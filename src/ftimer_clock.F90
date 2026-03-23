@@ -19,7 +19,7 @@ contains
       if (rate > 0_int64) then
          t = real(count, wp)/real(rate, wp)
       else
-         t = 0.0_wp
+         error stop "ftimer_default_clock: system_clock rate unavailable"
       end if
    end function ftimer_default_clock
 
@@ -33,7 +33,8 @@ contains
 #ifdef FTIMER_USE_MPI
       t = real(MPI_Wtime(), wp)
 #else
-      t = ftimer_default_clock()
+      t = 0.0_wp
+      error stop "ftimer_mpi_clock: FTIMER_USE_MPI is not enabled"
 #endif
    end function ftimer_mpi_clock
 

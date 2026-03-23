@@ -12,7 +12,7 @@ Current `main` provides a buildable foundation plus placeholder runtime behavior
 
 - CMake-based serial and MPI builds
 - `ftimer_types` exports shared kinds, constants, summary/container types, and abstract clock/hook interfaces
-- `ftimer_clock` exports `ftimer_default_clock()`, `ftimer_mpi_clock()`, and `ftimer_date_string()`
+- `ftimer_clock` exports `ftimer_default_clock()`, `ftimer_mpi_clock()` for MPI-enabled builds, and `ftimer_date_string()`
 - Placeholder example programs that compile and link against the library
 - A default smoke-test path that verifies the scaffold builds and reports placeholder status honestly
 - An installable CMake package export (`fTimerTargets.cmake`, `fTimerConfig.cmake`, `fTimerConfigVersion.cmake`)
