@@ -43,7 +43,7 @@ This workflow is mandatory for every PR.
   - `src/ftimer_core.F90`, especially `start`, `stop`, or `repair_mismatch`
   - `src/ftimer_mpi.F90`
 
-Do not manually paste the large saved prompts into the PR unless explicitly asked. Let `.github/workflows/codex-review.yml` post the trigger comments from `.github/prompts/`.
+The native trigger workflow now posts intentionally condensed single-line `@codex review ...` comments built from `.github/prompts/`. The preserved detailed prompts live in `.github/prompts/manual/` for auxiliary/manual review use. Do not paste the manual backup prompts into a PR unless you are using the documented fallback flow.
 
 ### Monitoring Reviews
 
@@ -67,6 +67,7 @@ Fallback procedure:
 
 1. Still apply the normal Codex review labels and monitor for the native review flow first.
 2. Request the missing review manually, for example via ChatGPT with GitHub integration.
+   You can reuse the detailed backup prompts from `.github/prompts/manual/` when doing this.
 3. Ask the manual review to use the repository review heading convention:
    - `## Software Review`
    - `## Methodology Review`
@@ -98,6 +99,7 @@ Useful commands:
 ## Known Limitations Of Native Codex GitHub Reviews
 
 - A passing trigger workflow only proves that the `@codex review` comment was posted.
+- Native Codex review did not reliably follow the previous long-form trigger prompts, so the workflow now uses single-line trigger comments and keeps the detailed versions only for manual fallback.
 - Codex review bodies may ignore prompt instructions about top-level headings.
 - A "no findings" outcome may appear as a generic comment or reaction rather than a distinct type-specific review body.
 - GitHub does not expose clean provenance from a particular trigger comment to a particular returned review object.

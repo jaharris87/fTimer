@@ -64,9 +64,13 @@ fTimer/
 │   │   ├── ci.yml                     # CI: build, lint, test (serial + MPI)
 │   │   └── codex-review.yml          # Codex review triggers
 │   └── prompts/
-│       ├── software-review.md
-│       ├── methodology-review.md      # Timing/HPC methodology review
-│       └── red-team-review.md
+│       ├── software-review.md         # Condensed native trigger prompt
+│       ├── methodology-review.md      # Condensed timing/HPC trigger prompt
+│       ├── red-team-review.md         # Condensed adversarial trigger prompt
+│       └── manual/
+│           ├── software-review.md     # Preserved detailed fallback prompt
+│           ├── methodology-review.md  # Preserved detailed fallback prompt
+│           └── red-team-review.md     # Preserved detailed fallback prompt
 ├── .claude/
 │   └── settings.json
 ├── src/

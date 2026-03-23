@@ -119,6 +119,8 @@ Short version:
 
 Use `docs/maintainer.md` for the full operating procedure, investigation commands, merge criteria, and the manual-review fallback when native Codex review is unavailable.
 
+The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`. The preserved detailed prompts for auxiliary/manual review use live in `.github/prompts/manual/`.
+
 ## Configuration
 
 - **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` is available.
