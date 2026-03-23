@@ -1,3 +1,9 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+
+if("@FTIMER_USE_MPI@" STREQUAL "ON")
+  find_dependency(MPI COMPONENTS Fortran)
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/fTimerTargets.cmake")

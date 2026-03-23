@@ -13,24 +13,30 @@ module ftimer
 
 contains
 
-   subroutine ftimer_init()
-      call ftimer_default_instance%init()
+   subroutine ftimer_init(ierr)
+      integer, intent(out), optional :: ierr
+
+      call ftimer_default_instance%init(ierr)
    end subroutine ftimer_init
 
-   subroutine ftimer_finalize()
-      call ftimer_default_instance%finalize()
+   subroutine ftimer_finalize(ierr)
+      integer, intent(out), optional :: ierr
+
+      call ftimer_default_instance%finalize(ierr)
    end subroutine ftimer_finalize
 
-   subroutine ftimer_start(name)
+   subroutine ftimer_start(name, ierr)
       character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
 
-      call ftimer_default_instance%start(name)
+      call ftimer_default_instance%start(name, ierr)
    end subroutine ftimer_start
 
-   subroutine ftimer_stop(name)
+   subroutine ftimer_stop(name, ierr)
       character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
 
-      call ftimer_default_instance%stop(name)
+      call ftimer_default_instance%stop(name, ierr)
    end subroutine ftimer_stop
 
 end module ftimer

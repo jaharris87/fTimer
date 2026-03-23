@@ -47,30 +47,7 @@ Phase 0 defaults:
 - Smoke tests are enabled by default and are intentionally minimal.
 - pFUnit-backed behavioral tests are not part of the default build yet.
 - FPM support is deferred until the public API stabilizes.
-
-## Workflow Bootstrap
-
-Codex review automation expects the following repository setup:
-
-- Labels: `codex-software-review`, `codex-methodology-review`, `codex-red-team-review`
-- Secret: `CODEX_TRIGGER_PAT` containing a fine-grained PAT with `pull-requests:write`
-- PR-based flow on `main`, with CI and lint required before merge
-
-Recommended GitHub ruleset for `main`:
-
-- require pull requests before merge
-- require `CI / build-serial`, `CI / build-mpi`, and `CI / lint`
-- block direct pushes and force pushes
-- require conversation resolution before merge
-
-The review-trigger workflow posts `@codex review` comments when those labels are applied to a PR. The label bootstrap is documented in-repo; there is no `scripts/create-labels.sh` script in this project.
-
-Phase workflow for development:
-
-- create or link the relevant GitHub issue first
-- work on a feature branch
-- open a PR to `main`
-- apply the Codex review labels required by the diff
+- The public API is placeholder-only in Phase 0: it compiles and preserves the error-reporting shape, but timer operations still report "not implemented" until later phases.
 
 ## Deferred Items
 

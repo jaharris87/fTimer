@@ -69,6 +69,8 @@ ftimer.F90  (procedural wrappers + default global instance)
 
 Phase 0 is scaffold work. The library, examples, install package, and smoke tests must stay buildable, but they are not substitutes for the real implementation phases in `TODO.md`.
 
+During Phase 0, the public API is placeholder-only: routine signatures should preserve the intended error-reporting contract, and unimplemented timer operations should report that status rather than silently succeeding.
+
 **Test-driven development is mandatory.** Write tests first, confirm they fail, then implement. All tests use the injectable mock clock for deterministic results — tests never sleep or depend on wall-clock timing.
 
 ### Test Categories

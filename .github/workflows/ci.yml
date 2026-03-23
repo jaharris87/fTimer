@@ -23,6 +23,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake
 
+      # Phase 0 intentionally validates the minimal scaffold without pFUnit.
+      # Reintroduce pFUnit install + .pf test execution once the real test
+      # suite lands in the implementation phases.
       - name: Configure (serial)
         run: cmake -B build
 
@@ -42,6 +45,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
+      # Phase 0 only proves that the MPI-enabled scaffold configures and builds.
+      # There are no MPI-labelled runtime tests yet; reintroduce those once the
+      # pFUnit MPI suite exists.
       - name: Configure (MPI)
         run: cmake -B build -DFTIMER_USE_MPI=ON
 
