@@ -55,6 +55,29 @@ After opening or materially updating the PR:
 4. Once all expected reviews have arrived, respond to every finding.
 5. If reviews have not arrived after 10 minutes, tell the user and ask how to proceed.
 
+### Fallback When Native Codex Review Is Unavailable
+
+Use this fallback only when the normal label-triggered Codex review path is unavailable or insufficient, for example:
+
+- Codex usage quota is exhausted
+- the trigger workflow posts successfully but no actual review artifacts arrive after the normal wait window
+- the GitHub/Codex integration is unavailable
+
+Fallback procedure:
+
+1. Still apply the normal Codex review labels and monitor for the native review flow first.
+2. Request the missing review manually, for example via ChatGPT with GitHub integration.
+3. Ask the manual review to use the repository review heading convention:
+   - `## Software Review`
+   - `## Methodology Review`
+   - `## Red Team Review`
+4. Post the manual review output to the PR as a comment, or post a durable link plus a short summary of the findings.
+5. Add a short PR comment explaining why fallback review was used and which review type it covered.
+6. Handle every finding exactly as in the normal workflow: agree and fix, disagree with evidence, or defer with reason.
+7. Resolve all related review threads or PR discussion threads before merge.
+
+This fallback does not replace required CI, required PR checks, or the normal Codex-label workflow when native Codex review is available.
+
 ### How To Inspect What Actually Happened
 
 Useful commands:
