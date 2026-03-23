@@ -13,7 +13,6 @@ module ftimer_core
    public :: ftimer_t
 #ifdef FTIMER_BUILD_TESTS
    public :: ftimer_test_get_state
-   public :: ftimer_test_set_init_wtime
    public :: ftimer_test_state_t
 #endif
 
@@ -251,6 +250,7 @@ contains
 
       call self%call_stack%push(id)
       now = self%wtime()
+      if (needs_init_wtime_rebase(self)) self%init_wtime = now
       self%segments(id)%start_time(ctx) = now
       self%segments(id)%call_count(ctx) = self%segments(id)%call_count(ctx) + 1
       self%segments(id)%is_running(ctx) = .true.
@@ -372,6 +372,8 @@ contains
       end do
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       self%call_stack%depth = 0
+      self%init_wtime = self%wtime()
+      self%init_date = ftimer_date_string()
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine reset
@@ -468,12 +470,6 @@ contains
       end if
    end subroutine ftimer_test_get_state
 
-   subroutine ftimer_test_set_init_wtime(self, init_wtime)
-      class(ftimer_t), intent(inout) :: self
-      real(wp), intent(in) :: init_wtime
-
-      self%init_wtime = init_wtime
-   end subroutine ftimer_test_set_init_wtime
 #endif
 
    subroutine clear_runtime_state(self, keep_hooks)
@@ -641,5 +637,47 @@ contains
          call self%on_event(id, ctx, FTIMER_EVENT_STOP, now, self%user_data)
       end if
    end subroutine stop_segment_with_now
+
+   logical function has_recorded_timing(self) result(has_data)
+      class(ftimer_t), intent(in) :: self
+      integer :: i
+
+      has_data = .false.
+      do i = 1, self%num_segments
+         if (allocated(self%segments(i)%call_count)) then
+            if (any(self%segments(i)%call_count > 0)) then
+               has_data = .true.
+               return
+            end if
+         end if
+         if (allocated(self%segments(i)%time)) then
+            if (any(self%segments(i)%time /= 0.0_wp)) then
+               has_data = .true.
+               return
+            end if
+         end if
+         if (allocated(self%segments(i)%is_running)) then
+            if (any(self%segments(i)%is_running)) then
+               has_data = .true.
+               return
+            end if
+         end if
+      end do
+   end function has_recorded_timing
+
+   logical function needs_init_wtime_rebase(self) result(needs_rebase)
+      class(ftimer_t), intent(in) :: self
+
+      needs_rebase = .false.
+      if (.not. self%initialized) return
+      if (.not. associated(self%clock)) return
+      if (has_recorded_timing(self)) return
+#ifdef FTIMER_USE_MPI
+      if (associated(self%clock, ftimer_mpi_clock)) return
+#else
+      if (associated(self%clock, ftimer_default_clock)) return
+#endif
+      needs_rebase = .true.
+   end function needs_init_wtime_rebase
 
 end module ftimer_core

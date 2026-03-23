@@ -1,15 +1,16 @@
 # fTimer Semantics Reference
 
-Phase 2 note: this document is still a forward-looking outline, not a complete runtime contract.
+Phase 3 note: this document is still a forward-looking outline, not a complete runtime contract.
 
-Current `main` now implements the Phase 2 core timer behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, and the `ierr` vs stderr error contract. Summary construction/formatting, MPI summary guarantees, and OpenMP behavior below are still future work.
+Current `main` now implements the Phase 2 core timer behavior plus Phase 3 local summary/reporting behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, self-time computation, and callback suppression during repair. MPI summary guarantees and OpenMP behavior below are still future work.
 
-Treat the sections below as implementation targets unless they describe the Phase 2 core behaviors listed above.
+Treat the sections below as implementation targets unless they describe the Phase 2/3 behaviors listed above.
 
 ## Timing Model
 
 - Inclusive vs exclusive (self) time definitions
 - Wall-clock only (no CPU time, no hardware counters)
+- Injected clocks are expected to be monotonic within a timing run
 
 ## Nesting Rules
 
@@ -32,6 +33,7 @@ Treat the sections below as implementation targets unless they describe the Phas
 ## Reset Behavior
 
 - Zeros times and counts, preserves timer definitions
+- Restarts the local monitoring window used for `summary%total_time` and `% Total`
 - Error if timers are active
 
 ## MPI Guarantees

@@ -23,7 +23,7 @@ contains
       call clear_summary(summary)
       summary%start_date = init_date
       summary%end_date = end_date
-      summary%total_time = max(0.0_wp, end_time - init_wtime)
+      summary%total_time = end_time - init_wtime
       summary%has_mpi_data = .false.
       summary%placeholder = 0
 
@@ -45,16 +45,19 @@ contains
       type(ftimer_summary_t), intent(in) :: summary
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
-      character(len=256) :: fmt
-      character(len=256) :: line
-      character(len=256) :: padded
+      character(len=64) :: fmt
+      character(len=:), allocatable :: line
+      character(len=:), allocatable :: padded
       integer :: i
       integer :: key_width
+      integer :: line_width
       integer :: name_width
 
       text = ''
       key_width = metadata_key_width(metadata)
       name_width = summary_name_width(summary)
+      line_width = summary_line_width(name_width)
+      allocate (character(len=line_width) :: line)
 
       write (line, '(f0.6)') summary%total_time
       call set_padded_text(padded, 'Total time (s)', key_width)
@@ -70,7 +73,9 @@ contains
 
       call append_line(text, '')
       call set_padded_text(padded, 'Timer name', name_width)
-      line = padded(1:name_width)//'  Inclusive (s)     Self (s)    Calls   % Total'
+      line = repeat(' ', len(line))
+      line(1:name_width + len('  Inclusive (s)     Self (s)    Calls   % Total')) = &
+         padded(1:name_width)//'  Inclusive (s)     Self (s)    Calls   % Total'
       call append_line(text, trim(line))
       call append_line(text, repeat('-', len_trim(line)))
 
@@ -228,7 +233,7 @@ contains
 
       if (allocated(segment%is_running) .and. allocated(segment%start_time)) then
          if ((ctx <= size(segment%is_running)) .and. (ctx <= size(segment%start_time))) then
-            if (segment%is_running(ctx)) total = total + max(0.0_wp, end_time - segment%start_time(ctx))
+            if (segment%is_running(ctx)) total = total + end_time - segment%start_time(ctx)
          end if
       end if
    end function inclusive_for_context
@@ -253,7 +258,7 @@ contains
 
       if (allocated(segment%is_running) .and. allocated(segment%start_time)) then
          if ((ctx <= size(segment%is_running)) .and. (ctx <= size(segment%start_time))) then
-            if (segment%is_running(ctx)) is_visible = end_time >= segment%start_time(ctx)
+            if (segment%is_running(ctx)) is_visible = .true.
          end if
       end if
    end function context_is_visible
@@ -271,15 +276,22 @@ contains
    end function metadata_key_width
 
    subroutine set_padded_text(padded, text, width)
-      character(len=*), intent(out) :: padded
+      character(len=:), allocatable, intent(out) :: padded
       character(len=*), intent(in) :: text
       integer, intent(in) :: width
       integer :: copy_len
 
-      padded = ''
-      copy_len = min(width, len_trim(text), len(padded))
+      allocate (character(len=width) :: padded)
+      padded = repeat(' ', width)
+      copy_len = min(width, len_trim(text))
       if (copy_len > 0) padded(1:copy_len) = text(1:copy_len)
    end subroutine set_padded_text
+
+   integer function summary_line_width(name_width) result(width)
+      integer, intent(in) :: name_width
+
+      width = name_width + 48
+   end function summary_line_width
 
    integer function summary_name_width(summary) result(width)
       type(ftimer_summary_t), intent(in) :: summary
