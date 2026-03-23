@@ -6,7 +6,7 @@
 
 > fTimer is a lightweight, correctness-first timing library for Fortran codes. Inspired by Flash-X's MPINative Timers but designed as a standalone profiling substrate, it preserves the proven conceptual model (stack-based nesting, context-sensitive accounting, hierarchical summary) while optimizing for correctness, clarity, portability, and composability.
 
-**Scope (Phase 1):** A portable wall-clock timer library with profiling extensibility hooks. fTimer does NOT itself provide hardware counter or power measurements — it provides callback hooks so external tools (PAPI, likwid, etc.) can attach to timer boundaries in the future.
+**Scope (implemented through Phase 2):** A portable wall-clock timer library with profiling extensibility hooks. fTimer does NOT itself provide hardware counter or power measurements — it provides callback hooks so external tools (PAPI, likwid, etc.) can attach to timer boundaries in the future.
 
 **Where fTimer preserves Flash-X's design:** strict stack-based nesting, context-sensitive accounting of the same timer under different parents, hierarchical summary logic, low conceptual overhead, string and integer-key access.
 
@@ -19,25 +19,26 @@
 - OOP core with encapsulated state and multiple instances
 - Injectable clock, configurable error handling, callback hooks with full context
 
-## Current Phase 1 Snapshot
+## Current Phase 2 Snapshot
 
 Current `main` is intentionally narrower than the target design below:
 
 - the library, examples, packaging, and smoke tests are buildable
 - `ftimer_types.F90` provides the shared constants, summary/container types, and abstract interfaces
 - `ftimer_clock.F90` provides the default wall clock, MPI wall clock wrapper, and date-string utility
-- the placeholder procedural interface exports `ftimer_init`, `ftimer_finalize`, `ftimer_start`, and `ftimer_stop`
-- the placeholder core type exports `init`, `finalize`, `start`, `stop`, and `get_summary`
-- timer operations preserve the intended `ierr`/warning shape but still report "not implemented"
-- pFUnit-backed behavioral tests, mismatch handling, summaries, callbacks, and MPI reductions are future implementation work
+- `ftimer_core.F90` implements `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, and a placeholder `get_summary`
+- the current procedural interface still exports only `ftimer_init`, `ftimer_finalize`, `ftimer_start`, and `ftimer_stop`
+- stack-based nesting, context-sensitive accounting, injectable clock use, and strict/warn/repair mismatch dispatch are implemented in the core runtime
+- pFUnit-backed behavioral tests exist for the Phase 2 core behaviors
+- summary building/formatting, callback-specific tests, expanded procedural wrappers, and MPI reductions are future implementation work
 
 For the current user-facing contract, prefer `README.md` and the source in `src/`. Use this document as the implementation target for future phases.
 
 ## Key Decisions
 
 - **Build system**: CMake with a convenience Makefile wrapper (`make`, `make test`, `make install` delegate to cmake/ctest)
-- **Current baseline**: buildable Phase 1 foundation modules + placeholder core/examples + smoke tests; full behavior arrives in later phases
-- **Testing**: current `main` uses smoke tests only; later phases use pFUnit with an injectable mock clock for deterministic tests
+- **Current baseline**: buildable Phase 2 foundation + core runtime + smoke tests + opt-in serial pFUnit tests; later phases add summaries, MPI reductions, and OpenMP guards
+- **Testing**: current `main` uses smoke tests by default and pFUnit with an injectable mock clock when `FTIMER_BUILD_TESTS=ON`
 - **Timer model**: Strict nesting only (stack-based, no overlapping timers)
 - **Mismatch handling**: Configurable (`strict`/`warn`/`repair`), **default `strict`**. `repair` mode is Flash-X compatibility. Internal repair transitions do NOT fire user callbacks.
 - **Error model**: Optional `ierr` argument on all public routines (standard Fortran pattern). When `ierr` absent, print warning to stderr.

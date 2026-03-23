@@ -1,10 +1,10 @@
 # fTimer Semantics Reference
 
-Phase 1 note: this document is a forward-looking outline, not the current runtime contract.
+Phase 2 note: this document is still a forward-looking outline, not a complete runtime contract.
 
-Current `main` includes the Phase 1 shared types and clock foundation, but it does **not** yet implement the timer semantics described below. The runtime timer API still preserves the intended error-reporting shape and reports unimplemented timer operations rather than silently succeeding.
+Current `main` now implements the Phase 2 core timer behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, and the `ierr` vs stderr error contract. Summary construction/formatting, MPI summary guarantees, and OpenMP behavior below are still future work.
 
-Treat the sections below as implementation targets for later phases, not as guarantees of the current behavior on `main`.
+Treat the sections below as implementation targets unless they describe the Phase 2 core behaviors listed above.
 
 ## Timing Model
 

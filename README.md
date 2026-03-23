@@ -4,24 +4,27 @@ A lightweight, correctness-first wall-clock timing library for modern Fortran.
 
 ## Status
 
-**Under construction.** Phase 1 provides buildable foundation modules for shared types and clock utilities, along with the existing placeholder core, examples, packaging, and smoke-test scaffolding. Behavioral implementation is tracked in [TODO.md](TODO.md).
+**Under construction.** Phase 2 provides the shared types/clock foundation plus a real core timer runtime with deterministic pFUnit coverage. Summary/reporting, expanded procedural wrappers, MPI reductions, and OpenMP guards are still tracked in [TODO.md](TODO.md).
 
-## Current Phase 1 Behavior
+## Current Phase 2 Behavior
 
-Current `main` provides a buildable foundation plus placeholder runtime behavior:
+Current `main` provides:
 
 - CMake-based serial and MPI builds
 - `ftimer_types` exports shared kinds, constants, summary/container types, and abstract clock/hook interfaces
 - `ftimer_clock` exports `ftimer_default_clock()`, `ftimer_mpi_clock()` for MPI-enabled builds, and `ftimer_date_string()`
-- Placeholder example programs that compile and link against the library
-- A default smoke-test path that verifies the scaffold builds and reports placeholder status honestly
+- `ftimer_core` exports a real `ftimer_t` implementation with `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, and placeholder `get_summary`
+- Strict-by-default stack-based timing with context-sensitive accounting and configurable mismatch handling (`strict` / `warn` / `repair`)
+- A default smoke-test path plus optional pFUnit behavioral tests using an injectable mock clock
+- Example programs that compile and link against the library
 - An installable CMake package export (`fTimerTargets.cmake`, `fTimerConfig.cmake`, `fTimerConfigVersion.cmake`)
 
-Current timer behavior is still intentionally narrow:
+Current public surface is still intentionally narrower than the target design:
 
 - Procedural interface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, and `ftimer_default_instance`
-- OOP core placeholder: `init`, `finalize`, `start`, `stop`, and `get_summary`
-- `start` and `stop` preserve the intended error-reporting contract but still report "not implemented" after initialization
+- OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, and `get_summary`
+- `start`/`stop` are now real timer operations with the intended `ierr`/stderr error contract
+- `get_summary()` remains a placeholder until Phase 3
 
 ## Target Capabilities
 
@@ -38,17 +41,19 @@ fTimer is intended to provide stack-based hierarchical timing with:
 ## Build
 
 ```bash
-# Serial build
-cmake -B build && cmake --build build
-
-# Run the current smoke test
+# Serial build with pFUnit tests
+cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+cmake --build build
 ctest --test-dir build --output-on-failure
 
-# MPI build
-cmake -B build-mpi -DFTIMER_USE_MPI=ON && cmake --build build-mpi
+# Smoke-test-only path
+cmake -B build-smoke
+cmake --build build-smoke
+ctest --test-dir build-smoke --output-on-failure
 
-# Enable pFUnit tests later, once they exist
-cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit && cmake --build build
+# MPI build compatibility check
+cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+cmake --build build-mpi
 
 # Or use the Makefile wrapper
 make        # serial build
@@ -56,24 +61,26 @@ make mpi    # MPI build
 make test   # build + test
 ```
 
-Requires: gfortran (or compatible Fortran compiler), CMake >= 3.16, and an MPI Fortran toolchain when `FTIMER_USE_MPI=ON`.
+Requires: a Fortran compiler with preprocess support, CMake >= 3.16, pFUnit when `FTIMER_BUILD_TESTS=ON`, and an MPI Fortran toolchain when `FTIMER_USE_MPI=ON`.
 
-Phase 1 defaults:
+Current defaults:
 
 - CMake is the only supported build path right now.
-- Smoke tests are enabled by default and are intentionally minimal.
-- pFUnit-backed behavioral tests are not part of the default build yet.
+- Smoke tests are enabled by default and stay intentionally minimal.
+- pFUnit-backed behavioral tests are opt-in via `FTIMER_BUILD_TESTS=ON`.
 - FPM support is deferred until the public API stabilizes.
-- The timer runtime API is still placeholder-only: it compiles and preserves the error-reporting shape, but timer operations still report "not implemented" until later phases.
+- Summary building/formatting and MPI reductions are not implemented yet.
 
 ## Deferred Items
 
-These are intentionally postponed beyond Phase 1:
+These are intentionally postponed beyond Phase 2:
 
-- pFUnit behavioral test suite
-- Core timer behavior
 - Structured summary building and formatting
+- Callback behavior tests
+- Procedural API expansion beyond the current wrapper surface
 - MPI reductions and cross-rank summary statistics
+- MPI behavioral tests
+- OpenMP guards
 - FPM manifest/support
 - secondary repo hygiene such as Dependabot, `.editorconfig`, and broader governance files
 
