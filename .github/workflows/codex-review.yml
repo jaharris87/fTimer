@@ -1,0 +1,92 @@
+name: Codex Review Triggers
+
+# This workflow does NOT call any AI API. It posts @codex review comments
+# which trigger native Codex GitHub review via your ChatGPT-linked account.
+#
+# Prerequisites:
+#   1. Create a fine-grained PAT with pull-requests:write on this repo
+#   2. Add it as a repository secret named CODEX_TRIGGER_PAT
+#   3. Create the review labels (see scripts/create-labels.sh)
+#
+# Why a PAT instead of github.token?
+#   Codex ignores @codex review comments from github-actions[bot].
+#   The PAT makes comments appear from your user account.
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  software-review:
+    if: github.event.label.name == 'codex-software-review'
+    concurrency:
+      group: codex-software-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Post software review trigger
+        env:
+          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
+        run: |
+          {
+            echo "@codex review"
+            echo
+            cat .github/prompts/software-review.md
+          } > /tmp/codex-software-comment.md
+
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body-file /tmp/codex-software-comment.md
+
+  methodology-review:
+    if: github.event.label.name == 'codex-methodology-review'
+    concurrency:
+      group: codex-methodology-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Post methodology review trigger
+        env:
+          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
+        run: |
+          {
+            echo "@codex review"
+            echo
+            cat .github/prompts/methodology-review.md
+          } > /tmp/codex-methodology-comment.md
+
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body-file /tmp/codex-methodology-comment.md
+
+  red-team-review:
+    if: github.event.label.name == 'codex-red-team-review'
+    concurrency:
+      group: codex-red-team-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Post red team review trigger
+        env:
+          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
+        run: |
+          {
+            echo "@codex review"
+            echo
+            cat .github/prompts/red-team-review.md
+          } > /tmp/codex-red-team-comment.md
+
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body-file /tmp/codex-red-team-comment.md

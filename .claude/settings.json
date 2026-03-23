@@ -1,0 +1,18 @@
+{
+  "$schema": "https://claude.ai/code/settings-schema.json",
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(cmake *)",
+      "Bash(make *)",
+      "Bash(make)",
+      "Bash(ctest *)",
+      "Bash(gfortran *)",
+      "Bash(mpif90 *)",
+      "Bash(mpirun *)",
+      "Bash(mpifort *)",
+      "Bash(fprettify *)",
+      "Bash(fpm *)"
+    ]
+  }
+}

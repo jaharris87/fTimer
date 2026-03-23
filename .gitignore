@@ -1,0 +1,24 @@
+# Build
+build/
+CMakeFiles/
+
+# Fortran module files
+*.mod
+*.smod
+
+# Object files
+*.o
+
+# Libraries
+*.a
+*.so
+*.dylib
+
+# Editor
+*~
+*.swp
+.vscode/
+.idea/
+
+# OS
+.DS_Store
