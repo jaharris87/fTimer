@@ -158,6 +158,7 @@ contains
       fake_time = 1.0_wp
       call timer%start("B", ierr=ierr)
       fake_time = 2.0_wp
+      ierr = -999
       call timer%stop("A", ierr=ierr)
 
       @assertEqual(FTIMER_SUCCESS, ierr)

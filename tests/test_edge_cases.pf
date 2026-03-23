@@ -49,6 +49,21 @@ contains
    end subroutine test_finalize_with_active_timer_returns_active
 
    @test
+   subroutine test_init_rejects_invalid_mismatch_mode()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      logical :: initialized
+
+      call timer%init(mismatch_mode=99, ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(timer, state)
+      initialized = state%initialized
+      @assertFalse(initialized)
+   end subroutine test_init_rejects_invalid_mismatch_mode
+
+   @test
    subroutine test_name_length_limit_accepts_exact_and_rejects_longer()
       type(ftimer_t) :: timer
       character(len=FTIMER_NAME_LEN) :: exact_name

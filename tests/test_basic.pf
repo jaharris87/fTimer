@@ -1,4 +1,5 @@
 module test_basic
+   use, intrinsic :: iso_c_binding, only: c_associated, c_loc, c_ptr
    use pfunit
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_MISMATCH_STRICT, FTIMER_SUCCESS, wp
@@ -41,6 +42,21 @@ contains
       @assertFalse(initialized)
       @assertEqual(0, num_segments)
    end subroutine test_init_finalize_sets_core_state
+
+   @test
+   subroutine test_init_positional_ierr_still_works()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      logical :: initialized
+
+      call timer%init(ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+      initialized = state%initialized
+      @assertTrue(initialized)
+   end subroutine test_init_positional_ierr_still_works
 
    @test
    subroutine test_start_stop_auto_creates_and_accumulates()
@@ -117,5 +133,43 @@ contains
       @assertEqual(4.0_wp, elapsed)
       @assertEqual(1, state%segments(id_a)%call_count(ctx))
    end subroutine test_start_id_stop_id_uses_cached_id
+
+   @test
+   subroutine test_finalize_clears_hook_state()
+      type(ftimer_t) :: timer
+      integer, target :: user_token
+      integer :: ierr
+      logical :: hook_associated
+      logical :: hook_cleared
+      logical :: data_cleared
+
+      call timer%init(ierr=ierr)
+      user_token = 7
+      timer%on_event => test_hook
+      timer%user_data = c_loc(user_token)
+
+      hook_associated = associated(timer%on_event)
+      @assertTrue(hook_associated)
+
+      call timer%finalize(ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      hook_cleared = .not. associated(timer%on_event)
+      data_cleared = .not. c_associated(timer%user_data)
+      @assertTrue(hook_cleared)
+      @assertTrue(data_cleared)
+   end subroutine test_finalize_clears_hook_state
+
+   subroutine test_hook(timer_id, context_idx, event, timestamp, user_data)
+      integer, intent(in) :: timer_id
+      integer, intent(in) :: context_idx
+      integer, intent(in) :: event
+      real(wp), intent(in) :: timestamp
+      type(c_ptr), intent(in) :: user_data
+
+      if ((timer_id + context_idx + event) < 0) error stop 1
+      if (timestamp < 0.0_wp) error stop 2
+      if (.not. c_associated(user_data)) error stop 3
+   end subroutine test_hook
 
 end module test_basic

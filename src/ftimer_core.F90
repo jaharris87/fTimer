@@ -67,12 +67,21 @@ module ftimer_core
 
 contains
 
-   subroutine init(self, comm, mismatch_mode, ierr)
+   subroutine init(self, ierr, comm, mismatch_mode)
       class(ftimer_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
-      integer, intent(out), optional :: ierr
       real(wp) :: now
+
+      if (present(mismatch_mode)) then
+         select case (mismatch_mode)
+         case (FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_MISMATCH_REPAIR)
+         case default
+            call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer init with invalid mismatch mode")
+            return
+         end select
+      end if
 
       if (self%initialized .and. has_active_timers(self)) then
          if (present(ierr)) then
@@ -133,7 +142,7 @@ contains
          call force_stop_all(self, now, fire_callback=.true.)
       end if
 
-      call clear_runtime_state(self, keep_hooks=.true.)
+      call clear_runtime_state(self, keep_hooks=.false.)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine finalize
 
@@ -276,6 +285,7 @@ contains
          end if
 
          call self%repair_mismatch(id)
+         if (present(ierr)) ierr = FTIMER_SUCCESS
       case default
          call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
          return
