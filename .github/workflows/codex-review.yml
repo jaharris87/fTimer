@@ -2,6 +2,10 @@ name: Codex Review Triggers
 
 # This workflow does NOT call any AI API. It posts @codex review comments
 # which trigger native Codex GitHub review via your ChatGPT-linked account.
+# The trigger comments are intentionally condensed to single lines because
+# native Codex review did not reliably follow the previous long-form prompts.
+# The preserved detailed prompts remain under .github/prompts/manual/ for
+# auxiliary/manual review use.
 #
 # Prerequisites:
 #   1. Create a fine-grained PAT with pull-requests:write on this repo
@@ -31,15 +35,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Post software review trigger
+      - name: Post condensed software review trigger
         env:
           GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
         run: |
-          {
-            echo "@codex review"
-            echo
-            cat .github/prompts/software-review.md
-          } > /tmp/codex-software-comment.md
+          printf '@codex review %s\n' "$(cat .github/prompts/software-review.md)" \
+            > /tmp/codex-software-comment.md
 
           gh pr comment "${{ github.event.pull_request.number }}" \
             --repo "${{ github.repository }}" \
@@ -54,15 +55,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Post methodology review trigger
+      - name: Post condensed methodology review trigger
         env:
           GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
         run: |
-          {
-            echo "@codex review"
-            echo
-            cat .github/prompts/methodology-review.md
-          } > /tmp/codex-methodology-comment.md
+          printf '@codex review %s\n' "$(cat .github/prompts/methodology-review.md)" \
+            > /tmp/codex-methodology-comment.md
 
           gh pr comment "${{ github.event.pull_request.number }}" \
             --repo "${{ github.repository }}" \
@@ -77,15 +75,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Post red team review trigger
+      - name: Post condensed red team review trigger
         env:
           GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
         run: |
-          {
-            echo "@codex review"
-            echo
-            cat .github/prompts/red-team-review.md
-          } > /tmp/codex-red-team-comment.md
+          printf '@codex review %s\n' "$(cat .github/prompts/red-team-review.md)" \
+            > /tmp/codex-red-team-comment.md
 
           gh pr comment "${{ github.event.pull_request.number }}" \
             --repo "${{ github.repository }}" \
