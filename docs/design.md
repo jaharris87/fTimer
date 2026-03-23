@@ -29,6 +29,7 @@ Current `main` is intentionally narrower than the target design below:
 - `ftimer_core.F90` implements `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `print_summary`, and `write_summary`
 - `ftimer_summary.F90` implements local summary building and formatted text reporting
 - `ftimer.F90` now exports the local procedural wrapper surface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_print_summary`, and `ftimer_write_summary`
+  Current Phase 4 note: the procedural wrapper keeps the legacy one-argument positional `ftimer_init(ierr)` calling form, so `comm` and `mismatch_mode` are keyword arguments in the current implementation
 - stack-based nesting, context-sensitive accounting, injectable clock use, and strict/warn/repair mismatch dispatch are implemented in the core runtime
 - pFUnit-backed behavioral tests exist for the Phase 2 core behaviors plus Phase 3 summary/self-time/file/callback coverage and Phase 4 procedural parity coverage
 - MPI reductions remain future implementation work
@@ -129,7 +130,10 @@ call timer%finalize([ierr])
 
 ### Procedural Convenience Interface
 ```fortran
-call ftimer_init([comm] [, mismatch_mode] [, ierr])
+! Current Phase 4 implementation preserves legacy `ftimer_init(ierr)` positional usage.
+! Pass `comm` and `mismatch_mode` by keyword in the procedural wrapper.
+call ftimer_init([ierr])
+call ftimer_init(comm=..., mismatch_mode=..., ierr=...)
 call ftimer_start("name" [, ierr])
 call ftimer_stop("name" [, ierr])
 call ftimer_get_summary(summary [, ierr])

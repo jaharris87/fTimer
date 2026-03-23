@@ -27,7 +27,7 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
       call snapshot_timer(oop_timer, oop_state)
 
-      call ftimer_init(ierr=ierr)
+      call ftimer_init(ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call snapshot_timer(ftimer_default_instance, procedural_state)
 
@@ -60,6 +60,36 @@ contains
       @assertEqual(oop_state%num_segments, procedural_state%num_segments)
       @assertEqual(0, oop_state%num_segments)
    end subroutine test_procedural_init_finalize_matches_oop
+
+   @test
+   subroutine test_procedural_init_keyword_options_match_oop()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_test_state_t) :: oop_state
+      type(ftimer_test_state_t) :: procedural_state
+      integer :: ierr
+      integer :: comm
+      integer :: mismatch_mode
+
+      comm = 42
+      mismatch_mode = 2
+
+      call oop_timer%init(mismatch_mode=mismatch_mode, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(oop_timer, oop_state)
+
+      call ftimer_init(comm=comm, mismatch_mode=mismatch_mode, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(ftimer_default_instance, procedural_state)
+
+      @assertEqual(42, comm)
+      @assertEqual(oop_state%mismatch_mode, procedural_state%mismatch_mode)
+      @assertEqual(mismatch_mode, procedural_state%mismatch_mode)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_init_keyword_options_match_oop
 
    @test
    subroutine test_procedural_start_stop_matches_oop()
@@ -264,6 +294,40 @@ contains
       call delete_if_exists(procedural_path)
       call cleanup_matching_timers(oop_timer, ierr)
    end subroutine test_procedural_write_summary_matches_oop
+
+   @test
+   subroutine test_procedural_write_summary_append_matches_oop()
+      type(ftimer_t) :: oop_timer
+      character(len=*), parameter :: oop_path = 'phase4_oop_summary_append.txt'
+      character(len=*), parameter :: procedural_path = 'phase4_procedural_summary_append.txt'
+      character(len=:), allocatable :: oop_text
+      character(len=:), allocatable :: procedural_text
+      integer :: ierr
+      logical :: texts_match
+
+      call delete_if_exists(oop_path)
+      call delete_if_exists(procedural_path)
+      call build_matching_timers(oop_timer, ierr)
+
+      call oop_timer%write_summary(oop_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call oop_timer%write_summary(oop_path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_write_summary(procedural_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_write_summary(procedural_path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      oop_text = read_file_text(oop_path)
+      procedural_text = read_file_text(procedural_path)
+      texts_match = procedural_text == oop_text
+      @assertTrue(texts_match)
+
+      call delete_if_exists(oop_path)
+      call delete_if_exists(procedural_path)
+      call cleanup_matching_timers(oop_timer, ierr)
+   end subroutine test_procedural_write_summary_append_matches_oop
 
    subroutine build_matching_timers(oop_timer, ierr)
       type(ftimer_t), intent(out) :: oop_timer

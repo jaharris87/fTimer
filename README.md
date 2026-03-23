@@ -23,6 +23,7 @@ Current `main` provides:
 Current public surface now exposes the complete local-only API for both usage styles:
 
 - Procedural interface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
+  Current Phase 4 note: the procedural wrapper preserves the legacy positional `ftimer_init(ierr)` form from earlier phases, so `comm` and `mismatch_mode` should be passed by keyword (`ftimer_init(comm=..., mismatch_mode=..., ierr=...)`) to avoid ambiguous integer-only positional calls.
 - OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `print_summary`, and `write_summary`
 - Procedural wrappers are thin forwarding calls over the existing OOP implementation and preserve the intended `ierr`/stderr error contract
 - Summary/reporting is local-only in this phase; MPI-reduced summaries remain deferred
