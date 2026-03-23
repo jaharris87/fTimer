@@ -1,0 +1,171 @@
+module test_nesting
+   use pfunit
+   use ftimer_core, only: ftimer_t, ftimer_test_state_t
+   use ftimer_types, only: FTIMER_ERR_MISMATCH, FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_WARN, FTIMER_SUCCESS, &
+      ftimer_call_stack_t, wp
+   use test_support, only: attach_mock_clock, build_stack, fake_time, find_context_idx, snapshot_timer
+   implicit none
+
+contains
+
+   @test
+   subroutine test_two_level_nesting_accumulates_parent_and_child()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: parent_stack
+      integer :: ierr
+      integer :: child_ctx
+      integer :: parent_ctx
+      real(wp) :: parent_time
+      real(wp) :: child_time
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("B", ierr=ierr)
+      fake_time = 3.0_wp
+      call timer%stop("B", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      call snapshot_timer(timer, state)
+      parent_ctx = find_context_idx(state, 1, state%call_stack)
+      parent_stack = build_stack([1])
+      child_ctx = find_context_idx(state, 2, parent_stack)
+      parent_time = state%segments(1)%time(parent_ctx)
+      child_time = state%segments(2)%time(child_ctx)
+
+      @assertEqual(5.0_wp, parent_time)
+      @assertEqual(2.0_wp, child_time)
+      @assertEqual(0, state%call_stack%depth)
+   end subroutine test_two_level_nesting_accumulates_parent_and_child
+
+   @test
+   subroutine test_deep_nesting_repairs_to_empty_stack()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: i
+      character(len=3) :: name
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      do i = 1, 10
+         write (name, '("L",i2.2)') i
+         call timer%start(trim(name), ierr=ierr)
+         fake_time = real(i, wp)
+      end do
+
+      do i = 10, 1, -1
+         write (name, '("L",i2.2)') i
+         fake_time = fake_time + 1.0_wp
+         call timer%stop(trim(name), ierr=ierr)
+      end do
+
+      call snapshot_timer(timer, state)
+
+      @assertEqual(10, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+   end subroutine test_deep_nesting_repairs_to_empty_stack
+
+   @test
+   subroutine test_strict_mismatch_leaves_stack_unchanged()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      type(ftimer_call_stack_t) :: active_stack
+      type(ftimer_call_stack_t) :: child_stack
+      integer :: ierr
+      integer :: ctx_a
+      integer :: ctx_b
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("B", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+      call snapshot_timer(timer, state)
+
+      active_stack = state%call_stack
+      child_stack = build_stack([1])
+      ctx_a = find_context_idx(state, 1, root_stack)
+      ctx_b = find_context_idx(state, 2, child_stack)
+
+      @assertEqual(2, active_stack%depth)
+      @assertTrue(state%segments(1)%is_running(ctx_a))
+      @assertTrue(state%segments(2)%is_running(ctx_b))
+   end subroutine test_strict_mismatch_leaves_stack_unchanged
+
+   @test
+   subroutine test_warn_mismatch_repairs_and_returns_code()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      type(ftimer_call_stack_t) :: old_parent
+      integer :: ierr
+      integer :: ctx_a
+      integer :: ctx_b_old
+      integer :: ctx_b_new
+      real(wp) :: time_a
+      real(wp) :: time_b_old
+
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_WARN, ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("B", ierr=ierr)
+      fake_time = 3.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+      call snapshot_timer(timer, state)
+
+      old_parent = build_stack([1])
+      ctx_a = find_context_idx(state, 1, root_stack)
+      ctx_b_old = find_context_idx(state, 2, old_parent)
+      ctx_b_new = find_context_idx(state, 2, root_stack)
+      time_a = state%segments(1)%time(ctx_a)
+      time_b_old = state%segments(2)%time(ctx_b_old)
+
+      @assertEqual(1, state%call_stack%depth)
+      @assertEqual(2, state%call_stack%top())
+      @assertEqual(3.0_wp, time_a)
+      @assertEqual(2.0_wp, time_b_old)
+      @assertTrue(state%segments(2)%is_running(ctx_b_new))
+   end subroutine test_warn_mismatch_repairs_and_returns_code
+
+   @test
+   subroutine test_repair_mismatch_repairs_silently()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ierr
+      integer :: ctx_b
+
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_REPAIR, ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("B", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+
+      ctx_b = find_context_idx(state, 2, root_stack)
+      @assertEqual(1, state%call_stack%depth)
+      @assertTrue(state%segments(2)%is_running(ctx_b))
+   end subroutine test_repair_mismatch_repairs_silently
+
+end module test_nesting
