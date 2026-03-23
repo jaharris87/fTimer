@@ -115,7 +115,7 @@ Short version:
 - monitor for the actual Codex review output
 - reply to every finding, resolve every review thread, and do not merge while merge-blocking findings remain
 
-Use `docs/maintainer.md` for the full operating procedure, investigation commands, and merge criteria.
+Use `docs/maintainer.md` for the full operating procedure, investigation commands, merge criteria, and the manual-review fallback when native Codex review is unavailable.
 
 ## Configuration
 
