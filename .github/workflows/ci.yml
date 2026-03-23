@@ -70,3 +70,4 @@ jobs:
           find src -name '*.F90' -exec fprettify --diff {} +
           find tests -name '*.pf' -exec fprettify --diff {} +
           find tests -name '*.F90' -exec fprettify --diff {} +
+          find examples -name '*.F90' -exec fprettify --diff {} +

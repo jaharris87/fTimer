@@ -1,8 +1,10 @@
 # fTimer Semantics Reference
 
-<!-- This document will be filled during implementation (Phase 7).
-     It should cover all behavioral contracts that users and reviewers
-     need to understand. Outline below; details TBD. -->
+Phase 0 note: this document is a forward-looking outline, not the current runtime contract.
+
+The merged Phase 0 scaffold does **not** yet implement the timer semantics described below. Today the public API is placeholder-only: it compiles, preserves the intended error-reporting shape, and reports unimplemented timer operations rather than silently succeeding.
+
+Treat the sections below as implementation targets for later phases, not as guarantees of the current behavior on `main`.
 
 ## Timing Model
 

@@ -22,7 +22,10 @@ ctest --test-dir build --output-on-failure
 cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit && cmake --build build
 
 # Lint / format check
-fprettify --diff src/*.F90 tests/*.pf
+find src -name '*.F90' -exec fprettify --diff {} +
+find tests -name '*.pf' -exec fprettify --diff {} +
+find tests -name '*.F90' -exec fprettify --diff {} +
+find examples -name '*.F90' -exec fprettify --diff {} +
 
 # Convenience Makefile (delegates to cmake)
 make            # build (serial)
