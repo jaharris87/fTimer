@@ -6,7 +6,14 @@ name: Codex Review Triggers
 # Prerequisites:
 #   1. Create a fine-grained PAT with pull-requests:write on this repo
 #   2. Add it as a repository secret named CODEX_TRIGGER_PAT
-#   3. Create the review labels documented in README.md and CLAUDE.md
+#   3. Create the review labels documented in .github/review-bootstrap.md
+#
+# Important behavior notes:
+#   - A successful workflow run only proves that the trigger comment was posted.
+#   - Native Codex reviews do not reliably preserve custom top-level headings.
+#   - "No findings" outcomes may not leave a distinct visible review body.
+#   - To keep provenance clear, this workflow enforces one active Codex review
+#     label at a time and posts trigger comments sequentially.
 #
 # Why a PAT instead of github.token?
 #   Codex ignores @codex review comments from github-actions[bot].
@@ -22,71 +29,97 @@ permissions:
   issues: write
 
 jobs:
-  software-review:
-    if: github.event.label.name == 'codex-software-review'
+  post-review-trigger:
+    if: contains(fromJson('["codex-software-review","codex-methodology-review","codex-red-team-review"]'), github.event.label.name)
     concurrency:
-      group: codex-software-review-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      group: codex-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Post software review trigger
+      - name: Compute review metadata
+        id: meta
+        env:
+          TRIGGER_LABEL: ${{ github.event.label.name }}
+        run: |
+          case "$TRIGGER_LABEL" in
+            codex-software-review)
+              echo "review_type=software" >> "$GITHUB_OUTPUT"
+              echo "prompt_path=.github/prompts/software-review.md" >> "$GITHUB_OUTPUT"
+              ;;
+            codex-methodology-review)
+              echo "review_type=methodology" >> "$GITHUB_OUTPUT"
+              echo "prompt_path=.github/prompts/methodology-review.md" >> "$GITHUB_OUTPUT"
+              ;;
+            codex-red-team-review)
+              echo "review_type=red-team" >> "$GITHUB_OUTPUT"
+              echo "prompt_path=.github/prompts/red-team-review.md" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+          python3 <<'PY'
+          import json
+          import os
+
+          allowed = {
+              "codex-software-review",
+              "codex-methodology-review",
+              "codex-red-team-review",
+          }
+
+          with open(os.environ["GITHUB_EVENT_PATH"], "r", encoding="utf-8") as fh:
+              event = json.load(fh)
+
+          labels = [label["name"] for label in event["pull_request"]["labels"]]
+          active = [label for label in labels if label in allowed]
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"active_codex_count={len(active)}\n")
+              out.write(f"active_codex_labels={','.join(active)}\n")
+          PY
+
+      - name: Post sequential-review guidance
+        if: steps.meta.outputs.active_codex_count != '1'
+        env:
+          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
+        run: |
+          cat > /tmp/codex-sequential-guidance.md <<EOF
+          Sequential Codex review triggering requires exactly one active Codex review label on the pull request.
+
+          Trigger that just fired: \`${{ github.event.label.name }}\`
+          Active Codex review labels right now: \`${{ steps.meta.outputs.active_codex_labels }}\`
+
+          Remove the extra Codex review labels, wait for the current review to land and be resolved, then apply the next label.
+
+          Recommended order:
+          1. \`codex-software-review\`
+          2. \`codex-methodology-review\` (if needed)
+          3. \`codex-red-team-review\` (if needed)
+
+          See \`.github/review-bootstrap.md\` for the detailed workflow and investigation commands.
+          EOF
+
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body-file /tmp/codex-sequential-guidance.md
+
+      - name: Post review trigger
+        if: steps.meta.outputs.active_codex_count == '1'
         env:
           GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
         run: |
           {
+            echo "<!-- codex-review-trigger:type=${{ steps.meta.outputs.review_type }} -->"
+            echo "Review request type: ${{ steps.meta.outputs.review_type }}"
+            echo "Requested via label: \`${{ github.event.label.name }}\`"
+            echo "Sequential trigger: yes"
+            echo
             echo "@codex review"
             echo
-            cat .github/prompts/software-review.md
-          } > /tmp/codex-software-comment.md
+            cat "${{ steps.meta.outputs.prompt_path }}"
+          } > /tmp/codex-review-comment.md
 
           gh pr comment "${{ github.event.pull_request.number }}" \
             --repo "${{ github.repository }}" \
-            --body-file /tmp/codex-software-comment.md
-
-  methodology-review:
-    if: github.event.label.name == 'codex-methodology-review'
-    concurrency:
-      group: codex-methodology-review-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Post methodology review trigger
-        env:
-          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
-        run: |
-          {
-            echo "@codex review"
-            echo
-            cat .github/prompts/methodology-review.md
-          } > /tmp/codex-methodology-comment.md
-
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --body-file /tmp/codex-methodology-comment.md
-
-  red-team-review:
-    if: github.event.label.name == 'codex-red-team-review'
-    concurrency:
-      group: codex-red-team-review-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Post red team review trigger
-        env:
-          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
-        run: |
-          {
-            echo "@codex review"
-            echo
-            cat .github/prompts/red-team-review.md
-          } > /tmp/codex-red-team-comment.md
-
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --body-file /tmp/codex-red-team-comment.md
+            --body-file /tmp/codex-review-comment.md

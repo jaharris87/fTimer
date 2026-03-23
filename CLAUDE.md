@@ -106,21 +106,34 @@ This workflow is **mandatory** for every PR. Do not skip any step.
 When you open or materially update a pull request:
 
 0. Create or link the GitHub issue for the phase/task before opening the PR.
-1. Always add the label `codex-software-review`.
-2. If changes touch `src/ftimer_core.F90`, `src/ftimer_summary.F90`, `src/ftimer_mpi.F90`, or `docs/semantics.md`, also add `codex-methodology-review`.
-3. If changes touch `src/ftimer_core.F90` (especially `start`, `stop`, `repair_mismatch`) or `src/ftimer_mpi.F90`, also add `codex-red-team-review`.
-4. Do not manually paste large review prompts into the PR unless explicitly asked.
-5. Let GitHub workflows trigger Codex review comments from the saved prompt files in `.github/prompts/`.
+1. Apply `codex-software-review` first, and keep it as the **only active Codex review label** on the PR.
+2. Do **not** apply `codex-methodology-review` or `codex-red-team-review` at the same time.
+3. If changes touch `src/ftimer_core.F90`, `src/ftimer_summary.F90`, `src/ftimer_mpi.F90`, or `docs/semantics.md`, apply `codex-methodology-review` only **after** the software review has landed, been handled, and its label has been removed.
+4. If changes touch `src/ftimer_core.F90` (especially `start`, `stop`, `repair_mismatch`) or `src/ftimer_mpi.F90`, apply `codex-red-team-review` only **after** the prior Codex review has landed, been handled, and its label has been removed.
+5. Do not manually paste large review prompts into the PR unless explicitly asked.
+6. Let GitHub workflows trigger Codex review comments from the saved prompt files in `.github/prompts/`.
 
 ### Step 2: Monitor for Codex reviews
 
 After opening the PR and applying labels, **you must proactively monitor for Codex review completion**. Do not wait for the user to ask.
 
 1. Inform the user that you are monitoring for Codex reviews.
-2. Poll the PR comments every 60 seconds for new comments from `chatgpt-codex-connector` or containing Codex review content.
-3. Codex reviews typically arrive within 2-5 minutes. Continue polling for up to 10 minutes.
-4. Once all expected reviews have arrived (one per label applied), proceed to Step 3.
-5. If reviews have not arrived after 10 minutes, inform the user and ask how to proceed.
+2. Treat a passing `Codex Review Triggers` workflow as **"trigger comment posted"**, not as proof that a review arrived.
+3. Inspect the PR review objects and inline review comments, not just the issue comments. Native Codex reviews may ignore requested top-level headings and "no findings" outcomes may not leave a distinct visible review body.
+4. Poll every 60 seconds for up to 10 minutes.
+5. Once the current review has arrived and any findings have been handled, remove that label before applying the next Codex review label.
+6. If a review has not arrived after 10 minutes, inform the user and ask how to proceed.
+
+### Review Inspection
+
+When you need to inspect what actually happened on a PR, use:
+
+- `gh pr checks <PR_NUMBER>`
+- `gh api repos/jaharris87/fTimer/issues/<PR_NUMBER>/comments`
+- `gh api repos/jaharris87/fTimer/pulls/<PR_NUMBER>/reviews`
+- `gh api repos/jaharris87/fTimer/pulls/<PR_NUMBER>/comments`
+
+For review-thread resolution state, use the GraphQL review thread query documented in `.github/review-bootstrap.md`.
 
 ### Step 3: Respond to each review finding
 
@@ -158,4 +171,5 @@ After responding to all reviews, give the user a concise summary:
 - Create the review labels manually in GitHub: `codex-software-review`, `codex-methodology-review`, `codex-red-team-review`.
 - Add a repository secret named `CODEX_TRIGGER_PAT` for the review-trigger workflow.
 - Configure a `main` ruleset that requires pull requests, passing CI/lint checks, blocks direct pushes and force pushes, and requires conversation resolution.
+- Use the sequential Codex review process documented in `.github/review-bootstrap.md`.
 - CMake is the only supported build system in Phase 0. FPM support is intentionally deferred.
