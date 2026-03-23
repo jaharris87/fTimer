@@ -1,0 +1,210 @@
+module test_summary
+   use pfunit
+   use ftimer_core, only: ftimer_t
+   use ftimer_types, only: FTIMER_SUCCESS, ftimer_metadata_t, ftimer_summary_t, wp
+   use test_support, only: attach_mock_clock, fake_time, read_unit_text
+   implicit none
+
+contains
+
+   @test
+   subroutine test_get_summary_returns_structured_entries()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      integer :: entry_count
+      integer :: trimmed_start
+      integer :: trimmed_end
+      logical :: has_mpi_data
+      logical :: first_name_matches
+      logical :: second_name_matches
+      logical :: third_name_matches
+      real(wp) :: total_time
+      real(wp) :: first_pct
+      real(wp) :: second_pct
+      real(wp) :: third_pct
+      real(wp) :: pct_diff
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%start("B", ierr=ierr)
+      fake_time = 9.0_wp
+      call timer%stop("B", ierr=ierr)
+      fake_time = 10.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      call timer%start("C", ierr=ierr)
+      fake_time = 15.0_wp
+      call timer%stop("C", ierr=ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      entry_count = summary%num_entries
+      total_time = summary%total_time
+      trimmed_start = len_trim(summary%start_date)
+      trimmed_end = len_trim(summary%end_date)
+      has_mpi_data = summary%has_mpi_data
+      first_name_matches = trim(summary%entries(1)%name) == 'A'
+      second_name_matches = trim(summary%entries(2)%name) == 'B'
+      third_name_matches = trim(summary%entries(3)%name) == 'C'
+      first_pct = 100.0_wp*10.0_wp/15.0_wp
+      second_pct = 100.0_wp*7.0_wp/15.0_wp
+      third_pct = 100.0_wp*5.0_wp/15.0_wp
+
+      @assertEqual(3, entry_count)
+      @assertEqual(15.0_wp, total_time)
+      @assertTrue(trimmed_start > 0)
+      @assertTrue(trimmed_end > 0)
+      @assertFalse(has_mpi_data)
+      @assertTrue(first_name_matches)
+      @assertTrue(second_name_matches)
+      @assertTrue(third_name_matches)
+      @assertEqual(0, summary%entries(1)%depth)
+      @assertEqual(1, summary%entries(2)%depth)
+      @assertEqual(0, summary%entries(3)%depth)
+      @assertEqual(10.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(7.0_wp, summary%entries(2)%inclusive_time)
+      @assertEqual(5.0_wp, summary%entries(3)%inclusive_time)
+      @assertEqual(3.0_wp, summary%entries(1)%self_time)
+      @assertEqual(7.0_wp, summary%entries(2)%self_time)
+      @assertEqual(5.0_wp, summary%entries(3)%self_time)
+      @assertEqual(1, summary%entries(1)%call_count)
+      @assertEqual(1, summary%entries(2)%call_count)
+      @assertEqual(1, summary%entries(3)%call_count)
+      @assertEqual(10.0_wp, summary%entries(1)%avg_time)
+      @assertEqual(7.0_wp, summary%entries(2)%avg_time)
+      @assertEqual(5.0_wp, summary%entries(3)%avg_time)
+
+      pct_diff = abs(summary%entries(1)%pct_time - first_pct)
+      @assertTrue(pct_diff < 1.0e-12_wp)
+      pct_diff = abs(summary%entries(2)%pct_time - second_pct)
+      @assertTrue(pct_diff < 1.0e-12_wp)
+      pct_diff = abs(summary%entries(3)%pct_time - third_pct)
+      @assertTrue(pct_diff < 1.0e-12_wp)
+   end subroutine test_get_summary_returns_structured_entries
+
+   @test
+   subroutine test_print_summary_writes_expected_text_with_metadata()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      type(ftimer_metadata_t) :: metadata(2)
+      character(len=:), allocatable :: actual
+      character(len=:), allocatable :: expected
+      integer :: ierr
+      integer :: unit
+      logical :: texts_match
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%start("B", ierr=ierr)
+      fake_time = 9.0_wp
+      call timer%stop("B", ierr=ierr)
+      fake_time = 10.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      metadata(1)%key = 'Case'
+      metadata(1)%value = 'Unit'
+      metadata(2)%key = 'Steps'
+      metadata(2)%value = '4'
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      open (newunit=unit, status='scratch', action='readwrite')
+      call timer%print_summary(unit=unit, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      actual = read_unit_text(unit)
+      expected = expected_summary_output(summary, metadata)
+      texts_match = actual == expected
+
+      close (unit)
+
+      @assertTrue(texts_match)
+   end subroutine test_print_summary_writes_expected_text_with_metadata
+
+   @test
+   subroutine test_print_summary_handles_deep_hierarchy()
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: actual
+      logical :: deepest_name_present
+      integer :: ierr
+      integer :: i
+      integer :: unit
+      character(len=8) :: name
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      do i = 1, 130
+         write (name, '("Depth",i3.3)') i
+         call timer%start(trim(name), ierr=ierr)
+         fake_time = fake_time + 1.0_wp
+      end do
+
+      do i = 130, 1, -1
+         write (name, '("Depth",i3.3)') i
+         fake_time = fake_time + 1.0_wp
+         call timer%stop(trim(name), ierr=ierr)
+      end do
+
+      open (newunit=unit, status='scratch', action='readwrite')
+      call timer%print_summary(unit=unit, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      actual = read_unit_text(unit)
+      deepest_name_present = index(actual, 'Depth130') > 0
+
+      close (unit)
+
+      @assertTrue(deepest_name_present)
+   end subroutine test_print_summary_handles_deep_hierarchy
+
+   @test
+   subroutine test_get_summary_surfaces_backward_clock_deltas()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = -1.0_wp
+      call timer%get_summary(summary, ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(-1.0_wp, summary%total_time)
+      @assertEqual(1, summary%num_entries)
+      @assertEqual(-1.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(-1.0_wp, summary%entries(1)%self_time)
+   end subroutine test_get_summary_surfaces_backward_clock_deltas
+
+   function expected_summary_output(summary, metadata) result(text)
+      type(ftimer_summary_t), intent(in) :: summary
+      type(ftimer_metadata_t), intent(in) :: metadata(:)
+      character(len=:), allocatable :: text
+      character(len=256) :: line
+
+      text = ''
+
+      write (line, '(a,f0.6)') 'Total time (s) : ', summary%total_time
+      text = text//trim(line)//new_line('a')
+      text = text//'Case           : Unit'//new_line('a')
+      text = text//'Steps          : 4'//new_line('a')
+      text = text//new_line('a')
+      text = text//'Timer name  Inclusive (s)     Self (s)    Calls   % Total'//new_line('a')
+      text = text//'---------------------------------------------------------'//new_line('a')
+      text = text//'A              10.000000      3.000000         1    100.00'//new_line('a')
+      text = text//'  B             7.000000      7.000000         1     70.00'//new_line('a')
+   end function expected_summary_output
+
+end module test_summary

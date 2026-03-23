@@ -2,11 +2,11 @@ module ftimer_core
    use, intrinsic :: iso_c_binding, only: c_null_ptr, c_ptr
    use, intrinsic :: iso_fortran_env, only: error_unit
    use ftimer_clock, only: ftimer_date_string, ftimer_default_clock, ftimer_mpi_clock
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MISMATCH, &
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
                            FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, &
-                           FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_segment_t, &
-                           ftimer_summary_t, wp
+                           FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_metadata_t, &
+                           ftimer_segment_t, ftimer_summary_t, wp
    implicit none
    private
 
@@ -60,10 +60,35 @@ module ftimer_core
       procedure :: lookup
       procedure :: reset
       procedure :: get_summary
+      procedure :: print_summary
+      procedure :: write_summary
       procedure, private :: wtime
       procedure, private :: find_or_create_segment
       procedure, private :: repair_mismatch
    end type ftimer_t
+
+   interface
+      module subroutine get_summary(self, summary, ierr)
+         class(ftimer_t), intent(in) :: self
+         type(ftimer_summary_t), intent(out) :: summary
+         integer, intent(out), optional :: ierr
+      end subroutine get_summary
+
+      module subroutine print_summary(self, unit, metadata, ierr)
+         class(ftimer_t), intent(in) :: self
+         integer, intent(in), optional :: unit
+         type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+         integer, intent(out), optional :: ierr
+      end subroutine print_summary
+
+      module subroutine write_summary(self, filename, append, metadata, ierr)
+         class(ftimer_t), intent(in) :: self
+         character(len=*), intent(in) :: filename
+         logical, intent(in), optional :: append
+         type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+         integer, intent(out), optional :: ierr
+      end subroutine write_summary
+   end interface
 
 contains
 
@@ -225,6 +250,7 @@ contains
 
       call self%call_stack%push(id)
       now = self%wtime()
+      if (needs_init_wtime_rebase(self)) self%init_wtime = now
       self%segments(id)%start_time(ctx) = now
       self%segments(id)%call_count(ctx) = self%segments(id)%call_count(ctx) + 1
       self%segments(id)%is_running(ctx) = .true.
@@ -346,6 +372,8 @@ contains
       end do
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       self%call_stack%depth = 0
+      self%init_wtime = self%wtime()
+      self%init_date = ftimer_date_string()
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine reset
@@ -388,19 +416,6 @@ contains
          self%segments(unwound_ids(i))%is_running(restart_ctx) = .true.
       end do
    end subroutine repair_mismatch
-
-   subroutine get_summary(self, summary, ierr)
-      class(ftimer_t), intent(in) :: self
-      type(ftimer_summary_t), intent(out) :: summary
-      integer, intent(out), optional :: ierr
-
-      if (self%initialized) then
-         summary%placeholder = 1
-      else
-         summary%placeholder = 0
-      end if
-      if (present(ierr)) ierr = FTIMER_SUCCESS
-   end subroutine get_summary
 
    real(wp) function wtime(self) result(now)
       class(ftimer_t), intent(in) :: self
@@ -454,6 +469,7 @@ contains
          state%segments = self%segments
       end if
    end subroutine ftimer_test_get_state
+
 #endif
 
    subroutine clear_runtime_state(self, keep_hooks)
@@ -621,5 +637,47 @@ contains
          call self%on_event(id, ctx, FTIMER_EVENT_STOP, now, self%user_data)
       end if
    end subroutine stop_segment_with_now
+
+   logical function has_recorded_timing(self) result(has_data)
+      class(ftimer_t), intent(in) :: self
+      integer :: i
+
+      has_data = .false.
+      do i = 1, self%num_segments
+         if (allocated(self%segments(i)%call_count)) then
+            if (any(self%segments(i)%call_count > 0)) then
+               has_data = .true.
+               return
+            end if
+         end if
+         if (allocated(self%segments(i)%time)) then
+            if (any(self%segments(i)%time /= 0.0_wp)) then
+               has_data = .true.
+               return
+            end if
+         end if
+         if (allocated(self%segments(i)%is_running)) then
+            if (any(self%segments(i)%is_running)) then
+               has_data = .true.
+               return
+            end if
+         end if
+      end do
+   end function has_recorded_timing
+
+   logical function needs_init_wtime_rebase(self) result(needs_rebase)
+      class(ftimer_t), intent(in) :: self
+
+      needs_rebase = .false.
+      if (.not. self%initialized) return
+      if (.not. associated(self%clock)) return
+      if (has_recorded_timing(self)) return
+#ifdef FTIMER_USE_MPI
+      if (associated(self%clock, ftimer_mpi_clock)) return
+#else
+      if (associated(self%clock, ftimer_default_clock)) return
+#endif
+      needs_rebase = .true.
+   end function needs_init_wtime_rebase
 
 end module ftimer_core

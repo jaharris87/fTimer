@@ -13,6 +13,10 @@ if(FTIMER_BUILD_TESTS)
     test_callcount.pf
     test_reset.pf
     test_edge_cases.pf
+    test_summary.pf
+    test_self_time.pf
+    test_file_output.pf
+    test_callbacks.pf
   )
 
   add_pfunit_ctest(ftimer_serial_tests
