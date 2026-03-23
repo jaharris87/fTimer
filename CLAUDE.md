@@ -72,9 +72,9 @@ ftimer.F90  (procedural wrappers + default global instance)
 
 ## Development Workflow
 
-Current `main` is in Phase 3. The shared types/clock foundation, core timer runtime, and local summary/report formatting are implemented; expanded procedural wrappers, MPI reductions, and OpenMP guards remain deferred in `TODO.md`.
+Current `main` is in Phase 4. The shared types/clock foundation, core timer runtime, local summary/report formatting, and procedural convenience wrappers are implemented; MPI reductions and OpenMP guards remain deferred in `TODO.md`.
 
-During Phase 3, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: maintain local summary/report behavior, but do not pull Phase 4+ wrapper/MPI/OpenMP work forward.
+During Phase 4, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: preserve procedural-wrapper parity with the OOP core, but do not pull Phase 5+ MPI/OpenMP work forward.
 
 Detailed repository operations and PR/review handling live in `docs/maintainer.md`. Use that file for GitHub workflow details; keep this file focused on coding/build/test behavior and the short mandatory PR summary below.
 

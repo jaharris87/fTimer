@@ -1,0 +1,332 @@
+module test_procedural_api
+   use pfunit
+   use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_get_summary, ftimer_init, &
+                     ftimer_lookup, ftimer_print_summary, ftimer_reset, ftimer_start, ftimer_start_id, &
+                     ftimer_stop, ftimer_stop_id, ftimer_write_summary
+   use ftimer_core, only: ftimer_t, ftimer_test_state_t
+   use ftimer_types, only: FTIMER_SUCCESS, ftimer_metadata_t, ftimer_summary_t, wp
+   use test_support, only: attach_mock_clock, fake_time, read_file_text, read_unit_text, snapshot_timer
+   implicit none
+
+contains
+
+   @test
+   subroutine test_procedural_init_finalize_matches_oop()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_test_state_t) :: oop_state
+      type(ftimer_test_state_t) :: procedural_state
+      integer :: ierr
+      logical :: oop_initialized
+      logical :: procedural_initialized
+      integer :: oop_num_segments
+      integer :: procedural_num_segments
+      integer :: oop_date_len
+      integer :: procedural_date_len
+
+      call oop_timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(oop_timer, oop_state)
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(ftimer_default_instance, procedural_state)
+
+      oop_initialized = oop_state%initialized
+      procedural_initialized = procedural_state%initialized
+      oop_num_segments = oop_state%num_segments
+      procedural_num_segments = procedural_state%num_segments
+      oop_date_len = len_trim(oop_state%init_date)
+      procedural_date_len = len_trim(procedural_state%init_date)
+
+      @assertTrue(oop_initialized)
+      @assertTrue(procedural_initialized)
+      @assertEqual(oop_state%mismatch_mode, procedural_state%mismatch_mode)
+      @assertEqual(oop_num_segments, procedural_num_segments)
+      @assertEqual(0, oop_num_segments)
+      @assertTrue(oop_date_len > 0)
+      @assertTrue(procedural_date_len > 0)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(oop_timer, oop_state)
+      call snapshot_timer(ftimer_default_instance, procedural_state)
+      oop_initialized = oop_state%initialized
+      procedural_initialized = procedural_state%initialized
+      @assertFalse(oop_initialized)
+      @assertFalse(procedural_initialized)
+      @assertEqual(oop_state%num_segments, procedural_state%num_segments)
+      @assertEqual(0, oop_state%num_segments)
+   end subroutine test_procedural_init_finalize_matches_oop
+
+   @test
+   subroutine test_procedural_start_stop_matches_oop()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_summary_t) :: oop_summary
+      type(ftimer_summary_t) :: procedural_summary
+      integer :: ierr
+
+      call oop_timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(oop_timer)
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call oop_timer%start("phase4", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_start("phase4", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 3.5_wp
+
+      call oop_timer%stop("phase4", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_stop("phase4", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call oop_timer%get_summary(oop_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_get_summary(procedural_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call assert_summary_equal(procedural_summary, oop_summary)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_start_stop_matches_oop
+
+   @test
+   subroutine test_procedural_lookup_start_id_stop_id_matches_oop()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_summary_t) :: oop_summary
+      type(ftimer_summary_t) :: procedural_summary
+      integer :: ierr
+      integer :: oop_id
+      integer :: procedural_id
+
+      call oop_timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(oop_timer)
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      oop_id = oop_timer%lookup("cached", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      procedural_id = ftimer_lookup("cached", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(oop_id, procedural_id)
+
+      call oop_timer%start_id(oop_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_start_id(procedural_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 8.0_wp
+
+      call oop_timer%stop_id(oop_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_stop_id(procedural_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call oop_timer%get_summary(oop_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_get_summary(procedural_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call assert_summary_equal(procedural_summary, oop_summary)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_lookup_start_id_stop_id_matches_oop
+
+   @test
+   subroutine test_procedural_reset_matches_oop()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_summary_t) :: oop_summary
+      type(ftimer_summary_t) :: procedural_summary
+      integer :: ierr
+
+      call oop_timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(oop_timer)
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call oop_timer%start("reset_me", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_start("reset_me", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 6.0_wp
+
+      call oop_timer%stop("reset_me", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_stop("reset_me", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 9.0_wp
+      call oop_timer%reset(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_reset(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call oop_timer%get_summary(oop_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_get_summary(procedural_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call assert_summary_equal(procedural_summary, oop_summary)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_reset_matches_oop
+
+   @test
+   subroutine test_procedural_print_summary_matches_oop()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_metadata_t) :: metadata(2)
+      character(len=:), allocatable :: oop_text
+      character(len=:), allocatable :: procedural_text
+      integer :: ierr
+      integer :: oop_unit
+      integer :: procedural_unit
+      logical :: texts_match
+
+      metadata(1)%key = 'Case'
+      metadata(1)%value = 'Phase4'
+      metadata(2)%key = 'Mode'
+      metadata(2)%value = 'Wrapper'
+
+      call build_matching_timers(oop_timer, ierr)
+
+      open (newunit=oop_unit, status='scratch', action='readwrite')
+      call oop_timer%print_summary(unit=oop_unit, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      oop_text = read_unit_text(oop_unit)
+      close (oop_unit)
+
+      open (newunit=procedural_unit, status='scratch', action='readwrite')
+      call ftimer_print_summary(unit=procedural_unit, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      procedural_text = read_unit_text(procedural_unit)
+      close (procedural_unit)
+
+      texts_match = procedural_text == oop_text
+      @assertTrue(texts_match)
+
+      call cleanup_matching_timers(oop_timer, ierr)
+   end subroutine test_procedural_print_summary_matches_oop
+
+   @test
+   subroutine test_procedural_write_summary_matches_oop()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=*), parameter :: oop_path = 'phase4_oop_summary.txt'
+      character(len=*), parameter :: procedural_path = 'phase4_procedural_summary.txt'
+      character(len=:), allocatable :: oop_text
+      character(len=:), allocatable :: procedural_text
+      integer :: ierr
+      logical :: texts_match
+
+      metadata(1)%key = 'Case'
+      metadata(1)%value = 'Phase4'
+
+      call delete_if_exists(oop_path)
+      call delete_if_exists(procedural_path)
+      call build_matching_timers(oop_timer, ierr)
+
+      call oop_timer%write_summary(oop_path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_write_summary(procedural_path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      oop_text = read_file_text(oop_path)
+      procedural_text = read_file_text(procedural_path)
+      texts_match = procedural_text == oop_text
+      @assertTrue(texts_match)
+
+      call delete_if_exists(oop_path)
+      call delete_if_exists(procedural_path)
+      call cleanup_matching_timers(oop_timer, ierr)
+   end subroutine test_procedural_write_summary_matches_oop
+
+   subroutine build_matching_timers(oop_timer, ierr)
+      type(ftimer_t), intent(out) :: oop_timer
+      integer, intent(out) :: ierr
+
+      call oop_timer%init(ierr=ierr)
+      call attach_mock_clock(oop_timer)
+
+      call ftimer_init(ierr=ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call oop_timer%start("outer", ierr=ierr)
+      call ftimer_start("outer", ierr=ierr)
+      fake_time = 2.0_wp
+      call oop_timer%start("inner", ierr=ierr)
+      call ftimer_start("inner", ierr=ierr)
+      fake_time = 5.0_wp
+      call oop_timer%stop("inner", ierr=ierr)
+      call ftimer_stop("inner", ierr=ierr)
+      fake_time = 7.0_wp
+      call oop_timer%stop("outer", ierr=ierr)
+      call ftimer_stop("outer", ierr=ierr)
+   end subroutine build_matching_timers
+
+   subroutine cleanup_matching_timers(oop_timer, ierr)
+      type(ftimer_t), intent(inout) :: oop_timer
+      integer, intent(out) :: ierr
+
+      call oop_timer%finalize(ierr=ierr)
+      call ftimer_finalize(ierr=ierr)
+   end subroutine cleanup_matching_timers
+
+   subroutine delete_if_exists(path)
+      character(len=*), intent(in) :: path
+      integer :: io
+      integer :: unit
+
+      open (newunit=unit, file=path, status='old', iostat=io)
+      if (io == 0) close (unit, status='delete')
+   end subroutine delete_if_exists
+
+   subroutine assert_summary_equal(lhs, rhs)
+      type(ftimer_summary_t), intent(in) :: lhs
+      type(ftimer_summary_t), intent(in) :: rhs
+      integer :: i
+      real(wp) :: pct_diff
+      logical :: names_match
+
+      @assertEqual(rhs%num_entries, lhs%num_entries)
+      @assertEqual(rhs%total_time, lhs%total_time)
+      @assertEqual(rhs%has_mpi_data, lhs%has_mpi_data)
+
+      do i = 1, lhs%num_entries
+         names_match = trim(lhs%entries(i)%name) == trim(rhs%entries(i)%name)
+         @assertTrue(names_match)
+         @assertEqual(rhs%entries(i)%depth, lhs%entries(i)%depth)
+         @assertEqual(rhs%entries(i)%inclusive_time, lhs%entries(i)%inclusive_time)
+         @assertEqual(rhs%entries(i)%self_time, lhs%entries(i)%self_time)
+         @assertEqual(rhs%entries(i)%call_count, lhs%entries(i)%call_count)
+         @assertEqual(rhs%entries(i)%avg_time, lhs%entries(i)%avg_time)
+         pct_diff = abs(lhs%entries(i)%pct_time - rhs%entries(i)%pct_time)
+         @assertTrue(pct_diff < 1.0e-12_wp)
+      end do
+   end subroutine assert_summary_equal
+
+end module test_procedural_api

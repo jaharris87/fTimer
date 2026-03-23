@@ -4,9 +4,9 @@ A lightweight, correctness-first wall-clock timing library for modern Fortran.
 
 ## Status
 
-**Under construction.** Phase 3 now provides the shared types/clock foundation, a real core timer runtime, structured summary building, and formatted local reporting with deterministic pFUnit coverage. Expanded procedural wrappers, MPI reductions, and OpenMP guards are still tracked in [TODO.md](TODO.md).
+**Under construction.** Phase 4 now provides the shared types/clock foundation, a real core timer runtime, structured summary building, formatted local reporting, and the expanded procedural convenience API with deterministic pFUnit coverage. MPI reductions and OpenMP guards are still tracked in [TODO.md](TODO.md).
 
-## Current Phase 3 Behavior
+## Current Phase 4 Behavior
 
 Current `main` provides:
 
@@ -20,12 +20,12 @@ Current `main` provides:
 - Example programs that compile and link against the library
 - An installable CMake package export (`fTimerTargets.cmake`, `fTimerConfig.cmake`, `fTimerConfigVersion.cmake`)
 
-Current public surface is still intentionally narrower than the target design:
+Current public surface now exposes the complete local-only API for both usage styles:
 
-- Procedural interface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, and `ftimer_default_instance`
+- Procedural interface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
 - OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `print_summary`, and `write_summary`
-- `start`/`stop` are now real timer operations with the intended `ierr`/stderr error contract
-- Summary/reporting is local-only in this phase; procedural summary wrappers and MPI-reduced summaries remain deferred
+- Procedural wrappers are thin forwarding calls over the existing OOP implementation and preserve the intended `ierr`/stderr error contract
+- Summary/reporting is local-only in this phase; MPI-reduced summaries remain deferred
 
 ## Target Capabilities
 
@@ -74,9 +74,8 @@ Current defaults:
 
 ## Deferred Items
 
-These are intentionally postponed beyond Phase 3:
+These are intentionally postponed beyond Phase 4:
 
-- Procedural API expansion beyond the current wrapper surface
 - MPI reductions and cross-rank summary statistics
 - MPI behavioral tests
 - OpenMP guards
