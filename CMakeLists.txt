@@ -6,9 +6,13 @@ project(fTimer
   DESCRIPTION "Lightweight, correctness-first wall-clock timing library for Fortran"
 )
 
+include(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
+
 # Options
 option(FTIMER_USE_MPI "Enable MPI support" OFF)
-option(FTIMER_BUILD_TESTS "Build tests (requires pFUnit)" ON)
+option(FTIMER_BUILD_TESTS "Build pFUnit tests (requires pFUnit)" OFF)
+option(FTIMER_BUILD_SMOKE_TESTS "Build Phase 0 smoke tests" ON)
 option(FTIMER_BUILD_EXAMPLES "Build example programs" ON)
 
 # MPI
@@ -23,15 +27,19 @@ set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/mod)
 add_subdirectory(src)
 
 # Tests
-if(FTIMER_BUILD_TESTS)
+if(FTIMER_BUILD_TESTS OR FTIMER_BUILD_SMOKE_TESTS)
   enable_testing()
+endif()
+
+if(FTIMER_BUILD_TESTS)
   # pFUnit
   if(DEFINED ENV{PFUNIT_DIR})
     set(PFUNIT_DIR $ENV{PFUNIT_DIR} CACHE PATH "pFUnit install prefix")
-  elseif(NOT DEFINED PFUNIT_DIR)
-    set(PFUNIT_DIR "/opt/homebrew/PFUNIT-4.16" CACHE PATH "pFUnit install prefix")
   endif()
   find_package(PFUNIT REQUIRED HINTS ${PFUNIT_DIR})
+endif()
+
+if(FTIMER_BUILD_TESTS OR FTIMER_BUILD_SMOKE_TESTS)
   add_subdirectory(tests)
 endif()
 
@@ -41,17 +49,36 @@ if(FTIMER_BUILD_EXAMPLES)
 endif()
 
 # Install
-include(GNUInstallDirs)
 install(TARGETS ftimer
   EXPORT fTimerTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ftimer
 )
 install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ftimer
 )
+
 install(EXPORT fTimerTargets
-  FILE fTimerConfig.cmake
+  FILE fTimerTargets.cmake
   NAMESPACE fTimer::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fTimer
+)
+
+configure_package_config_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/fTimerConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/fTimerConfig.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fTimer
+)
+
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/fTimerConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/fTimerConfig.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/fTimerConfigVersion.cmake
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fTimer
 )

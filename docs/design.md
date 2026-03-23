@@ -20,7 +20,8 @@
 ## Key Decisions
 
 - **Build system**: CMake with a convenience Makefile wrapper (`make`, `make test`, `make install` delegate to cmake/ctest)
-- **Testing**: pFUnit (native CMake integration, MPI test support) with injectable mock clock for deterministic tests
+- **Phase 0 baseline**: buildable placeholder library + examples + smoke tests; pFUnit and full behavior arrive in later phases
+- **Testing**: Phase 0 uses smoke tests only; later phases use pFUnit with an injectable mock clock for deterministic tests
 - **Timer model**: Strict nesting only (stack-based, no overlapping timers)
 - **Mismatch handling**: Configurable (`strict`/`warn`/`repair`), **default `strict`**. `repair` mode is Flash-X compatibility. Internal repair transitions do NOT fire user callbacks.
 - **Error model**: Optional `ierr` argument on all public routines (standard Fortran pattern). When `ierr` absent, print warning to stderr.
@@ -33,7 +34,6 @@
 ~/claude_projects/fTimer/
 ├── CMakeLists.txt                     # Top-level CMake (library + tests + examples)
 ├── Makefile                           # Convenience wrapper (delegates to cmake)
-├── fpm.toml                           # Fortran Package Manager manifest
 ├── CLAUDE.md                          # Builder agent instructions
 ├── AGENTS.md                          # Reviewer agent context
 ├── README.md                          # User-facing docs
@@ -468,9 +468,9 @@ call timer%stop("A")
 - OpenMP: master-only access, documented limitations
 
 ### CI workflow
-- Jobs: build (serial + MPI matrix), lint (fprettify), test (serial + MPI pFUnit)
+- Phase 0 jobs: serial build+smoke test, MPI build+smoke test, lint
 - Runner: ubuntu-latest with gfortran + OpenMPI
-- pFUnit installed from source in CI
+- pFUnit CI is deferred until the real test suite exists
 - Intel ifx CI deferred to Phase 2
 
 ### `.claude/settings.json` permissions
@@ -478,7 +478,7 @@ call timer%stop("A")
 
 ## Implementation Order
 
-1. **Scaffolding**: `init-project.sh`, fill templates, directory structure, `fpm.toml`, git + GitHub repo + labels
+1. **Scaffolding**: `init-project.sh`, fill templates, directory structure, git + GitHub repo + labels
 2. **Types + Clock**: `ftimer_types.F90` (all types, enums, errors, summary types, metadata), `ftimer_clock.F90` (injectable with defaults) — compile-check serial and MPI
 3. **Core**: `ftimer_core.F90` — `ftimer_t` class: init, start, stop (with mismatch dispatch), reset, finalize, lookup, repair_mismatch + serial pFUnit tests with mock clock
 4. **Summary**: `ftimer_summary.F90` — `get_summary()` returning `ftimer_summary_t` with self-time + `print_summary()`/`write_summary()` text formatting + golden output tests
