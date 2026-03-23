@@ -144,6 +144,30 @@ contains
    end subroutine test_warn_mismatch_repairs_and_returns_code
 
    @test
+   subroutine test_warn_mismatch_without_ierr_repairs_and_continues()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx_b
+
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_WARN)
+      call attach_mock_clock(timer)
+
+      call timer%start("A")
+      fake_time = 1.0_wp
+      call timer%start("B")
+      fake_time = 3.0_wp
+      call timer%stop("A")
+
+      call snapshot_timer(timer, state)
+
+      ctx_b = find_context_idx(state, 2, root_stack)
+      @assertEqual(1, state%call_stack%depth)
+      @assertEqual(2, state%call_stack%top())
+      @assertTrue(state%segments(2)%is_running(ctx_b))
+   end subroutine test_warn_mismatch_without_ierr_repairs_and_continues
+
+   @test
    subroutine test_repair_mismatch_repairs_silently()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state

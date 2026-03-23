@@ -24,4 +24,8 @@ if(MPI_TESTS_PRESENT)
   set_tests_properties(ftimer_mpi_tests PROPERTIES
     PROCESSORS 2
   )
+else()
+  message(WARNING
+    "Skipping ftimer_mpi_tests because Phase 5 MPI test sources are not present yet."
+  )
 endif()
