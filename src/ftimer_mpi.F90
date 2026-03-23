@@ -75,8 +75,6 @@ contains
          return
       end if
 
-      if (rank == 0) summary%has_mpi_data = .true.
-
       entry_count = summary%num_entries
       if (entry_count <= 0) return
 
@@ -116,6 +114,7 @@ contains
          summary%entries(idx)%avg_across_ranks = sum_values(i)/real(nprocs, wp)
          summary%entries(idx)%imbalance = compute_imbalance(max_values(i), summary%entries(idx)%avg_across_ranks)
       end do
+      summary%has_mpi_data = .true.
 #else
       status = FTIMER_SUCCESS
       summary%has_mpi_data = .false.
