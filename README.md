@@ -6,9 +6,24 @@ A lightweight, correctness-first wall-clock timing library for modern Fortran.
 
 **Under construction.** Phase 0 provides a buildable placeholder library, examples, packaging, and smoke-test scaffolding. Behavioral implementation is tracked in [TODO.md](TODO.md).
 
-## Overview
+## Current Phase 0 Behavior
 
-fTimer provides stack-based hierarchical timing with:
+Current `main` provides a minimal executable scaffold:
+
+- CMake-based serial and MPI placeholder builds
+- Placeholder example programs that compile and link against the library
+- A default smoke-test path that verifies the scaffold builds and reports placeholder status honestly
+- An installable CMake package export (`fTimerTargets.cmake`, `fTimerConfig.cmake`, `fTimerConfigVersion.cmake`)
+
+Current public surface area is intentionally small:
+
+- Procedural interface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, and `ftimer_default_instance`
+- OOP core placeholder: `init`, `finalize`, `start`, `stop`, and `get_summary`
+- `start` and `stop` preserve the intended error-reporting contract but still report "not implemented" after initialization
+
+## Target Capabilities
+
+fTimer is intended to provide stack-based hierarchical timing with:
 
 - Context-sensitive accounting (same timer name tracked independently under different parents)
 - Configurable mismatch handling (strict / warn / repair)

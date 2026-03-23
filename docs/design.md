@@ -1,5 +1,7 @@
 # fTimer: A Modern Fortran Wall-Clock Timing Library
 
+> This document is a forward-looking design reference. Unless a section explicitly says otherwise, it describes the target architecture and API for later phases rather than the exact runtime behavior on current `main`.
+
 ## Context
 
 > fTimer is a lightweight, correctness-first timing library for Fortran codes. Inspired by Flash-X's MPINative Timers but designed as a standalone profiling substrate, it preserves the proven conceptual model (stack-based nesting, context-sensitive accounting, hierarchical summary) while optimizing for correctness, clarity, portability, and composability.
@@ -17,6 +19,18 @@
 - OOP core with encapsulated state and multiple instances
 - Injectable clock, configurable error handling, callback hooks with full context
 
+## Current Phase 0 Snapshot
+
+Current `main` is intentionally narrower than the target design below:
+
+- the library, examples, packaging, and smoke tests are buildable
+- the placeholder procedural interface exports `ftimer_init`, `ftimer_finalize`, `ftimer_start`, and `ftimer_stop`
+- the placeholder core type exports `init`, `finalize`, `start`, `stop`, and `get_summary`
+- timer operations preserve the intended `ierr`/warning shape but still report "not implemented"
+- pFUnit-backed behavioral tests, mismatch handling, summaries, callbacks, and MPI reductions are future implementation work
+
+For the current user-facing contract, prefer `README.md` and the source in `src/`. Use this document as the implementation target for future phases.
+
 ## Key Decisions
 
 - **Build system**: CMake with a convenience Makefile wrapper (`make`, `make test`, `make install` delegate to cmake/ctest)
@@ -28,10 +42,10 @@
 - **GitHub**: `jaharris87/fTimer`, public
 - **License**: BSD-3-Clause
 
-## Project Structure
+## Target Project Structure
 
 ```
-~/claude_projects/fTimer/
+fTimer/
 ├── CMakeLists.txt                     # Top-level CMake (library + tests + examples)
 ├── Makefile                           # Convenience wrapper (delegates to cmake)
 ├── CLAUDE.md                          # Builder agent instructions
@@ -84,7 +98,7 @@
 └── fixtures/
 ```
 
-## Public API
+## Target Public API
 
 Users interact via `use ftimer` (procedural) or `use ftimer_core` (OOP only, no global state).
 
@@ -206,7 +220,7 @@ timer%on_event => my_papi_handler
 timer%user_data = c_loc(my_papi_state)
 ```
 
-## Data Structure Design
+## Target Data Structure Design
 
 ### Structured Summary Type (in `ftimer_types.F90`)
 
@@ -448,7 +462,7 @@ call timer%stop("A")
 ### CLAUDE.md key content
 - Build: `cmake -B build && cmake --build build`, `ctest --test-dir build`
 - MPI build: `cmake -B build -DFTIMER_USE_MPI=ON`
-- Lint: `fprettify --diff src/*.F90`
+- Lint: `find src -name '*.F90' -exec fprettify --diff {} +` plus matching checks for `tests/` and `examples/`
 - Architecture: `ftimer` (procedural wrappers) → `ftimer_core` (OOP class) → `ftimer_types` (data structures + summary types), with `ftimer_summary` (tree walk + formatting), `ftimer_mpi` (MPI collectives), `ftimer_clock` (injectable time source)
 
 ### AGENTS.md key risks
@@ -501,13 +515,13 @@ call timer%stop("A")
 - CSV/JSON export utilities
 - Hash-based timer name lookup (if profiling reveals linear search as bottleneck)
 
-## Verification
+## Target Verification
 
 - `cmake -B build && cmake --build build` — serial build succeeds
 - `cmake -B build -DFTIMER_USE_MPI=ON && cmake --build build` — MPI build succeeds
 - `ctest --test-dir build` — all serial pFUnit tests pass (deterministic, mock clock, no sleeps)
 - `ctest --test-dir build -L mpi` — all MPI tests pass (2 and 4 ranks)
-- `fprettify --diff src/*.F90` — no formatting differences
+- `find src tests examples -name '*.F90' -exec fprettify --diff {} +` plus `find tests -name '*.pf' -exec fprettify --diff {} +` — no formatting differences
 - Run `examples/nested_timers.F90` — output matches golden expected output
 - Run `examples/mpi_example.F90` with `mpirun -np 4` — MPI summary with min/max/avg/imbalance
 - Error contract: tests confirm every edge case returns correct `ierr` value
@@ -515,12 +529,9 @@ call timer%stop("A")
 - Self time: tests confirm `parent_self = parent_inclusive - sum(children_inclusive)`
 - Callback safety: test confirms repair events do not fire `on_event`
 
-## Reference Files
+## Author Reference Notes
 
-- Flash-X data structures: `~/Flash-X_jaharris87/source/monitors/Timers/TimersMain/MPINative/Timers_data.F90`
-- Flash-X stop (recursive repair reference): `~/Flash-X_jaharris87/source/monitors/Timers/TimersMain/MPINative/Timers_stop.F90`
-- Flash-X start: `~/Flash-X_jaharris87/source/monitors/Timers/TimersMain/MPINative/Timers_start.F90`
-- Flash-X summary builder: `~/Flash-X_jaharris87/source/monitors/Timers/TimersMain/MPINative/tmr_buildSummary.F90`
-- Flash-X stack library: `~/Flash-X_jaharris87/source/monitors/Timers/TimersMain/MPINative/tmr_stackLib.F90`
-- Framework templates: `/Users/hrh/claude_projects/agentic-dev-framework/templates/`
-- Framework init script: `/Users/hrh/claude_projects/agentic-dev-framework/scripts/init-project.sh`
+These references informed the design but are not required to work in this repo:
+
+- Flash-X MPINative timer sources, especially `Timers_data.F90`, `Timers_start.F90`, `Timers_stop.F90`, `tmr_buildSummary.F90`, and `tmr_stackLib.F90`
+- the author's project scaffolding templates and init scripts used during the initial repo setup
