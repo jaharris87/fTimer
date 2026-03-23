@@ -1,1 +1,1 @@
-as a timing/HPC methodology expert; find flaws in timing correctness, stack integrity, repair semantics, precision, error handling, and parallel correctness, not style issues; begin with "## Methodology Review".
+as a timing/HPC methodology expert; find flaws in timing correctness, stack integrity, repair semantics, precision, error handling, and parallel correctness, not style issues; classify findings as timing error, stack corruption, precision loss, MPI safety, error contract violation, or methodology concern; begin with "## Methodology Review".

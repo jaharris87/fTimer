@@ -1,1 +1,1 @@
-as a senior software engineer focused on correctness; find bugs, missing tests or docs, unsafe defaults, silent lossy behavior, and end-to-end validation gaps, not style issues; begin with "## Software Review".
+as a senior software engineer focused on correctness; find bugs, missing tests or docs, unsafe defaults, silent lossy behavior, and end-to-end validation gaps, not style issues; classify findings as bug, test gap, design concern, or nit; begin with "## Software Review".

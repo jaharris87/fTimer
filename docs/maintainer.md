@@ -121,6 +121,7 @@ When responding:
 - cite the fix commit when you agree and fix
 - cite code/tests/docs when you disagree
 - explain scope clearly when you defer
+- if the returned review omits a classification, assign one explicitly in your disposition comment using the repo categories below
 
 After replying:
 

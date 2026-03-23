@@ -1,1 +1,1 @@
-adversarially; find ways this PR could produce plausible but wrong results through validation gaps, silent corruption, boundary failures, invariant breaks, or weak evidence; begin with "## Red Team Review".
+adversarially; find ways this PR could produce plausible but wrong results through validation gaps, silent corruption, boundary failures, invariant breaks, or weak evidence; classify severity as silent wrong answer, crash, or degraded output; begin with "## Red Team Review".
