@@ -1,36 +1,139 @@
 module ftimer_core
+   use, intrinsic :: iso_c_binding, only: c_null_ptr, c_ptr
    use, intrinsic :: iso_fortran_env, only: error_unit
-   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_NOT_INIT, FTIMER_SUCCESS, ftimer_summary_t
+   use ftimer_clock, only: ftimer_date_string, ftimer_default_clock, ftimer_mpi_clock
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MISMATCH, &
+                           FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
+                           FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, &
+                           FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_segment_t, &
+                           ftimer_summary_t, wp
    implicit none
    private
 
    public :: ftimer_t
+#ifdef FTIMER_BUILD_TESTS
+   public :: ftimer_test_get_state
+   public :: ftimer_test_state_t
+#endif
+
+#ifdef FTIMER_BUILD_TESTS
+   type :: ftimer_test_state_t
+      type(ftimer_call_stack_t) :: call_stack
+      type(ftimer_segment_t), allocatable :: segments(:)
+      integer :: num_segments = 0
+      real(wp) :: init_wtime = 0.0_wp
+      character(len=40) :: init_date = ''
+      logical :: initialized = .false.
+      integer :: mismatch_mode = FTIMER_MISMATCH_STRICT
+#ifdef FTIMER_USE_MPI
+      integer :: mpi_comm = -1
+      integer :: mpi_rank = -1
+      integer :: mpi_nprocs = 1
+#endif
+   end type ftimer_test_state_t
+#endif
 
    type :: ftimer_t
+      private
+      type(ftimer_call_stack_t) :: call_stack
+      type(ftimer_segment_t), allocatable :: segments(:)
+      integer :: num_segments = 0
+      real(wp) :: init_wtime = 0.0_wp
+      character(len=40) :: init_date = ''
       logical :: initialized = .false.
+      integer :: mismatch_mode = FTIMER_MISMATCH_STRICT
+#ifdef FTIMER_USE_MPI
+      integer :: mpi_comm = -1
+      integer :: mpi_rank = -1
+      integer :: mpi_nprocs = 1
+#endif
+      procedure(ftimer_clock_func), pointer, nopass, public :: clock => null()
+      procedure(ftimer_hook_proc), pointer, nopass, public :: on_event => null()
+      type(c_ptr), public :: user_data = c_null_ptr
    contains
       procedure :: init
       procedure :: finalize
       procedure :: start
       procedure :: stop
+      procedure :: start_id
+      procedure :: stop_id
+      procedure :: lookup
+      procedure :: reset
       procedure :: get_summary
+      procedure, private :: wtime
+      procedure, private :: find_or_create_segment
+      procedure, private :: repair_mismatch
    end type ftimer_t
 
 contains
 
-   subroutine init(self, ierr)
+   subroutine init(self, comm, mismatch_mode, ierr)
       class(ftimer_t), intent(inout) :: self
+      integer, intent(in), optional :: comm
+      integer, intent(in), optional :: mismatch_mode
       integer, intent(out), optional :: ierr
+      real(wp) :: now
 
+      if (self%initialized .and. has_active_timers(self)) then
+         if (present(ierr)) then
+            ierr = FTIMER_ERR_ACTIVE
+            return
+         end if
+
+         write (error_unit, '(a)') "ftimer init with active timers; force-stopping active timers"
+         now = self%wtime()
+         call force_stop_all(self, now, fire_callback=.true.)
+      end if
+
+      call clear_runtime_state(self, keep_hooks=.true.)
       self%initialized = .true.
+
+      if (present(mismatch_mode)) then
+         self%mismatch_mode = mismatch_mode
+      else
+         self%mismatch_mode = FTIMER_MISMATCH_STRICT
+      end if
+
+#ifdef FTIMER_USE_MPI
+      if (present(comm)) then
+         self%mpi_comm = comm
+      else
+         self%mpi_comm = -1
+      end if
+      self%mpi_rank = -1
+      self%mpi_nprocs = 1
+      self%clock => ftimer_mpi_clock
+#else
+      self%clock => ftimer_default_clock
+#endif
+      self%init_wtime = self%wtime()
+      self%init_date = ftimer_date_string()
+
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine init
 
    subroutine finalize(self, ierr)
       class(ftimer_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
+      real(wp) :: now
 
-      self%initialized = .false.
+      if (.not. self%initialized) then
+         if (present(ierr)) ierr = FTIMER_SUCCESS
+         return
+      end if
+
+      if (has_active_timers(self)) then
+         if (present(ierr)) then
+            ierr = FTIMER_ERR_ACTIVE
+            return
+         end if
+
+         write (error_unit, '(a)') "ftimer finalize with active timers; force-stopping active timers"
+         now = self%wtime()
+         call force_stop_all(self, now, fire_callback=.true.)
+      end if
+
+      call clear_runtime_state(self, keep_hooks=.true.)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine finalize
 
@@ -38,29 +141,243 @@ contains
       class(ftimer_t), intent(inout) :: self
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
+      integer :: id
+      integer :: status
+      character(len=FTIMER_NAME_LEN) :: normalized_name
+      character(len=160) :: message
 
       if (.not. self%initialized) then
-         call set_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer start before init")
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer start before init")
          return
       end if
 
-      if (len_trim(name) < 0) stop 1
-      call set_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, "Phase 0 placeholder: ftimer start is not implemented")
+      call normalize_name(name, normalized_name, status, message)
+      if (status /= FTIMER_SUCCESS) then
+         call report_status(ierr, status, message)
+         return
+      end if
+
+      id = self%find_or_create_segment(normalized_name)
+      call self%start_id(id, ierr)
    end subroutine start
 
    subroutine stop(self, name, ierr)
       class(ftimer_t), intent(inout) :: self
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
+      integer :: id
+      integer :: status
+      character(len=FTIMER_NAME_LEN) :: normalized_name
+      character(len=160) :: message
 
       if (.not. self%initialized) then
-         call set_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer stop before init")
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer stop before init")
          return
       end if
 
-      if (len_trim(name) < 0) stop 1
-      call set_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, "Phase 0 placeholder: ftimer stop is not implemented")
+      call normalize_name(name, normalized_name, status, message)
+      if (status /= FTIMER_SUCCESS) then
+         call report_status(ierr, status, message)
+         return
+      end if
+
+      id = find_segment_index(self, normalized_name)
+      if (id <= 0) then
+         write (message, '(3a)') "ftimer stop on unknown timer: ", trim(normalized_name), ""
+         call report_status(ierr, FTIMER_ERR_UNKNOWN, trim(message))
+         return
+      end if
+
+      call self%stop_id(id, ierr)
    end subroutine stop
+
+   subroutine start_id(self, id, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: id
+      integer, intent(out), optional :: ierr
+      integer :: ctx
+      real(wp) :: now
+
+      if (.not. self%initialized) then
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer start_id before init")
+         return
+      end if
+
+      if ((id < 1) .or. (id > self%num_segments)) then
+         call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer start_id with unknown timer id")
+         return
+      end if
+
+      ctx = self%segments(id)%contexts%find(self%call_stack)
+      if (ctx <= 0) then
+         ctx = self%segments(id)%contexts%add(self%call_stack)
+      end if
+      call ensure_context_storage(self%segments(id), ctx)
+
+      call self%call_stack%push(id)
+      now = self%wtime()
+      self%segments(id)%start_time(ctx) = now
+      self%segments(id)%call_count(ctx) = self%segments(id)%call_count(ctx) + 1
+      self%segments(id)%is_running(ctx) = .true.
+
+      if (associated(self%on_event)) then
+         call self%on_event(id, ctx, FTIMER_EVENT_START, now, self%user_data)
+      end if
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine start_id
+
+   subroutine stop_id(self, id, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: id
+      integer, intent(out), optional :: ierr
+      character(len=192) :: message
+
+      if (.not. self%initialized) then
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer stop_id before init")
+         return
+      end if
+
+      if ((id < 1) .or. (id > self%num_segments)) then
+         call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer stop_id with unknown timer id")
+         return
+      end if
+
+      if (self%call_stack%depth <= 0) then
+         call report_status(ierr, FTIMER_ERR_MISMATCH, "ftimer stop mismatch on empty call stack")
+         return
+      end if
+
+      if (self%call_stack%top() == id) then
+         call stop_segment_with_now(self, id, self%wtime(), fire_callback=.true.)
+         if (present(ierr)) ierr = FTIMER_SUCCESS
+         return
+      end if
+
+      write (message, '(5a)') "ftimer stop mismatch: requested ", trim(self%segments(id)%name), &
+         " but top of stack is ", trim(self%segments(self%call_stack%top())%name), ""
+
+      select case (self%mismatch_mode)
+      case (FTIMER_MISMATCH_STRICT)
+         call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
+         return
+      case (FTIMER_MISMATCH_WARN)
+         if (.not. stack_contains(self%call_stack, id)) then
+            call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
+            return
+         end if
+
+         call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
+         call self%repair_mismatch(id)
+      case (FTIMER_MISMATCH_REPAIR)
+         if (.not. stack_contains(self%call_stack, id)) then
+            call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
+            return
+         end if
+
+         call self%repair_mismatch(id)
+      case default
+         call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
+         return
+      end select
+   end subroutine stop_id
+
+   integer function lookup(self, name, ierr) result(id)
+      class(ftimer_t), intent(inout) :: self
+      character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
+      integer :: status
+      character(len=FTIMER_NAME_LEN) :: normalized_name
+      character(len=160) :: message
+
+      id = 0
+      if (.not. self%initialized) then
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer lookup before init")
+         return
+      end if
+
+      call normalize_name(name, normalized_name, status, message)
+      if (status /= FTIMER_SUCCESS) then
+         call report_status(ierr, status, message)
+         return
+      end if
+
+      id = self%find_or_create_segment(normalized_name)
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end function lookup
+
+   subroutine reset(self, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+      integer :: i
+      real(wp) :: now
+
+      if (.not. self%initialized) then
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer reset before init")
+         return
+      end if
+
+      if (has_active_timers(self)) then
+         if (present(ierr)) then
+            ierr = FTIMER_ERR_ACTIVE
+            return
+         end if
+
+         write (error_unit, '(a)') "ftimer reset with active timers; force-stopping active timers"
+         now = self%wtime()
+         call force_stop_all(self, now, fire_callback=.true.)
+      end if
+
+      do i = 1, self%num_segments
+         if (allocated(self%segments(i)%time)) self%segments(i)%time = 0.0_wp
+         if (allocated(self%segments(i)%start_time)) self%segments(i)%start_time = 0.0_wp
+         if (allocated(self%segments(i)%is_running)) self%segments(i)%is_running = .false.
+         if (allocated(self%segments(i)%call_count)) self%segments(i)%call_count = 0
+      end do
+      if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
+      self%call_stack%depth = 0
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine reset
+
+   subroutine repair_mismatch(self, idx)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: idx
+      integer, allocatable :: unwound_ids(:)
+      integer :: top_id
+      integer :: restart_ctx
+      integer :: unwind_count
+      integer :: i
+      real(wp) :: now
+
+      if (.not. stack_contains(self%call_stack, idx)) return
+
+      now = self%wtime()
+      allocate (unwound_ids(self%call_stack%depth))
+      unwind_count = 0
+
+      do while ((self%call_stack%depth > 0) .and. (self%call_stack%top() /= idx))
+         top_id = self%call_stack%top()
+         call stop_segment_with_now(self, top_id, now, fire_callback=.false.)
+         unwind_count = unwind_count + 1
+         unwound_ids(unwind_count) = top_id
+      end do
+
+      if ((self%call_stack%depth > 0) .and. (self%call_stack%top() == idx)) then
+         call stop_segment_with_now(self, idx, now, fire_callback=.false.)
+      end if
+
+      do i = unwind_count, 1, -1
+         restart_ctx = self%segments(unwound_ids(i))%contexts%find(self%call_stack)
+         if (restart_ctx <= 0) then
+            restart_ctx = self%segments(unwound_ids(i))%contexts%add(self%call_stack)
+         end if
+         call ensure_context_storage(self%segments(unwound_ids(i)), restart_ctx)
+         call self%call_stack%push(unwound_ids(i))
+         self%segments(unwound_ids(i))%start_time(restart_ctx) = now
+         self%segments(unwound_ids(i))%is_running(restart_ctx) = .true.
+      end do
+   end subroutine repair_mismatch
 
    subroutine get_summary(self, summary, ierr)
       class(ftimer_t), intent(in) :: self
@@ -75,7 +392,180 @@ contains
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine get_summary
 
-   subroutine set_status(ierr, code, message)
+   real(wp) function wtime(self) result(now)
+      class(ftimer_t), intent(in) :: self
+
+      if (associated(self%clock)) then
+         now = self%clock()
+      else
+         now = ftimer_default_clock()
+      end if
+   end function wtime
+
+   integer function find_or_create_segment(self, name) result(idx)
+      class(ftimer_t), intent(inout) :: self
+      character(len=*), intent(in) :: name
+      type(ftimer_segment_t), allocatable :: new_segments(:)
+
+      idx = find_segment_index(self, name)
+      if (idx > 0) return
+
+      allocate (new_segments(self%num_segments + 1))
+      if (self%num_segments > 0) then
+         new_segments(1:self%num_segments) = self%segments(1:self%num_segments)
+      end if
+      new_segments(self%num_segments + 1)%name = name
+      call move_alloc(new_segments, self%segments)
+
+      self%num_segments = self%num_segments + 1
+      idx = self%num_segments
+   end function find_or_create_segment
+
+#ifdef FTIMER_BUILD_TESTS
+   subroutine ftimer_test_get_state(self, state)
+      class(ftimer_t), intent(in) :: self
+      type(ftimer_test_state_t), intent(out) :: state
+
+      state%call_stack = self%call_stack
+      state%num_segments = self%num_segments
+      state%init_wtime = self%init_wtime
+      state%init_date = self%init_date
+      state%initialized = self%initialized
+      state%mismatch_mode = self%mismatch_mode
+#ifdef FTIMER_USE_MPI
+      state%mpi_comm = self%mpi_comm
+      state%mpi_rank = self%mpi_rank
+      state%mpi_nprocs = self%mpi_nprocs
+#endif
+
+      if (allocated(state%segments)) deallocate (state%segments)
+      if (allocated(self%segments)) then
+         allocate (state%segments(size(self%segments)))
+         state%segments = self%segments
+      end if
+   end subroutine ftimer_test_get_state
+#endif
+
+   subroutine clear_runtime_state(self, keep_hooks)
+      class(ftimer_t), intent(inout) :: self
+      logical, intent(in) :: keep_hooks
+
+      if (allocated(self%segments)) deallocate (self%segments)
+      if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
+      self%call_stack%depth = 0
+      self%num_segments = 0
+      self%init_wtime = 0.0_wp
+      self%init_date = ''
+      self%initialized = .false.
+      self%mismatch_mode = FTIMER_MISMATCH_STRICT
+#ifdef FTIMER_USE_MPI
+      self%mpi_comm = -1
+      self%mpi_rank = -1
+      self%mpi_nprocs = 1
+#endif
+      if (.not. keep_hooks) then
+         nullify (self%clock)
+         nullify (self%on_event)
+         self%user_data = c_null_ptr
+      end if
+   end subroutine clear_runtime_state
+
+   subroutine ensure_context_storage(segment, required_size)
+      type(ftimer_segment_t), intent(inout) :: segment
+      integer, intent(in) :: required_size
+      integer :: old_size
+      integer, allocatable :: new_counts(:)
+      logical, allocatable :: new_running(:)
+      real(wp), allocatable :: new_start_times(:)
+      real(wp), allocatable :: new_times(:)
+
+      old_size = 0
+      if (allocated(segment%time)) old_size = size(segment%time)
+      if (old_size >= required_size) return
+
+      allocate (new_times(required_size))
+      allocate (new_start_times(required_size))
+      allocate (new_running(required_size))
+      allocate (new_counts(required_size))
+
+      new_times = 0.0_wp
+      new_start_times = 0.0_wp
+      new_running = .false.
+      new_counts = 0
+
+      if (old_size > 0) then
+         new_times(1:old_size) = segment%time
+         new_start_times(1:old_size) = segment%start_time
+         new_running(1:old_size) = segment%is_running
+         new_counts(1:old_size) = segment%call_count
+      end if
+
+      call move_alloc(new_times, segment%time)
+      call move_alloc(new_start_times, segment%start_time)
+      call move_alloc(new_running, segment%is_running)
+      call move_alloc(new_counts, segment%call_count)
+   end subroutine ensure_context_storage
+
+   integer function find_segment_index(self, name) result(idx)
+      class(ftimer_t), intent(in) :: self
+      character(len=*), intent(in) :: name
+      integer :: i
+
+      idx = 0
+      do i = 1, self%num_segments
+         if (self%segments(i)%name == name) then
+            idx = i
+            return
+         end if
+      end do
+   end function find_segment_index
+
+   subroutine force_stop_all(self, now, fire_callback)
+      class(ftimer_t), intent(inout) :: self
+      real(wp), intent(in) :: now
+      logical, intent(in) :: fire_callback
+      integer :: id
+
+      do while (self%call_stack%depth > 0)
+         id = self%call_stack%top()
+         call stop_segment_with_now(self, id, now, fire_callback)
+      end do
+   end subroutine force_stop_all
+
+   logical function has_active_timers(self) result(has_active)
+      class(ftimer_t), intent(in) :: self
+
+      has_active = self%call_stack%depth > 0
+   end function has_active_timers
+
+   subroutine normalize_name(name, normalized_name, status, message)
+      character(len=*), intent(in) :: name
+      character(len=FTIMER_NAME_LEN), intent(out) :: normalized_name
+      integer, intent(out) :: status
+      character(len=*), intent(out) :: message
+      integer :: trimmed_len
+
+      normalized_name = ''
+      message = ''
+      trimmed_len = len_trim(name)
+
+      if (trimmed_len <= 0) then
+         status = FTIMER_ERR_UNKNOWN
+         message = "ftimer timer name must not be empty"
+         return
+      end if
+
+      if (trimmed_len > FTIMER_NAME_LEN) then
+         status = FTIMER_ERR_UNKNOWN
+         write (message, '(a,i0)') "ftimer timer name exceeds FTIMER_NAME_LEN=", FTIMER_NAME_LEN
+         return
+      end if
+
+      normalized_name(1:trimmed_len) = name(1:trimmed_len)
+      status = FTIMER_SUCCESS
+   end subroutine normalize_name
+
+   subroutine report_status(ierr, code, message)
       integer, intent(out), optional :: ierr
       integer, intent(in) :: code
       character(len=*), intent(in) :: message
@@ -85,6 +575,41 @@ contains
       else
          write (error_unit, '(a)') trim(message)
       end if
-   end subroutine set_status
+   end subroutine report_status
+
+   logical function stack_contains(stack, id) result(found)
+      type(ftimer_call_stack_t), intent(in) :: stack
+      integer, intent(in) :: id
+
+      found = .false.
+      if (stack%depth <= 0) return
+      found = any(stack%ids(1:stack%depth) == id)
+   end function stack_contains
+
+   subroutine stop_segment_with_now(self, id, now, fire_callback)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: id
+      real(wp), intent(in) :: now
+      logical, intent(in) :: fire_callback
+      integer :: ctx
+      integer :: popped_id
+
+      popped_id = self%call_stack%pop()
+      if (popped_id /= id) then
+         error stop "ftimer internal stop_segment_with_now stack corruption"
+      end if
+
+      ctx = self%segments(id)%contexts%find(self%call_stack)
+      if (ctx <= 0) then
+         error stop "ftimer internal stop_segment_with_now missing context"
+      end if
+
+      self%segments(id)%time(ctx) = self%segments(id)%time(ctx) + now - self%segments(id)%start_time(ctx)
+      self%segments(id)%is_running(ctx) = .false.
+
+      if (fire_callback .and. associated(self%on_event)) then
+         call self%on_event(id, ctx, FTIMER_EVENT_STOP, now, self%user_data)
+      end if
+   end subroutine stop_segment_with_now
 
 end module ftimer_core

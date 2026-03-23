@@ -16,7 +16,7 @@ contains
    subroutine ftimer_init(ierr)
       integer, intent(out), optional :: ierr
 
-      call ftimer_default_instance%init(ierr)
+      call ftimer_default_instance%init(ierr=ierr)
    end subroutine ftimer_init
 
    subroutine ftimer_finalize(ierr)

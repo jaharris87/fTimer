@@ -2,7 +2,7 @@ module test_nesting
    use pfunit
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_MISMATCH, FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_WARN, FTIMER_SUCCESS, &
-      ftimer_call_stack_t, wp
+                           ftimer_call_stack_t, wp
    use test_support, only: attach_mock_clock, build_stack, fake_time, find_context_idx, snapshot_timer
    implicit none
 
