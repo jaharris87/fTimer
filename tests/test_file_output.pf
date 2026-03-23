@@ -1,0 +1,122 @@
+module test_file_output
+   use pfunit
+   use ftimer_core, only: ftimer_t
+   use ftimer_types, only: FTIMER_ERR_IO, FTIMER_SUCCESS, ftimer_summary_t, wp
+   use test_support, only: attach_mock_clock, fake_time, read_file_text
+   implicit none
+
+contains
+
+   @test
+   subroutine test_write_summary_creates_new_file()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: path = 'phase3_summary_new.txt'
+      character(len=:), allocatable :: actual
+      character(len=:), allocatable :: expected
+      integer :: ierr
+      integer :: io
+      integer :: unit
+      logical :: texts_match
+
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+
+      call timer%write_summary(path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      actual = read_file_text(path)
+      expected = expected_single_timer_output(summary)
+      texts_match = actual == expected
+
+      @assertTrue(texts_match)
+
+      open (newunit=unit, file=path, status='old', iostat=io)
+      if (io == 0) close (unit, status='delete')
+   end subroutine test_write_summary_creates_new_file
+
+   @test
+   subroutine test_write_summary_appends_to_existing_file()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: path = 'phase3_summary_append.txt'
+      character(len=:), allocatable :: actual
+      character(len=:), allocatable :: expected
+      character(len=:), allocatable :: block
+      integer :: ierr
+      integer :: io
+      integer :: unit
+      logical :: texts_match
+
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+
+      call timer%write_summary(path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      actual = read_file_text(path)
+      block = expected_single_timer_output(summary)
+      expected = block//block
+      texts_match = actual == expected
+
+      @assertTrue(texts_match)
+
+      open (newunit=unit, file=path, status='old', iostat=io)
+      if (io == 0) close (unit, status='delete')
+   end subroutine test_write_summary_appends_to_existing_file
+
+   @test
+   subroutine test_write_summary_invalid_path_returns_io_error()
+      type(ftimer_t) :: timer
+      integer :: ierr
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      call timer%write_summary('/no_such_dir/phase3_summary.txt', ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_IO, ierr)
+   end subroutine test_write_summary_invalid_path_returns_io_error
+
+   subroutine build_single_timer_summary(timer, summary, ierr)
+      type(ftimer_t), intent(out) :: timer
+      type(ftimer_summary_t), intent(out) :: summary
+      integer, intent(out) :: ierr
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 4.0_wp
+      call timer%stop("A", ierr=ierr)
+      call timer%get_summary(summary, ierr=ierr)
+   end subroutine build_single_timer_summary
+
+   subroutine delete_if_exists(path)
+      character(len=*), intent(in) :: path
+      integer :: io
+      integer :: unit
+
+      open (newunit=unit, file=path, status='old', iostat=io)
+      if (io == 0) close (unit, status='delete')
+   end subroutine delete_if_exists
+
+   function expected_single_timer_output(summary) result(text)
+      type(ftimer_summary_t), intent(in) :: summary
+      character(len=:), allocatable :: text
+      character(len=256) :: line
+
+      write (line, '(a,f0.6)') 'Total time (s) : ', summary%total_time
+      text = trim(line)//new_line('a')//new_line('a')
+      text = text//'Timer name  Inclusive (s)     Self (s)    Calls   % Total'//new_line('a')
+      text = text//'---------------------------------------------------------'//new_line('a')
+      text = text//'A               4.000000      4.000000         1    100.00'//new_line('a')
+   end function expected_single_timer_output
+
+end module test_file_output

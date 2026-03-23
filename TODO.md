@@ -37,12 +37,12 @@ The `ftimer_t` class with all timer operations. Write pFUnit tests FIRST for eac
 
 Structured summary data + text formatting. Depends on Phase 2.
 
-- [ ] `src/ftimer_summary.F90` — `build_summary()` subroutine: recursive tree walk building `ftimer_summary_t` from `ftimer_t` state. Compute inclusive time per (timer, context). Second pass: compute self_time = inclusive - sum(direct children).
-- [ ] Text formatting: `format_summary()` producing hierarchical indented table with columns: timer name, inclusive time, self time, call count, % of total. Metadata header lines from `ftimer_metadata_t` array.
-- [ ] `ftimer_t%get_summary(summary, ...)` — Call `build_summary()`, return structured data.
-- [ ] `ftimer_t%print_summary(...)` — Call `get_summary()` + `format_summary()`, write to stdout or specified unit. Accept optional `metadata` array.
-- [ ] `ftimer_t%write_summary(...)` — Write formatted summary to file (new or append mode). Return `FTIMER_ERR_IO` on failure.
-- [ ] **Tests**:
+- [x] `src/ftimer_summary.F90` — `build_summary()` subroutine: recursive tree walk building `ftimer_summary_t` from `ftimer_t` state. Compute inclusive time per (timer, context). Second pass: compute self_time = inclusive - sum(direct children).
+- [x] Text formatting: `format_summary()` producing hierarchical indented table with columns: timer name, inclusive time, self time, call count, % of total. Metadata header lines from `ftimer_metadata_t` array.
+- [x] `ftimer_t%get_summary(summary, ...)` — Call `build_summary()`, return structured data.
+- [x] `ftimer_t%print_summary(...)` — Call `get_summary()` + `format_summary()`, write to stdout or specified unit. Accept optional `metadata` array.
+- [x] `ftimer_t%write_summary(...)` — Write formatted summary to file (new or append mode). Return `FTIMER_ERR_IO` on failure.
+- [x] **Tests**:
   - `tests/test_summary.pf` — `get_summary()` returns correct structured data (entry count, names, depths, inclusive times, call counts, percentages). Golden text output comparison for `print_summary()`. Metadata appears in header.
   - `tests/test_self_time.pf` — Parent(10s) containing child(7s) → parent self_time = 3s. Multiple children. Deeply nested.
   - `tests/test_file_output.pf` — Write to new file, append to existing, invalid path returns `FTIMER_ERR_IO`.

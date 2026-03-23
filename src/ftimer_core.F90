@@ -2,17 +2,18 @@ module ftimer_core
    use, intrinsic :: iso_c_binding, only: c_null_ptr, c_ptr
    use, intrinsic :: iso_fortran_env, only: error_unit
    use ftimer_clock, only: ftimer_date_string, ftimer_default_clock, ftimer_mpi_clock
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MISMATCH, &
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
                            FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, &
-                           FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_segment_t, &
-                           ftimer_summary_t, wp
+                           FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_metadata_t, &
+                           ftimer_segment_t, ftimer_summary_t, wp
    implicit none
    private
 
    public :: ftimer_t
 #ifdef FTIMER_BUILD_TESTS
    public :: ftimer_test_get_state
+   public :: ftimer_test_set_init_wtime
    public :: ftimer_test_state_t
 #endif
 
@@ -60,10 +61,35 @@ module ftimer_core
       procedure :: lookup
       procedure :: reset
       procedure :: get_summary
+      procedure :: print_summary
+      procedure :: write_summary
       procedure, private :: wtime
       procedure, private :: find_or_create_segment
       procedure, private :: repair_mismatch
    end type ftimer_t
+
+   interface
+      module subroutine get_summary(self, summary, ierr)
+         class(ftimer_t), intent(in) :: self
+         type(ftimer_summary_t), intent(out) :: summary
+         integer, intent(out), optional :: ierr
+      end subroutine get_summary
+
+      module subroutine print_summary(self, unit, metadata, ierr)
+         class(ftimer_t), intent(in) :: self
+         integer, intent(in), optional :: unit
+         type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+         integer, intent(out), optional :: ierr
+      end subroutine print_summary
+
+      module subroutine write_summary(self, filename, append, metadata, ierr)
+         class(ftimer_t), intent(in) :: self
+         character(len=*), intent(in) :: filename
+         logical, intent(in), optional :: append
+         type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+         integer, intent(out), optional :: ierr
+      end subroutine write_summary
+   end interface
 
 contains
 
@@ -389,19 +415,6 @@ contains
       end do
    end subroutine repair_mismatch
 
-   subroutine get_summary(self, summary, ierr)
-      class(ftimer_t), intent(in) :: self
-      type(ftimer_summary_t), intent(out) :: summary
-      integer, intent(out), optional :: ierr
-
-      if (self%initialized) then
-         summary%placeholder = 1
-      else
-         summary%placeholder = 0
-      end if
-      if (present(ierr)) ierr = FTIMER_SUCCESS
-   end subroutine get_summary
-
    real(wp) function wtime(self) result(now)
       class(ftimer_t), intent(in) :: self
 
@@ -454,6 +467,13 @@ contains
          state%segments = self%segments
       end if
    end subroutine ftimer_test_get_state
+
+   subroutine ftimer_test_set_init_wtime(self, init_wtime)
+      class(ftimer_t), intent(inout) :: self
+      real(wp), intent(in) :: init_wtime
+
+      self%init_wtime = init_wtime
+   end subroutine ftimer_test_set_init_wtime
 #endif
 
    subroutine clear_runtime_state(self, keep_hooks)

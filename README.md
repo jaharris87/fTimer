@@ -4,27 +4,28 @@ A lightweight, correctness-first wall-clock timing library for modern Fortran.
 
 ## Status
 
-**Under construction.** Phase 2 provides the shared types/clock foundation plus a real core timer runtime with deterministic pFUnit coverage. Summary/reporting, expanded procedural wrappers, MPI reductions, and OpenMP guards are still tracked in [TODO.md](TODO.md).
+**Under construction.** Phase 3 now provides the shared types/clock foundation, a real core timer runtime, structured summary building, and formatted local reporting with deterministic pFUnit coverage. Expanded procedural wrappers, MPI reductions, and OpenMP guards are still tracked in [TODO.md](TODO.md).
 
-## Current Phase 2 Behavior
+## Current Phase 3 Behavior
 
 Current `main` provides:
 
 - CMake-based serial and MPI builds
 - `ftimer_types` exports shared kinds, constants, summary/container types, and abstract clock/hook interfaces
 - `ftimer_clock` exports `ftimer_default_clock()`, `ftimer_mpi_clock()` for MPI-enabled builds, and `ftimer_date_string()`
-- `ftimer_core` exports a real `ftimer_t` implementation with `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, and placeholder `get_summary`
+- `ftimer_core` exports a real `ftimer_t` implementation with `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `print_summary`, and `write_summary`
+- `ftimer_summary` builds structured local summaries with hierarchical entries, inclusive time, self time, call counts, and formatted text output
 - Strict-by-default stack-based timing with context-sensitive accounting and configurable mismatch handling (`strict` / `warn` / `repair`)
-- A default smoke-test path plus optional pFUnit behavioral tests using an injectable mock clock
+- A default smoke-test path plus optional pFUnit behavioral/integration tests using an injectable mock clock
 - Example programs that compile and link against the library
 - An installable CMake package export (`fTimerTargets.cmake`, `fTimerConfig.cmake`, `fTimerConfigVersion.cmake`)
 
 Current public surface is still intentionally narrower than the target design:
 
 - Procedural interface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, and `ftimer_default_instance`
-- OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, and `get_summary`
+- OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `print_summary`, and `write_summary`
 - `start`/`stop` are now real timer operations with the intended `ierr`/stderr error contract
-- `get_summary()` remains a placeholder until Phase 3
+- Summary/reporting is local-only in this phase; procedural summary wrappers and MPI-reduced summaries remain deferred
 
 ## Target Capabilities
 
@@ -69,14 +70,12 @@ Current defaults:
 - Smoke tests are enabled by default and stay intentionally minimal.
 - pFUnit-backed behavioral tests are opt-in via `FTIMER_BUILD_TESTS=ON`.
 - FPM support is deferred until the public API stabilizes.
-- Summary building/formatting and MPI reductions are not implemented yet.
+- MPI reductions are not implemented yet.
 
 ## Deferred Items
 
-These are intentionally postponed beyond Phase 2:
+These are intentionally postponed beyond Phase 3:
 
-- Structured summary building and formatting
-- Callback behavior tests
 - Procedural API expansion beyond the current wrapper surface
 - MPI reductions and cross-rank summary statistics
 - MPI behavioral tests
