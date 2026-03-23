@@ -1,0 +1,64 @@
+module test_reset
+   use pfunit
+   use ftimer_core, only: ftimer_t, ftimer_test_state_t
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_SUCCESS, ftimer_call_stack_t, wp
+   use test_support, only: attach_mock_clock, build_stack, fake_time, find_context_idx, snapshot_timer
+   implicit none
+
+contains
+
+   @test
+   subroutine test_reset_zeros_times_and_counts_but_preserves_names()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: id_a
+      integer :: ctx
+      real(wp) :: elapsed
+      integer :: count
+      type(ftimer_call_stack_t) :: root_stack
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%stop("A", ierr=ierr)
+      id_a = timer%lookup("A", ierr=ierr)
+
+      call timer%reset(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_a, root_stack)
+      elapsed = state%segments(id_a)%time(ctx)
+      count = state%segments(id_a)%call_count(ctx)
+
+      @assertEqual(1, state%num_segments)
+      @assertEqual("A", trim(state%segments(id_a)%name))
+      @assertEqual(0.0_wp, elapsed)
+      @assertEqual(0, count)
+   end subroutine test_reset_zeros_times_and_counts_but_preserves_names
+
+   @test
+   subroutine test_reset_with_active_timer_returns_active_error()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: ctx
+      type(ftimer_call_stack_t) :: root_stack
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      call timer%reset(ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, 1, root_stack)
+      @assertEqual(1, state%call_stack%depth)
+      @assertTrue(state%segments(1)%is_running(ctx))
+   end subroutine test_reset_with_active_timer_returns_active_error
+
+end module test_reset

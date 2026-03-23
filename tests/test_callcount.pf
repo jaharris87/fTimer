@@ -1,0 +1,83 @@
+module test_callcount
+   use pfunit
+   use ftimer_core, only: ftimer_t, ftimer_test_state_t
+   use ftimer_types, only: FTIMER_SUCCESS, ftimer_call_stack_t, wp
+   use test_support, only: attach_mock_clock, build_stack, fake_time, find_context_idx, snapshot_timer
+   implicit none
+
+contains
+
+   @test
+   subroutine test_multiple_calls_increment_same_context_count()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: id_a
+      integer :: ctx
+      integer :: count
+      type(ftimer_call_stack_t) :: root_stack
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%stop("A", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%start("A", ierr=ierr)
+      fake_time = 4.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      id_a = timer%lookup("A", ierr=ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_a, root_stack)
+      count = state%segments(id_a)%call_count(ctx)
+
+      @assertEqual(2, count)
+   end subroutine test_multiple_calls_increment_same_context_count
+
+   @test
+   subroutine test_call_counts_are_tracked_per_context()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: id_work
+      integer :: ctx_a
+      integer :: ctx_b
+      integer :: count_a
+      integer :: count_b
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      call timer%start("work", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%stop("work", ierr=ierr)
+      call timer%stop("A", ierr=ierr)
+
+      fake_time = 2.0_wp
+      call timer%start("B", ierr=ierr)
+      call timer%start("work", ierr=ierr)
+      fake_time = 3.0_wp
+      call timer%stop("work", ierr=ierr)
+      fake_time = 4.0_wp
+      call timer%start("work", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%stop("work", ierr=ierr)
+      call timer%stop("B", ierr=ierr)
+
+      id_work = timer%lookup("work", ierr=ierr)
+      call snapshot_timer(timer, state)
+
+      ctx_a = find_context_idx(state, id_work, build_stack([1]))
+      ctx_b = find_context_idx(state, id_work, build_stack([3]))
+      count_a = state%segments(id_work)%call_count(ctx_a)
+      count_b = state%segments(id_work)%call_count(ctx_b)
+
+      @assertEqual(1, count_a)
+      @assertEqual(2, count_b)
+   end subroutine test_call_counts_are_tracked_per_context
+
+end module test_callcount

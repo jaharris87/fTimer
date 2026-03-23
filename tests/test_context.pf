@@ -1,0 +1,59 @@
+module test_context
+   use pfunit
+   use ftimer_core, only: ftimer_t, ftimer_test_state_t
+   use ftimer_types, only: FTIMER_SUCCESS, ftimer_call_stack_t, wp
+   use test_support, only: attach_mock_clock, build_stack, fake_time, find_context_idx, snapshot_timer
+   implicit none
+
+contains
+
+   @test
+   subroutine test_same_timer_under_different_parents_uses_distinct_contexts()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: stack_a
+      type(ftimer_call_stack_t) :: stack_b
+      integer :: ierr
+      integer :: id_work
+      integer :: ctx_a
+      integer :: ctx_b
+      real(wp) :: time_a
+      real(wp) :: time_b
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("work", ierr=ierr)
+      fake_time = 3.0_wp
+      call timer%stop("work", ierr=ierr)
+      fake_time = 4.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      call timer%start("B", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%start("work", ierr=ierr)
+      fake_time = 8.0_wp
+      call timer%stop("work", ierr=ierr)
+      fake_time = 9.0_wp
+      call timer%stop("B", ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      id_work = timer%lookup("work", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      stack_a = build_stack([1])
+      stack_b = build_stack([3])
+      ctx_a = find_context_idx(state, id_work, stack_a)
+      ctx_b = find_context_idx(state, id_work, stack_b)
+      time_a = state%segments(id_work)%time(ctx_a)
+      time_b = state%segments(id_work)%time(ctx_b)
+
+      @assertEqual(2, state%segments(id_work)%contexts%count)
+      @assertEqual(2.0_wp, time_a)
+      @assertEqual(3.0_wp, time_b)
+   end subroutine test_same_timer_under_different_parents_uses_distinct_contexts
+
+end module test_context

@@ -10,16 +10,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Serial build
-cmake -B build && cmake --build build
-
-# MPI build
-cmake -B build-mpi -DFTIMER_USE_MPI=ON && cmake --build build-mpi
-
-# Run the current smoke tests
+cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+cmake --build build
 ctest --test-dir build --output-on-failure
 
-# Enable pFUnit once real tests exist
-cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit && cmake --build build
+# Smoke-test-only build
+cmake -B build-smoke
+cmake --build build-smoke
+ctest --test-dir build-smoke --output-on-failure
+
+# MPI build
+cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+cmake --build build-mpi
 
 # Lint / format check
 find src -name '*.F90' -exec fprettify --diff {} +
@@ -70,13 +72,13 @@ ftimer.F90  (procedural wrappers + default global instance)
 
 ## Development Workflow
 
-Current `main` is in Phase 1. The shared types/clock foundation is implemented, while the timer runtime remains placeholder-only until later phases in `TODO.md`.
+Current `main` is in Phase 2. The shared types/clock foundation and the core timer runtime are implemented; summary/report formatting, expanded procedural wrappers, MPI reductions, and OpenMP guards remain deferred in `TODO.md`.
 
-During Phase 1, keep the library, examples, install package, and smoke tests buildable. Routine signatures should preserve the intended error-reporting contract, and unimplemented timer operations should continue to report that status rather than silently succeeding.
+During Phase 2, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: make the core timer behavior real, but do not pull Phase 3+ summary/report/MPI/OpenMP work forward.
 
 Detailed repository operations and PR/review handling live in `docs/maintainer.md`. Use that file for GitHub workflow details; keep this file focused on coding/build/test behavior and the short mandatory PR summary below.
 
-**Phase 1 exception:** the types/clock foundation is compile-first work, not an early pFUnit phase. Starting in Phase 2, test-driven development is mandatory: write tests first, confirm they fail, then implement. All behavioral tests use the injectable mock clock for deterministic results — tests never sleep or depend on wall-clock timing.
+**Phase 1 exception:** the types/clock foundation was compile-first work, not an early pFUnit phase. Starting in Phase 2, test-driven development is mandatory: write tests first, confirm they fail, then implement. All behavioral tests use the injectable mock clock for deterministic results — tests never sleep or depend on wall-clock timing.
 
 ### Test Categories
 
@@ -86,8 +88,8 @@ Detailed repository operations and PR/review handling live in `docs/maintainer.m
 
 ### Test Infrastructure
 
-- **Current default**: smoke-test-only baseline (`FTIMER_BUILD_SMOKE_TESTS=ON`, `FTIMER_BUILD_TESTS=OFF`)
-- **Framework for later phases**: pFUnit, enabled explicitly with `-DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=...`
+- **Current default**: smoke-test baseline (`FTIMER_BUILD_SMOKE_TESTS=ON`, `FTIMER_BUILD_TESTS=OFF`)
+- **Behavioral suite**: pFUnit, enabled explicitly with `-DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=...`
 - **Mock clock**: Module-level `fake_time` variable with `mock_clock()` function. Inject via `timer%clock => mock_clock`. Advance deterministically: set `fake_time`, call start/stop, assert exact accumulated times.
 - **Golden output tests**: `test_summary.pf` compares `print_summary()` output against expected text.
 - **Error contract tests**: Every edge case tested via `ierr` return value, not stderr parsing.
@@ -123,6 +125,6 @@ Use `docs/maintainer.md` for the full operating procedure, investigation command
 - **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the current smoke-test baseline.
 - **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables pFUnit-backed tests once those suites exist.
 - **`CMAKE_INSTALL_PREFIX`**: Where `make install` places the library and module files.
-- **pFUnit**: Optional until the real test tree exists. Set `PFUNIT_DIR` explicitly when enabling `FTIMER_BUILD_TESTS`.
+- **pFUnit**: Optional dependency for behavioral tests. Set `PFUNIT_DIR` explicitly when enabling `FTIMER_BUILD_TESTS`.
 
 CMake is the only supported build system in the current implementation. FPM support is intentionally deferred.

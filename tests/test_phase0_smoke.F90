@@ -1,7 +1,7 @@
 program test_phase0_smoke
    use ftimer, only: ftimer_finalize, ftimer_init, ftimer_start, ftimer_stop
    use ftimer_mpi, only: ftimer_mpi_enabled
-   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_NOT_INIT, FTIMER_SUCCESS
+   use ftimer_types, only: FTIMER_ERR_NOT_INIT, FTIMER_SUCCESS
    implicit none
    integer :: ierr
 
@@ -15,10 +15,10 @@ program test_phase0_smoke
    if (ierr /= FTIMER_SUCCESS) error stop 3
 
    call ftimer_start("smoke", ierr)
-   if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 4
+   if (ierr /= FTIMER_SUCCESS) error stop 4
 
    call ftimer_stop("smoke", ierr)
-   if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 5
+   if (ierr /= FTIMER_SUCCESS) error stop 5
 
    call ftimer_finalize(ierr)
    if (ierr /= FTIMER_SUCCESS) error stop 6
@@ -29,5 +29,5 @@ program test_phase0_smoke
    if (ftimer_mpi_enabled()) error stop 8
 #endif
 
-   print *, "ftimer phase0 smoke ok"
+   print *, "ftimer smoke ok"
 end program test_phase0_smoke

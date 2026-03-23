@@ -1,0 +1,158 @@
+module test_edge_cases
+   use pfunit
+   use ftimer_core, only: ftimer_t, ftimer_test_state_t
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_NAME_LEN, &
+                           FTIMER_SUCCESS, ftimer_call_stack_t, wp
+   use test_support, only: attach_mock_clock, fake_time, find_context_idx, snapshot_timer
+   implicit none
+
+contains
+
+   @test
+   subroutine test_start_and_stop_before_init_return_not_init()
+      type(ftimer_t) :: timer
+      integer :: ierr
+
+      call timer%start("A", ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+
+      call timer%stop("A", ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+   end subroutine test_start_and_stop_before_init_return_not_init
+
+   @test
+   subroutine test_stop_unknown_timer_returns_unknown()
+      type(ftimer_t) :: timer
+      integer :: ierr
+
+      call timer%init(ierr=ierr)
+      call timer%stop("missing", ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+   end subroutine test_stop_unknown_timer_returns_unknown
+
+   @test
+   subroutine test_finalize_with_active_timer_returns_active()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%finalize(ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+      call snapshot_timer(timer, state)
+      @assertTrue(state%initialized)
+      @assertEqual(1, state%call_stack%depth)
+   end subroutine test_finalize_with_active_timer_returns_active
+
+   @test
+   subroutine test_finalize_without_ierr_force_stops_and_continues()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      logical :: initialized
+
+      call timer%init()
+      call attach_mock_clock(timer)
+
+      call timer%start("A")
+      fake_time = 1.0_wp
+      call timer%finalize()
+
+      call snapshot_timer(timer, state)
+      initialized = state%initialized
+      @assertFalse(initialized)
+      @assertEqual(0, state%call_stack%depth)
+   end subroutine test_finalize_without_ierr_force_stops_and_continues
+
+   @test
+   subroutine test_init_rejects_invalid_mismatch_mode()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      logical :: initialized
+
+      call timer%init(mismatch_mode=99, ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(timer, state)
+      initialized = state%initialized
+      @assertFalse(initialized)
+   end subroutine test_init_rejects_invalid_mismatch_mode
+
+   @test
+   subroutine test_reset_without_ierr_force_stops_and_zeros()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ierr
+      integer :: ctx
+      real(wp) :: elapsed
+      integer :: count
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%reset()
+
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, 1, root_stack)
+      elapsed = state%segments(1)%time(ctx)
+      count = state%segments(1)%call_count(ctx)
+
+      @assertTrue(state%initialized)
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(0.0_wp, elapsed)
+      @assertEqual(0, count)
+   end subroutine test_reset_without_ierr_force_stops_and_zeros
+
+   @test
+   subroutine test_name_length_limit_accepts_exact_and_rejects_longer()
+      type(ftimer_t) :: timer
+      character(len=FTIMER_NAME_LEN) :: exact_name
+      character(len=FTIMER_NAME_LEN + 1) :: long_name
+      integer :: ierr
+      integer :: id_exact
+      integer :: id_long
+
+      exact_name = repeat("x", FTIMER_NAME_LEN)
+      long_name = repeat("y", FTIMER_NAME_LEN + 1)
+
+      call timer%init(ierr=ierr)
+      id_exact = timer%lookup(exact_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, id_exact)
+
+      id_long = timer%lookup(long_name, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(0, id_long)
+   end subroutine test_name_length_limit_accepts_exact_and_rejects_longer
+
+   @test
+   subroutine test_dynamic_growth_creates_many_segments()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: i
+      character(len=12) :: name
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      do i = 1, 20
+         write (name, '("timer_",i2.2)') i
+         call timer%start(trim(name), ierr=ierr)
+         fake_time = fake_time + 1.0_wp
+         call timer%stop(trim(name), ierr=ierr)
+      end do
+
+      call snapshot_timer(timer, state)
+      @assertEqual(20, state%num_segments)
+   end subroutine test_dynamic_growth_creates_many_segments
+
+end module test_edge_cases
