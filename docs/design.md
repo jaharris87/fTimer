@@ -19,11 +19,13 @@
 - OOP core with encapsulated state and multiple instances
 - Injectable clock, configurable error handling, callback hooks with full context
 
-## Current Phase 0 Snapshot
+## Current Phase 1 Snapshot
 
 Current `main` is intentionally narrower than the target design below:
 
 - the library, examples, packaging, and smoke tests are buildable
+- `ftimer_types.F90` provides the shared constants, summary/container types, and abstract interfaces
+- `ftimer_clock.F90` provides the default wall clock, MPI wall clock wrapper, and date-string utility
 - the placeholder procedural interface exports `ftimer_init`, `ftimer_finalize`, `ftimer_start`, and `ftimer_stop`
 - the placeholder core type exports `init`, `finalize`, `start`, `stop`, and `get_summary`
 - timer operations preserve the intended `ierr`/warning shape but still report "not implemented"
@@ -34,8 +36,8 @@ For the current user-facing contract, prefer `README.md` and the source in `src/
 ## Key Decisions
 
 - **Build system**: CMake with a convenience Makefile wrapper (`make`, `make test`, `make install` delegate to cmake/ctest)
-- **Phase 0 baseline**: buildable placeholder library + examples + smoke tests; pFUnit and full behavior arrive in later phases
-- **Testing**: Phase 0 uses smoke tests only; later phases use pFUnit with an injectable mock clock for deterministic tests
+- **Current baseline**: buildable Phase 1 foundation modules + placeholder core/examples + smoke tests; full behavior arrives in later phases
+- **Testing**: current `main` uses smoke tests only; later phases use pFUnit with an injectable mock clock for deterministic tests
 - **Timer model**: Strict nesting only (stack-based, no overlapping timers)
 - **Mismatch handling**: Configurable (`strict`/`warn`/`repair`), **default `strict`**. `repair` mode is Flash-X compatibility. Internal repair transitions do NOT fire user callbacks.
 - **Error model**: Optional `ierr` argument on all public routines (standard Fortran pattern). When `ierr` absent, print warning to stderr.
@@ -482,7 +484,7 @@ call timer%stop("A")
 - OpenMP: master-only access, documented limitations
 
 ### CI workflow
-- Phase 0 jobs: serial build+smoke test, MPI build+smoke test, lint
+- Current jobs: serial build+smoke test, MPI build+smoke test, lint
 - Runner: ubuntu-latest with gfortran + OpenMPI
 - pFUnit CI is deferred until the real test suite exists
 - Intel ifx CI deferred to Phase 2

@@ -4,18 +4,20 @@ A lightweight, correctness-first wall-clock timing library for modern Fortran.
 
 ## Status
 
-**Under construction.** Phase 0 provides a buildable placeholder library, examples, packaging, and smoke-test scaffolding. Behavioral implementation is tracked in [TODO.md](TODO.md).
+**Under construction.** Phase 1 provides buildable foundation modules for shared types and clock utilities, along with the existing placeholder core, examples, packaging, and smoke-test scaffolding. Behavioral implementation is tracked in [TODO.md](TODO.md).
 
-## Current Phase 0 Behavior
+## Current Phase 1 Behavior
 
-Current `main` provides a minimal executable scaffold:
+Current `main` provides a buildable foundation plus placeholder runtime behavior:
 
-- CMake-based serial and MPI placeholder builds
+- CMake-based serial and MPI builds
+- `ftimer_types` exports shared kinds, constants, summary/container types, and abstract clock/hook interfaces
+- `ftimer_clock` exports `ftimer_default_clock()`, `ftimer_mpi_clock()`, and `ftimer_date_string()`
 - Placeholder example programs that compile and link against the library
 - A default smoke-test path that verifies the scaffold builds and reports placeholder status honestly
 - An installable CMake package export (`fTimerTargets.cmake`, `fTimerConfig.cmake`, `fTimerConfigVersion.cmake`)
 
-Current public surface area is intentionally small:
+Current timer behavior is still intentionally narrow:
 
 - Procedural interface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, and `ftimer_default_instance`
 - OOP core placeholder: `init`, `finalize`, `start`, `stop`, and `get_summary`
@@ -36,14 +38,14 @@ fTimer is intended to provide stack-based hierarchical timing with:
 ## Build
 
 ```bash
-# Serial placeholder build
+# Serial build
 cmake -B build && cmake --build build
 
-# Run Phase 0 smoke test
+# Run the current smoke test
 ctest --test-dir build --output-on-failure
 
-# MPI placeholder build
-cmake -B build -DFTIMER_USE_MPI=ON && cmake --build build
+# MPI build
+cmake -B build-mpi -DFTIMER_USE_MPI=ON && cmake --build build-mpi
 
 # Enable pFUnit tests later, once they exist
 cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit && cmake --build build
@@ -54,21 +56,24 @@ make mpi    # MPI build
 make test   # build + test
 ```
 
-Requires: gfortran (or compatible Fortran compiler) and CMake >= 3.16.
+Requires: gfortran (or compatible Fortran compiler), CMake >= 3.16, and an MPI Fortran toolchain when `FTIMER_USE_MPI=ON`.
 
-Phase 0 defaults:
+Phase 1 defaults:
 
 - CMake is the only supported build path right now.
 - Smoke tests are enabled by default and are intentionally minimal.
 - pFUnit-backed behavioral tests are not part of the default build yet.
 - FPM support is deferred until the public API stabilizes.
-- The public API is placeholder-only in Phase 0: it compiles and preserves the error-reporting shape, but timer operations still report "not implemented" until later phases.
+- The timer runtime API is still placeholder-only: it compiles and preserves the error-reporting shape, but timer operations still report "not implemented" until later phases.
 
 ## Deferred Items
 
-These are intentionally postponed beyond Phase 0:
+These are intentionally postponed beyond Phase 1:
 
 - pFUnit behavioral test suite
+- Core timer behavior
+- Structured summary building and formatting
+- MPI reductions and cross-rank summary statistics
 - FPM manifest/support
 - secondary repo hygiene such as Dependabot, `.editorconfig`, and broader governance files
 
