@@ -1,14 +1,235 @@
 module ftimer_types
+   use, intrinsic :: iso_c_binding, only: c_ptr
    implicit none
    private
 
-   integer, parameter, public :: FTIMER_SUCCESS = 0
-   integer, parameter, public :: FTIMER_ERR_NOT_INIT = 1
-   integer, parameter, public :: FTIMER_ERR_NOT_IMPLEMENTED = 2
-   integer, parameter, public :: wp = selected_real_kind(15, 307)
+   public :: FTIMER_SUCCESS
+   public :: FTIMER_ERR_NOT_INIT
+   public :: FTIMER_ERR_NOT_IMPLEMENTED
+   public :: FTIMER_ERR_UNKNOWN
+   public :: FTIMER_ERR_ACTIVE
+   public :: FTIMER_ERR_MISMATCH
+   public :: FTIMER_ERR_MPI_INCON
+   public :: FTIMER_ERR_IO
+   public :: FTIMER_NAME_LEN
+   public :: FTIMER_MISMATCH_STRICT
+   public :: FTIMER_MISMATCH_WARN
+   public :: FTIMER_MISMATCH_REPAIR
+   public :: FTIMER_EVENT_START
+   public :: FTIMER_EVENT_STOP
+   public :: wp
+   public :: ftimer_metadata_t
+   public :: ftimer_summary_entry_t
+   public :: ftimer_summary_t
+   public :: ftimer_call_stack_t
+   public :: ftimer_context_list_t
+   public :: ftimer_segment_t
+   public :: ftimer_clock_func
+   public :: ftimer_hook_proc
 
-   type, public :: ftimer_summary_t
+   integer, parameter :: FTIMER_SUCCESS = 0
+   integer, parameter :: FTIMER_ERR_NOT_INIT = 1
+   integer, parameter :: FTIMER_ERR_NOT_IMPLEMENTED = 2
+   integer, parameter :: FTIMER_ERR_UNKNOWN = 3
+   integer, parameter :: FTIMER_ERR_ACTIVE = 4
+   integer, parameter :: FTIMER_ERR_MISMATCH = 5
+   integer, parameter :: FTIMER_ERR_MPI_INCON = 6
+   integer, parameter :: FTIMER_ERR_IO = 7
+
+   integer, parameter :: wp = selected_real_kind(15, 307)
+   integer, parameter :: FTIMER_NAME_LEN = 64
+
+   integer, parameter :: FTIMER_MISMATCH_STRICT = 1
+   integer, parameter :: FTIMER_MISMATCH_WARN = 2
+   integer, parameter :: FTIMER_MISMATCH_REPAIR = 3
+
+   integer, parameter :: FTIMER_EVENT_START = 1
+   integer, parameter :: FTIMER_EVENT_STOP = 2
+
+   type :: ftimer_metadata_t
+      character(len=FTIMER_NAME_LEN) :: key = ''
+      character(len=FTIMER_NAME_LEN) :: value = ''
+   end type ftimer_metadata_t
+
+   type :: ftimer_summary_entry_t
+      character(len=FTIMER_NAME_LEN) :: name = ''
+      integer :: depth = 0
+      real(wp) :: inclusive_time = 0.0_wp
+      real(wp) :: self_time = 0.0_wp
+      integer :: call_count = 0
+      real(wp) :: avg_time = 0.0_wp
+      real(wp) :: pct_time = 0.0_wp
+      real(wp) :: min_time = -1.0_wp
+      real(wp) :: max_time = -1.0_wp
+      real(wp) :: avg_across_ranks = -1.0_wp
+      real(wp) :: imbalance = -1.0_wp
+   end type ftimer_summary_entry_t
+
+   type :: ftimer_summary_t
+      character(len=40) :: start_date = ''
+      character(len=40) :: end_date = ''
+      real(wp) :: total_time = 0.0_wp
+      logical :: has_mpi_data = .false.
+      integer :: num_entries = 0
       integer :: placeholder = 0
+      type(ftimer_summary_entry_t), allocatable :: entries(:)
    end type ftimer_summary_t
+
+   type :: ftimer_call_stack_t
+      integer :: depth = 0
+      integer, allocatable :: ids(:)
+   contains
+      procedure :: push => ftimer_call_stack_push
+      procedure :: pop => ftimer_call_stack_pop
+      procedure :: top => ftimer_call_stack_top
+      procedure :: equals => ftimer_call_stack_equals
+      procedure :: copy => ftimer_call_stack_copy
+   end type ftimer_call_stack_t
+
+   type :: ftimer_context_list_t
+      integer :: count = 0
+      type(ftimer_call_stack_t), allocatable :: stacks(:)
+   contains
+      procedure :: find => ftimer_context_list_find
+      procedure :: add => ftimer_context_list_add
+   end type ftimer_context_list_t
+
+   type :: ftimer_segment_t
+      character(len=FTIMER_NAME_LEN) :: name = ''
+      real(wp), allocatable :: time(:)
+      real(wp), allocatable :: start_time(:)
+      logical, allocatable :: is_running(:)
+      integer, allocatable :: call_count(:)
+      type(ftimer_context_list_t) :: contexts
+   end type ftimer_segment_t
+
+   abstract interface
+      function ftimer_clock_func() result(t)
+         import :: wp
+         real(wp) :: t
+      end function ftimer_clock_func
+   end interface
+
+   abstract interface
+      subroutine ftimer_hook_proc(timer_id, context_idx, event, timestamp, user_data)
+         import :: c_ptr, wp
+         integer, intent(in) :: timer_id
+         integer, intent(in) :: context_idx
+         integer, intent(in) :: event
+         real(wp), intent(in) :: timestamp
+         type(c_ptr), intent(in) :: user_data
+      end subroutine ftimer_hook_proc
+   end interface
+
+contains
+
+   subroutine ftimer_call_stack_push(self, id)
+      class(ftimer_call_stack_t), intent(inout) :: self
+      integer, intent(in) :: id
+      integer, allocatable :: new_ids(:)
+
+      allocate (new_ids(self%depth + 1))
+      if (self%depth > 0) then
+         new_ids(1:self%depth) = self%ids(1:self%depth)
+      end if
+      new_ids(self%depth + 1) = id
+
+      call move_alloc(new_ids, self%ids)
+      self%depth = self%depth + 1
+   end subroutine ftimer_call_stack_push
+
+   integer function ftimer_call_stack_pop(self) result(id)
+      class(ftimer_call_stack_t), intent(inout) :: self
+      integer, allocatable :: new_ids(:)
+
+      id = 0
+      if (self%depth <= 0) then
+         self%depth = 0
+         if (allocated(self%ids)) deallocate (self%ids)
+         return
+      end if
+
+      id = self%ids(self%depth)
+      if (self%depth == 1) then
+         deallocate (self%ids)
+      else
+         allocate (new_ids(self%depth - 1))
+         new_ids = self%ids(1:self%depth - 1)
+         call move_alloc(new_ids, self%ids)
+      end if
+      self%depth = self%depth - 1
+   end function ftimer_call_stack_pop
+
+   integer function ftimer_call_stack_top(self) result(id)
+      class(ftimer_call_stack_t), intent(in) :: self
+
+      id = 0
+      if (self%depth <= 0) return
+      id = self%ids(self%depth)
+   end function ftimer_call_stack_top
+
+   logical function ftimer_call_stack_equals(self, other) result(is_equal)
+      class(ftimer_call_stack_t), intent(in) :: self
+      class(ftimer_call_stack_t), intent(in) :: other
+
+      is_equal = .false.
+      if (self%depth /= other%depth) return
+      if (self%depth == 0) then
+         is_equal = .true.
+         return
+      end if
+
+      is_equal = all(self%ids(1:self%depth) == other%ids(1:other%depth))
+   end function ftimer_call_stack_equals
+
+   subroutine ftimer_call_stack_copy(self, other)
+      class(ftimer_call_stack_t), intent(out) :: self
+      class(ftimer_call_stack_t), intent(in) :: other
+
+      self%depth = other%depth
+      if (allocated(self%ids)) deallocate (self%ids)
+
+      if (other%depth > 0) then
+         allocate (self%ids(other%depth))
+         self%ids = other%ids(1:other%depth)
+      end if
+   end subroutine ftimer_call_stack_copy
+
+   integer function ftimer_context_list_find(self, stack) result(idx)
+      class(ftimer_context_list_t), intent(in) :: self
+      type(ftimer_call_stack_t), intent(in) :: stack
+      integer :: i
+
+      idx = 0
+      do i = 1, self%count
+         if (self%stacks(i)%equals(stack)) then
+            idx = i
+            return
+         end if
+      end do
+   end function ftimer_context_list_find
+
+   integer function ftimer_context_list_add(self, stack) result(idx)
+      class(ftimer_context_list_t), intent(inout) :: self
+      type(ftimer_call_stack_t), intent(in) :: stack
+      type(ftimer_call_stack_t), allocatable :: new_stacks(:)
+      integer :: existing
+
+      existing = self%find(stack)
+      if (existing > 0) then
+         idx = existing
+         return
+      end if
+
+      allocate (new_stacks(self%count + 1))
+      if (self%count > 0) then
+         new_stacks(1:self%count) = self%stacks(1:self%count)
+      end if
+      call new_stacks(self%count + 1)%copy(stack)
+
+      call move_alloc(new_stacks, self%stacks)
+      self%count = self%count + 1
+      idx = self%count
+   end function ftimer_context_list_add
 
 end module ftimer_types

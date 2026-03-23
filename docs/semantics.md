@@ -1,8 +1,8 @@
 # fTimer Semantics Reference
 
-Phase 0 note: this document is a forward-looking outline, not the current runtime contract.
+Phase 1 note: this document is a forward-looking outline, not the current runtime contract.
 
-The merged Phase 0 scaffold does **not** yet implement the timer semantics described below. Today the public API is placeholder-only: it compiles, preserves the intended error-reporting shape, and reports unimplemented timer operations rather than silently succeeding.
+Current `main` includes the Phase 1 shared types and clock foundation, but it does **not** yet implement the timer semantics described below. The runtime timer API still preserves the intended error-reporting shape and reports unimplemented timer operations rather than silently succeeding.
 
 Treat the sections below as implementation targets for later phases, not as guarantees of the current behavior on `main`.
 

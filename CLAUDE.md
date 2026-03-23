@@ -9,13 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Run Commands
 
 ```bash
-# Serial placeholder build
+# Serial build
 cmake -B build && cmake --build build
 
-# MPI placeholder build
-cmake -B build -DFTIMER_USE_MPI=ON && cmake --build build
+# MPI build
+cmake -B build-mpi -DFTIMER_USE_MPI=ON && cmake --build build-mpi
 
-# Run Phase 0 smoke tests
+# Run the current smoke tests
 ctest --test-dir build --output-on-failure
 
 # Enable pFUnit once real tests exist
@@ -70,13 +70,13 @@ ftimer.F90  (procedural wrappers + default global instance)
 
 ## Development Workflow
 
-Phase 0 is scaffold work. The library, examples, install package, and smoke tests must stay buildable, but they are not substitutes for the real implementation phases in `TODO.md`.
+Current `main` is in Phase 1. The shared types/clock foundation is implemented, while the timer runtime remains placeholder-only until later phases in `TODO.md`.
 
-During Phase 0, the public API is placeholder-only: routine signatures should preserve the intended error-reporting contract, and unimplemented timer operations should report that status rather than silently succeeding.
+During Phase 1, keep the library, examples, install package, and smoke tests buildable. Routine signatures should preserve the intended error-reporting contract, and unimplemented timer operations should continue to report that status rather than silently succeeding.
 
 Detailed repository operations and PR/review handling live in `docs/maintainer.md`. Use that file for GitHub workflow details; keep this file focused on coding/build/test behavior and the short mandatory PR summary below.
 
-**Test-driven development is mandatory.** Write tests first, confirm they fail, then implement. All tests use the injectable mock clock for deterministic results — tests never sleep or depend on wall-clock timing.
+**Phase 1 exception:** the types/clock foundation is compile-first work, not an early pFUnit phase. Starting in Phase 2, test-driven development is mandatory: write tests first, confirm they fail, then implement. All behavioral tests use the injectable mock clock for deterministic results — tests never sleep or depend on wall-clock timing.
 
 ### Test Categories
 
@@ -86,7 +86,7 @@ Detailed repository operations and PR/review handling live in `docs/maintainer.m
 
 ### Test Infrastructure
 
-- **Phase 0 default**: smoke-test-only baseline (`FTIMER_BUILD_SMOKE_TESTS=ON`, `FTIMER_BUILD_TESTS=OFF`)
+- **Current default**: smoke-test-only baseline (`FTIMER_BUILD_SMOKE_TESTS=ON`, `FTIMER_BUILD_TESTS=OFF`)
 - **Framework for later phases**: pFUnit, enabled explicitly with `-DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=...`
 - **Mock clock**: Module-level `fake_time` variable with `mock_clock()` function. Inject via `timer%clock => mock_clock`. Advance deterministically: set `fake_time`, call start/stop, assert exact accumulated times.
 - **Golden output tests**: `test_summary.pf` compares `print_summary()` output against expected text.
@@ -120,9 +120,9 @@ Use `docs/maintainer.md` for the full operating procedure, investigation command
 ## Configuration
 
 - **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` is available.
-- **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the Phase 0 smoke-test baseline.
+- **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the current smoke-test baseline.
 - **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables pFUnit-backed tests once those suites exist.
 - **`CMAKE_INSTALL_PREFIX`**: Where `make install` places the library and module files.
 - **pFUnit**: Optional until the real test tree exists. Set `PFUNIT_DIR` explicitly when enabling `FTIMER_BUILD_TESTS`.
 
-CMake is the only supported build system in Phase 0. FPM support is intentionally deferred.
+CMake is the only supported build system in the current implementation. FPM support is intentionally deferred.
