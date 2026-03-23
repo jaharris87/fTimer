@@ -9,6 +9,7 @@ set(FTIMER_SOURCES
 )
 
 add_library(ftimer ${FTIMER_SOURCES})
+add_library(fTimer::ftimer ALIAS ftimer)
 
 target_include_directories(ftimer
   PUBLIC

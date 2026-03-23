@@ -1,9 +1,9 @@
 # Convenience wrapper — delegates to CMake
 #
 # Usage:
-#   make            Build (serial)
-#   make mpi        Build (MPI)
-#   make test       Build + run tests
+#   make            Build Phase 0 scaffold (serial)
+#   make mpi        Build Phase 0 scaffold (MPI)
+#   make test       Build + run default smoke tests
 #   make clean      Remove build directory
 #   make install    Install to CMAKE_INSTALL_PREFIX
 

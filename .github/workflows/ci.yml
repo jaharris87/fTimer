@@ -23,20 +23,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake
 
-      - name: Install pFUnit
-        run: |
-          git clone --depth 1 --branch v4.10.0 https://github.com/Goddard-Fortran-Ecosystem/pFUnit.git /tmp/pFUnit
-          cmake -B /tmp/pFUnit/build -S /tmp/pFUnit -DCMAKE_INSTALL_PREFIX=/opt/pfunit
-          cmake --build /tmp/pFUnit/build -j$(nproc)
-          sudo cmake --install /tmp/pFUnit/build
-
+      # Phase 0 intentionally validates the minimal scaffold without pFUnit.
+      # Reintroduce pFUnit install + .pf test execution once the real test
+      # suite lands in the implementation phases.
       - name: Configure (serial)
-        run: cmake -B build -DPFUNIT_DIR=/opt/pfunit
+        run: cmake -B build
 
       - name: Build
         run: cmake --build build -j$(nproc)
 
-      - name: Test
+      - name: Smoke test
         run: ctest --test-dir build --output-on-failure
 
   build-mpi:
@@ -49,26 +45,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
-      - name: Install pFUnit (with MPI)
-        run: |
-          git clone --depth 1 --branch v4.10.0 https://github.com/Goddard-Fortran-Ecosystem/pFUnit.git /tmp/pFUnit
-          cmake -B /tmp/pFUnit/build -S /tmp/pFUnit -DCMAKE_INSTALL_PREFIX=/opt/pfunit
-          cmake --build /tmp/pFUnit/build -j$(nproc)
-          sudo cmake --install /tmp/pFUnit/build
-
+      # Phase 0 only proves that the MPI-enabled scaffold configures and builds.
+      # There are no MPI-labelled runtime tests yet; reintroduce those once the
+      # pFUnit MPI suite exists.
       - name: Configure (MPI)
-        run: cmake -B build -DFTIMER_USE_MPI=ON -DPFUNIT_DIR=/opt/pfunit
+        run: cmake -B build -DFTIMER_USE_MPI=ON
 
       - name: Build
         run: cmake --build build -j$(nproc)
 
-      - name: Test (serial)
-        run: ctest --test-dir build --output-on-failure -LE mpi
-
-      - name: Test (MPI, 2 ranks)
-        run: ctest --test-dir build --output-on-failure -L mpi
-        env:
-          OMPI_MCA_rmaps_base_oversubscribe: 1
+      - name: Smoke test
+        run: ctest --test-dir build --output-on-failure
 
   lint:
     runs-on: ubuntu-latest
@@ -82,3 +69,4 @@ jobs:
         run: |
           find src -name '*.F90' -exec fprettify --diff {} +
           find tests -name '*.pf' -exec fprettify --diff {} +
+          find tests -name '*.F90' -exec fprettify --diff {} +

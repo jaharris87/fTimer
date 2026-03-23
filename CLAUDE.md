@@ -9,17 +9,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Run Commands
 
 ```bash
-# Serial build
+# Serial placeholder build
 cmake -B build && cmake --build build
 
-# MPI build
+# MPI placeholder build
 cmake -B build -DFTIMER_USE_MPI=ON && cmake --build build
 
-# Run all tests
-ctest --test-dir build
+# Run Phase 0 smoke tests
+ctest --test-dir build --output-on-failure
 
-# Run only MPI tests
-ctest --test-dir build -L mpi
+# Enable pFUnit once real tests exist
+cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit && cmake --build build
 
 # Lint / format check
 fprettify --diff src/*.F90 tests/*.pf
@@ -67,6 +67,10 @@ ftimer.F90  (procedural wrappers + default global instance)
 
 ## Development Workflow
 
+Phase 0 is scaffold work. The library, examples, install package, and smoke tests must stay buildable, but they are not substitutes for the real implementation phases in `TODO.md`.
+
+During Phase 0, the public API is placeholder-only: routine signatures should preserve the intended error-reporting contract, and unimplemented timer operations should report that status rather than silently succeeding.
+
 **Test-driven development is mandatory.** Write tests first, confirm they fail, then implement. All tests use the injectable mock clock for deterministic results — tests never sleep or depend on wall-clock timing.
 
 ### Test Categories
@@ -77,7 +81,8 @@ ftimer.F90  (procedural wrappers + default global instance)
 
 ### Test Infrastructure
 
-- **Framework**: pFUnit (installed at `/opt/homebrew/PFUNIT-4.16`)
+- **Phase 0 default**: smoke-test-only baseline (`FTIMER_BUILD_SMOKE_TESTS=ON`, `FTIMER_BUILD_TESTS=OFF`)
+- **Framework for later phases**: pFUnit, enabled explicitly with `-DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=...`
 - **Mock clock**: Module-level `fake_time` variable with `mock_clock()` function. Inject via `timer%clock => mock_clock`. Advance deterministically: set `fake_time`, call start/stop, assert exact accumulated times.
 - **Golden output tests**: `test_summary.pf` compares `print_summary()` output against expected text.
 - **Error contract tests**: Every edge case tested via `ierr` return value, not stderr parsing.
@@ -100,6 +105,7 @@ This workflow is **mandatory** for every PR. Do not skip any step.
 
 When you open or materially update a pull request:
 
+0. Create or link the GitHub issue for the phase/task before opening the PR.
 1. Always add the label `codex-software-review`.
 2. If changes touch `src/ftimer_core.F90`, `src/ftimer_summary.F90`, `src/ftimer_mpi.F90`, or `docs/semantics.md`, also add `codex-methodology-review`.
 3. If changes touch `src/ftimer_core.F90` (especially `start`, `stop`, `repair_mismatch`) or `src/ftimer_mpi.F90`, also add `codex-red-team-review`.
@@ -142,5 +148,14 @@ After responding to all reviews, give the user a concise summary:
 ## Configuration
 
 - **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` is available.
+- **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the Phase 0 smoke-test baseline.
+- **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables pFUnit-backed tests once those suites exist.
 - **`CMAKE_INSTALL_PREFIX`**: Where `make install` places the library and module files.
-- **pFUnit**: Tests require pFUnit. Set `PFUNIT_DIR` if not in a standard location (default: `/opt/homebrew/PFUNIT-4.16`).
+- **pFUnit**: Optional until the real test tree exists. Set `PFUNIT_DIR` explicitly when enabling `FTIMER_BUILD_TESTS`.
+
+## Repository Bootstrap
+
+- Create the review labels manually in GitHub: `codex-software-review`, `codex-methodology-review`, `codex-red-team-review`.
+- Add a repository secret named `CODEX_TRIGGER_PAT` for the review-trigger workflow.
+- Configure a `main` ruleset that requires pull requests, passing CI/lint checks, blocks direct pushes and force pushes, and requires conversation resolution.
+- CMake is the only supported build system in Phase 0. FPM support is intentionally deferred.

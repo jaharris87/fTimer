@@ -1,14 +1,6 @@
 # Implementation TODO
 
-<!-- Handoff from scaffolding session. The full design plan is at:
-     ~/.claude/plans/swift-painting-aho.md (in the agentic-dev-framework project context)
-
-     The implementation session should:
-     1. Read this file at the start of each session
-     2. Work through phases in order, using TDD (write tests first)
-     3. Check off items as they are completed
-     4. Open PRs per phase (or per item for large phases)
-     5. Follow the PR review workflow in CLAUDE.md for every PR -->
+The in-repo design reference for implementation is [docs/design.md](docs/design.md).
 
 ## Phase 1: Types + Clock
 

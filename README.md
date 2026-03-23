@@ -4,7 +4,7 @@ A lightweight, correctness-first wall-clock timing library for modern Fortran.
 
 ## Status
 
-**Under construction.** Scaffolding is in place; implementation is tracked in [TODO.md](TODO.md).
+**Under construction.** Phase 0 provides a buildable placeholder library, examples, packaging, and smoke-test scaffolding. Behavioral implementation is tracked in [TODO.md](TODO.md).
 
 ## Overview
 
@@ -21,14 +21,17 @@ fTimer provides stack-based hierarchical timing with:
 ## Build
 
 ```bash
-# Serial
+# Serial placeholder build
 cmake -B build && cmake --build build
 
-# MPI
+# Run Phase 0 smoke test
+ctest --test-dir build --output-on-failure
+
+# MPI placeholder build
 cmake -B build -DFTIMER_USE_MPI=ON && cmake --build build
 
-# Test
-ctest --test-dir build --output-on-failure
+# Enable pFUnit tests later, once they exist
+cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit && cmake --build build
 
 # Or use the Makefile wrapper
 make        # serial build
@@ -36,7 +39,23 @@ make mpi    # MPI build
 make test   # build + test
 ```
 
-Requires: gfortran (or compatible Fortran compiler), CMake >= 3.16. Tests require [pFUnit](https://github.com/Goddard-Fortran-Ecosystem/pFUnit).
+Requires: gfortran (or compatible Fortran compiler) and CMake >= 3.16.
+
+Phase 0 defaults:
+
+- CMake is the only supported build path right now.
+- Smoke tests are enabled by default and are intentionally minimal.
+- pFUnit-backed behavioral tests are not part of the default build yet.
+- FPM support is deferred until the public API stabilizes.
+- The public API is placeholder-only in Phase 0: it compiles and preserves the error-reporting shape, but timer operations still report "not implemented" until later phases.
+
+## Deferred Items
+
+These are intentionally postponed beyond Phase 0:
+
+- pFUnit behavioral test suite
+- FPM manifest/support
+- secondary repo hygiene such as Dependabot, `.editorconfig`, and broader governance files
 
 ## License
 
