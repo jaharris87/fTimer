@@ -17,6 +17,7 @@ if(FTIMER_BUILD_TESTS)
     test_self_time.pf
     test_file_output.pf
     test_callbacks.pf
+    test_procedural_api.pf
   )
 
   add_pfunit_ctest(ftimer_serial_tests

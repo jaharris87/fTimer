@@ -52,9 +52,9 @@ Structured summary data + text formatting. Depends on Phase 2.
 
 Default global instance + procedural wrappers. Thin layer over Phase 2-3.
 
-- [ ] `src/ftimer.F90` — Module-level `type(ftimer_t), save, target :: default_timer`. Procedural wrappers: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_print_summary`, `ftimer_write_summary`.
-- [ ] Verify: both `use ftimer` (procedural) and `use ftimer_core` (OOP only, no global state) work independently.
-- [ ] Update tests to verify procedural interface produces same results as OOP interface.
+- [x] `src/ftimer.F90` — Module-level default timer instance (`ftimer_default_instance`) with thin procedural wrappers: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_print_summary`, `ftimer_write_summary`.
+- [x] Verify: both `use ftimer` (procedural) and `use ftimer_core` (OOP only, no global state) work independently.
+- [x] Update tests to verify procedural interface produces same results as OOP interface.
 
 ## Phase 5: MPI Support
 
