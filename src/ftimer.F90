@@ -13,6 +13,7 @@ module ftimer
    public :: ftimer_lookup
    public :: ftimer_reset
    public :: ftimer_get_summary
+   public :: ftimer_mpi_summary
    public :: ftimer_print_summary
    public :: ftimer_write_summary
    public :: ftimer_default_instance
@@ -85,6 +86,13 @@ contains
 
       call ftimer_default_instance%get_summary(summary, ierr=ierr)
    end subroutine ftimer_get_summary
+
+   subroutine ftimer_mpi_summary(summary, ierr)
+      type(ftimer_summary_t), intent(out) :: summary
+      integer, intent(out), optional :: ierr
+
+      call ftimer_default_instance%mpi_summary(summary, ierr=ierr)
+   end subroutine ftimer_mpi_summary
 
    subroutine ftimer_print_summary(unit, metadata, ierr)
       integer, intent(in), optional :: unit

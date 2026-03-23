@@ -1,7 +1,9 @@
 submodule(ftimer_core) ftimer_core_summary_bindings
    use, intrinsic :: iso_fortran_env, only: error_unit, output_unit
    use ftimer_clock, only: ftimer_date_string
+   use ftimer_mpi, only: augment_summary_with_mpi
    use ftimer_summary, only: build_summary, format_summary
+   use ftimer_types, only: FTIMER_ERR_MPI_INCON
    implicit none
 
 contains
@@ -16,6 +18,36 @@ contains
    call build_current_summary(self, summary)
    if (present(ierr)) ierr = FTIMER_SUCCESS
    end procedure get_summary
+
+   module procedure mpi_summary
+   integer :: comm
+   integer :: status
+
+   if (.not. self%initialized) then
+      call reset_summary(summary)
+      call report_summary_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer mpi_summary before init")
+      return
+   end if
+
+   call build_current_summary(self, summary)
+
+   comm = -1
+#ifdef FTIMER_USE_MPI
+   comm = self%mpi_comm
+#endif
+   call augment_summary_with_mpi(summary, comm, status)
+   if (status /= FTIMER_SUCCESS) then
+      if (status == FTIMER_ERR_MPI_INCON) then
+         call report_summary_status(ierr, status, &
+                                    "ftimer mpi_summary detected inconsistent timer descriptors across ranks; using local summary")
+      else
+         call report_summary_status(ierr, status, "ftimer mpi_summary MPI reduction failed")
+      end if
+      return
+   end if
+
+   if (present(ierr)) ierr = FTIMER_SUCCESS
+   end procedure mpi_summary
 
    module procedure print_summary
    type(ftimer_summary_t) :: summary

@@ -16,13 +16,10 @@ endforeach()
 if(MPI_TESTS_PRESENT)
   add_pfunit_ctest(ftimer_mpi_tests
     TEST_SOURCES ${MPI_TEST_PATHS}
+    OTHER_SOURCES ../test_support.F90
     LINK_LIBRARIES ftimer
     LABELS mpi
-  )
-
-  # Run MPI tests with 2 ranks by default
-  set_tests_properties(ftimer_mpi_tests PROPERTIES
-    PROCESSORS 2
+    MAX_PES 2
   )
 else()
   message(WARNING
