@@ -3,7 +3,8 @@ module test_edge_cases
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_NAME_LEN, &
                            FTIMER_SUCCESS, ftimer_call_stack_t, wp
-   use test_support, only: attach_mock_clock, fake_time, find_context_idx, snapshot_timer
+   use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time, &
+                           find_context_idx, snapshot_timer
    implicit none
 
 contains
@@ -19,6 +20,48 @@ contains
       call timer%stop("A", ierr=ierr)
       @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
    end subroutine test_start_and_stop_before_init_return_not_init
+
+   @test
+   subroutine test_print_summary_before_init_with_ierr_is_silent()
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: ierr
+      integer :: saved_fd
+      logical :: is_silent
+
+      call begin_stderr_capture('test_print_summary_before_init_with_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call timer%print_summary(ierr=ierr)
+
+      call end_stderr_capture('test_print_summary_before_init_with_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
+   end subroutine test_print_summary_before_init_with_ierr_is_silent
+
+   @test
+   subroutine test_print_summary_before_init_without_ierr_warns_to_stderr()
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: saved_fd
+      logical :: has_warning
+
+      call begin_stderr_capture('test_print_summary_before_init_without_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call timer%print_summary()
+
+      call end_stderr_capture('test_print_summary_before_init_without_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_warning = index(stderr_text, 'ftimer print_summary before init') > 0
+      @assertTrue(has_warning)
+   end subroutine test_print_summary_before_init_without_ierr_warns_to_stderr
 
    @test
    subroutine test_stop_unknown_timer_returns_unknown()

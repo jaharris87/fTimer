@@ -109,7 +109,7 @@ Detailed repository operations and PR/review handling live in `docs/maintainer.m
 - **Behavioral suite**: pFUnit, enabled explicitly with `-DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=...`
 - **Mock clock**: Module-level `fake_time` variable with `mock_clock()` function. Inject via `timer%clock => mock_clock`. Advance deterministically: set `fake_time`, call start/stop, assert exact accumulated times.
 - **Golden output tests**: `test_summary.pf` compares `print_summary()` output against expected text.
-- **Error contract tests**: Every edge case tested via `ierr` return value, not stderr parsing.
+- **Error contract tests**: Prefer `ierr` return-value assertions for edge cases, and use narrow stderr-capture checks when the contract under test explicitly distinguishes `ierr`-present silence from omitted-`ierr` warnings.
 
 ### pFUnit Quirks (gfortran)
 
