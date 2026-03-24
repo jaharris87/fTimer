@@ -27,9 +27,9 @@ contains
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
 
-      ! Preserve the existing one-argument positional form `ftimer_init(ierr)`.
-      ! Procedural `comm` and `mismatch_mode` should be passed by keyword to
-      ! avoid ambiguity with that legacy calling convention.
+      ! Contract: the only supported positional call is `ftimer_init()`.
+      ! Pass ierr, comm, and mismatch_mode by keyword because positional
+      ! integer calls are ambiguous and bind to the first integer dummy.
       call ftimer_default_instance%init(ierr=ierr, comm=comm, mismatch_mode=mismatch_mode)
    end subroutine ftimer_init
 

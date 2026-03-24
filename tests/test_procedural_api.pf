@@ -4,7 +4,7 @@ module test_procedural_api
                      ftimer_lookup, ftimer_print_summary, ftimer_reset, ftimer_start, ftimer_start_id, &
                      ftimer_stop, ftimer_stop_id, ftimer_write_summary
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
-   use ftimer_types, only: FTIMER_SUCCESS, ftimer_metadata_t, ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_MISMATCH_STRICT, FTIMER_SUCCESS, ftimer_metadata_t, ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time, read_file_text, read_unit_text, snapshot_timer
    implicit none
 
@@ -27,7 +27,7 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
       call snapshot_timer(oop_timer, oop_state)
 
-      call ftimer_init(ierr)
+      call ftimer_init(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call snapshot_timer(ftimer_default_instance, procedural_state)
 
@@ -62,6 +62,35 @@ contains
    end subroutine test_procedural_init_finalize_matches_oop
 
    @test
+   subroutine test_procedural_init_without_integer_args_matches_oop()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_test_state_t) :: oop_state
+      type(ftimer_test_state_t) :: procedural_state
+      integer :: ierr
+      logical :: oop_initialized
+      logical :: procedural_initialized
+
+      call oop_timer%init()
+      call snapshot_timer(oop_timer, oop_state)
+
+      call ftimer_init()
+      call snapshot_timer(ftimer_default_instance, procedural_state)
+
+      oop_initialized = oop_state%initialized
+      procedural_initialized = procedural_state%initialized
+
+      @assertTrue(oop_initialized)
+      @assertTrue(procedural_initialized)
+      @assertEqual(oop_state%mismatch_mode, procedural_state%mismatch_mode)
+      @assertEqual(oop_state%num_segments, procedural_state%num_segments)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_init_without_integer_args_matches_oop
+
+   @test
    subroutine test_procedural_init_keyword_options_match_oop()
       type(ftimer_t) :: oop_timer
       type(ftimer_test_state_t) :: oop_state
@@ -90,6 +119,35 @@ contains
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_procedural_init_keyword_options_match_oop
+
+   @test
+   subroutine test_init_positional_integer_trap_is_ambiguous_for_both_apis()
+      use ftimer_types, only: FTIMER_MISMATCH_WARN
+      type(ftimer_t) :: oop_timer
+      type(ftimer_test_state_t) :: oop_state
+      type(ftimer_test_state_t) :: procedural_state
+      integer :: ierr
+      integer :: oop_mode
+      integer :: procedural_mode
+
+      oop_mode = FTIMER_MISMATCH_WARN
+      call oop_timer%init(oop_mode)
+      call snapshot_timer(oop_timer, oop_state)
+
+      procedural_mode = FTIMER_MISMATCH_WARN
+      call ftimer_init(procedural_mode)
+      call snapshot_timer(ftimer_default_instance, procedural_state)
+
+      @assertEqual(FTIMER_SUCCESS, oop_mode)
+      @assertEqual(FTIMER_SUCCESS, procedural_mode)
+      @assertEqual(FTIMER_MISMATCH_STRICT, oop_state%mismatch_mode)
+      @assertEqual(FTIMER_MISMATCH_STRICT, procedural_state%mismatch_mode)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_init_positional_integer_trap_is_ambiguous_for_both_apis
 
    @test
    subroutine test_procedural_start_stop_matches_oop()
