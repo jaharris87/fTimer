@@ -1,7 +1,10 @@
 module ftimer_mpi
    use, intrinsic :: iso_fortran_env, only: int64
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, &
-                           FTIMER_ERR_UNKNOWN, FTIMER_NAME_LEN, FTIMER_SUCCESS, ftimer_summary_t, wp
+                           FTIMER_ERR_UNKNOWN, FTIMER_MPI_SUMMARY_LOCAL_ONLY, &
+                           FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE, &
+                           FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED, FTIMER_NAME_LEN, FTIMER_SUCCESS, &
+                           ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi
 #endif
@@ -98,6 +101,7 @@ contains
       logical :: hashes_match
 
       summary%has_mpi_data = .false.
+      summary%mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
 
       call resolve_mpi_summary_comm(comm, active_comm, status)
       if (status /= FTIMER_SUCCESS) then
@@ -142,6 +146,13 @@ contains
          return
       end if
 
+      if (rank == 0) then
+         summary%has_mpi_data = .true.
+         summary%mpi_summary_state = FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED
+      else
+         summary%mpi_summary_state = FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE
+      end if
+
       entry_count = summary%num_entries
       if (entry_count <= 0) return
 
@@ -181,10 +192,10 @@ contains
          summary%entries(idx)%avg_across_ranks = sum_values(i)/real(nprocs, wp)
          summary%entries(idx)%imbalance = compute_imbalance(max_values(i), summary%entries(idx)%avg_across_ranks)
       end do
-      summary%has_mpi_data = .true.
 #else
       status = FTIMER_ERR_NOT_IMPLEMENTED
       summary%has_mpi_data = .false.
+      summary%mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
 #endif
    end subroutine augment_summary_with_mpi
 

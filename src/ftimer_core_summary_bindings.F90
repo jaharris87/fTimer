@@ -3,7 +3,8 @@ submodule(ftimer_core) ftimer_core_summary_bindings
    use ftimer_clock, only: ftimer_date_string
    use ftimer_mpi, only: augment_summary_with_mpi, check_mpi_summary_prereqs
    use ftimer_summary, only: build_summary, format_summary
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, &
+                           FTIMER_MPI_SUMMARY_LOCAL_ONLY
    implicit none
 
 contains
@@ -168,7 +169,7 @@ contains
       summary%total_time = 0.0_wp
       summary%has_mpi_data = .false.
       summary%num_entries = 0
-      summary%placeholder = 0
+      summary%mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
    end subroutine reset_summary
 
    subroutine report_summary_status(ierr, code, message)

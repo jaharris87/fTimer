@@ -1,6 +1,6 @@
 module ftimer_summary
-   use ftimer_types, only: FTIMER_NAME_LEN, ftimer_call_stack_t, ftimer_metadata_t, ftimer_segment_t, &
-                           ftimer_summary_entry_t, ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_MPI_SUMMARY_LOCAL_ONLY, FTIMER_NAME_LEN, ftimer_call_stack_t, ftimer_metadata_t, &
+                           ftimer_segment_t, ftimer_summary_entry_t, ftimer_summary_t, wp
    implicit none
    private
 
@@ -25,7 +25,7 @@ contains
       summary%end_date = end_date
       summary%total_time = end_time - init_wtime
       summary%has_mpi_data = .false.
-      summary%placeholder = 0
+      summary%mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
 
       if (present(segments)) then
          summary%num_entries = count_summary_entries(segments, root_stack, end_time)
@@ -111,7 +111,7 @@ contains
       summary%total_time = 0.0_wp
       summary%has_mpi_data = .false.
       summary%num_entries = 0
-      summary%placeholder = 0
+      summary%mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
    end subroutine clear_summary
 
    subroutine compute_self_times(summary)

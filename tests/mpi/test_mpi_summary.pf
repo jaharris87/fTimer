@@ -3,7 +3,10 @@ module test_mpi_summary
    use mpi
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_SUCCESS, ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_MPI_SUMMARY_LOCAL_ONLY, &
+                           FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE, &
+                           FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED, FTIMER_SUCCESS, &
+                           ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time
    implicit none
 
@@ -61,16 +64,19 @@ contains
 
       if (rank == 0) then
          @assertTrue(has_mpi_data)
+         @assertEqual(FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED, summary%mpi_summary_state)
          call assert_real_close(summary%entries(1)%min_time, 10.0_wp)
          call assert_real_close(summary%entries(1)%max_time, 14.0_wp)
          call assert_real_close(summary%entries(1)%avg_across_ranks, 12.0_wp)
          call assert_real_close(summary%entries(1)%imbalance, 14.0_wp/12.0_wp)
+         @assertTrue(summary%entries(1)%inclusive_time /= summary%entries(1)%avg_across_ranks)
          call assert_real_close(summary%entries(2)%min_time, 4.0_wp)
          call assert_real_close(summary%entries(2)%max_time, 6.0_wp)
          call assert_real_close(summary%entries(2)%avg_across_ranks, 5.0_wp)
          call assert_real_close(summary%entries(2)%imbalance, 6.0_wp/5.0_wp)
       else
          @assertFalse(has_mpi_data)
+         @assertEqual(FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE, summary%mpi_summary_state)
          @assertEqual(-1.0_wp, summary%entries(1)%min_time)
          @assertEqual(-1.0_wp, summary%entries(1)%max_time)
          @assertEqual(-1.0_wp, summary%entries(1)%avg_across_ranks)
@@ -117,6 +123,7 @@ contains
          second_name_matches = trim(summary%entries(2)%name) == 'B'
 
          @assertTrue(has_mpi_data)
+         @assertEqual(FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED, summary%mpi_summary_state)
          @assertEqual(2, summary%num_entries)
          @assertTrue(first_name_matches)
          @assertTrue(second_name_matches)
@@ -132,6 +139,7 @@ contains
          call assert_real_close(summary%entries(2)%imbalance, 8.0_wp/7.0_wp)
       else
          @assertFalse(has_mpi_data)
+         @assertEqual(FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE, summary%mpi_summary_state)
       end if
 
       call timer%finalize(ierr=ierr)
@@ -174,6 +182,7 @@ contains
          inner_matches = trim(summary%entries(4)%name) == 'inner'
 
          @assertTrue(has_mpi_data)
+         @assertEqual(FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED, summary%mpi_summary_state)
          @assertEqual(4, summary%num_entries)
          @assertTrue(outer_matches)
          @assertTrue(stage_a_matches)
@@ -205,6 +214,7 @@ contains
          call assert_real_close(summary%entries(4)%imbalance, 2.0_wp/1.5_wp)
       else
          @assertFalse(has_mpi_data)
+         @assertEqual(FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE, summary%mpi_summary_state)
       end if
 
       call timer%finalize(ierr=ierr)
@@ -242,6 +252,7 @@ contains
 
       @assertEqual(FTIMER_ERR_ACTIVE, ierr)
       @assertFalse(has_mpi_data)
+      @assertEqual(FTIMER_MPI_SUMMARY_LOCAL_ONLY, summary%mpi_summary_state)
       @assertEqual(1, summary%num_entries)
       @assertEqual(expected_time, summary%entries(1)%inclusive_time)
       @assertEqual(expected_time, summary%entries(1)%self_time)
@@ -446,6 +457,7 @@ contains
 
       @assertEqual(rhs%num_entries, lhs%num_entries)
       @assertEqual(rhs%has_mpi_data, lhs%has_mpi_data)
+      @assertEqual(rhs%mpi_summary_state, lhs%mpi_summary_state)
       call assert_real_close(lhs%total_time, rhs%total_time)
 
       do i = 1, lhs%num_entries
