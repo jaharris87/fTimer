@@ -10,22 +10,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Smoke-test-only build
-cmake --fresh -B build-smoke
+cmake -B build-smoke
 cmake --build build-smoke
 ctest --test-dir build-smoke --output-on-failure
 
 # Serial build (documented path: GNU Fortran + matching pFUnit install)
-FC=gfortran cmake --fresh -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build
 ctest --test-dir build --output-on-failure
 
 # MPI build (documented path: MPI wrapper compiler)
-FC=mpifort cmake --fresh -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+FC=mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-mpi
 ctest --test-dir build-mpi --output-on-failure -L mpi
 
 # OpenMP guard build (currently supported with GNU Fortran)
-FC=gfortran cmake --fresh -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+FC=gfortran cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-openmp
 ctest --test-dir build-openmp --output-on-failure
 
@@ -50,6 +50,8 @@ Supported toolchain matrix:
 - Serial + pFUnit tests: GNU Fortran (`gfortran`) with a pFUnit installation built for the same compiler/toolchain.
 - MPI: an MPI wrapper compiler such as `mpifort`. `FTIMER_USE_MPI=ON` now runs a configure-time `use mpi` probe and fails early if the active compiler cannot consume the discovered MPI module files.
 - OpenMP: GNU Fortran (`gfortran`) only for the documented/supported path.
+
+Use a separate build directory for each mode/compiler combination. Reconfiguring an existing CMake build tree with a different Fortran compiler is not a supported workflow here.
 
 ## Architecture
 

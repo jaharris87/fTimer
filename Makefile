@@ -9,6 +9,8 @@
 #   make install    Install to CMAKE_INSTALL_PREFIX
 
 BUILD_DIR   ?= build
+MPI_BUILD_DIR ?= build-mpi
+OPENMP_BUILD_DIR ?= build-openmp
 CMAKE_FLAGS ?=
 NPROC       := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
 
@@ -19,18 +21,18 @@ all:
 	cmake --build $(BUILD_DIR) -j$(NPROC)
 
 mpi:
-	FC=$${FC:-mpifort} cmake -B $(BUILD_DIR) -DFTIMER_USE_MPI=ON $(CMAKE_FLAGS)
-	cmake --build $(BUILD_DIR) -j$(NPROC)
+	FC=$${FC:-mpifort} cmake -B $(MPI_BUILD_DIR) -DFTIMER_USE_MPI=ON $(CMAKE_FLAGS)
+	cmake --build $(MPI_BUILD_DIR) -j$(NPROC)
 
 openmp:
-	FC=$${FC:-gfortran} cmake -B $(BUILD_DIR) -DFTIMER_USE_OPENMP=ON $(CMAKE_FLAGS)
-	cmake --build $(BUILD_DIR) -j$(NPROC)
+	FC=$${FC:-gfortran} cmake -B $(OPENMP_BUILD_DIR) -DFTIMER_USE_OPENMP=ON $(CMAKE_FLAGS)
+	cmake --build $(OPENMP_BUILD_DIR) -j$(NPROC)
 
 test: all
 	ctest --test-dir $(BUILD_DIR) --output-on-failure
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) $(MPI_BUILD_DIR) $(OPENMP_BUILD_DIR)
 
 install: all
 	cmake --install $(BUILD_DIR)
