@@ -16,6 +16,10 @@ option(FTIMER_BUILD_TESTS "Build pFUnit tests (requires pFUnit)" OFF)
 option(FTIMER_BUILD_SMOKE_TESTS "Build Phase 0 smoke tests" ON)
 option(FTIMER_BUILD_EXAMPLES "Build example programs" ON)
 
+set(FTIMER_PUBLIC_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/ftimer")
+set(FTIMER_TEST_LIBRARY_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/testlib")
+set(FTIMER_TEST_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/tests")
+
 # MPI
 if(FTIMER_USE_MPI)
   find_package(MPI REQUIRED COMPONENTS Fortran)
@@ -24,9 +28,6 @@ endif()
 if(FTIMER_USE_OPENMP)
   find_package(OpenMP REQUIRED COMPONENTS Fortran)
 endif()
-
-# Fortran module output directory
-set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/mod)
 
 # Library
 add_subdirectory(src)
@@ -60,7 +61,7 @@ install(TARGETS ftimer
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ftimer
 )
-install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/
+install(DIRECTORY ${FTIMER_PUBLIC_MODULE_DIR}/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ftimer
 )
 

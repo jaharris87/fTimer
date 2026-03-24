@@ -80,6 +80,7 @@ Current defaults:
 - CMake is the only supported build path right now.
 - Smoke tests are enabled by default and stay intentionally minimal.
 - pFUnit-backed behavioral tests are opt-in via `FTIMER_BUILD_TESTS=ON`.
+- Installing `fTimer` always exports the same consumer-facing library/modules whether or not `FTIMER_BUILD_TESTS=ON`; test-only modules stay build-tree-only and are not installed.
 - FPM support is deferred until the public API stabilizes.
 - MPI-reduced structured summaries require `FTIMER_USE_MPI=ON`; otherwise `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and a local-only summary.
 - OpenMP master-thread guards require `FTIMER_USE_OPENMP=ON`; otherwise the OpenMP directives compile away and fTimer behaves as the serial/MPI-only runtime already described above.
