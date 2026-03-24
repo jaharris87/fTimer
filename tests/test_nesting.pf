@@ -3,8 +3,8 @@ module test_nesting
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_MISMATCH, FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_WARN, FTIMER_SUCCESS, &
                            ftimer_call_stack_t, wp
-   use test_support, only: attach_mock_clock, attach_scripted_mock_clock, build_stack, fake_time, find_context_idx, &
-                           get_mock_clock_call_count, snapshot_timer
+   use test_support, only: attach_mock_clock, attach_scripted_mock_clock, begin_stderr_capture, build_stack, &
+                           end_stderr_capture, fake_time, find_context_idx, get_mock_clock_call_count, snapshot_timer
    implicit none
 
 contains
@@ -109,12 +109,16 @@ contains
    subroutine test_warn_mismatch_repairs_and_returns_code()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
       type(ftimer_call_stack_t) :: root_stack
       type(ftimer_call_stack_t) :: old_parent
       integer :: ierr
+      integer :: saved_fd
       integer :: ctx_a
       integer :: ctx_b_old
       integer :: ctx_b_new
+      logical :: is_silent
       real(wp) :: time_a
       real(wp) :: time_b_old
 
@@ -125,9 +129,18 @@ contains
       fake_time = 1.0_wp
       call timer%start("B", ierr=ierr)
       fake_time = 3.0_wp
+
+      call begin_stderr_capture('test_warn_mismatch_repairs_and_returns_code.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
       call timer%stop("A", ierr=ierr)
 
+      call end_stderr_capture('test_warn_mismatch_repairs_and_returns_code.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
       @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
       call snapshot_timer(timer, state)
 
       old_parent = build_stack([1])
@@ -148,8 +161,12 @@ contains
    subroutine test_warn_mismatch_without_ierr_repairs_and_continues()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
       type(ftimer_call_stack_t) :: root_stack
       integer :: ctx_b
+      integer :: saved_fd
+      logical :: has_warning
 
       call timer%init(mismatch_mode=FTIMER_MISMATCH_WARN)
       call attach_mock_clock(timer)
@@ -158,11 +175,20 @@ contains
       fake_time = 1.0_wp
       call timer%start("B")
       fake_time = 3.0_wp
+
+      call begin_stderr_capture('test_warn_mismatch_without_ierr_repairs_and_continues.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
       call timer%stop("A")
+
+      call end_stderr_capture('test_warn_mismatch_without_ierr_repairs_and_continues.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
 
       call snapshot_timer(timer, state)
 
       ctx_b = find_context_idx(state, 2, root_stack)
+      has_warning = index(stderr_text, 'ftimer stop mismatch: requested A but top of stack is B') > 0
+      @assertTrue(has_warning)
       @assertEqual(1, state%call_stack%depth)
       @assertEqual(2, state%call_stack%top())
       @assertTrue(state%segments(2)%is_running(ctx_b))
