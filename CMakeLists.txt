@@ -11,6 +11,7 @@ include(GNUInstallDirs)
 
 # Options
 option(FTIMER_USE_MPI "Enable MPI support" OFF)
+option(FTIMER_USE_OPENMP "Enable OpenMP master-thread guards" OFF)
 option(FTIMER_BUILD_TESTS "Build pFUnit tests (requires pFUnit)" OFF)
 option(FTIMER_BUILD_SMOKE_TESTS "Build Phase 0 smoke tests" ON)
 option(FTIMER_BUILD_EXAMPLES "Build example programs" ON)
@@ -18,6 +19,10 @@ option(FTIMER_BUILD_EXAMPLES "Build example programs" ON)
 # MPI
 if(FTIMER_USE_MPI)
   find_package(MPI REQUIRED COMPONENTS Fortran)
+endif()
+
+if(FTIMER_USE_OPENMP)
+  find_package(OpenMP REQUIRED COMPONENTS Fortran)
 endif()
 
 # Fortran module output directory

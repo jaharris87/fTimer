@@ -104,6 +104,18 @@ contains
       integer, intent(out), optional :: ierr
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+!$omp master
+      call init_impl(self, ierr=ierr, comm=comm, mismatch_mode=mismatch_mode)
+!$omp end master
+   end subroutine init
+
+   subroutine init_impl(self, ierr, comm, mismatch_mode)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+      integer, intent(in), optional :: comm
+      integer, intent(in), optional :: mismatch_mode
       real(wp) :: now
 
       if (present(mismatch_mode)) then
@@ -151,9 +163,19 @@ contains
       self%init_date = ftimer_date_string()
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
-   end subroutine init
+   end subroutine init_impl
 
    subroutine finalize(self, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+!$omp master
+      call finalize_impl(self, ierr=ierr)
+!$omp end master
+   end subroutine finalize
+
+   subroutine finalize_impl(self, ierr)
       class(ftimer_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
       real(wp) :: now
@@ -176,9 +198,20 @@ contains
 
       call clear_runtime_state(self, keep_hooks=.false.)
       if (present(ierr)) ierr = FTIMER_SUCCESS
-   end subroutine finalize
+   end subroutine finalize_impl
 
    subroutine start(self, name, ierr)
+      class(ftimer_t), intent(inout) :: self
+      character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+!$omp master
+      call start_impl(self, name, ierr=ierr)
+!$omp end master
+   end subroutine start
+
+   subroutine start_impl(self, name, ierr)
       class(ftimer_t), intent(inout) :: self
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
@@ -199,10 +232,21 @@ contains
       end if
 
       id = self%find_or_create_segment(normalized_name)
-      call self%start_id(id, ierr)
-   end subroutine start
+      call start_id_impl(self, id, ierr=ierr)
+   end subroutine start_impl
 
    subroutine stop(self, name, ierr)
+      class(ftimer_t), intent(inout) :: self
+      character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+!$omp master
+      call stop_impl(self, name, ierr=ierr)
+!$omp end master
+   end subroutine stop
+
+   subroutine stop_impl(self, name, ierr)
       class(ftimer_t), intent(inout) :: self
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
@@ -229,10 +273,21 @@ contains
          return
       end if
 
-      call self%stop_id(id, ierr)
-   end subroutine stop
+      call stop_id_impl(self, id, ierr=ierr)
+   end subroutine stop_impl
 
    subroutine start_id(self, id, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: id
+      integer, intent(out), optional :: ierr
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+!$omp master
+      call start_id_impl(self, id, ierr=ierr)
+!$omp end master
+   end subroutine start_id
+
+   subroutine start_id_impl(self, id, ierr)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
@@ -267,9 +322,20 @@ contains
       end if
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
-   end subroutine start_id
+   end subroutine start_id_impl
 
    subroutine stop_id(self, id, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: id
+      integer, intent(out), optional :: ierr
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+!$omp master
+      call stop_id_impl(self, id, ierr=ierr)
+!$omp end master
+   end subroutine stop_id
+
+   subroutine stop_id_impl(self, id, ierr)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
@@ -323,9 +389,21 @@ contains
          call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
          return
       end select
-   end subroutine stop_id
+   end subroutine stop_id_impl
 
    integer function lookup(self, name, ierr) result(id)
+      class(ftimer_t), intent(inout) :: self
+      character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
+
+      id = 0
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+!$omp master
+      id = lookup_impl(self, name, ierr)
+!$omp end master
+   end function lookup
+
+   integer function lookup_impl(self, name, ierr) result(id)
       class(ftimer_t), intent(inout) :: self
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
@@ -347,9 +425,19 @@ contains
 
       id = self%find_or_create_segment(normalized_name)
       if (present(ierr)) ierr = FTIMER_SUCCESS
-   end function lookup
+   end function lookup_impl
 
    subroutine reset(self, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+!$omp master
+      call reset_impl(self, ierr=ierr)
+!$omp end master
+   end subroutine reset
+
+   subroutine reset_impl(self, ierr)
       class(ftimer_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
       integer :: i
@@ -383,7 +471,7 @@ contains
       self%init_date = ftimer_date_string()
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
-   end subroutine reset
+   end subroutine reset_impl
 
    subroutine repair_mismatch(self, idx)
       class(ftimer_t), intent(inout) :: self

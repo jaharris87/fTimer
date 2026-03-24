@@ -23,6 +23,10 @@ if(FTIMER_USE_MPI)
   target_link_libraries(ftimer PUBLIC MPI::MPI_Fortran)
 endif()
 
+if(FTIMER_USE_OPENMP)
+  target_link_libraries(ftimer PUBLIC OpenMP::OpenMP_Fortran)
+endif()
+
 if(FTIMER_BUILD_TESTS)
   target_compile_definitions(ftimer PRIVATE FTIMER_BUILD_TESTS)
 endif()

@@ -6,4 +6,8 @@ if("@FTIMER_USE_MPI@" STREQUAL "ON")
   find_dependency(MPI COMPONENTS Fortran)
 endif()
 
+if("@FTIMER_USE_OPENMP@" STREQUAL "ON")
+  find_dependency(OpenMP COMPONENTS Fortran)
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/fTimerTargets.cmake")

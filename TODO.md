@@ -72,8 +72,8 @@ Cross-rank summary with hash preflight. Depends on Phases 2-3.
 
 Master-thread-only timing. Light touch — guards only, not thread-local instances.
 
-- [ ] Add `!$omp master` / `!$omp end master` guards around all timer operations in `ftimer_core.F90`
-- [ ] Document OpenMP limitations in `docs/semantics.md`: master-thread-only, not thread-safe, non-master calls are no-ops
+- [x] Add `!$omp master` / `!$omp end master` guards around all timer operations in `ftimer_core.F90`
+- [x] Document OpenMP limitations in `docs/semantics.md`: master-thread-only, not thread-safe, non-master calls are no-ops
 - [ ] Optional: `suppress_in_parallel` flag to skip timer calls within parallel regions
 
 ## Phase 7: Documentation + Examples

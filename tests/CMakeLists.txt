@@ -20,6 +20,12 @@ if(FTIMER_BUILD_TESTS)
     test_procedural_api.pf
   )
 
+  if(FTIMER_USE_OPENMP)
+    list(APPEND SERIAL_TEST_SOURCES
+      test_openmp_guards.pf
+    )
+  endif()
+
   if(NOT FTIMER_USE_MPI)
     list(APPEND SERIAL_TEST_SOURCES
       test_mpi_disabled.pf
