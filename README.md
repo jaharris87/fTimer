@@ -20,7 +20,7 @@ Current `main` provides:
 - `ftimer_mpi` adds canonical descriptor hashing, cross-rank consistency preflight, and MPI reduction helpers for structured summaries
 - Strict-by-default stack-based timing with context-sensitive accounting and configurable mismatch handling (`strict` / `warn` / `repair`)
 - Timer names are right-trimmed for normal Fortran character compatibility, but they must otherwise be non-empty, fit within `FTIMER_NAME_LEN`, must not begin with a blank, and must not contain ASCII control characters
-- Optional OpenMP master-thread guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`; inside OpenMP parallel regions, non-master calls to the guarded core timer operations are no-ops instead of mutating shared timer state
+- Optional OpenMP master-thread guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`; inside OpenMP parallel regions, non-master calls to the guarded core timer operations are silent no-ops: no summary entry is created, no call count is incremented, no `ierr` is set, and no stderr warning is emitted. Timer calls made exclusively on worker threads vanish silently and produce no summary entry. When all threads in a parallel region call start/stop for the same timer, only the master thread's call is recorded — the call count reflects 1, not the thread count. To time a parallel region as a whole, place start/stop calls outside the `!$omp parallel` block.
 - A default smoke-test path plus optional pFUnit behavioral/integration/MPI tests using an injectable mock clock
 - Example programs that compile and link against the library
 - An installable CMake package export (`fTimerTargets.cmake`, `fTimerConfig.cmake`, `fTimerConfigVersion.cmake`)
@@ -38,7 +38,7 @@ Current public surface on `main` supports both usage styles:
 - After a successful `mpi_summary()`, `start_date`, `end_date`, `total_time`, `inclusive_time`, `self_time`, `call_count`, `avg_time`, and `pct_time` still describe only the calling rank's local summary
 - On rank 0 only, a successful `mpi_summary()` also populates `min_time`, `max_time`, `avg_across_ranks`, and `imbalance`; `has_mpi_data=.true.` means only those reduced MPI entry fields are valid on this rank, not that the whole summary is globally reduced
 - `summary%mpi_summary_state` makes the result shape explicit: `FTIMER_MPI_SUMMARY_LOCAL_ONLY` for plain local summaries, `FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED` for the root-local-plus-reduced root result, and `FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE` for successful non-root calls that still expose only local fields
-- OpenMP support is intentionally limited: Phase 6 does not make `fTimer` thread-safe or add thread-local timer instances; the supported model is still master-thread-only timing
+- OpenMP support is intentionally limited: Phase 6 does not make `fTimer` thread-safe or add thread-local timer instances; the supported model is master-thread-only timing. Timings reported in a summary reflect only what the master thread observed; worker-thread work is not separately captured.
 
 ## Quick Start
 

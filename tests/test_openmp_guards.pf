@@ -526,6 +526,91 @@ contains
       @assertEqual(5.0_wp, summary%total_time)
    end subroutine assert_master_parallel_summary
 
+   @test
+   subroutine test_worker_only_parallel_work_absent_from_summary()
+      ! Contract: timer calls made exclusively on worker threads vanish silently.
+      ! A user placing start/stop on worker threads only will find no entry for
+      ! that timer in the summary -- worker-thread work is not captured.
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      integer :: thread_num
+      logical :: thread_seen(2)
+      logical :: entry_absent
+
+      call omp_set_dynamic(.false.)
+      thread_seen = .false.
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+!$omp parallel num_threads(2) default(shared) private(thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num /= 0) then
+         call timer%start("worker_work")
+         call timer%stop("worker_work")
+      end if
+!$omp end parallel
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      entry_absent = summary%num_entries == 0
+      @assertTrue(entry_absent)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_worker_only_parallel_work_absent_from_summary
+
+   @test
+   subroutine test_all_threads_start_stop_call_count_is_master_only()
+      ! Contract: when all threads call start/stop for the same timer inside a
+      ! parallel region, only the master thread's invocation is recorded.
+      ! Call count is 1 (master only), not 2 (all threads).
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      integer :: thread_num
+      logical :: thread_seen(2)
+
+      call omp_set_dynamic(.false.)
+      thread_seen = .false.
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+!$omp parallel num_threads(2) default(shared) private(thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      call timer%start("all_threads")
+
+!$omp barrier
+
+      if (thread_num == 0) fake_time = 3.0_wp
+
+!$omp barrier
+
+      call timer%stop("all_threads")
+!$omp end parallel
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(1, summary%num_entries)
+      @assertEqual(1, summary%entries(1)%call_count)
+      @assertEqual(3.0_wp, summary%entries(1)%inclusive_time)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_all_threads_start_stop_call_count_is_master_only
+
    subroutine assert_summary_equal(lhs, rhs)
       type(ftimer_summary_t), intent(in) :: lhs
       type(ftimer_summary_t), intent(in) :: rhs
