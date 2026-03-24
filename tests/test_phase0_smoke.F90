@@ -11,7 +11,7 @@ program test_phase0_smoke
    call ftimer_stop("smoke", ierr)
    if (ierr /= FTIMER_ERR_NOT_INIT) error stop 2
 
-   call ftimer_init(ierr)
+   call ftimer_init(ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop 3
 
    call ftimer_start("smoke", ierr)

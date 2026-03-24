@@ -44,19 +44,16 @@ contains
    end subroutine test_init_finalize_sets_core_state
 
    @test
-   subroutine test_init_positional_ierr_still_works()
+   subroutine test_init_without_ierr_still_initializes()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state
-      integer :: ierr
       logical :: initialized
 
-      call timer%init(ierr)
-
-      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init()
       call snapshot_timer(timer, state)
       initialized = state%initialized
       @assertTrue(initialized)
-   end subroutine test_init_positional_ierr_still_works
+   end subroutine test_init_without_ierr_still_initializes
 
    @test
    subroutine test_start_stop_auto_creates_and_accumulates()
