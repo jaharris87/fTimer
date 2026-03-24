@@ -37,6 +37,7 @@ option(FTIMER_USE_OPENMP "Enable OpenMP master-thread guards" OFF)
 option(FTIMER_BUILD_TESTS "Build pFUnit tests (requires pFUnit)" OFF)
 option(FTIMER_BUILD_SMOKE_TESTS "Build Phase 0 smoke tests" ON)
 option(FTIMER_BUILD_EXAMPLES "Build example programs" ON)
+option(FTIMER_BUILD_BENCH "Build performance measurement harness" OFF)
 
 set(FTIMER_PUBLIC_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/ftimer")
 set(FTIMER_TEST_LIBRARY_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/testlib")
@@ -99,6 +100,11 @@ endif()
 # Examples
 if(FTIMER_BUILD_EXAMPLES)
   add_subdirectory(examples)
+endif()
+
+# Benchmark / measurement harness
+if(FTIMER_BUILD_BENCH)
+  add_subdirectory(bench)
 endif()
 
 # Install

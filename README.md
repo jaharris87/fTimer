@@ -81,6 +81,18 @@ fTimer is intended to provide stack-based hierarchical timing with:
 - Callback hooks for external profiling tools (PAPI, likwid, etc.)
 - Injectable clock for deterministic testing
 
+## Performance Measurement
+
+A standalone measurement harness (`bench/ftimer_bench.F90`) covers the main overhead risks: hot-path start/stop, name-lookup scaling with timer count, call-stack push/pop scaling with nesting depth, and summary-generation scaling with timer count. No pFUnit required.
+
+```bash
+cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON
+cmake --build build-bench --target ftimer_bench
+./build-bench/bench/ftimer_bench
+```
+
+This produces a structured table of per-operation nanosecond costs useful for identifying regression targets and comparing before/after optimizations. See `bench/ftimer_bench.F90` for scenario descriptions.
+
 ## Build
 
 ```bash
