@@ -313,6 +313,11 @@ contains
 
       escaped = ''
       visible_len = len_trim(name)
+      if (visible_len <= 0) then
+         escaped = '<blank>'
+         return
+      end if
+
       leading_space = .true.
 
       do i = 1, visible_len
@@ -339,6 +344,8 @@ contains
          text = text//'\n'
       case (13)
          text = text//'\r'
+      case (92)
+         text = text//'\\'
       case (0:8, 11:12, 14:31, 127)
          call append_hex_escape(text, code)
       case default

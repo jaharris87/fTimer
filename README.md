@@ -30,7 +30,7 @@ Current public surface still exposes the complete Phase 5 API surface for both u
 - OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `mpi_summary`, `print_summary`, and `write_summary`
 - Procedural wrappers are thin forwarding calls over the existing OOP implementation and preserve the intended `ierr`/stderr error contract
 - `get_summary()`, `print_summary()`, and `write_summary()` remain local-only
-- Formatted local summaries escape any leading blanks or control characters that appear in raw summary-entry names instead of emitting them literally: leading blanks render as `\x20`, tabs/newlines/carriage returns render as `\t`/`\n`/`\r`, and other ASCII control characters render as `\xNN`
+- Formatted local summaries escape unsafe raw summary-entry names instead of emitting them literally: leading blanks render as `\x20`, backslashes render as `\\`, tabs/newlines/carriage returns render as `\t`/`\n`/`\r`, other ASCII control characters render as `\xNN`, and blank/empty raw names render as `<blank>`
 - `mpi_summary()` / `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON` plus a fully stopped timer set for cross-rank reduction, perform a hash-based preflight before any reduction, fall back to local-only summaries with `FTIMER_ERR_MPI_INCON` on inconsistent ranks, and populate min/max/avg/imbalance fields on root when `has_mpi_data` is valid
 - OpenMP support is intentionally limited: Phase 6 does not make `fTimer` thread-safe or add thread-local timer instances; the supported model is still master-thread-only timing
 
