@@ -17,6 +17,7 @@ Current `main` provides:
 - `ftimer_summary` builds structured local summaries with hierarchical entries, inclusive time, self time, call counts, and formatted text output
 - `ftimer_mpi` adds canonical descriptor hashing, cross-rank consistency preflight, and MPI reduction helpers for structured summaries
 - Strict-by-default stack-based timing with context-sensitive accounting and configurable mismatch handling (`strict` / `warn` / `repair`)
+- Timer names are right-trimmed for normal Fortran character compatibility, but they must otherwise be non-empty, fit within `FTIMER_NAME_LEN`, must not begin with a blank, and must not contain ASCII control characters
 - Optional OpenMP master-thread guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`; inside OpenMP parallel regions, non-master calls to the guarded core timer operations are no-ops instead of mutating shared timer state
 - A default smoke-test path plus optional pFUnit behavioral/integration/MPI tests using an injectable mock clock
 - Example programs that compile and link against the library
@@ -29,6 +30,7 @@ Current public surface still exposes the complete Phase 5 API surface for both u
 - OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `mpi_summary`, `print_summary`, and `write_summary`
 - Procedural wrappers are thin forwarding calls over the existing OOP implementation and preserve the intended `ierr`/stderr error contract
 - `get_summary()`, `print_summary()`, and `write_summary()` remain local-only
+- Formatted local summaries escape unsafe raw summary-entry names instead of emitting them literally: leading blanks render as `\x20`, backslashes render as `\\`, tabs/newlines/carriage returns render as `\t`/`\n`/`\r`, other ASCII control characters render as `\xNN`, and blank/empty raw names render as `<blank>`
 - `mpi_summary()` / `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init` (`MPI_COMM_WORLD` when `comm` is omitted). They perform a hash-based timer-descriptor preflight before reduction, fall back to local-only summaries with `FTIMER_ERR_MPI_INCON` on inconsistent ranks, populate min/max/avg/imbalance fields only on communicator root when `has_mpi_data` is valid, and do not attempt to rescue mismatched communicator choices across would-be participants
 - OpenMP support is intentionally limited: Phase 6 does not make `fTimer` thread-safe or add thread-local timer instances; the supported model is still master-thread-only timing
 

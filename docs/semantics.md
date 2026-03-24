@@ -30,6 +30,12 @@ Treat the sections below as implementation targets unless they describe the Phas
 - `ierr` absent: warn to stderr, continue
 - Error codes and their meanings
 
+## Timer Name / Summary Text Policy
+
+- Public timer creation/lookup paths right-trim trailing blanks, reject empty names, reject names longer than `FTIMER_NAME_LEN`, reject names that begin with a blank, and reject ASCII control characters
+- Formatted summary output does not emit unsafe raw summary-entry names literally
+- Escaped formatted-summary forms are stable: leading blanks render as `\x20`, backslashes render as `\\`, tab/newline/carriage return render as `\t`/`\n`/`\r`, other ASCII control characters render as `\xNN`, and blank/empty raw names render as `<blank>`
+
 ## Reset Behavior
 
 - Zeros times and counts, preserves timer definitions

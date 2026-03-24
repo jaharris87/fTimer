@@ -659,6 +659,8 @@ contains
       character(len=FTIMER_NAME_LEN), intent(out) :: normalized_name
       integer, intent(out) :: status
       character(len=*), intent(out) :: message
+      integer :: i
+      integer :: code
       integer :: trimmed_len
 
       normalized_name = ''
@@ -676,6 +678,21 @@ contains
          write (message, '(a,i0)') "ftimer timer name exceeds FTIMER_NAME_LEN=", FTIMER_NAME_LEN
          return
       end if
+
+      if (name(1:1) == ' ') then
+         status = FTIMER_ERR_UNKNOWN
+         message = "ftimer timer name must not begin with whitespace"
+         return
+      end if
+
+      do i = 1, trimmed_len
+         code = iachar(name(i:i))
+         if ((code < 32) .or. (code == 127)) then
+            status = FTIMER_ERR_UNKNOWN
+            write (message, '(a,i0)') "ftimer timer name contains control character at position ", i
+            return
+         end if
+      end do
 
       normalized_name(1:trimmed_len) = name(1:trimmed_len)
       status = FTIMER_SUCCESS
