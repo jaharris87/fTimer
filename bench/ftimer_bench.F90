@@ -45,7 +45,9 @@ program ftimer_bench
 
    integer, parameter :: REPS_HOT = 100000  ! flat and lookup scenarios
    integer, parameter :: REPS_NESTED = 10000   ! per nesting-depth scenario
-   integer, parameter :: REPS_SUMMARY = 1000    ! per summary scenario
+   integer, parameter :: REPS_SUMMARY = 1000    ! per summary scenario (N=10, N=50)
+   ! Reduced rep count for N=100: get_summary at 100 timers is ~40x slower than
+   ! at 10 timers (superlinear scaling), so 200 reps still gives ~40ms total.
    integer, parameter :: REPS_SUMMARY_LARGE = 200  ! for 100-timer scenario
 
    integer(int64) :: count_rate
@@ -101,10 +103,10 @@ contains
       integer, intent(in) :: reps
       integer(int64), intent(in) :: count_rate
       integer(int64) :: t0, t1
-      integer :: i, discard
+      integer :: i
 
       call ftimer_init()
-      discard = ftimer_lookup('t')  ! pre-register to avoid first-time cost
+      i = ftimer_lookup('t')  ! pre-register to avoid first-time cost
       call system_clock(t0)
       do i = 1, reps
          call ftimer_start('t')
@@ -113,7 +115,6 @@ contains
       call system_clock(t1)
       call ftimer_finalize()
       call print_result('flat start/stop (name-based)', reps, t0, t1, count_rate)
-      if (discard < 0) write (*, '(a)') ''  ! suppress unused-variable warning
    end subroutine bench_flat_name
 
    ! Scenario 2: id-based start/stop, pre-registered timer.
@@ -141,32 +142,35 @@ contains
    ! Cycles through all N timers each outer rep.  Each inner start/stop
    ! exercises find_segment_index which does a linear scan over all segments.
    ! Comparing N=1, 10, 50 shows how scan cost scales with timer count.
+   !
+   ! Timer names are built into an array before timing begins so that
+   ! formatted write overhead does not contaminate the hot-loop measurement.
    subroutine bench_lookup_scaling(reps_outer, num_timers, count_rate)
       integer, intent(in) :: reps_outer
       integer, intent(in) :: num_timers
       integer(int64), intent(in) :: count_rate
       integer(int64) :: t0, t1
-      integer :: i, j, total_ops, discard
-      character(len=8) :: tname
+      integer :: i, j, total_ops
+      character(len=8), allocatable :: tnames(:)
       character(len=47) :: label
 
       total_ops = reps_outer*num_timers
+      allocate (tnames(num_timers))
       call ftimer_init()
       do j = 1, num_timers
-         write (tname, '("t",i7.7)') j
-         discard = ftimer_lookup(tname)  ! pre-register all timers
+         write (tnames(j), '("t",i7.7)') j
+         i = ftimer_lookup(tnames(j))  ! pre-register all timers
       end do
-      if (discard < 0) write (*, '(a)') ''  ! suppress unused-variable warning
       call system_clock(t0)
       do i = 1, reps_outer
          do j = 1, num_timers
-            write (tname, '("t",i7.7)') j
-            call ftimer_start(tname)
-            call ftimer_stop(tname)
+            call ftimer_start(tnames(j))
+            call ftimer_stop(tnames(j))
          end do
       end do
       call system_clock(t1)
       call ftimer_finalize()
+      deallocate (tnames)
       write (label, '("lookup scaling N=",i2," timers (name-based)")') num_timers
       call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_lookup_scaling
