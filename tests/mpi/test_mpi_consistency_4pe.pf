@@ -1,0 +1,341 @@
+module test_mpi_consistency_4pe
+   use pfunit
+   use mpi
+   use ftimer_core, only: ftimer_t
+   use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_SUCCESS, ftimer_summary_t, wp
+   use test_support, only: attach_mock_clock, fake_time
+   implicit none
+
+   @testcase(npes=[4])
+   type, extends(MpiTestCase) :: mpi_consistency_4pe_case
+   end type mpi_consistency_4pe_case
+
+contains
+
+   @test
+   subroutine test_mpi_summary_falls_back_when_some_ranks_have_extra_timers(this)
+      class(mpi_consistency_4pe_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      integer :: nprocs
+      integer :: rank
+      real(wp) :: expected_common
+      logical :: has_mpi_data
+      logical :: name_matches
+
+      rank = this%getProcessRank()
+      nprocs = this%getNumProcesses()
+      @assertEqual(4, nprocs)
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_extra_timer_mismatch(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      has_mpi_data = summary%has_mpi_data
+
+      @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
+      @assertFalse(has_mpi_data)
+      expected_common = 2.0_wp + real(rank, wp)
+
+      if (rank == 0) then
+         @assertEqual(2, summary%num_entries)
+         name_matches = trim(summary%entries(2)%name) == 'extra'
+         @assertTrue(name_matches)
+         call assert_entry_times(summary, 2, 3.0_wp, 3.0_wp)
+      else
+         @assertEqual(1, summary%num_entries)
+      end if
+
+      name_matches = trim(summary%entries(1)%name) == 'common'
+      @assertTrue(name_matches)
+      call assert_entry_has_no_mpi_data(summary, 1)
+      call assert_entry_times(summary, 1, expected_common, expected_common)
+      if (rank == 0) call assert_entry_has_no_mpi_data(summary, 2)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_summary_falls_back_when_some_ranks_have_extra_timers
+
+   @test
+   subroutine test_mpi_summary_falls_back_when_some_ranks_are_missing_timers(this)
+      class(mpi_consistency_4pe_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      integer :: nprocs
+      integer :: rank
+      real(wp) :: expected_common
+      logical :: has_mpi_data
+      logical :: first_name_matches
+      logical :: second_name_matches
+
+      rank = this%getProcessRank()
+      nprocs = this%getNumProcesses()
+      @assertEqual(4, nprocs)
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_missing_timer_mismatch(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      has_mpi_data = summary%has_mpi_data
+
+      @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
+      @assertFalse(has_mpi_data)
+      expected_common = 1.0_wp + real(rank, wp)
+
+      if (rank == 0) then
+         @assertEqual(1, summary%num_entries)
+         first_name_matches = trim(summary%entries(1)%name) == 'common'
+         @assertTrue(first_name_matches)
+         call assert_entry_has_no_mpi_data(summary, 1)
+         call assert_entry_times(summary, 1, expected_common, expected_common)
+      else
+         @assertEqual(2, summary%num_entries)
+         first_name_matches = trim(summary%entries(1)%name) == 'common'
+         second_name_matches = trim(summary%entries(2)%name) == 'late'
+         @assertTrue(first_name_matches)
+         @assertTrue(second_name_matches)
+         call assert_entry_has_no_mpi_data(summary, 1)
+         call assert_entry_has_no_mpi_data(summary, 2)
+         call assert_entry_times(summary, 1, expected_common, expected_common)
+         call assert_entry_times(summary, 2, 2.0_wp, 2.0_wp)
+      end if
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_summary_falls_back_when_some_ranks_are_missing_timers
+
+   @test
+   subroutine test_mpi_summary_falls_back_when_timer_names_differ(this)
+      class(mpi_consistency_4pe_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      integer :: nprocs
+      integer :: rank
+      real(wp) :: expected_time
+      logical :: has_mpi_data
+      logical :: name_matches
+
+      rank = this%getProcessRank()
+      nprocs = this%getNumProcesses()
+      @assertEqual(4, nprocs)
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_renamed_timer_mismatch(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      has_mpi_data = summary%has_mpi_data
+
+      @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
+      @assertFalse(has_mpi_data)
+      @assertEqual(1, summary%num_entries)
+      expected_time = 5.0_wp + real(rank, wp)
+
+      if (mod(rank, 2) == 0) then
+         name_matches = trim(summary%entries(1)%name) == 'alpha'
+      else
+         name_matches = trim(summary%entries(1)%name) == 'beta'
+      end if
+      @assertTrue(name_matches)
+      call assert_entry_has_no_mpi_data(summary, 1)
+      call assert_entry_times(summary, 1, expected_time, expected_time)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_summary_falls_back_when_timer_names_differ
+
+   @test
+   subroutine test_mpi_summary_falls_back_for_four_rank_hierarchy_mismatch(this)
+      class(mpi_consistency_4pe_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      integer :: nprocs
+      integer :: rank
+      real(wp) :: expected_outer
+      real(wp) :: expected_outer_self
+      real(wp) :: expected_work
+      logical :: has_mpi_data
+      logical :: first_name_matches
+      logical :: second_name_matches
+
+      rank = this%getProcessRank()
+      nprocs = this%getNumProcesses()
+      @assertEqual(4, nprocs)
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_four_rank_hierarchy_mismatch(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      has_mpi_data = summary%has_mpi_data
+
+      @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
+      @assertFalse(has_mpi_data)
+      @assertEqual(2, summary%num_entries)
+
+      first_name_matches = trim(summary%entries(1)%name) == 'outer'
+      second_name_matches = trim(summary%entries(2)%name) == 'work'
+      @assertTrue(first_name_matches)
+      @assertTrue(second_name_matches)
+      call assert_entry_has_no_mpi_data(summary, 1)
+      call assert_entry_has_no_mpi_data(summary, 2)
+
+      if (mod(rank, 2) == 0) then
+         expected_outer = 7.0_wp + real(rank, wp)
+         expected_work = 3.0_wp + real(rank, wp)
+         expected_outer_self = 4.0_wp
+         @assertEqual(0, summary%entries(1)%depth)
+         @assertEqual(1, summary%entries(2)%depth)
+      else
+         expected_outer = 2.0_wp + real(rank, wp)
+         expected_work = 4.0_wp
+         expected_outer_self = expected_outer
+         @assertEqual(0, summary%entries(1)%depth)
+         @assertEqual(0, summary%entries(2)%depth)
+      end if
+      call assert_entry_times(summary, 1, expected_outer, expected_outer_self)
+      call assert_entry_times(summary, 2, expected_work, expected_work)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_summary_falls_back_for_four_rank_hierarchy_mismatch
+
+   subroutine build_extra_timer_mismatch(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      call timer%start("common", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 2.0_wp + real(rank, wp)
+      call timer%stop("common", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      if (rank == 0) then
+         fake_time = 3.0_wp
+         call timer%start("extra", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 6.0_wp
+         call timer%stop("extra", ierr=ierr)
+      end if
+   end subroutine build_extra_timer_mismatch
+
+   subroutine build_missing_timer_mismatch(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      call timer%start("common", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 1.0_wp + real(rank, wp)
+      call timer%stop("common", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      if (rank /= 0) then
+         fake_time = 2.0_wp + real(rank, wp)
+         call timer%start("late", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 4.0_wp + real(rank, wp)
+         call timer%stop("late", ierr=ierr)
+      end if
+   end subroutine build_missing_timer_mismatch
+
+   subroutine build_renamed_timer_mismatch(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      if (mod(rank, 2) == 0) then
+         call timer%start("alpha", ierr=ierr)
+      else
+         call timer%start("beta", ierr=ierr)
+      end if
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 5.0_wp + real(rank, wp)
+      if (mod(rank, 2) == 0) then
+         call timer%stop("alpha", ierr=ierr)
+      else
+         call timer%stop("beta", ierr=ierr)
+      end if
+   end subroutine build_renamed_timer_mismatch
+
+   subroutine build_four_rank_hierarchy_mismatch(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      call timer%start("outer", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      if (mod(rank, 2) == 0) then
+         fake_time = 2.0_wp
+         call timer%start("work", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 5.0_wp + real(rank, wp)
+         call timer%stop("work", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 7.0_wp + real(rank, wp)
+         call timer%stop("outer", ierr=ierr)
+      else
+         fake_time = 2.0_wp + real(rank, wp)
+         call timer%stop("outer", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         call timer%start("work", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 6.0_wp + real(rank, wp)
+         call timer%stop("work", ierr=ierr)
+      end if
+   end subroutine build_four_rank_hierarchy_mismatch
+
+   subroutine assert_entry_has_no_mpi_data(summary, index)
+      type(ftimer_summary_t), intent(in) :: summary
+      integer, intent(in) :: index
+
+      @assertEqual(-1.0_wp, summary%entries(index)%min_time)
+      @assertEqual(-1.0_wp, summary%entries(index)%max_time)
+      @assertEqual(-1.0_wp, summary%entries(index)%avg_across_ranks)
+      @assertEqual(-1.0_wp, summary%entries(index)%imbalance)
+   end subroutine assert_entry_has_no_mpi_data
+
+   subroutine assert_entry_times(summary, index, expected_inclusive, expected_self)
+      type(ftimer_summary_t), intent(in) :: summary
+      integer, intent(in) :: index
+      real(wp), intent(in) :: expected_inclusive
+      real(wp), intent(in) :: expected_self
+
+      @assertEqual(expected_inclusive, summary%entries(index)%inclusive_time)
+      @assertEqual(expected_self, summary%entries(index)%self_time)
+   end subroutine assert_entry_times
+
+end module test_mpi_consistency_4pe
