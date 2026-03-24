@@ -146,15 +146,11 @@ contains
          return
       end if
 
-      if (rank == 0) then
-         summary%has_mpi_data = .true.
-         summary%mpi_summary_state = FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED
-      else
-         summary%mpi_summary_state = FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE
-      end if
-
       entry_count = summary%num_entries
-      if (entry_count <= 0) return
+      if (entry_count <= 0) then
+         call set_success_summary_state(summary, rank)
+         return
+      end if
 
       allocate (send_values(entry_count))
       allocate (min_values(entry_count))
@@ -183,6 +179,7 @@ contains
          return
       end if
 
+      call set_success_summary_state(summary, rank)
       if (rank /= 0) return
 
       do i = 1, entry_count
@@ -198,6 +195,18 @@ contains
       summary%mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
 #endif
    end subroutine augment_summary_with_mpi
+
+   subroutine set_success_summary_state(summary, rank)
+      type(ftimer_summary_t), intent(inout) :: summary
+      integer, intent(in) :: rank
+
+      if (rank == 0) then
+         summary%has_mpi_data = .true.
+         summary%mpi_summary_state = FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED
+      else
+         summary%mpi_summary_state = FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE
+      end if
+   end subroutine set_success_summary_state
 
 #ifdef FTIMER_USE_MPI
    subroutine build_descriptor_order(summary, descriptors, permutation)
