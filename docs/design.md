@@ -1,12 +1,14 @@
 # fTimer: A Modern Fortran Wall-Clock Timing Library
 
 > This document is a forward-looking design reference. Unless a section explicitly says otherwise, it describes the target architecture and API for later phases rather than the exact runtime behavior on current `main`.
+>
+> For the shipped contract on current `main`, prefer `README.md`, `docs/semantics.md`, and the implementation in `src/`.
 
 ## Context
 
 > fTimer is a lightweight, correctness-first timing library for Fortran codes. Inspired by Flash-X's MPINative Timers but designed as a standalone profiling substrate, it preserves the proven conceptual model (stack-based nesting, context-sensitive accounting, hierarchical summary) while optimizing for correctness, clarity, portability, and composability.
 
-**Scope (implemented through Phase 5):** A portable wall-clock timer library with profiling extensibility hooks plus local structured summaries, formatted reports, a procedural convenience API over the OOP core, and MPI-reduced structured summaries with cross-rank preflight. fTimer does NOT itself provide hardware counter or power measurements — it provides callback hooks so external tools (PAPI, likwid, etc.) can attach to timer boundaries in the future.
+**Scope (implemented through Phase 6):** A portable wall-clock timer library with profiling extensibility hooks plus local structured summaries, formatted reports, a procedural convenience API over the OOP core, MPI-reduced structured summaries with cross-rank preflight, and limited OpenMP master-thread guards. fTimer does NOT itself provide hardware counter or power measurements — it provides callback hooks so external tools (PAPI, likwid, etc.) can attach to timer boundaries in the future.
 
 **Where fTimer preserves Flash-X's design:** strict stack-based nesting, context-sensitive accounting of the same timer under different parents, hierarchical summary logic, low conceptual overhead, string and integer-key access.
 
@@ -19,7 +21,7 @@
 - OOP core with encapsulated state and multiple instances
 - Injectable clock, configurable error handling, callback hooks with full context
 
-## Current Phase 5 Snapshot
+## Current Phase 6 Snapshot
 
 Current `main` is intentionally narrower than the target design below:
 
@@ -28,7 +30,7 @@ Current `main` is intentionally narrower than the target design below:
 - `ftimer_clock.F90` provides the default wall clock, MPI wall clock wrapper, and date-string utility
 - `ftimer_core.F90` implements `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `print_summary`, and `write_summary`
 - `ftimer_summary.F90` implements local summary building and formatted text reporting
-- `ftimer.F90` now exports the local procedural wrapper surface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_print_summary`, and `ftimer_write_summary`
+- `ftimer.F90` now exports the current procedural surface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
   Current Phase 6 note: the safe, documented positional `init` forms on current `main` are `call timer%init()` and `call ftimer_init()`. Pass `ierr`, `comm`, and `mismatch_mode` by keyword in both APIs. With the current Fortran interface, positional integer calls still compile but are ambiguous and can silently bind to `ierr`, so they are documented as unsupported traps.
 - stack-based nesting, context-sensitive accounting, injectable clock use, and strict/warn/repair mismatch dispatch are implemented in the core runtime
 - pFUnit-backed behavioral tests exist for the Phase 2 core behaviors plus Phase 3 summary/self-time/file/callback coverage, Phase 4 procedural parity coverage, and Phase 5 MPI summary coverage
@@ -39,7 +41,7 @@ For the current user-facing contract, prefer `README.md` and the source in `src/
 ## Key Decisions
 
 - **Build system**: CMake with a convenience Makefile wrapper (`make`, `make test`, `make install` delegate to cmake/ctest)
-- **Current baseline**: buildable Phase 5 foundation + core runtime + local summary/reporting + procedural wrappers + MPI-reduced structured summaries + smoke tests + opt-in serial/MPI pFUnit tests; later phases add OpenMP guards
+- **Current baseline**: buildable Phase 6 foundation + core runtime + local summary/reporting + procedural wrappers + MPI-reduced structured summaries + limited OpenMP guards + smoke tests + opt-in serial/MPI pFUnit tests
 - **Testing**: current `main` uses smoke tests by default and pFUnit with an injectable mock clock when `FTIMER_BUILD_TESTS=ON`
 - **Timer model**: Strict nesting only (stack-based, no overlapping timers)
 - **Mismatch handling**: Configurable (`strict`/`warn`/`repair`), **default `strict`**. `repair` mode is Flash-X compatibility. Internal repair transitions do NOT fire user callbacks.
@@ -115,6 +117,8 @@ fTimer/
 
 ## Target Public API
 
+Unless noted otherwise, the entry points listed here already exist on current `main`. Shared types and constants still come from `ftimer_types`; `use ftimer` does not re-export them.
+
 Users interact via `use ftimer` (procedural) or `use ftimer_core` (OOP only, no global state).
 
 ### OOP Interface
@@ -169,12 +173,14 @@ call ftimer_finalize([ierr])
 
 ### Summary Metadata (replaces `nsteps`)
 
-Instead of a domain-specific `nsteps` argument, summaries accept generic metadata:
+Current `main` exposes the `ftimer_metadata_t` type, not a helper constructor. Metadata values are built by assigning the `%key` and `%value` fields directly:
 
 ```fortran
 type(ftimer_metadata_t) :: meta(2)
-meta(1) = ftimer_metadata("evolution steps", "10")
-meta(2) = ftimer_metadata("grid blocks", "1024")
+meta(1)%key = "evolution steps"
+meta(1)%value = "10"
+meta(2)%key = "grid blocks"
+meta(2)%value = "1024"
 call timer%print_summary(metadata=meta)
 ```
 

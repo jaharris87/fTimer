@@ -4,7 +4,9 @@ A lightweight, correctness-first wall-clock timing library for modern Fortran.
 
 ## Status
 
-**Under construction.** Phase 6 now provides the shared types/clock foundation, a real core timer runtime, structured local summaries and reporting, the expanded procedural convenience API, MPI-reduced structured summaries with deterministic pFUnit coverage, and limited OpenMP master-thread guards when built with `FTIMER_USE_OPENMP=ON`.
+Current `main` implements the Phase 6 runtime contract: shared types/clock foundation, a real core timer runtime, structured local summaries and reporting, the procedural convenience API, MPI-reduced structured summaries, and limited OpenMP master-thread guards when built with `FTIMER_USE_OPENMP=ON`.
+
+Future-facing design notes still live in `docs/design.md`; when a design note conflicts with this README or the source in `src/`, the current implementation on `main` is the source of truth.
 
 ## Current Phase 6 Behavior
 
@@ -23,11 +25,12 @@ Current `main` provides:
 - Example programs that compile and link against the library
 - An installable CMake package export (`fTimerTargets.cmake`, `fTimerConfig.cmake`, `fTimerConfigVersion.cmake`)
 
-Current public surface still exposes the complete Phase 5 API surface for both usage styles:
+Current public surface on `main` supports both usage styles:
 
-- Procedural interface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
+- `use ftimer` exports `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
   Current Phase 6 note: the safe, documented positional `init` forms are `call timer%init()` and `call ftimer_init()`. Pass `ierr`, `comm`, and `mismatch_mode` by keyword in both APIs. With the current Fortran interface, positional integer calls still compile but are ambiguous and can silently bind to `ierr`, so they are documented as unsupported traps.
 - OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `mpi_summary`, `print_summary`, and `write_summary`
+- `use ftimer` does not re-export shared types or constants. Import `ftimer_summary_t`, `ftimer_metadata_t`, `FTIMER_MISMATCH_*`, and `FTIMER_MPI_SUMMARY_*` from `ftimer_types`.
 - Procedural wrappers are thin forwarding calls over the existing OOP implementation and preserve the intended `ierr`/stderr error contract
 - `get_summary()`, `print_summary()`, and `write_summary()` remain local-only
 - Formatted local summaries escape unsafe raw summary-entry names instead of emitting them literally: leading blanks render as `\x20`, backslashes render as `\\`, tabs/newlines/carriage returns render as `\t`/`\n`/`\r`, other ASCII control characters render as `\xNN`, and blank/empty raw names render as `<blank>`
@@ -36,6 +39,35 @@ Current public surface still exposes the complete Phase 5 API surface for both u
 - On rank 0 only, a successful `mpi_summary()` also populates `min_time`, `max_time`, `avg_across_ranks`, and `imbalance`; `has_mpi_data=.true.` means only those reduced MPI entry fields are valid on this rank, not that the whole summary is globally reduced
 - `summary%mpi_summary_state` makes the result shape explicit: `FTIMER_MPI_SUMMARY_LOCAL_ONLY` for plain local summaries, `FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED` for the root-local-plus-reduced root result, and `FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE` for successful non-root calls that still expose only local fields
 - OpenMP support is intentionally limited: Phase 6 does not make `fTimer` thread-safe or add thread-local timer instances; the supported model is still master-thread-only timing
+
+## Quick Start
+
+```fortran
+program quick_start
+   use ftimer, only: ftimer_finalize, ftimer_get_summary, ftimer_init, &
+                     ftimer_print_summary, ftimer_start, ftimer_stop
+   use ftimer_types, only: ftimer_summary_t
+   implicit none
+
+   type(ftimer_summary_t) :: summary
+
+   call ftimer_init()
+   call ftimer_start("work")
+   call ftimer_stop("work")
+
+   call ftimer_get_summary(summary)
+   call ftimer_print_summary()
+   call ftimer_finalize()
+end program quick_start
+```
+
+For metadata headers, construct `ftimer_metadata_t` values directly by assigning `%key` and `%value`. Current `main` does not provide a helper constructor such as `ftimer_metadata(...)`.
+
+## Examples
+
+- `examples/basic_usage.F90`: serial procedural usage with `start`, `stop`, `get_summary`, and `print_summary`
+- `examples/nested_timers.F90`: nested timers plus manual `ftimer_metadata_t` header fields
+- `examples/mpi_example.F90`: MPI-only example showing `ftimer_init(comm=...)` and root-side reduced summary fields from `ftimer_mpi_summary()`
 
 ## Target Capabilities
 

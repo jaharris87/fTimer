@@ -2,6 +2,8 @@
 
 The in-repo design reference for implementation is [docs/design.md](docs/design.md).
 
+This file is a historical roadmap plus backlog, not the authoritative statement of what ships today. Checked items record work already landed on `main`; unchecked items are remaining follow-up work or release chores. For the current user-facing contract, use `README.md`, `docs/semantics.md`, and the implementation in `src/`.
+
 ## Phase 1: Types + Clock
 
 Foundation types and injectable clock — everything else depends on these. No tests yet (pFUnit tests come in Phase 2 alongside the core), but these modules must compile cleanly in both serial and MPI builds.
@@ -78,17 +80,17 @@ Master-thread-only timing. Light touch — guards only, not thread-local instanc
 
 ## Phase 7: Documentation + Examples
 
-- [ ] `docs/semantics.md` — Full semantics reference: inclusive/exclusive time definitions, nesting rules, mismatch modes and their behavior, reset behavior, error contract (ierr vs stderr), MPI guarantees (hash preflight, comm handle compatibility with mpif.h and mpi_f08), OpenMP limitations, callback contract
-- [ ] `examples/basic_usage.F90` — Simple start/stop/print_summary
-- [ ] `examples/nested_timers.F90` — Multi-level nesting with golden expected output
-- [ ] `examples/mpi_example.F90` — MPI summary with imbalance metrics
-- [ ] `README.md` — Complete with identity statement, quick start, API reference, build instructions, example output
+- [x] `docs/semantics.md` — Current semantics reference: inclusive/exclusive time definitions, nesting rules, mismatch modes and their behavior, reset behavior, error contract (ierr vs stderr), MPI guarantees, OpenMP limitations, callback contract
+- [x] `examples/basic_usage.F90` — Simple start/stop/get_summary/print_summary example
+- [x] `examples/nested_timers.F90` — Multi-level nesting example with metadata header fields
+- [x] `examples/mpi_example.F90` — MPI summary example showing the current root-local-plus-reduced contract
+- [x] `README.md` — Current public contract, quick start, build instructions, and example descriptions
 
 ## Phase 8: Polish + CI Verification
 
 - [ ] Run `fprettify` on all source files, fix any formatting issues
-- [ ] Verify serial CI: `cmake -B build && cmake --build build && ctest --test-dir build`
-- [ ] Verify MPI CI: `cmake -B build -DFTIMER_USE_MPI=ON && cmake --build build && ctest --test-dir build`
+- [ ] Verify default smoke CI path: `cmake -B build-smoke && cmake --build build-smoke && ctest --test-dir build-smoke`
+- [ ] Verify MPI smoke CI path: `cmake -B build-mpi -DFTIMER_USE_MPI=ON && cmake --build build-mpi && ctest --test-dir build-mpi`
 - [ ] Verify all examples run and produce expected output
 - [ ] Final review: CLAUDE.md, README, docs/semantics.md all match implementation
 

@@ -23,9 +23,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake
 
-      # Phase 0 intentionally validates the minimal scaffold without pFUnit.
-      # Reintroduce pFUnit install + .pf test execution once the real test
-      # suite lands in the implementation phases.
+      # GitHub Actions currently exercises the default smoke-test path only.
+      # The repo also contains opt-in pFUnit suites, but this workflow does not
+      # provision PFUNIT_DIR or run those serial/MPI behavioral tests.
       - name: Configure (serial)
         run: cmake -B build
 
@@ -45,9 +45,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
-      # Phase 0 only proves that the MPI-enabled scaffold configures and builds.
-      # There are no MPI-labelled runtime tests yet; reintroduce those once the
-      # pFUnit MPI suite exists.
+      # The MPI job also follows the smoke-test path only. pFUnit MPI suites
+      # exist in the repo but are not exercised here because PFUNIT_DIR is not
+      # provisioned in this workflow.
       - name: Configure (MPI)
         run: cmake -B build -DFTIMER_USE_MPI=ON
 

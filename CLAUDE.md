@@ -90,7 +90,7 @@ ftimer.F90  (procedural wrappers + default global instance)
 
 Current `main` is in Phase 6. The shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, and limited OpenMP master-thread guards are implemented.
 
-During Phase 6, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: preserve procedural-wrapper parity with the OOP core, keep MPI summary behavior correct and explicit, preserve the limited master-thread-only OpenMP guard model, but do not pull Phase 7+ docs/examples or fuller OpenMP work forward.
+During Phase 6, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: preserve procedural-wrapper parity with the OOP core, keep MPI summary behavior correct and explicit, preserve the limited master-thread-only OpenMP guard model, and keep current-state docs/examples honest. Do not pull fuller post-Phase-6 design work or broader OpenMP support forward.
 
 Detailed repository operations and PR/review handling live in `docs/maintainer.md`. Use that file for GitHub workflow details; keep this file focused on coding/build/test behavior and the short mandatory PR summary below.
 
