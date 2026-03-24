@@ -85,6 +85,7 @@ ftimer.F90  (procedural wrappers + default global instance)
 - **Exclusive/self time**: Computed as inclusive time minus sum of direct children's inclusive times.
 - **Callback hooks**: `on_event` procedure pointer fires on start/stop. Internal repair transitions do NOT fire callbacks.
 - **MPI via integer comm handle**: Compatible with both `include 'mpif.h'` and `use mpi_f08` (via `comm%MPI_VAL`).
+- **OpenMP master-thread-only timing**: When built with `FTIMER_USE_OPENMP=ON`, all guarded timer operations run only on the master thread (thread 0). Worker-thread calls are silent no-ops: no summary entry is created, no call count is incremented, and no `ierr` is set. Timer calls made exclusively on worker threads produce no summary entry. The supported pattern is to place `start`/`stop` outside `!$omp parallel` blocks. Placing `start`/`stop` inside a parallel region expecting each thread to contribute is the misleading anti-pattern. See `docs/semantics.md` "Consequences for timing data" for the full contract.
 
 ## Development Workflow
 
