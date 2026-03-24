@@ -3,7 +3,8 @@ module test_nesting
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_MISMATCH, FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_WARN, FTIMER_SUCCESS, &
                            ftimer_call_stack_t, wp
-   use test_support, only: attach_mock_clock, build_stack, fake_time, find_context_idx, snapshot_timer
+   use test_support, only: attach_mock_clock, attach_scripted_mock_clock, build_stack, fake_time, find_context_idx, &
+                           get_mock_clock_call_count, snapshot_timer
    implicit none
 
 contains
@@ -192,5 +193,137 @@ contains
       @assertEqual(1, state%call_stack%depth)
       @assertTrue(state%segments(2)%is_running(ctx_b))
    end subroutine test_repair_mismatch_repairs_silently
+
+   @test
+   subroutine test_repair_uses_single_now_for_unwind_target_and_restart()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      type(ftimer_call_stack_t) :: a_stack
+      type(ftimer_call_stack_t) :: ab_stack
+      type(ftimer_call_stack_t) :: b_stack
+      integer :: ierr
+      integer :: ctx_a_root
+      integer :: ctx_b_under_a
+      integer :: ctx_b_root
+      integer :: ctx_c_under_ab
+      integer :: ctx_c_under_b
+      integer :: call_count
+      real(wp) :: time_a_root
+      real(wp) :: time_b_under_a
+      real(wp) :: time_b_root
+      real(wp) :: time_c_under_ab
+      real(wp) :: time_c_under_b
+      real(wp), parameter :: scripted_times(6) = [0.0_wp, 10.0_wp, 20.0_wp, 30.0_wp, 40.0_wp, 50.0_wp]
+
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_REPAIR, ierr=ierr)
+      call attach_scripted_mock_clock(timer, scripted_times)
+
+      call timer%start("A", ierr=ierr)
+      call timer%start("B", ierr=ierr)
+      call timer%start("C", ierr=ierr)
+      call timer%stop("A", ierr=ierr)
+      call timer%stop("C", ierr=ierr)
+      call timer%stop("B", ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+
+      a_stack = build_stack([1])
+      ab_stack = build_stack([1, 2])
+      b_stack = build_stack([2])
+      ctx_a_root = find_context_idx(state, 1, root_stack)
+      ctx_b_under_a = find_context_idx(state, 2, a_stack)
+      ctx_b_root = find_context_idx(state, 2, root_stack)
+      ctx_c_under_ab = find_context_idx(state, 3, ab_stack)
+      ctx_c_under_b = find_context_idx(state, 3, b_stack)
+      time_a_root = state%segments(1)%time(ctx_a_root)
+      time_b_under_a = state%segments(2)%time(ctx_b_under_a)
+      time_b_root = state%segments(2)%time(ctx_b_root)
+      time_c_under_ab = state%segments(3)%time(ctx_c_under_ab)
+      time_c_under_b = state%segments(3)%time(ctx_c_under_b)
+      call_count = get_mock_clock_call_count()
+
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(30.0_wp, time_a_root)
+      @assertEqual(20.0_wp, time_b_under_a)
+      @assertEqual(20.0_wp, time_b_root)
+      @assertEqual(10.0_wp, time_c_under_ab)
+      @assertEqual(10.0_wp, time_c_under_b)
+      @assertFalse(state%segments(2)%is_running(ctx_b_root))
+      @assertFalse(state%segments(3)%is_running(ctx_c_under_b))
+      @assertEqual(6, call_count)
+      @assertEqual(30.0_wp, state%segments(2)%start_time(ctx_b_root))
+      @assertEqual(30.0_wp, state%segments(3)%start_time(ctx_c_under_b))
+   end subroutine test_repair_uses_single_now_for_unwind_target_and_restart
+
+   @test
+   subroutine test_warn_multi_level_mismatch_restarts_in_order_and_continues()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      type(ftimer_call_stack_t) :: a_stack
+      type(ftimer_call_stack_t) :: ab_stack
+      type(ftimer_call_stack_t) :: b_stack
+      integer :: ierr
+      integer :: ctx_a_root
+      integer :: ctx_b_under_a
+      integer :: ctx_b_root
+      integer :: ctx_c_under_ab
+      integer :: ctx_c_under_b
+      real(wp) :: time_a_root
+      real(wp) :: time_b_under_a
+      real(wp) :: time_b_root
+      real(wp) :: time_c_under_ab
+      real(wp) :: time_c_under_b
+
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_WARN, ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("B", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%start("C", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+
+      call snapshot_timer(timer, state)
+      @assertEqual(2, state%call_stack%depth)
+      @assertEqual(3, state%call_stack%top())
+
+      fake_time = 8.0_wp
+      call timer%stop("C", ierr=ierr)
+      fake_time = 13.0_wp
+      call timer%stop("B", ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+
+      a_stack = build_stack([1])
+      ab_stack = build_stack([1, 2])
+      b_stack = build_stack([2])
+      ctx_a_root = find_context_idx(state, 1, root_stack)
+      ctx_b_under_a = find_context_idx(state, 2, a_stack)
+      ctx_b_root = find_context_idx(state, 2, root_stack)
+      ctx_c_under_ab = find_context_idx(state, 3, ab_stack)
+      ctx_c_under_b = find_context_idx(state, 3, b_stack)
+      time_a_root = state%segments(1)%time(ctx_a_root)
+      time_b_under_a = state%segments(2)%time(ctx_b_under_a)
+      time_b_root = state%segments(2)%time(ctx_b_root)
+      time_c_under_ab = state%segments(3)%time(ctx_c_under_ab)
+      time_c_under_b = state%segments(3)%time(ctx_c_under_b)
+
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(5.0_wp, time_a_root)
+      @assertEqual(4.0_wp, time_b_under_a)
+      @assertEqual(8.0_wp, time_b_root)
+      @assertEqual(3.0_wp, time_c_under_ab)
+      @assertEqual(3.0_wp, time_c_under_b)
+      @assertFalse(state%segments(2)%is_running(ctx_b_root))
+      @assertFalse(state%segments(3)%is_running(ctx_c_under_b))
+   end subroutine test_warn_multi_level_mismatch_restarts_in_order_and_continues
 
 end module test_nesting

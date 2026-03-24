@@ -2,7 +2,8 @@ module test_callbacks
    use, intrinsic :: iso_c_binding, only: c_associated, c_loc, c_ptr
    use pfunit
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_EVENT_START, FTIMER_EVENT_STOP, FTIMER_MISMATCH_REPAIR, FTIMER_SUCCESS, wp
+   use ftimer_types, only: FTIMER_ERR_MISMATCH, FTIMER_EVENT_START, FTIMER_EVENT_STOP, FTIMER_MISMATCH_REPAIR, &
+                           FTIMER_MISMATCH_WARN, FTIMER_SUCCESS, wp
    use test_support, only: attach_mock_clock, fake_time
    implicit none
 
@@ -59,9 +60,10 @@ contains
       type(ftimer_t) :: timer
       integer, target :: token
       integer :: ierr
-      logical :: first_event_is_start
-      logical :: second_event_is_start
-      logical :: third_event_is_stop
+      integer, parameter :: expected_timer_ids(5) = [1, 2, 3, 3, 2]
+      integer, parameter :: expected_events(5) = [FTIMER_EVENT_START, FTIMER_EVENT_START, FTIMER_EVENT_START, &
+                                                  FTIMER_EVENT_STOP, FTIMER_EVENT_STOP]
+      real(wp), parameter :: expected_timestamps(5) = [0.0_wp, 1.0_wp, 2.0_wp, 5.0_wp, 8.0_wp]
 
       call reset_callback_log()
       call timer%init(mismatch_mode=FTIMER_MISMATCH_REPAIR, ierr=ierr)
@@ -75,30 +77,73 @@ contains
       fake_time = 1.0_wp
       call timer%start("B", ierr=ierr)
       fake_time = 2.0_wp
+      call timer%start("C", ierr=ierr)
+      fake_time = 3.0_wp
       call timer%stop("A", ierr=ierr)
       fake_time = 5.0_wp
+      call timer%stop("C", ierr=ierr)
+      fake_time = 8.0_wp
       call timer%stop("B", ierr=ierr)
 
       @assertEqual(FTIMER_SUCCESS, ierr)
 
-      first_event_is_start = callback_events(1) == FTIMER_EVENT_START
-      second_event_is_start = callback_events(2) == FTIMER_EVENT_START
-      third_event_is_stop = callback_events(3) == FTIMER_EVENT_STOP
-
-      @assertEqual(3, callback_count)
-      @assertTrue(first_event_is_start)
-      @assertTrue(second_event_is_start)
-      @assertTrue(third_event_is_stop)
-      @assertEqual(1, callback_timer_ids(1))
-      @assertEqual(2, callback_timer_ids(2))
-      @assertEqual(2, callback_timer_ids(3))
-      @assertEqual(0.0_wp, callback_timestamps(1))
-      @assertEqual(1.0_wp, callback_timestamps(2))
-      @assertEqual(5.0_wp, callback_timestamps(3))
-      @assertTrue(callback_has_user_data(1))
-      @assertTrue(callback_has_user_data(2))
-      @assertTrue(callback_has_user_data(3))
+      call assert_callback_trace(5, expected_timer_ids, expected_events, expected_timestamps)
    end subroutine test_repair_does_not_fire_internal_callbacks
+
+   @test
+   subroutine test_warn_does_not_fire_internal_callbacks()
+      type(ftimer_t) :: timer
+      integer, target :: token
+      integer :: ierr
+      integer, parameter :: expected_timer_ids(5) = [1, 2, 3, 3, 2]
+      integer, parameter :: expected_events(5) = [FTIMER_EVENT_START, FTIMER_EVENT_START, FTIMER_EVENT_START, &
+                                                  FTIMER_EVENT_STOP, FTIMER_EVENT_STOP]
+      real(wp), parameter :: expected_timestamps(5) = [0.0_wp, 1.0_wp, 2.0_wp, 5.0_wp, 8.0_wp]
+
+      call reset_callback_log()
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_WARN, ierr=ierr)
+      call attach_mock_clock(timer)
+
+      token = 13
+      timer%on_event => record_callback
+      timer%user_data = c_loc(token)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("B", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%start("C", ierr=ierr)
+      fake_time = 3.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+
+      fake_time = 5.0_wp
+      call timer%stop("C", ierr=ierr)
+      fake_time = 8.0_wp
+      call timer%stop("B", ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call assert_callback_trace(5, expected_timer_ids, expected_events, expected_timestamps)
+   end subroutine test_warn_does_not_fire_internal_callbacks
+
+   subroutine assert_callback_trace(expected_count, expected_timer_ids, expected_events, expected_timestamps)
+      integer, intent(in) :: expected_count
+      integer, intent(in) :: expected_timer_ids(:)
+      integer, intent(in) :: expected_events(:)
+      real(wp), intent(in) :: expected_timestamps(:)
+      integer :: i
+
+      @assertEqual(expected_count, callback_count)
+
+      do i = 1, expected_count
+         @assertEqual(expected_timer_ids(i), callback_timer_ids(i))
+         @assertEqual(expected_events(i), callback_events(i))
+         @assertEqual(expected_timestamps(i), callback_timestamps(i))
+         @assertTrue(callback_has_user_data(i))
+      end do
+   end subroutine assert_callback_trace
 
    subroutine record_callback(timer_id, context_idx, event, timestamp, user_data)
       integer, intent(in) :: timer_id
