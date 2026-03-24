@@ -105,7 +105,6 @@ contains
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
 
-      if (present(ierr)) ierr = FTIMER_SUCCESS
 !$omp master
       call init_impl(self, ierr=ierr, comm=comm, mismatch_mode=mismatch_mode)
 !$omp end master
@@ -169,7 +168,6 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
 
-      if (present(ierr)) ierr = FTIMER_SUCCESS
 !$omp master
       call finalize_impl(self, ierr=ierr)
 !$omp end master
@@ -205,7 +203,6 @@ contains
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
 
-      if (present(ierr)) ierr = FTIMER_SUCCESS
 !$omp master
       call start_impl(self, name, ierr=ierr)
 !$omp end master
@@ -240,7 +237,6 @@ contains
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
 
-      if (present(ierr)) ierr = FTIMER_SUCCESS
 !$omp master
       call stop_impl(self, name, ierr=ierr)
 !$omp end master
@@ -281,7 +277,6 @@ contains
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
 
-      if (present(ierr)) ierr = FTIMER_SUCCESS
 !$omp master
       call start_id_impl(self, id, ierr=ierr)
 !$omp end master
@@ -329,7 +324,6 @@ contains
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
 
-      if (present(ierr)) ierr = FTIMER_SUCCESS
 !$omp master
       call stop_id_impl(self, id, ierr=ierr)
 !$omp end master
@@ -397,7 +391,6 @@ contains
       integer, intent(out), optional :: ierr
 
       id = 0
-      if (present(ierr)) ierr = FTIMER_SUCCESS
 !$omp master
       id = lookup_impl(self, name, ierr)
 !$omp end master
@@ -431,7 +424,6 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
 
-      if (present(ierr)) ierr = FTIMER_SUCCESS
 !$omp master
       call reset_impl(self, ierr=ierr)
 !$omp end master

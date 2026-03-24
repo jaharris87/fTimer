@@ -4,9 +4,11 @@ module test_openmp_guards
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_get_summary, ftimer_init, &
                      ftimer_lookup, ftimer_start, ftimer_start_id, ftimer_stop, ftimer_stop_id
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
-   use ftimer_types, only: FTIMER_SUCCESS, ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time, snapshot_timer
    implicit none
+
+   integer, parameter :: NOOP_IERR_SENTINEL = -100
 
 contains
 
@@ -67,11 +69,11 @@ contains
       if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
 
       if (thread_num /= 0) then
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call timer%start("worker_only", ierr=local_ierr)
          worker_start_ierr = local_ierr
 
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call timer%stop("worker_only", ierr=local_ierr)
          worker_stop_ierr = local_ierr
       end if
@@ -81,8 +83,8 @@ contains
 
       @assertTrue(thread_seen(1))
       @assertTrue(thread_seen(2))
-      @assertEqual(FTIMER_SUCCESS, worker_start_ierr)
-      @assertEqual(FTIMER_SUCCESS, worker_stop_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_start_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_stop_ierr)
       @assertEqual(0, state%num_segments)
       @assertEqual(0, state%call_stack%depth)
 
@@ -110,7 +112,7 @@ contains
       if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
 
       if (thread_num /= 0) then
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call timer%init(ierr=local_ierr)
          worker_ierr = local_ierr
       end if
@@ -121,7 +123,7 @@ contains
 
       @assertTrue(thread_seen(1))
       @assertTrue(thread_seen(2))
-      @assertEqual(FTIMER_SUCCESS, worker_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_ierr)
       @assertFalse(initialized)
       @assertEqual(0, state%num_segments)
    end subroutine test_non_master_init_is_noop
@@ -157,16 +159,16 @@ contains
       if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
 
       if (thread_num /= 0) then
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          local_id = timer%lookup("worker_id", ierr=local_ierr)
          worker_id = local_id
          worker_lookup_ierr = local_ierr
 
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call timer%start_id(local_id, ierr=local_ierr)
          worker_start_ierr = local_ierr
 
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call timer%stop_id(local_id, ierr=local_ierr)
          worker_stop_ierr = local_ierr
       end if
@@ -177,9 +179,9 @@ contains
       @assertTrue(thread_seen(1))
       @assertTrue(thread_seen(2))
       @assertEqual(0, worker_id)
-      @assertEqual(FTIMER_SUCCESS, worker_lookup_ierr)
-      @assertEqual(FTIMER_SUCCESS, worker_start_ierr)
-      @assertEqual(FTIMER_SUCCESS, worker_stop_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_lookup_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_start_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_stop_ierr)
       @assertEqual(0, state%num_segments)
       @assertEqual(0, state%call_stack%depth)
 
@@ -220,7 +222,7 @@ contains
       if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
 
       if (thread_num /= 0) then
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call timer%reset(ierr=local_ierr)
          worker_ierr = local_ierr
       end if
@@ -233,7 +235,7 @@ contains
 
       @assertTrue(thread_seen(1))
       @assertTrue(thread_seen(2))
-      @assertEqual(FTIMER_SUCCESS, worker_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_ierr)
       @assertTrue(initialized)
       @assertEqual(1, state%num_segments)
       @assertEqual(3.0_wp, elapsed)
@@ -273,7 +275,7 @@ contains
       if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
 
       if (thread_num /= 0) then
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call timer%finalize(ierr=local_ierr)
          worker_ierr = local_ierr
       end if
@@ -284,7 +286,7 @@ contains
 
       @assertTrue(thread_seen(1))
       @assertTrue(thread_seen(2))
-      @assertEqual(FTIMER_SUCCESS, worker_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_ierr)
       @assertTrue(initialized)
       @assertEqual(1, state%num_segments)
 
@@ -310,11 +312,52 @@ contains
       @assertTrue(thread_seen(2))
       @assertEqual(FTIMER_SUCCESS, master_start_ierr)
       @assertEqual(FTIMER_SUCCESS, master_stop_ierr)
-      @assertEqual(FTIMER_SUCCESS, worker_start_ierr)
-      @assertEqual(FTIMER_SUCCESS, worker_stop_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_start_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_stop_ierr)
 
       call assert_master_parallel_summary(summary)
    end subroutine test_parallel_master_only_summary_remains_correct
+
+   @test
+   subroutine test_worker_noop_does_not_clobber_shared_ierr()
+      type(ftimer_t) :: timer
+      integer :: ierr
+      integer :: ignored_id
+      integer :: shared_ierr
+      integer :: thread_num
+      logical :: thread_seen(2)
+
+      call omp_set_dynamic(.false.)
+
+      thread_seen = .false.
+      shared_ierr = NOOP_IERR_SENTINEL
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+!$omp parallel num_threads(2) default(shared) private(thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num == 0) then
+         shared_ierr = NOOP_IERR_SENTINEL
+         ignored_id = timer%lookup("", ierr=shared_ierr)
+      end if
+
+!$omp barrier
+
+      if (thread_num /= 0) then
+         call timer%start("worker_only", ierr=shared_ierr)
+      end if
+!$omp end parallel
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(FTIMER_ERR_UNKNOWN, shared_ierr)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_worker_noop_does_not_clobber_shared_ierr
 
    @test
    subroutine test_procedural_parallel_guards_match_oop()
@@ -374,7 +417,7 @@ contains
       if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
 
       if (thread_num == 0) then
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call timer%start("parallel", ierr=local_ierr)
          master_start_ierr = local_ierr
       end if
@@ -382,11 +425,11 @@ contains
 !$omp barrier
 
       if (thread_num /= 0) then
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call timer%start("parallel", ierr=local_ierr)
          worker_start_ierr = local_ierr
 
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call timer%stop("parallel", ierr=local_ierr)
          worker_stop_ierr = local_ierr
       end if
@@ -395,7 +438,7 @@ contains
 
       if (thread_num == 0) then
          fake_time = 5.0_wp
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call timer%stop("parallel", ierr=local_ierr)
          master_stop_ierr = local_ierr
       end if
@@ -436,7 +479,7 @@ contains
       if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
 
       if (thread_num == 0) then
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call ftimer_start("parallel", ierr=local_ierr)
          master_start_ierr = local_ierr
       end if
@@ -444,11 +487,11 @@ contains
 !$omp barrier
 
       if (thread_num /= 0) then
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call ftimer_start("parallel", ierr=local_ierr)
          worker_start_ierr = local_ierr
 
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call ftimer_stop("parallel", ierr=local_ierr)
          worker_stop_ierr = local_ierr
       end if
@@ -457,7 +500,7 @@ contains
 
       if (thread_num == 0) then
          fake_time = 5.0_wp
-         local_ierr = -100
+         local_ierr = NOOP_IERR_SENTINEL
          call ftimer_stop("parallel", ierr=local_ierr)
          master_stop_ierr = local_ierr
       end if

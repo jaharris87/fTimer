@@ -48,6 +48,7 @@ Treat the sections below as implementation targets unless they describe the Phas
 - The implemented model is master-thread-only timing; this phase does not make `fTimer` generally thread-safe
 - Inside OpenMP parallel regions, the guarded `ftimer_core` timer operations run only on the master thread
 - Non-master calls to those guarded core timer operations become no-ops instead of mutating shared timer state
+- Suppressed non-master calls are skipped before normal validation, emit no stderr warning, and leave any caller-provided `ierr` unchanged
 - The OpenMP guards do not broaden support for concurrent access to other APIs; summary/report generation and other shared access remain unsupported in threaded regions
 - Thread-local timer instances, fuller concurrent timing support, and any `suppress_in_parallel` control remain deferred
 
