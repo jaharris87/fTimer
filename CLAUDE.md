@@ -9,23 +9,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Run Commands
 
 ```bash
-# Serial build
-cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
-cmake --build build
-ctest --test-dir build --output-on-failure
-
 # Smoke-test-only build
 cmake -B build-smoke
 cmake --build build-smoke
 ctest --test-dir build-smoke --output-on-failure
 
-# MPI build
-cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+# Serial build (documented path: GNU Fortran + matching pFUnit install)
+FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+cmake --build build
+ctest --test-dir build --output-on-failure
+
+# MPI build (documented path: MPI wrapper compiler)
+FC=mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-mpi
 ctest --test-dir build-mpi --output-on-failure -L mpi
 
-# OpenMP guard build
-cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+# OpenMP guard build (currently supported with GNU Fortran)
+FC=gfortran cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-openmp
 ctest --test-dir build-openmp --output-on-failure
 
@@ -37,11 +37,21 @@ find examples -name '*.F90' -exec fprettify --diff {} +
 
 # Convenience Makefile (delegates to cmake)
 make            # build (serial)
-make mpi        # build (MPI)
+make mpi        # build (MPI, defaults FC=mpifort)
+make openmp     # build (OpenMP, defaults FC=gfortran)
 make test       # build + run tests
 make clean      # remove build/
 make install    # install to CMAKE_INSTALL_PREFIX
 ```
+
+Supported toolchain matrix:
+
+- Serial smoke/library build: the active Fortran compiler that CMake selects, as long as it can build the project normally.
+- Serial + pFUnit tests: GNU Fortran (`gfortran`) with a pFUnit installation built for the same compiler/toolchain.
+- MPI: an MPI wrapper compiler such as `mpifort`. `FTIMER_USE_MPI=ON` now runs a configure-time `use mpi` probe and fails early if the active compiler cannot consume the discovered MPI module files.
+- OpenMP: GNU Fortran (`gfortran`) only for the documented/supported path.
+
+Use a separate build directory for each mode/compiler combination. Reconfiguring an existing CMake build tree with a different Fortran compiler is not a supported workflow here.
 
 ## Architecture
 
@@ -130,10 +140,10 @@ The native Codex trigger comments are intentionally posted as single-line `@code
 
 ## Configuration
 
-- **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` can populate cross-rank fields. When OFF, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the summary local-only.
-- **`FTIMER_USE_OPENMP`** (CMake option, default OFF): Enables the Phase 6 `!$omp master` guards around the guarded `ftimer_core` entry points. This is limited master-thread-only protection, not full thread safety.
+- **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` can populate cross-rank fields. The supported path is an MPI wrapper compiler such as `mpifort`; configure now fails early if the active compiler cannot compile a minimal `use mpi` probe against the discovered MPI toolchain. When OFF, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the summary local-only.
+- **`FTIMER_USE_OPENMP`** (CMake option, default OFF): Enables the Phase 6 `!$omp master` guards around the guarded `ftimer_core` entry points. This is limited master-thread-only protection, not full thread safety. The documented/supported build path is GNU Fortran (`gfortran`).
 - **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the current smoke-test baseline.
-- **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables pFUnit-backed tests once those suites exist.
+- **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables the pFUnit-backed behavioral and MPI test suites.
 - **`CMAKE_INSTALL_PREFIX`**: Where `make install` places the library and module files.
 - **pFUnit**: Optional dependency for behavioral tests. Set `PFUNIT_DIR` explicitly when enabling `FTIMER_BUILD_TESTS`.
 

@@ -47,42 +47,53 @@ fTimer is intended to provide stack-based hierarchical timing with:
 ## Build
 
 ```bash
-# Serial build with pFUnit tests
-cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
-cmake --build build
-ctest --test-dir build --output-on-failure
-
 # Smoke-test-only path
 cmake -B build-smoke
 cmake --build build-smoke
 ctest --test-dir build-smoke --output-on-failure
 
-# MPI build + MPI tests
-cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+# Serial build with pFUnit tests (documented path: GNU Fortran + matching pFUnit install)
+FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+cmake --build build
+ctest --test-dir build --output-on-failure
+
+# MPI build + MPI tests (documented path: MPI wrapper compiler)
+FC=mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-mpi
 ctest --test-dir build-mpi --output-on-failure -L mpi
 
-# OpenMP-guard build + tests
-cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+# OpenMP-guard build + tests (currently supported with GNU Fortran)
+FC=gfortran cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-openmp
 ctest --test-dir build-openmp --output-on-failure
 
 # Or use the Makefile wrapper
 make        # serial build
-make mpi    # MPI build
+make mpi    # MPI build (defaults FC=mpifort)
+make openmp # OpenMP build (defaults FC=gfortran)
 make test   # build + test
 ```
 
-Requires: a Fortran compiler with preprocess support, CMake >= 3.16, pFUnit when `FTIMER_BUILD_TESTS=ON`, and an MPI Fortran toolchain when `FTIMER_USE_MPI=ON`.
+Supported toolchain matrix:
+
+- Serial smoke/library build: the active Fortran compiler that CMake selects, as long as it can build the project normally.
+- Serial + pFUnit tests: GNU Fortran (`gfortran`) with a pFUnit installation built for the same compiler/toolchain.
+- MPI: an MPI wrapper compiler such as `mpifort`. `FTIMER_USE_MPI=ON` now probes a minimal `use mpi` compile at configure time and fails early if the active compiler cannot consume the discovered MPI module files.
+- OpenMP: GNU Fortran (`gfortran`) only for the documented/supported path. Other compiler families are not currently an advertised OpenMP build path for this repo.
+
+Use a separate build directory for each mode/compiler combination. Reconfiguring an existing CMake build tree with a different Fortran compiler is not a supported workflow here.
+
+Requires: a Fortran compiler with preprocess support, CMake >= 3.16, pFUnit when `FTIMER_BUILD_TESTS=ON`, an MPI wrapper/compiler pair when `FTIMER_USE_MPI=ON`, and GNU Fortran when `FTIMER_USE_OPENMP=ON`.
 
 Current defaults:
 
 - CMake is the only supported build path right now.
 - Smoke tests are enabled by default and stay intentionally minimal.
 - pFUnit-backed behavioral tests are opt-in via `FTIMER_BUILD_TESTS=ON`.
+- `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`; incompatible default-compiler MPI paths now fail during configure with guidance instead of reaching a later compile failure.
 - FPM support is deferred until the public API stabilizes.
 - MPI-reduced structured summaries require `FTIMER_USE_MPI=ON`; otherwise `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and a local-only summary.
-- OpenMP master-thread guards require `FTIMER_USE_OPENMP=ON`; otherwise the OpenMP directives compile away and fTimer behaves as the serial/MPI-only runtime already described above.
+- OpenMP master-thread guards require `FTIMER_USE_OPENMP=ON` with GNU Fortran; otherwise the OpenMP directives compile away and fTimer behaves as the serial/MPI-only runtime already described above.
 - Formatted summary/report output is still local-only.
 
 ## Deferred Items
