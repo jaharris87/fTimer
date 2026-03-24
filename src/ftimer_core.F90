@@ -60,6 +60,7 @@ module ftimer_core
       procedure :: lookup
       procedure :: reset
       procedure :: get_summary
+      procedure :: mpi_summary
       procedure :: print_summary
       procedure :: write_summary
       procedure, private :: wtime
@@ -73,6 +74,12 @@ module ftimer_core
          type(ftimer_summary_t), intent(out) :: summary
          integer, intent(out), optional :: ierr
       end subroutine get_summary
+
+      module subroutine mpi_summary(self, summary, ierr)
+         class(ftimer_t), intent(in) :: self
+         type(ftimer_summary_t), intent(out) :: summary
+         integer, intent(out), optional :: ierr
+      end subroutine mpi_summary
 
       module subroutine print_summary(self, unit, metadata, ierr)
          class(ftimer_t), intent(in) :: self

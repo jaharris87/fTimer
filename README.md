@@ -4,29 +4,31 @@ A lightweight, correctness-first wall-clock timing library for modern Fortran.
 
 ## Status
 
-**Under construction.** Phase 4 now provides the shared types/clock foundation, a real core timer runtime, structured summary building, formatted local reporting, and the expanded procedural convenience API with deterministic pFUnit coverage. MPI reductions and OpenMP guards are still tracked in [TODO.md](TODO.md).
+**Under construction.** Phase 5 now provides the shared types/clock foundation, a real core timer runtime, structured local summaries and reporting, the expanded procedural convenience API, and MPI-reduced structured summaries with deterministic pFUnit coverage. OpenMP guards are still tracked in [TODO.md](TODO.md).
 
-## Current Phase 4 Behavior
+## Current Phase 5 Behavior
 
 Current `main` provides:
 
 - CMake-based serial and MPI builds
 - `ftimer_types` exports shared kinds, constants, summary/container types, and abstract clock/hook interfaces
 - `ftimer_clock` exports `ftimer_default_clock()`, `ftimer_mpi_clock()` for MPI-enabled builds, and `ftimer_date_string()`
-- `ftimer_core` exports a real `ftimer_t` implementation with `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `print_summary`, and `write_summary`
+- `ftimer_core` exports a real `ftimer_t` implementation with `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `mpi_summary`, `print_summary`, and `write_summary`
 - `ftimer_summary` builds structured local summaries with hierarchical entries, inclusive time, self time, call counts, and formatted text output
+- `ftimer_mpi` adds canonical descriptor hashing, cross-rank consistency preflight, and MPI reduction helpers for structured summaries
 - Strict-by-default stack-based timing with context-sensitive accounting and configurable mismatch handling (`strict` / `warn` / `repair`)
-- A default smoke-test path plus optional pFUnit behavioral/integration tests using an injectable mock clock
+- A default smoke-test path plus optional pFUnit behavioral/integration/MPI tests using an injectable mock clock
 - Example programs that compile and link against the library
 - An installable CMake package export (`fTimerTargets.cmake`, `fTimerConfig.cmake`, `fTimerConfigVersion.cmake`)
 
-Current public surface now exposes the complete local-only API for both usage styles:
+Current public surface now exposes the complete Phase 5 API surface for both usage styles:
 
-- Procedural interface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
-  Current Phase 4 note: the procedural wrapper preserves the legacy positional `ftimer_init(ierr)` form from earlier phases, so `comm` and `mismatch_mode` should be passed by keyword (`ftimer_init(comm=..., mismatch_mode=..., ierr=...)`) to avoid ambiguous integer-only positional calls.
-- OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `print_summary`, and `write_summary`
+- Procedural interface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
+  Current Phase 5 note: the procedural wrapper preserves the legacy positional `ftimer_init(ierr)` form from earlier phases, so `comm` and `mismatch_mode` should be passed by keyword (`ftimer_init(comm=..., mismatch_mode=..., ierr=...)`) to avoid ambiguous integer-only positional calls.
+- OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `mpi_summary`, `print_summary`, and `write_summary`
 - Procedural wrappers are thin forwarding calls over the existing OOP implementation and preserve the intended `ierr`/stderr error contract
-- Summary/reporting is local-only in this phase; MPI-reduced summaries remain deferred
+- `get_summary()`, `print_summary()`, and `write_summary()` remain local-only
+- `mpi_summary()` / `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON` plus a fully stopped timer set for cross-rank reduction, perform a hash-based preflight before any reduction, fall back to local-only summaries with `FTIMER_ERR_MPI_INCON` on inconsistent ranks, and populate min/max/avg/imbalance fields on root when `has_mpi_data` is valid
 
 ## Target Capabilities
 
@@ -53,9 +55,10 @@ cmake -B build-smoke
 cmake --build build-smoke
 ctest --test-dir build-smoke --output-on-failure
 
-# MPI build compatibility check
+# MPI build + MPI tests
 cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-mpi
+ctest --test-dir build-mpi --output-on-failure -L mpi
 
 # Or use the Makefile wrapper
 make        # serial build
@@ -71,14 +74,13 @@ Current defaults:
 - Smoke tests are enabled by default and stay intentionally minimal.
 - pFUnit-backed behavioral tests are opt-in via `FTIMER_BUILD_TESTS=ON`.
 - FPM support is deferred until the public API stabilizes.
-- MPI reductions are not implemented yet.
+- MPI-reduced structured summaries require `FTIMER_USE_MPI=ON`; otherwise `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and a local-only summary.
+- Formatted summary/report output is still local-only.
 
 ## Deferred Items
 
-These are intentionally postponed beyond Phase 4:
+These are intentionally postponed beyond Phase 5:
 
-- MPI reductions and cross-rank summary statistics
-- MPI behavioral tests
 - OpenMP guards
 - FPM manifest/support
 - secondary repo hygiene such as Dependabot, `.editorconfig`, and broader governance files

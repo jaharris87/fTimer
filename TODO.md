@@ -60,13 +60,13 @@ Default global instance + procedural wrappers. Thin layer over Phase 2-3.
 
 Cross-rank summary with hash preflight. Depends on Phases 2-3.
 
-- [ ] `src/ftimer_mpi.F90` — Hash preflight: each rank hashes sorted canonical timer descriptor list, `MPI_Allgather` to compare. If mismatch, set `FTIMER_ERR_MPI_INCON`, fall back to local-only.
-- [ ] MPI reduce: `MPI_Reduce` for min/max/sum of each entry's inclusive_time. Compute avg = sum/nprocs, imbalance = max/avg. Populate `ftimer_summary_entry_t` MPI fields on root.
-- [ ] `ftimer_t%mpi_summary(...)` — Call hash preflight, then MPI reduce, then build summary. Set `has_mpi_data = .true.` on result.
-- [ ] `ftimer_mpi_summary` procedural wrapper in `ftimer.F90`.
-- [ ] **Tests** (`tests/mpi/`):
-  - `test_mpi_summary.pf` — min/max/avg/imbalance correctness with mock clock per rank
-  - `test_mpi_consistency.pf` — Consistent timers succeed; inconsistent detected, returns `FTIMER_ERR_MPI_INCON`
+- [x] `src/ftimer_mpi.F90` — Hash preflight: each rank hashes sorted canonical timer descriptor list, `MPI_Allgather` to compare. If mismatch, set `FTIMER_ERR_MPI_INCON`, fall back to local-only.
+- [x] MPI reduce: `MPI_Reduce` for min/max/sum of each entry's inclusive_time. Compute avg = sum/nprocs, imbalance = max/avg. Populate `ftimer_summary_entry_t` MPI fields on root.
+- [x] `ftimer_t%mpi_summary(...)` — Call hash preflight, then MPI reduce, then build summary. Set `has_mpi_data = .true.` on result.
+- [x] `ftimer_mpi_summary` procedural wrapper in `ftimer.F90`.
+- [x] **Tests** (`tests/mpi/`):
+  - [x] `test_mpi_summary.pf` — min/max/avg/imbalance correctness with mock clock per rank
+  - [x] `test_mpi_consistency.pf` — Consistent timers succeed; inconsistent detected, returns `FTIMER_ERR_MPI_INCON`
 
 ## Phase 6: OpenMP Guards
 

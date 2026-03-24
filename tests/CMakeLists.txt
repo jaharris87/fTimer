@@ -20,6 +20,12 @@ if(FTIMER_BUILD_TESTS)
     test_procedural_api.pf
   )
 
+  if(NOT FTIMER_USE_MPI)
+    list(APPEND SERIAL_TEST_SOURCES
+      test_mpi_disabled.pf
+    )
+  endif()
+
   add_pfunit_ctest(ftimer_serial_tests
     TEST_SOURCES ${SERIAL_TEST_SOURCES}
     OTHER_SOURCES test_support.F90

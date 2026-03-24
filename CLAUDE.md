@@ -22,6 +22,7 @@ ctest --test-dir build-smoke --output-on-failure
 # MPI build
 cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-mpi
+ctest --test-dir build-mpi --output-on-failure -L mpi
 
 # Lint / format check
 find src -name '*.F90' -exec fprettify --diff {} +
@@ -72,9 +73,9 @@ ftimer.F90  (procedural wrappers + default global instance)
 
 ## Development Workflow
 
-Current `main` is in Phase 4. The shared types/clock foundation, core timer runtime, local summary/report formatting, and procedural convenience wrappers are implemented; MPI reductions and OpenMP guards remain deferred in `TODO.md`.
+Current `main` is in Phase 5. The shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, and MPI-reduced structured summaries are implemented; OpenMP guards remain deferred in `TODO.md`.
 
-During Phase 4, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: preserve procedural-wrapper parity with the OOP core, but do not pull Phase 5+ MPI/OpenMP work forward.
+During Phase 5, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: preserve procedural-wrapper parity with the OOP core, keep MPI summary behavior correct and explicit, but do not pull Phase 6+ OpenMP work forward.
 
 Detailed repository operations and PR/review handling live in `docs/maintainer.md`. Use that file for GitHub workflow details; keep this file focused on coding/build/test behavior and the short mandatory PR summary below.
 
@@ -123,7 +124,7 @@ The native Codex trigger comments are intentionally posted as single-line `@code
 
 ## Configuration
 
-- **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` is available.
+- **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` can populate cross-rank fields. When OFF, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the summary local-only.
 - **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the current smoke-test baseline.
 - **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables pFUnit-backed tests once those suites exist.
 - **`CMAKE_INSTALL_PREFIX`**: Where `make install` places the library and module files.

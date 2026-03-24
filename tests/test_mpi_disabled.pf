@@ -1,0 +1,122 @@
+module test_mpi_disabled
+   use pfunit
+   use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_start, ftimer_stop
+   use ftimer_core, only: ftimer_t
+   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_SUCCESS, ftimer_summary_t, wp
+   use test_support, only: attach_mock_clock, fake_time
+   implicit none
+
+contains
+
+   @test
+   subroutine test_oop_mpi_summary_not_implemented_returns_local()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      logical :: has_mpi_data
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_single_timer(timer, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      has_mpi_data = summary%has_mpi_data
+
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+      @assertFalse(has_mpi_data)
+      @assertEqual(1, summary%num_entries)
+      @assertEqual(4.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(4.0_wp, summary%entries(1)%self_time)
+      @assertEqual(1, summary%entries(1)%call_count)
+      @assertEqual(-1.0_wp, summary%entries(1)%min_time)
+      @assertEqual(-1.0_wp, summary%entries(1)%max_time)
+      @assertEqual(-1.0_wp, summary%entries(1)%avg_across_ranks)
+      @assertEqual(-1.0_wp, summary%entries(1)%imbalance)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_oop_mpi_summary_not_implemented_returns_local
+
+   @test
+   subroutine test_procedural_mpi_summary_matches_oop_when_disabled()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_summary_t) :: oop_summary
+      type(ftimer_summary_t) :: procedural_summary
+      integer :: ierr
+
+      call oop_timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(oop_timer)
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call build_single_timer(oop_timer, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call build_single_timer_procedural(ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call oop_timer%mpi_summary(oop_summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+      call ftimer_mpi_summary(procedural_summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+
+      call assert_summary_equal(procedural_summary, oop_summary)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_mpi_summary_matches_oop_when_disabled
+
+   subroutine build_single_timer(timer, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      call timer%start("work", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 4.0_wp
+      call timer%stop("work", ierr=ierr)
+   end subroutine build_single_timer
+
+   subroutine build_single_timer_procedural(ierr)
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      call ftimer_start("work", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 4.0_wp
+      call ftimer_stop("work", ierr=ierr)
+   end subroutine build_single_timer_procedural
+
+   subroutine assert_summary_equal(lhs, rhs)
+      type(ftimer_summary_t), intent(in) :: lhs
+      type(ftimer_summary_t), intent(in) :: rhs
+      logical :: names_match
+
+      @assertEqual(rhs%num_entries, lhs%num_entries)
+      @assertEqual(rhs%has_mpi_data, lhs%has_mpi_data)
+      @assertEqual(rhs%total_time, lhs%total_time)
+
+      names_match = trim(lhs%entries(1)%name) == trim(rhs%entries(1)%name)
+      @assertTrue(names_match)
+      @assertEqual(rhs%entries(1)%depth, lhs%entries(1)%depth)
+      @assertEqual(rhs%entries(1)%inclusive_time, lhs%entries(1)%inclusive_time)
+      @assertEqual(rhs%entries(1)%self_time, lhs%entries(1)%self_time)
+      @assertEqual(rhs%entries(1)%call_count, lhs%entries(1)%call_count)
+      @assertEqual(rhs%entries(1)%avg_time, lhs%entries(1)%avg_time)
+      @assertEqual(rhs%entries(1)%pct_time, lhs%entries(1)%pct_time)
+      @assertEqual(rhs%entries(1)%min_time, lhs%entries(1)%min_time)
+      @assertEqual(rhs%entries(1)%max_time, lhs%entries(1)%max_time)
+      @assertEqual(rhs%entries(1)%avg_across_ranks, lhs%entries(1)%avg_across_ranks)
+      @assertEqual(rhs%entries(1)%imbalance, lhs%entries(1)%imbalance)
+   end subroutine assert_summary_equal
+
+end module test_mpi_disabled

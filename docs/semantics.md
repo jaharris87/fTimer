@@ -1,8 +1,8 @@
 # fTimer Semantics Reference
 
-Phase 3 note: this document is still a forward-looking outline, not a complete runtime contract.
+Phase 5 note: this document is still a forward-looking outline, not a complete runtime contract.
 
-Current `main` now implements the Phase 2 core timer behavior plus Phase 3 local summary/reporting behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, self-time computation, and callback suppression during repair. MPI summary guarantees and OpenMP behavior below are still future work.
+Current `main` now implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, and Phase 5 MPI structured summaries: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `mpi_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, and root-side MPI min/max/avg/imbalance fields. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with a local-only summary. OpenMP behavior below is still future work.
 
 Treat the sections below as implementation targets unless they describe the Phase 2/3 behaviors listed above.
 
