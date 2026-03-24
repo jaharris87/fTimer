@@ -54,4 +54,5 @@ When reviewing PRs in this repo:
 3. **Be skeptical of tests**: Ask whether the test actually exercises the behavior it claims to test.
 4. **Verify docs match implementation**: If the PR changes behavior, check that CLAUDE.md, README, and any relevant comments are updated.
 5. **Prefer fewer, more serious findings**: Two real concerns are worth more than twenty style nits.
-6. **Begin your response with the review type heading** (`## Software Review`, `## Methodology Review`, or `## Red Team Review`) so it is clear which review you are responding to.
+6. **Begin your response with the review type heading** expected by the prompt so it is clear which review you are responding to.
+7. **Match the detailed prompt library when used**: `.github/prompts/detailed/` also defines long-form review headings such as `## API / Compatibility Review`, `## Build / Portability Review`, `## Docs / Contract Review`, `## MPI Safety Review`, `## Performance / Overhead Review`, and `## Test Quality Review`.

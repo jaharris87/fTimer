@@ -118,9 +118,9 @@ Short version:
 - monitor for the actual Codex review output
 - reply to every finding, resolve every review thread, and do not merge while merge-blocking findings remain
 
-Use `docs/maintainer.md` for the full operating procedure, investigation commands, merge criteria, and the manual-review fallback when native Codex review is unavailable.
+Use `docs/maintainer.md` for the full operating procedure, investigation commands, merge criteria, and the fallback/detailed-review workflow when native Codex review is unavailable or when a longer-form review is needed.
 
-The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`. The preserved detailed prompts for auxiliary/manual review use live in `.github/prompts/manual/`.
+The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`. The long-form prompt library lives in `.github/prompts/detailed/`: it contains detailed versions of the three PR-triggered review types plus six additional review prompts for API/compatibility, build/portability, docs/contracts, MPI safety, performance/overhead, and test quality.
 
 ## Configuration
 

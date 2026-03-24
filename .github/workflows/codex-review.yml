@@ -4,8 +4,8 @@ name: Codex Review Triggers
 # which trigger native Codex GitHub review via your ChatGPT-linked account.
 # The trigger comments are intentionally condensed to single lines because
 # native Codex review did not reliably follow the previous long-form prompts.
-# The preserved detailed prompts remain under .github/prompts/manual/ for
-# auxiliary/manual review use.
+# The long-form prompt library lives under .github/prompts/detailed/ for
+# manual fallback reviews and non-triggered deep reviews.
 #
 # Prerequisites:
 #   1. Create a fine-grained PAT with pull-requests:write on this repo

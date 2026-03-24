@@ -43,7 +43,16 @@ This workflow is mandatory for every PR.
   - `src/ftimer_core.F90`, especially `start`, `stop`, or `repair_mismatch`
   - `src/ftimer_mpi.F90`
 
-The native trigger workflow now posts intentionally condensed single-line `@codex review ...` comments built from `.github/prompts/`. The preserved detailed prompts live in `.github/prompts/manual/` for auxiliary/manual review use. Do not paste the manual backup prompts into a PR unless you are using the documented fallback flow.
+The native trigger workflow now posts intentionally condensed single-line `@codex review ...` comments built from `.github/prompts/`. The long-form prompt library lives in `.github/prompts/detailed/`. Keep the top-level prompts reserved for label-triggered native reviews; use the detailed prompts for manual fallback reviews or deeper repo-health reviews that are not wired to PR labels. Do not paste a detailed prompt into a PR unless you are intentionally using the documented fallback flow.
+
+### Detailed Prompt Library
+
+The detailed prompt set in `.github/prompts/detailed/` has two roles:
+
+- long-form fallback versions of the three PR-triggered review types: `software-review.md`, `methodology-review.md`, and `red-team-review.md`
+- additional long-horizon review prompts that are not label-triggered by default: `api-compat-review.md`, `build-portability-review.md`, `docs-contract-review.md`, `mpi-safety-review.md`, `performance-overhead-review.md`, and `test-quality-review.md`
+
+Use the additional detailed prompts when you want a targeted repository review outside the normal PR trigger flow, for example periodic maintainability checks, pre-release audits, or focused follow-up investigation on a risky area.
 
 ### Monitoring Reviews
 
@@ -67,7 +76,7 @@ Fallback procedure:
 
 1. Still apply the normal Codex review labels and monitor for the native review flow first.
 2. Request the missing review manually, for example via ChatGPT with GitHub integration.
-   You can reuse the detailed backup prompts from `.github/prompts/manual/` when doing this.
+   Use the matching detailed prompt from `.github/prompts/detailed/` when doing this.
 3. Ask the manual review to use the repository review heading convention:
    - `## Software Review`
    - `## Methodology Review`
@@ -99,7 +108,7 @@ Useful commands:
 ## Known Limitations Of Native Codex GitHub Reviews
 
 - A passing trigger workflow only proves that the `@codex review` comment was posted.
-- Native Codex review did not reliably follow the previous long-form trigger prompts, so the workflow now uses single-line trigger comments and keeps the detailed versions only for manual fallback.
+- Native Codex review did not reliably follow the previous long-form trigger prompts, so the workflow now uses single-line trigger comments and keeps the detailed versions in a separate long-form prompt library for fallback and non-triggered deep reviews.
 - Codex review bodies may ignore prompt instructions about top-level headings.
 - A "no findings" outcome may appear as a generic comment or reaction rather than a distinct type-specific review body.
 - GitHub does not expose clean provenance from a particular trigger comment to a particular returned review object.

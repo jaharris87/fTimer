@@ -69,10 +69,16 @@ fTimer/
 │       ├── software-review.md         # Condensed native trigger prompt
 │       ├── methodology-review.md      # Condensed timing/HPC trigger prompt
 │       ├── red-team-review.md         # Condensed adversarial trigger prompt
-│       └── manual/
-│           ├── software-review.md     # Preserved detailed fallback prompt
-│           ├── methodology-review.md  # Preserved detailed fallback prompt
-│           └── red-team-review.md     # Preserved detailed fallback prompt
+│       └── detailed/
+│           ├── software-review.md     # Detailed software review prompt
+│           ├── methodology-review.md  # Detailed methodology review prompt
+│           ├── red-team-review.md     # Detailed adversarial review prompt
+│           ├── api-compat-review.md   # Long-horizon API/compatibility review
+│           ├── build-portability-review.md
+│           ├── docs-contract-review.md
+│           ├── mpi-safety-review.md
+│           ├── performance-overhead-review.md
+│           └── test-quality-review.md
 ├── .claude/
 │   └── settings.json
 ├── src/
