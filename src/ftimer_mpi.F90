@@ -1,7 +1,7 @@
 module ftimer_mpi
    use, intrinsic :: iso_fortran_env, only: int64
-   use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_UNKNOWN, FTIMER_NAME_LEN, FTIMER_SUCCESS, &
-                           ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, &
+                           FTIMER_ERR_UNKNOWN, FTIMER_NAME_LEN, FTIMER_SUCCESS, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi
 #endif
@@ -9,6 +9,7 @@ module ftimer_mpi
    private
 
    public :: augment_summary_with_mpi
+   public :: check_mpi_summary_prereqs
    public :: ftimer_mpi_enabled
 
 contains
@@ -20,6 +21,40 @@ contains
       ftimer_mpi_enabled = .false.
 #endif
    end function ftimer_mpi_enabled
+
+   subroutine check_mpi_summary_prereqs(local_has_active_timers, comm, status)
+      logical, intent(in) :: local_has_active_timers
+      integer, intent(in) :: comm
+      integer, intent(out) :: status
+#ifdef FTIMER_USE_MPI
+      integer :: active_comm
+      integer :: any_active
+      integer :: local_active
+      integer :: mpierr
+
+      status = FTIMER_SUCCESS
+      active_comm = comm
+      if (active_comm < 0) active_comm = MPI_COMM_WORLD
+
+      if (active_comm == MPI_COMM_NULL) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      local_active = 0
+      if (local_has_active_timers) local_active = 1
+
+      call MPI_Allreduce(local_active, any_active, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      if (any_active /= 0) status = FTIMER_ERR_ACTIVE
+#else
+      status = FTIMER_ERR_NOT_IMPLEMENTED
+#endif
+   end subroutine check_mpi_summary_prereqs
 
    subroutine augment_summary_with_mpi(summary, comm, status)
       type(ftimer_summary_t), intent(inout) :: summary
@@ -34,19 +69,24 @@ contains
       integer :: nprocs
       integer :: rank
       integer, allocatable :: permutation(:)
-      integer(int64) :: local_hash
-      integer(int64), allocatable :: gathered_hashes(:)
+      integer(int64) :: local_hashes(2)
+      integer(int64), allocatable :: gathered_hashes(:, :)
       real(wp), allocatable :: send_values(:)
       real(wp), allocatable :: min_values(:)
       real(wp), allocatable :: max_values(:)
       real(wp), allocatable :: sum_values(:)
       character(len=:), allocatable :: descriptors(:)
+      logical :: hashes_match
 
       status = FTIMER_SUCCESS
       summary%has_mpi_data = .false.
 
       active_comm = comm
       if (active_comm < 0) active_comm = MPI_COMM_WORLD
+      if (active_comm == MPI_COMM_NULL) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
 
       call MPI_Comm_rank(active_comm, rank, mpierr)
       if (mpierr /= MPI_SUCCESS) then
@@ -61,16 +101,24 @@ contains
       end if
 
       call build_descriptor_order(summary, descriptors, permutation)
-      local_hash = hash_descriptor_list(descriptors, permutation)
+      call hash_descriptor_list(descriptors, permutation, local_hashes)
 
-      allocate (gathered_hashes(nprocs))
-      call MPI_Allgather(local_hash, 1, MPI_INTEGER8, gathered_hashes, 1, MPI_INTEGER8, active_comm, mpierr)
+      allocate (gathered_hashes(2, nprocs))
+      call MPI_Allgather(local_hashes, 2, MPI_INTEGER8, gathered_hashes, 2, MPI_INTEGER8, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      if (.not. all(gathered_hashes == gathered_hashes(1))) then
+      hashes_match = .true.
+      do i = 2, nprocs
+         if (any(gathered_hashes(:, i) /= gathered_hashes(:, 1))) then
+            hashes_match = .false.
+            exit
+         end if
+      end do
+
+      if (.not. hashes_match) then
          status = FTIMER_ERR_MPI_INCON
          return
       end if
@@ -116,7 +164,7 @@ contains
       end do
       summary%has_mpi_data = .true.
 #else
-      status = FTIMER_SUCCESS
+      status = FTIMER_ERR_NOT_IMPLEMENTED
       summary%has_mpi_data = .false.
 #endif
    end subroutine augment_summary_with_mpi
@@ -223,9 +271,10 @@ contains
       end do
    end subroutine sort_permutation_by_descriptor
 
-   integer(int64) function hash_descriptor_list(descriptors, permutation) result(hash_value)
+   subroutine hash_descriptor_list(descriptors, permutation, hash_values)
       character(len=*), intent(in) :: descriptors(:)
       integer, intent(in) :: permutation(:)
+      integer(int64), intent(out) :: hash_values(2)
       integer :: i
       integer :: j
       integer :: trimmed_len
@@ -250,8 +299,9 @@ contains
          low_hash = hash_step(low_hash, 10_int64, 65599_int64, 4294967279_int64)
       end do
 
-      hash_value = ishft(high_hash, 32) + low_hash
-   end function hash_descriptor_list
+      hash_values(1) = high_hash
+      hash_values(2) = low_hash
+   end subroutine hash_descriptor_list
 
    integer(int64) function hash_step(current, value, base, modulus) result(updated)
       integer(int64), intent(in) :: current

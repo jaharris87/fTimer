@@ -6,7 +6,7 @@
 
 > fTimer is a lightweight, correctness-first timing library for Fortran codes. Inspired by Flash-X's MPINative Timers but designed as a standalone profiling substrate, it preserves the proven conceptual model (stack-based nesting, context-sensitive accounting, hierarchical summary) while optimizing for correctness, clarity, portability, and composability.
 
-**Scope (implemented through Phase 4):** A portable wall-clock timer library with profiling extensibility hooks plus local structured summaries, formatted reports, and a procedural convenience API over the OOP core. fTimer does NOT itself provide hardware counter or power measurements — it provides callback hooks so external tools (PAPI, likwid, etc.) can attach to timer boundaries in the future.
+**Scope (implemented through Phase 5):** A portable wall-clock timer library with profiling extensibility hooks plus local structured summaries, formatted reports, a procedural convenience API over the OOP core, and MPI-reduced structured summaries with cross-rank preflight. fTimer does NOT itself provide hardware counter or power measurements — it provides callback hooks so external tools (PAPI, likwid, etc.) can attach to timer boundaries in the future.
 
 **Where fTimer preserves Flash-X's design:** strict stack-based nesting, context-sensitive accounting of the same timer under different parents, hierarchical summary logic, low conceptual overhead, string and integer-key access.
 
@@ -19,7 +19,7 @@
 - OOP core with encapsulated state and multiple instances
 - Injectable clock, configurable error handling, callback hooks with full context
 
-## Current Phase 4 Snapshot
+## Current Phase 5 Snapshot
 
 Current `main` is intentionally narrower than the target design below:
 
@@ -29,17 +29,17 @@ Current `main` is intentionally narrower than the target design below:
 - `ftimer_core.F90` implements `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `print_summary`, and `write_summary`
 - `ftimer_summary.F90` implements local summary building and formatted text reporting
 - `ftimer.F90` now exports the local procedural wrapper surface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_print_summary`, and `ftimer_write_summary`
-  Current Phase 4 note: the procedural wrapper keeps the legacy one-argument positional `ftimer_init(ierr)` calling form, so `comm` and `mismatch_mode` are keyword arguments in the current implementation
+  Current Phase 5 note: the procedural wrapper keeps the legacy one-argument positional `ftimer_init(ierr)` calling form, so `comm` and `mismatch_mode` are keyword arguments in the current implementation
 - stack-based nesting, context-sensitive accounting, injectable clock use, and strict/warn/repair mismatch dispatch are implemented in the core runtime
-- pFUnit-backed behavioral tests exist for the Phase 2 core behaviors plus Phase 3 summary/self-time/file/callback coverage and Phase 4 procedural parity coverage
-- MPI reductions remain future implementation work
+- pFUnit-backed behavioral tests exist for the Phase 2 core behaviors plus Phase 3 summary/self-time/file/callback coverage, Phase 4 procedural parity coverage, and Phase 5 MPI summary coverage
+- `mpi_summary()` / `ftimer_mpi_summary()` now provide MPI-reduced structured summaries on root after a descriptor-hash preflight, return local-only summaries with `FTIMER_ERR_MPI_INCON` on inconsistent ranks, return `FTIMER_ERR_NOT_IMPLEMENTED` in non-MPI builds, and require all timers to be stopped before cross-rank reduction
 
 For the current user-facing contract, prefer `README.md` and the source in `src/`. Use this document as the implementation target for future phases.
 
 ## Key Decisions
 
 - **Build system**: CMake with a convenience Makefile wrapper (`make`, `make test`, `make install` delegate to cmake/ctest)
-- **Current baseline**: buildable Phase 4 foundation + core runtime + local summary/reporting + procedural wrappers + smoke tests + opt-in serial pFUnit tests; later phases add MPI reductions and OpenMP guards
+- **Current baseline**: buildable Phase 5 foundation + core runtime + local summary/reporting + procedural wrappers + MPI-reduced structured summaries + smoke tests + opt-in serial/MPI pFUnit tests; later phases add OpenMP guards
 - **Testing**: current `main` uses smoke tests by default and pFUnit with an injectable mock clock when `FTIMER_BUILD_TESTS=ON`
 - **Timer model**: Strict nesting only (stack-based, no overlapping timers)
 - **Mismatch handling**: Configurable (`strict`/`warn`/`repair`), **default `strict`**. `repair` mode is Flash-X compatibility. Internal repair transitions do NOT fire user callbacks.
@@ -130,7 +130,7 @@ call timer%finalize([ierr])
 
 ### Procedural Convenience Interface
 ```fortran
-! Current Phase 4 implementation preserves legacy `ftimer_init(ierr)` positional usage.
+! Current Phase 5 implementation preserves legacy `ftimer_init(ierr)` positional usage.
 ! Pass `comm` and `mismatch_mode` by keyword in the procedural wrapper.
 call ftimer_init([ierr])
 call ftimer_init(comm=..., mismatch_mode=..., ierr=...)
@@ -156,7 +156,7 @@ call ftimer_finalize([ierr])
 | `timer%get_summary(summary [, ierr])` | `ftimer_get_summary(...)` | **Structured data**: returns `ftimer_summary_t` with all timing data. |
 | `timer%print_summary(...)` | `ftimer_print_summary(...)` | **Formatted text**: hierarchical table to stdout or unit. |
 | `timer%write_summary(...)` | `ftimer_write_summary(...)` | Formatted text to file (new or append). |
-| `timer%mpi_summary(...)` | `ftimer_mpi_summary(...)` | MPI-reduced summary on root (structured or formatted). |
+| `timer%mpi_summary(...)` | `ftimer_mpi_summary(...)` | MPI-reduced structured summary on root. |
 
 ### Summary Metadata (replaces `nsteps`)
 

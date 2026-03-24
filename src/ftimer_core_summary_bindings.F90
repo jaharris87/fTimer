@@ -1,9 +1,9 @@
 submodule(ftimer_core) ftimer_core_summary_bindings
    use, intrinsic :: iso_fortran_env, only: error_unit, output_unit
    use ftimer_clock, only: ftimer_date_string
-   use ftimer_mpi, only: augment_summary_with_mpi
+   use ftimer_mpi, only: augment_summary_with_mpi, check_mpi_summary_prereqs
    use ftimer_summary, only: build_summary, format_summary
-   use ftimer_types, only: FTIMER_ERR_MPI_INCON
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED
    implicit none
 
 contains
@@ -22,6 +22,7 @@ contains
    module procedure mpi_summary
    integer :: comm
    integer :: status
+   logical :: local_has_active_timers
 
    if (.not. self%initialized) then
       call reset_summary(summary)
@@ -29,12 +30,26 @@ contains
       return
    end if
 
-   call build_current_summary(self, summary)
-
    comm = -1
+   local_has_active_timers = self%call_stack%depth > 0
+   call build_current_summary(self, summary)
 #ifdef FTIMER_USE_MPI
    comm = self%mpi_comm
 #endif
+   call check_mpi_summary_prereqs(local_has_active_timers, comm, status)
+   if (status /= FTIMER_SUCCESS) then
+      select case (status)
+      case (FTIMER_ERR_NOT_IMPLEMENTED)
+         call report_summary_status(ierr, status, "ftimer mpi_summary requires FTIMER_USE_MPI=ON; using local summary")
+      case (FTIMER_ERR_ACTIVE)
+         call report_summary_status(ierr, status, &
+                                    "ftimer mpi_summary requires all timers stopped before MPI reduction; using local summary")
+      case default
+         call report_summary_status(ierr, status, "ftimer mpi_summary MPI precheck failed; using local summary")
+      end select
+      return
+   end if
+
    call augment_summary_with_mpi(summary, comm, status)
    if (status /= FTIMER_SUCCESS) then
       if (status == FTIMER_ERR_MPI_INCON) then
