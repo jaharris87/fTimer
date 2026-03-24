@@ -97,6 +97,12 @@ contains
       integer(c_int) :: saved_fd_c
 
       call delete_file_if_exists(path)
+      flush (error_unit)
+      if (c_fflush(c_null_ptr) < 0_c_int) then
+         ierr = 1
+         saved_fd = -1
+         return
+      end if
 
       c_path = trim(path)//c_null_char
       saved_fd_c = c_dup(STDERR_FILENO)
