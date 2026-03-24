@@ -164,11 +164,10 @@ contains
    function display_name(entry) result(name)
       type(ftimer_summary_entry_t), intent(in) :: entry
       character(len=:), allocatable :: name
-      integer :: name_len
+      character(len=:), allocatable :: escaped_name
 
-      name_len = max(1, len_trim(entry%name) + 2*entry%depth)
-      allocate (character(len=name_len) :: name)
-      name = repeat(' ', 2*entry%depth)//trim(entry%name)
+      escaped_name = escaped_summary_name(entry%name)
+      name = repeat(' ', 2*entry%depth)//escaped_name
    end function display_name
 
    recursive subroutine fill_summary_entries(entries, position, segments, parent_stack, depth, total_time, end_time)
@@ -295,12 +294,68 @@ contains
 
    integer function summary_name_width(summary) result(width)
       type(ftimer_summary_t), intent(in) :: summary
+      character(len=:), allocatable :: name
       integer :: i
 
       width = len('Timer name')
       do i = 1, summary%num_entries
-         width = max(width, len_trim(summary%entries(i)%name) + 2*summary%entries(i)%depth)
+         name = display_name(summary%entries(i))
+         width = max(width, len(name))
       end do
    end function summary_name_width
+
+   function escaped_summary_name(name) result(escaped)
+      character(len=*), intent(in) :: name
+      character(len=:), allocatable :: escaped
+      integer :: i
+      integer :: visible_len
+      logical :: leading_space
+
+      escaped = ''
+      visible_len = len_trim(name)
+      leading_space = .true.
+
+      do i = 1, visible_len
+         if (leading_space .and. (name(i:i) == ' ')) then
+            escaped = escaped//'\x20'
+            cycle
+         end if
+
+         leading_space = .false.
+         call append_escaped_char(escaped, name(i:i))
+      end do
+   end function escaped_summary_name
+
+   subroutine append_escaped_char(text, ch)
+      character(len=:), allocatable, intent(inout) :: text
+      character(len=1), intent(in) :: ch
+      integer :: code
+
+      code = iachar(ch)
+      select case (code)
+      case (9)
+         text = text//'\t'
+      case (10)
+         text = text//'\n'
+      case (13)
+         text = text//'\r'
+      case (0:8, 11:12, 14:31, 127)
+         call append_hex_escape(text, code)
+      case default
+         text = text//ch
+      end select
+   end subroutine append_escaped_char
+
+   subroutine append_hex_escape(text, code)
+      character(len=:), allocatable, intent(inout) :: text
+      integer, intent(in) :: code
+      character(len=*), parameter :: hex_digits = '0123456789ABCDEF'
+      integer :: high_nibble
+      integer :: low_nibble
+
+      high_nibble = code/16
+      low_nibble = mod(code, 16)
+      text = text//'\x'//hex_digits(high_nibble + 1:high_nibble + 1)//hex_digits(low_nibble + 1:low_nibble + 1)
+   end subroutine append_hex_escape
 
 end module ftimer_summary

@@ -134,6 +134,48 @@ contains
    end subroutine test_name_length_limit_accepts_exact_and_rejects_longer
 
    @test
+   subroutine test_lookup_rejects_control_chars_and_edge_whitespace()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      character(len=16) :: carriage_name
+      character(len=16) :: newline_name
+      character(len=16) :: safe_name
+      character(len=16) :: tab_name
+      integer :: ierr
+      integer :: id
+
+      carriage_name = 'bad'//achar(13)//'name'
+      safe_name = 'safe name'
+      newline_name = 'bad'//achar(10)//'name'
+      tab_name = 'bad'//achar(9)//'name'
+
+      call timer%init(ierr=ierr)
+
+      id = timer%lookup(safe_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, id)
+
+      id = timer%lookup(' leading', ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(0, id)
+
+      id = timer%lookup(carriage_name, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(0, id)
+
+      id = timer%lookup(tab_name, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(0, id)
+
+      id = timer%lookup(newline_name, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(0, id)
+
+      call snapshot_timer(timer, state)
+      @assertEqual(1, state%num_segments)
+   end subroutine test_lookup_rejects_control_chars_and_edge_whitespace
+
+   @test
    subroutine test_dynamic_growth_creates_many_segments()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state

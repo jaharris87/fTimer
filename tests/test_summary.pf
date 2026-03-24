@@ -1,6 +1,7 @@
 module test_summary
    use pfunit
    use ftimer_core, only: ftimer_t
+   use ftimer_summary, only: format_summary
    use ftimer_types, only: FTIMER_SUCCESS, ftimer_metadata_t, ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time, read_unit_text
    implicit none
@@ -135,9 +136,14 @@ contains
    subroutine test_print_summary_handles_deep_hierarchy()
       type(ftimer_t) :: timer
       character(len=:), allocatable :: actual
-      logical :: deepest_name_present
+      character(len=:), allocatable :: expected_prefix
+      logical :: entry_present
+      logical :: flattened_deepest_as_root
       integer :: ierr
       integer :: i
+      integer :: line_count
+      integer :: line_pos
+      integer :: previous_pos
       integer :: unit
       character(len=8) :: name
 
@@ -161,11 +167,24 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       actual = read_unit_text(unit)
-      deepest_name_present = index(actual, 'Depth130') > 0
+      line_count = count_lines(actual)
+      previous_pos = 0
+
+      do i = 1, 130
+         expected_prefix = deep_hierarchy_prefix(i)
+         line_pos = index(actual, new_line('a')//expected_prefix)
+         entry_present = line_pos > 0
+         @assertTrue(entry_present)
+         @assertTrue(line_pos > previous_pos)
+         previous_pos = line_pos
+      end do
+
+      flattened_deepest_as_root = index(actual, new_line('a')//'Depth130') > 0
 
       close (unit)
 
-      @assertTrue(deepest_name_present)
+      @assertEqual(134, line_count)
+      @assertFalse(flattened_deepest_as_root)
    end subroutine test_print_summary_handles_deep_hierarchy
 
    @test
@@ -188,6 +207,56 @@ contains
       @assertEqual(-1.0_wp, summary%entries(1)%self_time)
    end subroutine test_get_summary_surfaces_backward_clock_deltas
 
+   @test
+   subroutine test_format_summary_escapes_unsafe_names()
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      logical :: escaped_leading_space
+      logical :: escaped_newline
+      logical :: escaped_tab
+      logical :: raw_flattened_name_present
+      logical :: raw_newline_name_present
+      logical :: raw_tab_name_present
+
+      summary%total_time = 3.0_wp
+      summary%num_entries = 3
+      allocate (summary%entries(3))
+
+      summary%entries(1)%name = '  fake root'
+      summary%entries(1)%inclusive_time = 1.0_wp
+      summary%entries(1)%self_time = 1.0_wp
+      summary%entries(1)%call_count = 1
+      summary%entries(1)%pct_time = 33.33_wp
+
+      summary%entries(2)%name = 'line'//achar(10)//'break'
+      summary%entries(2)%inclusive_time = 1.0_wp
+      summary%entries(2)%self_time = 1.0_wp
+      summary%entries(2)%call_count = 1
+      summary%entries(2)%pct_time = 33.33_wp
+
+      summary%entries(3)%name = 'tab'//achar(9)//'name'
+      summary%entries(3)%inclusive_time = 1.0_wp
+      summary%entries(3)%self_time = 1.0_wp
+      summary%entries(3)%call_count = 1
+      summary%entries(3)%pct_time = 33.34_wp
+
+      call format_summary(summary, text)
+
+      escaped_leading_space = index(text, '\x20\x20fake root') > 0
+      escaped_newline = index(text, 'line\nbreak') > 0
+      escaped_tab = index(text, 'tab\tname') > 0
+      raw_flattened_name_present = index(text, new_line('a')//'  fake root') > 0
+      raw_newline_name_present = index(text, 'line'//achar(10)//'break') > 0
+      raw_tab_name_present = index(text, 'tab'//achar(9)//'name') > 0
+
+      @assertTrue(escaped_leading_space)
+      @assertTrue(escaped_newline)
+      @assertTrue(escaped_tab)
+      @assertFalse(raw_flattened_name_present)
+      @assertFalse(raw_newline_name_present)
+      @assertFalse(raw_tab_name_present)
+   end subroutine test_format_summary_escapes_unsafe_names
+
    function expected_summary_output(summary, metadata) result(text)
       type(ftimer_summary_t), intent(in) :: summary
       type(ftimer_metadata_t), intent(in) :: metadata(:)
@@ -206,5 +275,24 @@ contains
       text = text//'A              10.000000      3.000000         1    100.00'//new_line('a')
       text = text//'  B             7.000000      7.000000         1     70.00'//new_line('a')
    end function expected_summary_output
+
+   integer function count_lines(text) result(count)
+      character(len=*), intent(in) :: text
+      integer :: i
+
+      count = 0
+      do i = 1, len(text)
+         if (text(i:i) == new_line('a')) count = count + 1
+      end do
+   end function count_lines
+
+   function deep_hierarchy_prefix(level) result(prefix)
+      integer, intent(in) :: level
+      character(len=:), allocatable :: prefix
+      character(len=8) :: name
+
+      write (name, '("Depth",i3.3)') level
+      prefix = repeat(' ', 2*(level - 1))//trim(name)
+   end function deep_hierarchy_prefix
 
 end module test_summary
