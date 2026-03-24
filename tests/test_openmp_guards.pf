@@ -91,6 +91,42 @@ contains
    end subroutine test_non_master_start_stop_are_noops
 
    @test
+   subroutine test_non_master_init_is_noop()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: local_ierr
+      integer :: thread_num
+      integer :: worker_ierr
+      logical :: thread_seen(2)
+      logical :: initialized
+
+      call omp_set_dynamic(.false.)
+
+      worker_ierr = -1
+      thread_seen = .false.
+
+!$omp parallel num_threads(2) default(shared) private(local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num /= 0) then
+         local_ierr = -100
+         call timer%init(ierr=local_ierr)
+         worker_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call snapshot_timer(timer, state)
+      initialized = state%initialized
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(FTIMER_SUCCESS, worker_ierr)
+      @assertFalse(initialized)
+      @assertEqual(0, state%num_segments)
+   end subroutine test_non_master_init_is_noop
+
+   @test
    subroutine test_non_master_lookup_and_id_calls_are_noops()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state
@@ -150,6 +186,111 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_non_master_lookup_and_id_calls_are_noops
+
+   @test
+   subroutine test_non_master_reset_is_noop()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ctx
+      integer :: ierr
+      integer :: local_ierr
+      integer :: thread_num
+      integer :: worker_ierr
+      real(wp) :: elapsed
+      logical :: initialized
+      logical :: thread_seen(2)
+
+      call omp_set_dynamic(.false.)
+
+      worker_ierr = -1
+      thread_seen = .false.
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("keep", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 3.0_wp
+      call timer%stop("keep", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+!$omp parallel num_threads(2) default(shared) private(local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num /= 0) then
+         local_ierr = -100
+         call timer%reset(ierr=local_ierr)
+         worker_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call snapshot_timer(timer, state)
+      initialized = state%initialized
+      ctx = 1
+      elapsed = state%segments(1)%time(ctx)
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(FTIMER_SUCCESS, worker_ierr)
+      @assertTrue(initialized)
+      @assertEqual(1, state%num_segments)
+      @assertEqual(3.0_wp, elapsed)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_non_master_reset_is_noop
+
+   @test
+   subroutine test_non_master_finalize_is_noop()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: local_ierr
+      integer :: thread_num
+      integer :: worker_ierr
+      logical :: initialized
+      logical :: thread_seen(2)
+
+      call omp_set_dynamic(.false.)
+
+      worker_ierr = -1
+      thread_seen = .false.
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("keep", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp
+      call timer%stop("keep", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+!$omp parallel num_threads(2) default(shared) private(local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num /= 0) then
+         local_ierr = -100
+         call timer%finalize(ierr=local_ierr)
+         worker_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call snapshot_timer(timer, state)
+      initialized = state%initialized
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(FTIMER_SUCCESS, worker_ierr)
+      @assertTrue(initialized)
+      @assertEqual(1, state%num_segments)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_non_master_finalize_is_noop
 
    @test
    subroutine test_parallel_master_only_summary_remains_correct()
