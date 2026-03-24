@@ -34,6 +34,7 @@ contains
    local_has_active_timers = self%call_stack%depth > 0
    call build_current_summary(self, summary)
 #ifdef FTIMER_USE_MPI
+   ! mpi_summary() is collective over the communicator captured during init.
    comm = self%mpi_comm
 #endif
    call check_mpi_summary_prereqs(local_has_active_timers, comm, status)
@@ -43,9 +44,11 @@ contains
          call report_summary_status(ierr, status, "ftimer mpi_summary requires FTIMER_USE_MPI=ON; using local summary")
       case (FTIMER_ERR_ACTIVE)
          call report_summary_status(ierr, status, &
-                                    "ftimer mpi_summary requires all timers stopped before MPI reduction; using local summary")
+                                    "ftimer mpi_summary requires all timers stopped before reduction on "// &
+                                    "the init communicator; using local summary")
       case default
-         call report_summary_status(ierr, status, "ftimer mpi_summary MPI precheck failed; using local summary")
+         call report_summary_status(ierr, status, &
+                                    "ftimer mpi_summary communicator precheck failed; using local summary")
       end select
       return
    end if
@@ -54,7 +57,8 @@ contains
    if (status /= FTIMER_SUCCESS) then
       if (status == FTIMER_ERR_MPI_INCON) then
          call report_summary_status(ierr, status, &
-                                    "ftimer mpi_summary detected inconsistent timer descriptors across ranks; using local summary")
+                                    "ftimer mpi_summary detected inconsistent timer descriptors across "// &
+                                    "ranks in the init communicator; using local summary")
       else
          call report_summary_status(ierr, status, "ftimer mpi_summary MPI reduction failed")
       end if
