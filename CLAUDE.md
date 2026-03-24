@@ -9,6 +9,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Run Commands
 
 ```bash
+# Performance measurement harness (serial, no pFUnit required)
+cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON
+cmake --build build-bench --target ftimer_bench
+./build-bench/bench/ftimer_bench
+
 # Smoke-test-only build
 cmake -B build-smoke
 cmake --build build-smoke
