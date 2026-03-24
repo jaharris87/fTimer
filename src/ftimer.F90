@@ -27,9 +27,9 @@ contains
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
 
-      ! Contract: the only supported positional call is `ftimer_init()`.
-      ! Pass ierr, comm, and mismatch_mode by keyword because positional
-      ! integer calls are ambiguous and bind to the first integer dummy.
+      ! Contract: use only `ftimer_init()` positionally.
+      ! Positional integer calls still compile with this Fortran interface,
+      ! but they are ambiguous and bind to the first integer dummy (`ierr`).
       call ftimer_default_instance%init(ierr=ierr, comm=comm, mismatch_mode=mismatch_mode)
    end subroutine ftimer_init
 

@@ -105,10 +105,10 @@ contains
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
 
-      ! Contract: the only supported positional call is `timer%init()`.
-      ! Integer arguments are keyword-only by contract because positional
-      ! integer calls are ambiguous and bind to the first integer dummy.
-!$omp master
+      ! Contract: use only `timer%init()` positionally.
+      ! Positional integer calls still compile with this Fortran interface,
+      ! but they are ambiguous and bind to the first integer dummy (`ierr`).
+      !$omp master
       call init_impl(self, ierr=ierr, comm=comm, mismatch_mode=mismatch_mode)
 !$omp end master
    end subroutine init

@@ -17,9 +17,17 @@ if(design_text MATCHES "call ftimer_init\\(\\[ierr\\]\\)")
 endif()
 
 if(NOT readme_text MATCHES "Pass `ierr`, `comm`, and `mismatch_mode` by keyword")
-  message(FATAL_ERROR "README must state that all integer init arguments are keyword-only by contract.")
+  message(FATAL_ERROR "README must state that integer init arguments are passed safely by keyword.")
 endif()
 
 if(NOT design_text MATCHES "Pass `ierr`, `comm`, and `mismatch_mode` by keyword")
-  message(FATAL_ERROR "docs/design.md must state that all integer init arguments are keyword-only by contract.")
+  message(FATAL_ERROR "docs/design.md must state that integer init arguments are passed safely by keyword.")
+endif()
+
+if(NOT readme_text MATCHES "positional integer calls still compile but are ambiguous")
+  message(FATAL_ERROR "README must warn that positional integer init calls still compile but are ambiguous.")
+endif()
+
+if(NOT design_text MATCHES "positional integer calls still compile but are ambiguous")
+  message(FATAL_ERROR "docs/design.md must warn that positional integer init calls still compile but are ambiguous.")
 endif()
