@@ -1,3 +1,5 @@
+set(CMAKE_Fortran_MODULE_DIRECTORY "${FTIMER_TEST_MODULE_DIR}")
+
 if(FTIMER_BUILD_SMOKE_TESTS)
   add_executable(ftimer_phase0_smoke test_phase0_smoke.F90)
   target_link_libraries(ftimer_phase0_smoke PRIVATE ftimer)
@@ -41,7 +43,7 @@ if(FTIMER_BUILD_TESTS)
   add_pfunit_ctest(ftimer_serial_tests
     TEST_SOURCES ${SERIAL_TEST_SOURCES}
     OTHER_SOURCES test_support.F90
-    LINK_LIBRARIES ftimer
+    LINK_LIBRARIES ftimer_test
   )
 
   # MPI tests (only when MPI enabled)

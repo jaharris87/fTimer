@@ -31,7 +31,7 @@ if(MPI_TESTS_PRESENT)
   add_pfunit_ctest(ftimer_mpi_tests
     TEST_SOURCES ${MPI_TEST_PATHS_2PE}
     OTHER_SOURCES ../test_support.F90
-    LINK_LIBRARIES ftimer
+    LINK_LIBRARIES ftimer_test
     LABELS mpi
     MAX_PES 2
   )

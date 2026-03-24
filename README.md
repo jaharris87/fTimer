@@ -95,6 +95,7 @@ Current defaults:
 - CMake is the only supported build path right now.
 - Smoke tests are enabled by default and stay intentionally minimal.
 - pFUnit-backed behavioral tests are opt-in via `FTIMER_BUILD_TESTS=ON`.
+- Installing `fTimer` always exports the same consumer-facing library/modules whether or not `FTIMER_BUILD_TESTS=ON`; test-only modules stay build-tree-only and are not installed.
 - `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`; incompatible default-compiler MPI paths now fail during configure with guidance instead of reaching a later compile failure.
 - FPM support is deferred until the public API stabilizes.
 - MPI-reduced structured summaries require `FTIMER_USE_MPI=ON`; otherwise `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and a local-only summary.
