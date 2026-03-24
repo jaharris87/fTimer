@@ -24,6 +24,11 @@ cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/pat
 cmake --build build-mpi
 ctest --test-dir build-mpi --output-on-failure -L mpi
 
+# OpenMP guard build
+cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+cmake --build build-openmp
+ctest --test-dir build-openmp --output-on-failure
+
 # Lint / format check
 find src -name '*.F90' -exec fprettify --diff {} +
 find tests -name '*.pf' -exec fprettify --diff {} +
@@ -73,9 +78,9 @@ ftimer.F90  (procedural wrappers + default global instance)
 
 ## Development Workflow
 
-Current `main` is in Phase 5. The shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, and MPI-reduced structured summaries are implemented; OpenMP guards remain deferred in `TODO.md`.
+Current `main` is in Phase 6. The shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, and limited OpenMP master-thread guards are implemented.
 
-During Phase 5, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: preserve procedural-wrapper parity with the OOP core, keep MPI summary behavior correct and explicit, but do not pull Phase 6+ OpenMP work forward.
+During Phase 6, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: preserve procedural-wrapper parity with the OOP core, keep MPI summary behavior correct and explicit, preserve the limited master-thread-only OpenMP guard model, but do not pull Phase 7+ docs/examples or fuller OpenMP work forward.
 
 Detailed repository operations and PR/review handling live in `docs/maintainer.md`. Use that file for GitHub workflow details; keep this file focused on coding/build/test behavior and the short mandatory PR summary below.
 
@@ -84,6 +89,7 @@ Detailed repository operations and PR/review handling live in `docs/maintainer.m
 ### Test Categories
 
 - **Unit tests** (`tests/test_*.pf`): Isolated module tests — init/finalize, single start/stop, timer creation, ID lookup, time accumulation, call counts, reset behavior, edge cases, error contract verification. All use mock clock.
+- **OpenMP guard tests** (`tests/test_openmp_guards.pf`): Master-thread-only guard semantics under `FTIMER_USE_OPENMP=ON`. These verify serial behavior outside parallel regions, worker-thread no-op behavior, summary stability, and procedural parity.
 - **Integration tests** (`tests/test_summary.pf`, `tests/test_self_time.pf`, `tests/test_callbacks.pf`, `tests/test_file_output.pf`): Cross-module tests — summary building, self-time computation, callback firing, file I/O.
 - **MPI tests** (`tests/mpi/test_mpi_*.pf`): Cross-rank correctness — MPI min/max/avg/imbalance, timer consistency checks. Run with 2+ ranks.
 
@@ -125,6 +131,7 @@ The native Codex trigger comments are intentionally posted as single-line `@code
 ## Configuration
 
 - **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` can populate cross-rank fields. When OFF, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the summary local-only.
+- **`FTIMER_USE_OPENMP`** (CMake option, default OFF): Enables the Phase 6 `!$omp master` guards around the guarded `ftimer_core` entry points. This is limited master-thread-only protection, not full thread safety.
 - **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the current smoke-test baseline.
 - **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables pFUnit-backed tests once those suites exist.
 - **`CMAKE_INSTALL_PREFIX`**: Where `make install` places the library and module files.

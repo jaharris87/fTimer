@@ -1,0 +1,553 @@
+module test_openmp_guards
+   use omp_lib, only: omp_get_thread_num, omp_set_dynamic
+   use pfunit
+   use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_get_summary, ftimer_init, &
+                     ftimer_lookup, ftimer_start, ftimer_start_id, ftimer_stop, ftimer_stop_id
+   use ftimer_core, only: ftimer_t, ftimer_test_state_t
+   use ftimer_types, only: FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, ftimer_summary_t, wp
+   use test_support, only: attach_mock_clock, fake_time, snapshot_timer
+   implicit none
+
+   integer, parameter :: NOOP_IERR_SENTINEL = -100
+
+contains
+
+   @test
+   subroutine test_serial_start_stop_unchanged_when_openmp_enabled()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      logical :: names_match
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("serial", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 4.0_wp
+      call timer%stop("serial", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(1, summary%num_entries)
+      names_match = trim(summary%entries(1)%name) == 'serial'
+      @assertTrue(names_match)
+      @assertEqual(4.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(4.0_wp, summary%entries(1)%self_time)
+      @assertEqual(1, summary%entries(1)%call_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_serial_start_stop_unchanged_when_openmp_enabled
+
+   @test
+   subroutine test_non_master_start_stop_are_noops()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: local_ierr
+      integer :: thread_num
+      integer :: worker_start_ierr
+      integer :: worker_stop_ierr
+      logical :: thread_seen(2)
+
+      call omp_set_dynamic(.false.)
+
+      worker_start_ierr = -1
+      worker_stop_ierr = -1
+      thread_seen = .false.
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+!$omp parallel num_threads(2) default(shared) private(local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num /= 0) then
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%start("worker_only", ierr=local_ierr)
+         worker_start_ierr = local_ierr
+
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%stop("worker_only", ierr=local_ierr)
+         worker_stop_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call snapshot_timer(timer, state)
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(NOOP_IERR_SENTINEL, worker_start_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_stop_ierr)
+      @assertEqual(0, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_non_master_start_stop_are_noops
+
+   @test
+   subroutine test_non_master_init_is_noop()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: local_ierr
+      integer :: thread_num
+      integer :: worker_ierr
+      logical :: thread_seen(2)
+      logical :: initialized
+
+      call omp_set_dynamic(.false.)
+
+      worker_ierr = -1
+      thread_seen = .false.
+
+!$omp parallel num_threads(2) default(shared) private(local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num /= 0) then
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%init(ierr=local_ierr)
+         worker_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call snapshot_timer(timer, state)
+      initialized = state%initialized
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(NOOP_IERR_SENTINEL, worker_ierr)
+      @assertFalse(initialized)
+      @assertEqual(0, state%num_segments)
+   end subroutine test_non_master_init_is_noop
+
+   @test
+   subroutine test_non_master_lookup_and_id_calls_are_noops()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: local_id
+      integer :: local_ierr
+      integer :: thread_num
+      integer :: worker_id
+      integer :: worker_lookup_ierr
+      integer :: worker_start_ierr
+      integer :: worker_stop_ierr
+      logical :: thread_seen(2)
+
+      call omp_set_dynamic(.false.)
+
+      worker_id = -1
+      worker_lookup_ierr = -1
+      worker_start_ierr = -1
+      worker_stop_ierr = -1
+      thread_seen = .false.
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+!$omp parallel num_threads(2) default(shared) private(local_id, local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num /= 0) then
+         local_ierr = NOOP_IERR_SENTINEL
+         local_id = timer%lookup("worker_id", ierr=local_ierr)
+         worker_id = local_id
+         worker_lookup_ierr = local_ierr
+
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%start_id(local_id, ierr=local_ierr)
+         worker_start_ierr = local_ierr
+
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%stop_id(local_id, ierr=local_ierr)
+         worker_stop_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call snapshot_timer(timer, state)
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(0, worker_id)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_lookup_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_start_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_stop_ierr)
+      @assertEqual(0, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_non_master_lookup_and_id_calls_are_noops
+
+   @test
+   subroutine test_non_master_reset_is_noop()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ctx
+      integer :: ierr
+      integer :: local_ierr
+      integer :: thread_num
+      integer :: worker_ierr
+      real(wp) :: elapsed
+      logical :: initialized
+      logical :: thread_seen(2)
+
+      call omp_set_dynamic(.false.)
+
+      worker_ierr = -1
+      thread_seen = .false.
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("keep", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 3.0_wp
+      call timer%stop("keep", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+!$omp parallel num_threads(2) default(shared) private(local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num /= 0) then
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%reset(ierr=local_ierr)
+         worker_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call snapshot_timer(timer, state)
+      initialized = state%initialized
+      ctx = 1
+      elapsed = state%segments(1)%time(ctx)
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(NOOP_IERR_SENTINEL, worker_ierr)
+      @assertTrue(initialized)
+      @assertEqual(1, state%num_segments)
+      @assertEqual(3.0_wp, elapsed)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_non_master_reset_is_noop
+
+   @test
+   subroutine test_non_master_finalize_is_noop()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: local_ierr
+      integer :: thread_num
+      integer :: worker_ierr
+      logical :: initialized
+      logical :: thread_seen(2)
+
+      call omp_set_dynamic(.false.)
+
+      worker_ierr = -1
+      thread_seen = .false.
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("keep", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp
+      call timer%stop("keep", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+!$omp parallel num_threads(2) default(shared) private(local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num /= 0) then
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%finalize(ierr=local_ierr)
+         worker_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call snapshot_timer(timer, state)
+      initialized = state%initialized
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(NOOP_IERR_SENTINEL, worker_ierr)
+      @assertTrue(initialized)
+      @assertEqual(1, state%num_segments)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_non_master_finalize_is_noop
+
+   @test
+   subroutine test_parallel_master_only_summary_remains_correct()
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      integer :: master_start_ierr
+      integer :: master_stop_ierr
+      integer :: worker_start_ierr
+      integer :: worker_stop_ierr
+      logical :: thread_seen(2)
+
+      call build_master_only_oop(summary, ierr, thread_seen, master_start_ierr, master_stop_ierr, &
+                                 worker_start_ierr, worker_stop_ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(FTIMER_SUCCESS, master_start_ierr)
+      @assertEqual(FTIMER_SUCCESS, master_stop_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_start_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_stop_ierr)
+
+      call assert_master_parallel_summary(summary)
+   end subroutine test_parallel_master_only_summary_remains_correct
+
+   @test
+   subroutine test_worker_noop_does_not_clobber_shared_ierr()
+      type(ftimer_t) :: timer
+      integer :: ierr
+      integer :: ignored_id
+      integer :: shared_ierr
+      integer :: thread_num
+      logical :: thread_seen(2)
+
+      call omp_set_dynamic(.false.)
+
+      thread_seen = .false.
+      shared_ierr = NOOP_IERR_SENTINEL
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+!$omp parallel num_threads(2) default(shared) private(thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num == 0) then
+         shared_ierr = NOOP_IERR_SENTINEL
+         ignored_id = timer%lookup("", ierr=shared_ierr)
+      end if
+
+!$omp barrier
+
+      if (thread_num /= 0) then
+         call timer%start("worker_only", ierr=shared_ierr)
+      end if
+!$omp end parallel
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(FTIMER_ERR_UNKNOWN, shared_ierr)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_worker_noop_does_not_clobber_shared_ierr
+
+   @test
+   subroutine test_procedural_parallel_guards_match_oop()
+      type(ftimer_summary_t) :: oop_summary
+      type(ftimer_summary_t) :: procedural_summary
+      integer :: ierr
+      integer :: master_start_ierr
+      integer :: master_stop_ierr
+      integer :: worker_start_ierr
+      integer :: worker_stop_ierr
+      logical :: oop_thread_seen(2)
+      logical :: procedural_thread_seen(2)
+
+      call build_master_only_oop(oop_summary, ierr, oop_thread_seen, master_start_ierr, master_stop_ierr, &
+                                 worker_start_ierr, worker_stop_ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call build_master_only_procedural(procedural_summary, ierr, procedural_thread_seen, &
+                                        master_start_ierr, master_stop_ierr, worker_start_ierr, worker_stop_ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertTrue(oop_thread_seen(1))
+      @assertTrue(oop_thread_seen(2))
+      @assertTrue(procedural_thread_seen(1))
+      @assertTrue(procedural_thread_seen(2))
+
+      call assert_summary_equal(procedural_summary, oop_summary)
+   end subroutine test_procedural_parallel_guards_match_oop
+
+   subroutine build_master_only_oop(summary, ierr, thread_seen, master_start_ierr, master_stop_ierr, &
+                                    worker_start_ierr, worker_stop_ierr)
+      type(ftimer_summary_t), intent(out) :: summary
+      integer, intent(out) :: ierr
+      logical, intent(out) :: thread_seen(2)
+      integer, intent(out) :: master_start_ierr
+      integer, intent(out) :: master_stop_ierr
+      integer, intent(out) :: worker_start_ierr
+      integer, intent(out) :: worker_stop_ierr
+      type(ftimer_t) :: timer
+      integer :: local_ierr
+      integer :: thread_num
+
+      call omp_set_dynamic(.false.)
+
+      thread_seen = .false.
+      master_start_ierr = -1
+      master_stop_ierr = -1
+      worker_start_ierr = -1
+      worker_stop_ierr = -1
+
+      call timer%init(ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+      call attach_mock_clock(timer)
+
+!$omp parallel num_threads(2) default(shared) private(local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num == 0) then
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%start("parallel", ierr=local_ierr)
+         master_start_ierr = local_ierr
+      end if
+
+!$omp barrier
+
+      if (thread_num /= 0) then
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%start("parallel", ierr=local_ierr)
+         worker_start_ierr = local_ierr
+
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%stop("parallel", ierr=local_ierr)
+         worker_stop_ierr = local_ierr
+      end if
+
+!$omp barrier
+
+      if (thread_num == 0) then
+         fake_time = 5.0_wp
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%stop("parallel", ierr=local_ierr)
+         master_stop_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call timer%get_summary(summary, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      call timer%finalize(ierr=ierr)
+   end subroutine build_master_only_oop
+
+   subroutine build_master_only_procedural(summary, ierr, thread_seen, master_start_ierr, master_stop_ierr, &
+                                           worker_start_ierr, worker_stop_ierr)
+      type(ftimer_summary_t), intent(out) :: summary
+      integer, intent(out) :: ierr
+      logical, intent(out) :: thread_seen(2)
+      integer, intent(out) :: master_start_ierr
+      integer, intent(out) :: master_stop_ierr
+      integer, intent(out) :: worker_start_ierr
+      integer, intent(out) :: worker_stop_ierr
+      integer :: local_ierr
+      integer :: thread_num
+
+      call omp_set_dynamic(.false.)
+
+      thread_seen = .false.
+      master_start_ierr = -1
+      master_stop_ierr = -1
+      worker_start_ierr = -1
+      worker_stop_ierr = -1
+
+      call ftimer_init(ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+      call attach_mock_clock(ftimer_default_instance)
+
+!$omp parallel num_threads(2) default(shared) private(local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num == 0) then
+         local_ierr = NOOP_IERR_SENTINEL
+         call ftimer_start("parallel", ierr=local_ierr)
+         master_start_ierr = local_ierr
+      end if
+
+!$omp barrier
+
+      if (thread_num /= 0) then
+         local_ierr = NOOP_IERR_SENTINEL
+         call ftimer_start("parallel", ierr=local_ierr)
+         worker_start_ierr = local_ierr
+
+         local_ierr = NOOP_IERR_SENTINEL
+         call ftimer_stop("parallel", ierr=local_ierr)
+         worker_stop_ierr = local_ierr
+      end if
+
+!$omp barrier
+
+      if (thread_num == 0) then
+         fake_time = 5.0_wp
+         local_ierr = NOOP_IERR_SENTINEL
+         call ftimer_stop("parallel", ierr=local_ierr)
+         master_stop_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call ftimer_get_summary(summary, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      call ftimer_finalize(ierr=ierr)
+   end subroutine build_master_only_procedural
+
+   subroutine assert_master_parallel_summary(summary)
+      type(ftimer_summary_t), intent(in) :: summary
+      logical :: names_match
+
+      @assertEqual(1, summary%num_entries)
+      names_match = trim(summary%entries(1)%name) == 'parallel'
+      @assertTrue(names_match)
+      @assertEqual(0, summary%entries(1)%depth)
+      @assertEqual(5.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(5.0_wp, summary%entries(1)%self_time)
+      @assertEqual(1, summary%entries(1)%call_count)
+      @assertEqual(5.0_wp, summary%total_time)
+   end subroutine assert_master_parallel_summary
+
+   subroutine assert_summary_equal(lhs, rhs)
+      type(ftimer_summary_t), intent(in) :: lhs
+      type(ftimer_summary_t), intent(in) :: rhs
+      integer :: i
+      logical :: names_match
+      real(wp) :: pct_diff
+
+      @assertEqual(rhs%num_entries, lhs%num_entries)
+      @assertEqual(rhs%total_time, lhs%total_time)
+      @assertEqual(rhs%has_mpi_data, lhs%has_mpi_data)
+
+      do i = 1, lhs%num_entries
+         names_match = trim(lhs%entries(i)%name) == trim(rhs%entries(i)%name)
+         @assertTrue(names_match)
+         @assertEqual(rhs%entries(i)%depth, lhs%entries(i)%depth)
+         @assertEqual(rhs%entries(i)%inclusive_time, lhs%entries(i)%inclusive_time)
+         @assertEqual(rhs%entries(i)%self_time, lhs%entries(i)%self_time)
+         @assertEqual(rhs%entries(i)%call_count, lhs%entries(i)%call_count)
+         @assertEqual(rhs%entries(i)%avg_time, lhs%entries(i)%avg_time)
+         pct_diff = abs(lhs%entries(i)%pct_time - rhs%entries(i)%pct_time)
+         @assertTrue(pct_diff < 1.0e-12_wp)
+      end do
+   end subroutine assert_summary_equal
+
+end module test_openmp_guards

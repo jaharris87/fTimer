@@ -1,8 +1,8 @@
 # fTimer Semantics Reference
 
-Phase 5 note: this document is still a forward-looking outline, not a complete runtime contract.
+Phase 6 note: this document is still a forward-looking outline, not a complete runtime contract.
 
-Current `main` now implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, and Phase 5 MPI structured summaries: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `mpi_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, and root-side MPI min/max/avg/imbalance fields. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with a local-only summary. OpenMP behavior below is still future work.
+Current `main` now implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `mpi_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, root-side MPI min/max/avg/imbalance fields, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with a local-only summary.
 
 Treat the sections below as implementation targets unless they describe the Phase 2/3 behaviors listed above.
 
@@ -44,9 +44,13 @@ Treat the sections below as implementation targets unless they describe the Phas
 
 ## OpenMP Limitations
 
-- Master-thread-only (not thread-safe)
-- Non-master calls are no-ops
-- `suppress_in_parallel` option
+- OpenMP guard behavior is enabled only when the library is built with `FTIMER_USE_OPENMP=ON`
+- The implemented model is master-thread-only timing; this phase does not make `fTimer` generally thread-safe
+- Inside OpenMP parallel regions, the guarded `ftimer_core` timer operations run only on the master thread
+- Non-master calls to those guarded core timer operations become no-ops instead of mutating shared timer state
+- Suppressed non-master calls are skipped before normal validation, emit no stderr warning, and leave any caller-provided `ierr` unchanged
+- The OpenMP guards do not broaden support for concurrent access to other APIs; summary/report generation and other shared access remain unsupported in threaded regions
+- Thread-local timer instances, fuller concurrent timing support, and any `suppress_in_parallel` control remain deferred
 
 ## Callback Contract
 
