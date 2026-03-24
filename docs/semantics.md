@@ -53,6 +53,19 @@ Treat the sections below as implementation targets unless they describe the Phas
 - Min/max/avg/imbalance fields are valid only on communicator root when `has_mpi_data=.true.`
 - Mismatched communicator choices across would-be participants are unsupported; this API has no safe cross-communicator rendezvous to detect that misuse without risking the same MPI deadlock it is trying to avoid
 
+## MPI Summary Contract
+
+`mpi_summary()` does not return a fully reduced cross-rank copy of every summary field.
+
+- `start_date`, `end_date`, `total_time`, and each entry's `inclusive_time`, `self_time`, `call_count`, `avg_time`, and `pct_time` always describe the calling rank's local summary data, even after a successful `mpi_summary()`.
+- `min_time`, `max_time`, `avg_across_ranks`, and `imbalance` are the only cross-rank reduced entry fields.
+- Those reduced MPI entry fields are valid only when `summary%has_mpi_data` is `.true.`.
+- `summary%has_mpi_data` means only that the reduced MPI entry fields are valid on this rank. It does not mean every field in the summary is globally meaningful, and it does not mean non-root ranks receive reduced entry fields.
+- `summary%mpi_summary_state` makes the result shape explicit:
+- `FTIMER_MPI_SUMMARY_LOCAL_ONLY`: plain local summary. This is what `get_summary()` returns, and it is also what `mpi_summary()` leaves behind when MPI support is disabled, timers are still active, descriptor hashes disagree across ranks, or another MPI-side failure forces fallback.
+- `FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED`: successful `mpi_summary()` result on rank 0. Local summary fields remain root-local; reduced MPI entry fields are populated and `has_mpi_data` is `.true.`.
+- `FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE`: successful `mpi_summary()` result on non-root ranks. Local summary fields still describe that non-root rank only; reduced MPI entry fields remain unset and `has_mpi_data` is `.false.`.
+
 ## OpenMP Limitations
 
 - OpenMP guard behavior is enabled only when the library is built with `FTIMER_USE_OPENMP=ON`

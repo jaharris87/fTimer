@@ -17,6 +17,9 @@ module ftimer_types
    public :: FTIMER_MISMATCH_REPAIR
    public :: FTIMER_EVENT_START
    public :: FTIMER_EVENT_STOP
+   public :: FTIMER_MPI_SUMMARY_LOCAL_ONLY
+   public :: FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED
+   public :: FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE
    public :: wp
    public :: ftimer_metadata_t
    public :: ftimer_summary_entry_t
@@ -46,6 +49,10 @@ module ftimer_types
    integer, parameter :: FTIMER_EVENT_START = 1
    integer, parameter :: FTIMER_EVENT_STOP = 2
 
+   integer, parameter :: FTIMER_MPI_SUMMARY_LOCAL_ONLY = 0
+   integer, parameter :: FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED = 1
+   integer, parameter :: FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE = 2
+
    type :: ftimer_metadata_t
       character(len=FTIMER_NAME_LEN) :: key = ''
       character(len=FTIMER_NAME_LEN) :: value = ''
@@ -59,6 +66,7 @@ module ftimer_types
       integer :: call_count = 0
       real(wp) :: avg_time = 0.0_wp
       real(wp) :: pct_time = 0.0_wp
+      ! MPI-reduced fields are valid only when summary%has_mpi_data is .true.
       real(wp) :: min_time = -1.0_wp
       real(wp) :: max_time = -1.0_wp
       real(wp) :: avg_across_ranks = -1.0_wp
@@ -69,9 +77,12 @@ module ftimer_types
       character(len=40) :: start_date = ''
       character(len=40) :: end_date = ''
       real(wp) :: total_time = 0.0_wp
+      ! .true. only when the MPI-reduced entry fields are valid on this rank.
       logical :: has_mpi_data = .false.
       integer :: num_entries = 0
-      integer :: placeholder = 0
+      ! Describes whether this summary is local-only, root-local plus reduced MPI
+      ! fields, or a non-root local view returned after a successful reduction.
+      integer :: mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
       type(ftimer_summary_entry_t), allocatable :: entries(:)
    end type ftimer_summary_t
 

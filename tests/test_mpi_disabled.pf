@@ -2,7 +2,8 @@ module test_mpi_disabled
    use pfunit
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_SUCCESS, ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_MPI_SUMMARY_LOCAL_ONLY, &
+                           FTIMER_SUCCESS, ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time
    implicit none
 
@@ -27,6 +28,7 @@ contains
 
       @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
       @assertFalse(has_mpi_data)
+      @assertEqual(FTIMER_MPI_SUMMARY_LOCAL_ONLY, summary%mpi_summary_state)
       @assertEqual(1, summary%num_entries)
       @assertEqual(4.0_wp, summary%entries(1)%inclusive_time)
       @assertEqual(4.0_wp, summary%entries(1)%self_time)
@@ -103,6 +105,7 @@ contains
 
       @assertEqual(rhs%num_entries, lhs%num_entries)
       @assertEqual(rhs%has_mpi_data, lhs%has_mpi_data)
+      @assertEqual(rhs%mpi_summary_state, lhs%mpi_summary_state)
       @assertEqual(rhs%total_time, lhs%total_time)
 
       names_match = trim(lhs%entries(1)%name) == trim(rhs%entries(1)%name)
