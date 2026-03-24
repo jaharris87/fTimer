@@ -14,6 +14,29 @@ module ftimer_mpi
 
 contains
 
+   subroutine resolve_mpi_summary_comm(comm, active_comm, status)
+      integer, intent(in) :: comm
+      integer, intent(out) :: active_comm
+      integer, intent(out) :: status
+#ifdef FTIMER_USE_MPI
+      ! Contract: mpi_summary() is collective over the communicator captured at init.
+      ! If init omitted `comm`, ftimer_core passes a sentinel and mpi_summary()
+      ! resolves that contract to MPI_COMM_WORLD here.
+      active_comm = comm
+      if (active_comm < 0) active_comm = MPI_COMM_WORLD
+
+      if (active_comm == MPI_COMM_NULL) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      status = FTIMER_SUCCESS
+#else
+      active_comm = -1
+      status = FTIMER_ERR_NOT_IMPLEMENTED
+#endif
+   end subroutine resolve_mpi_summary_comm
+
    logical function ftimer_mpi_enabled()
 #ifdef FTIMER_USE_MPI
       ftimer_mpi_enabled = .true.
@@ -32,12 +55,8 @@ contains
       integer :: local_active
       integer :: mpierr
 
-      status = FTIMER_SUCCESS
-      active_comm = comm
-      if (active_comm < 0) active_comm = MPI_COMM_WORLD
-
-      if (active_comm == MPI_COMM_NULL) then
-         status = FTIMER_ERR_UNKNOWN
+      call resolve_mpi_summary_comm(comm, active_comm, status)
+      if (status /= FTIMER_SUCCESS) then
          return
       end if
 
@@ -78,13 +97,10 @@ contains
       character(len=:), allocatable :: descriptors(:)
       logical :: hashes_match
 
-      status = FTIMER_SUCCESS
       summary%has_mpi_data = .false.
 
-      active_comm = comm
-      if (active_comm < 0) active_comm = MPI_COMM_WORLD
-      if (active_comm == MPI_COMM_NULL) then
-         status = FTIMER_ERR_UNKNOWN
+      call resolve_mpi_summary_comm(comm, active_comm, status)
+      if (status /= FTIMER_SUCCESS) then
          return
       end if
 
@@ -119,6 +135,9 @@ contains
       end do
 
       if (.not. hashes_match) then
+         ! Descriptor consistency is only meaningful after ranks have already
+         ! agreed to enter the same communicator collective. Communicator
+         ! disagreement across would-be participants is documented as unsupported.
          status = FTIMER_ERR_MPI_INCON
          return
       end if
