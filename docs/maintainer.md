@@ -50,9 +50,12 @@ The native trigger workflow now posts intentionally condensed single-line `@code
 The detailed prompt set in `.github/prompts/detailed/` has two roles:
 
 - long-form fallback versions of the three PR-triggered review types: `software-review.md`, `methodology-review.md`, and `red-team-review.md`
-- additional long-horizon review prompts that are not label-triggered by default: `api-compat-review.md`, `build-portability-review.md`, `docs-contract-review.md`, `mpi-safety-review.md`, `performance-overhead-review.md`, and `test-quality-review.md`
+- additional long-horizon review prompts that are not label-triggered by default: `api-compat-review.md`, `build-portability-review.md`, `completion-audit-review.md`, `docs-contract-review.md`, `mpi-safety-review.md`, `performance-overhead-review.md`, `pragmatic-design-review.md`, and `test-quality-review.md`
 
 Use the additional detailed prompts when you want a targeted repository review outside the normal PR trigger flow, for example periodic maintainability checks, pre-release audits, or focused follow-up investigation on a risky area.
+
+- Use `completion-audit-review.md` at issue, phase, or release boundaries to verify that claimed work is actually complete and that docs, tests, and acceptance criteria are honestly closed. Not intended as a routine per-PR review.
+- Use `pragmatic-design-review.md` selectively on PRs that introduce new abstractions, wrappers, or architecture. Skip it for narrow bug fixes or documentation-only changes.
 
 ### Monitoring Reviews
 

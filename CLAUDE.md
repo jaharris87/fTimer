@@ -142,7 +142,7 @@ Short version:
 
 Use `docs/maintainer.md` for the full operating procedure, investigation commands, merge criteria, and the fallback/detailed-review workflow when native Codex review is unavailable or when a longer-form review is needed.
 
-The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`. The long-form prompt library lives in `.github/prompts/detailed/`: it contains detailed versions of the three PR-triggered review types plus six additional review prompts for API/compatibility, build/portability, docs/contracts, MPI safety, performance/overhead, and test quality.
+The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`. The long-form prompt library lives in `.github/prompts/detailed/`: it contains detailed versions of the three PR-triggered review types plus eight additional review prompts for API/compatibility, build/portability, completion auditing, docs/contracts, MPI safety, performance/overhead, pragmatic design, and test quality.
 
 ## Configuration
 
