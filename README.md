@@ -28,7 +28,7 @@ Current `main` provides:
 Current public surface on `main` supports both usage styles:
 
 - `use ftimer` exports `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
-  Current Phase 6 note: the safe, documented positional `init` forms are `call timer%init()` and `call ftimer_init()`. Pass `ierr`, `comm`, and `mismatch_mode` by keyword in both APIs. With the current Fortran interface, positional integer calls still compile but are ambiguous and can silently bind to `ierr`, so they are documented as unsupported traps.
+  `ierr` is now the last optional argument in both `init` signatures (`comm`, `mismatch_mode`, `ierr`). A single positional integer safely binds to `comm` (`intent(in)`), not `ierr` (`intent(out)`), eliminating the silent-clobber trap from earlier phases. Keywords are recommended for readability.
 - OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `mpi_summary`, `print_summary`, and `write_summary`
 - `use ftimer` does not re-export shared types or constants. Import `ftimer_summary_t`, `ftimer_metadata_t`, `FTIMER_MISMATCH_*`, and `FTIMER_MPI_SUMMARY_*` from `ftimer_types`.
 - Procedural wrappers are thin forwarding calls over the existing OOP implementation and preserve the intended `ierr`/stderr error contract

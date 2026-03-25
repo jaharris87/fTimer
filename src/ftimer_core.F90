@@ -99,25 +99,25 @@ module ftimer_core
 
 contains
 
-   subroutine init(self, ierr, comm, mismatch_mode)
+   subroutine init(self, comm, mismatch_mode, ierr)
       class(ftimer_t), intent(inout) :: self
-      integer, intent(out), optional :: ierr
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
+      integer, intent(out), optional :: ierr
 
-      ! Contract: use only `timer%init()` positionally.
-      ! Positional integer calls still compile with this Fortran interface,
-      ! but they are ambiguous and bind to the first integer dummy (`ierr`).
+      ! Contract: ierr is last to eliminate the positional intent(out) trap.
+      ! A single positional integer now binds to comm (intent(in)), not ierr.
+      ! Keywords are recommended for readability.
       !$omp master
       call init_impl(self, ierr=ierr, comm=comm, mismatch_mode=mismatch_mode)
 !$omp end master
    end subroutine init
 
-   subroutine init_impl(self, ierr, comm, mismatch_mode)
+   subroutine init_impl(self, comm, mismatch_mode, ierr)
       class(ftimer_t), intent(inout) :: self
-      integer, intent(out), optional :: ierr
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
+      integer, intent(out), optional :: ierr
       real(wp) :: now
 
       if (present(mismatch_mode)) then

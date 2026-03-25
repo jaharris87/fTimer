@@ -22,14 +22,14 @@ module ftimer
 
 contains
 
-   subroutine ftimer_init(ierr, comm, mismatch_mode)
-      integer, intent(out), optional :: ierr
+   subroutine ftimer_init(comm, mismatch_mode, ierr)
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
+      integer, intent(out), optional :: ierr
 
-      ! Contract: use only `ftimer_init()` positionally.
-      ! Positional integer calls still compile with this Fortran interface,
-      ! but they are ambiguous and bind to the first integer dummy (`ierr`).
+      ! Contract: ierr is last to eliminate the positional intent(out) trap.
+      ! A single positional integer now binds to comm (intent(in)), not ierr.
+      ! Keywords are recommended for readability.
       call ftimer_default_instance%init(ierr=ierr, comm=comm, mismatch_mode=mismatch_mode)
    end subroutine ftimer_init
 
