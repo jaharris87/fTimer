@@ -1,42 +1,58 @@
 # AGENTS.md
 
-This file provides agent guidance for Codex and other coding-agent workflows in this repository.
+This file provides context to Codex when reviewing code in this repository.
 
-Start with `docs/agent-context.md`.
-That file is the shared baseline context for coding agents in this repo.
+## Project Context
 
-## Agent-Specific Guidance
+**fTimer** — A lightweight, correctness-first wall-clock timing library for modern Fortran. Stack-based nesting, context-sensitive accounting, hierarchical summaries, configurable mismatch handling, MPI cross-rank statistics, and callback hooks for external profiling tools.
 
-- Keep the working set minimal and purpose-built for the task.
-- Do not reread unchanged files without a specific reason.
-- Prefer fresh, narrowly scoped review passes over inheriting a large implementation context.
-- For review tasks, start from the diff and touched files first, then expand only if the review question requires it.
+## What Matters Most in This Repo
 
-## When To Read Additional Docs
+### Timing Correctness (highest priority)
 
-- Read `docs/semantics.md` only when runtime behavior or contract changes are changing or unclear.
-- Read `README.md` only when user-facing behavior, examples, or documentation changes.
-- Read `docs/design.md` only for architectural or future-facing questions.
-- Read `docs/maintainer.md` only for issue/PR/review/disposition workflow tasks.
+- **Context mismatch in start/stop ordering**: `stop` must pop the call stack BEFORE looking up the context index. If the lookup happens before the pop, the context will be the "timer is running" stack instead of the "timer's parent" stack, silently zeroing times or attributing them to the wrong context.
+- **Iterative repair timestamp consistency**: When repairing a nesting mismatch, all unwound timers and the target timer must use a single `now` timestamp captured once. Independent clock reads for each step create timing gaps or double-counting that is invisible in output but makes times not sum correctly.
+- **Repair must NOT fire user callbacks**: Internal repair transitions (unwinding/restarting timers during mismatch repair) must not fire the `on_event` callback. If they do, external profiling tools (PAPI, likwid) will see phantom start/stop events that corrupt their measurements.
+- **Self-time computation boundaries**: Exclusive/self time is `inclusive - sum(direct children)`. If child iteration boundaries are wrong (e.g., iterating past the next sibling into cousins), self_time can go negative or exceed inclusive_time. Both conditions indicate a bug.
 
-## Implementation Defaults
+### Numerical Precision
 
-For most coding tasks, start with:
+- **Double-precision truncation**: All timing arithmetic must use `real(wp)` where `wp = selected_real_kind(15, 307)`. Any implicit conversion to default `real` (single precision) degrades accuracy for runs longer than ~1 hour. Watch for literal constants without `_wp` suffix and mixed-precision arithmetic.
 
-1. task or issue description
-2. `docs/agent-context.md`
-3. touched source files
-4. touched tests
+### MPI Correctness
 
-Expand only as needed.
+- **MPI summary hangs on inconsistent timer sets**: If ranks have different timer names or context structures, collective operations (MPI_Reduce, MPI_Allgather) will deadlock or produce garbage. The hash-based preflight check is mandatory before any collective — it must compare canonical timer descriptors across all ranks and fall back to local-only summary on mismatch.
+- **Array growth divergence across MPI ranks**: If ranks create timers in different orders or different counts, segment array indices diverge. MPI collectives that assume matching indices will reduce the wrong timers against each other, producing plausible but wrong cross-rank statistics.
 
-## Review Prompt Library
+### Code Quality Risks
 
-The review prompt library lives under `.github/prompts/` and `.github/prompts/detailed/`.
+- **Docs drift**: `CLAUDE.md`, README, `docs/semantics.md`, and any user-facing help text must match the actual implementation. Discrepancies are real bugs.
+- **Test skepticism**: Ask whether tests actually exercise the behavior they claim to test. Mock clock tests that never advance time, or mismatch tests that don't verify the stack state after repair, provide false confidence.
+- **Silent fallbacks**: Any code path that substitutes a default value for missing data should be flagged. Silent fallbacks can mask real errors and produce plausible-looking but wrong output. In particular: missing `ierr` argument should warn, not silently succeed.
 
-Use those prompts for:
-- automatic `@codex review` workflows
-- fallback manual review
-- targeted repo-health or audit reviews
+## Architecture Quick Reference
 
-Keep repository facts and coding context in `docs/agent-context.md`, not duplicated in prompt files unless the task specifically requires it.
+```
+ftimer.F90  (procedural wrappers + default global instance)
+  └─► ftimer_core.F90  (ftimer_t class: init, start, stop, reset, finalize, lookup)
+        ├─► ftimer_types.F90   (types, kinds, constants, enums, summary types, callback interface)
+        ├─► ftimer_clock.F90   (injectable clock: MPI_Wtime vs system_clock)
+        ├─► ftimer_summary.F90 (structured summary + text formatting)
+        └─► ftimer_mpi.F90    (MPI reduce + hash preflight)
+```
+
+Key data flow: `start("name")` → lookup/create segment → find/create context (current call stack) → push onto call stack → record start_time. `stop("name")` → verify top-of-stack match → pop call stack → find context (now-current stack) → accumulate elapsed time.
+
+The call stack state CHANGES between start and stop — this is the most common source of context attribution bugs.
+
+## Review Standards
+
+When reviewing PRs in this repo:
+
+1. **Anchor findings in code**: Cite specific files, functions, and line numbers. Do not make vague claims.
+2. **Prioritize correctness over style**: A real bug matters more than a missing docstring.
+3. **Be skeptical of tests**: Ask whether the test actually exercises the behavior it claims to test.
+4. **Verify docs match implementation**: If the PR changes behavior, check that CLAUDE.md, README, and any relevant comments are updated.
+5. **Prefer fewer, more serious findings**: Two real concerns are worth more than twenty style nits.
+6. **Begin your response with the review type heading** expected by the prompt so it is clear which review you are responding to.
+7. **Match the detailed prompt library when used**: `.github/prompts/detailed/` also defines long-form review headings such as `## API / Compatibility Review`, `## Build / Portability Review`, `## Completion Audit Review`, `## Docs / Contract Review`, `## MPI Safety Review`, `## Performance / Overhead Review`, `## Pragmatic Design Review`, and `## Test Quality Review`.

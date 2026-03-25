@@ -1,294 +1,93 @@
-> **When to read this**
->
-> Read this file when runtime behavior is changing, ambiguous, under review, or needs exact contract-level interpretation.
->
-> This is the canonical detailed runtime-contract reference for behavior on `main`.
->
-> Do **not** load this by default for routine implementation tasks that are purely local refactors, build-system changes, or non-behavioral cleanup.
-
 # fTimer Semantics Reference
 
-This document defines the current runtime contract on `main`.
+This document describes the current runtime contract on `main`.
 
-Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and Phase 6 OpenMP guard behavior.
+Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `mpi_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, root-side MPI min/max/avg/imbalance fields, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with a local-only summary.
 
-For the user-facing project overview, build entry points, and examples, see `README.md`.
-For forward-looking design intent, see `docs/design.md`.
-
-When these documents differ, current behavior on `main` is defined by:
-
-1. the implementation under `src/`
-2. the behavioral tests
-3. this document
+Forward-looking target design notes belong in `docs/design.md`. When the two documents differ, `README.md` and the implementation under `src/` define the current user-facing contract.
 
 ## Timing Model
 
-- Wall-clock timing only
-- No CPU-time accounting
-- No hardware-counter accounting in the core library
+- Inclusive vs exclusive (self) time definitions
+- Wall-clock only (no CPU time, no hardware counters)
 - Injected clocks are expected to be monotonic within a timing run
 
 ## Nesting Rules
 
-- Timers are stack-based.
-- Overlapping sibling timers are not supported.
-- The same timer name may appear under different parent stacks and is tracked independently by context.
-
-## Start / Stop Semantics
-
-### Start
-
-A `start("name")` operation conceptually:
-
-1. resolves or creates the timer segment for `"name"`
-2. resolves or creates the current parent context
-3. pushes the timer onto the active call stack
-4. records the start timestamp
-
-### Stop
-
-A `stop("name")` operation conceptually:
-
-1. verifies that the active stack top matches the timer being stopped
-2. pops the timer from the active call stack
-3. resolves the timer's parent context using the now-current stack
-4. accumulates elapsed time and increments call count
-
-The stack state changes between `start` and `stop`.
-Correct context attribution therefore depends on using the post-pop parent stack during stop handling.
-
-## Inclusive and Self Time
-
-For each summary entry:
-
-- `inclusive_time` is the total accumulated time spent in that timer context
-- `self_time` is `inclusive_time - sum(direct children inclusive_time)`
-
-Only direct children contribute to self-time subtraction.
-Iterating past direct children into cousins or deeper descendants is a correctness bug.
+- Strict stack-based nesting (no overlapping timers)
+- Context-sensitive accounting: same timer name under different parents
 
 ## Mismatch Handling
 
-Mismatch handling is configurable:
-
-- `strict` — error, no repair
-- `warn` — diagnostic plus iterative repair
-- `repair` — silent iterative repair for compatibility-oriented behavior
-
-### Repair Contract
-
-Mismatch repair uses this logical model:
-
-1. capture one timestamp
-2. unwind active timers above the requested stop target
-3. stop the target timer
-4. restart unwound timers in reverse order
-
-Important constraints:
-
-- the repair sequence must use a single captured timestamp consistently
-- internal repair transitions must not fire user callbacks
+- Strict mode (default): error, no repair
+- Warn mode: diagnostic + iterative repair
+- Repair mode: silent iterative repair (Flash-X compatibility)
+- Repair algorithm: single timestamp, unwind, stop target, restart unwound in reverse
 
 ## Error Contract
 
-All public routines use the same general contract for `ierr`.
+- `ierr` present: set code, no stderr
+- `ierr` absent: warn to stderr, continue
+- Error codes and their meanings
 
-- When `ierr` is present:
-  - set the error code
-  - do not emit stderr diagnostics for that condition
-- When `ierr` is absent:
-  - emit the appropriate warning/diagnostic to stderr
-  - continue according to the routine's contract
+## Timer Name / Summary Text Policy
+
+- Public timer creation/lookup paths right-trim trailing blanks, reject empty names, reject names longer than `FTIMER_NAME_LEN`, reject names that begin with a blank, and reject ASCII control characters
+- Formatted summary output does not emit unsafe raw summary-entry names literally
+- Escaped formatted-summary forms are stable: leading blanks render as `\x20`, backslashes render as `\\`, tab/newline/carriage return render as `\t`/`\n`/`\r`, other ASCII control characters render as `\xNN`, and blank/empty raw names render as `<blank>`
 
 ## Reset Behavior
 
-`reset`:
+- Zeros times and counts, preserves timer definitions
+- Restarts the local monitoring window used for `summary%total_time` and `% Total`
+- Error if timers are active
 
-- zeros times and call counts
-- preserves timer definitions
-- restarts the local monitoring window used for `summary%total_time` and `% Total`
-- errors if timers are still active
+## MPI Guarantees
 
-## Timer Name Policy
+- `mpi_summary()` is collective over the communicator captured by `init`
+- Omitting `comm` at `init` means `mpi_summary()` uses `MPI_COMM_WORLD`
+- All ranks in that communicator must enter `mpi_summary()` with fully stopped timers
+- Integer comm handle compatibility (`mpif.h` and `mpi_f08`)
+- Hash-based timer-descriptor preflight before the reduction phase
+- Extra timers, missing timers, renamed timers, and hierarchy/context mismatches fall back to the local-only summary with `FTIMER_ERR_MPI_INCON`
+- Min/max/avg/imbalance fields are valid only on communicator root when `has_mpi_data=.true.`
+- Mismatched communicator choices across would-be participants are unsupported; this API has no safe cross-communicator rendezvous to detect that misuse without risking the same MPI deadlock it is trying to avoid
 
-Public timer creation / lookup paths:
+## MPI Summary Contract
 
-- right-trim trailing blanks
-- reject empty names
-- reject names longer than `FTIMER_NAME_LEN`
-- reject names that begin with a blank
-- reject ASCII control characters
+`mpi_summary()` does not return a fully reduced cross-rank copy of every summary field.
 
-## Formatted Summary Text Policy
+- `start_date`, `end_date`, `total_time`, and each entry's `inclusive_time`, `self_time`, `call_count`, `avg_time`, and `pct_time` always describe the calling rank's local summary data, even after a successful `mpi_summary()`.
+- `min_time`, `max_time`, `avg_across_ranks`, and `imbalance` are the only cross-rank reduced entry fields.
+- Those reduced MPI entry fields are valid only when `summary%has_mpi_data` is `.true.`.
+- `summary%has_mpi_data` means only that the reduced MPI entry fields are valid on this rank. It does not mean every field in the summary is globally meaningful, and it does not mean non-root ranks receive reduced entry fields.
+- `summary%mpi_summary_state` makes the result shape explicit:
+- `FTIMER_MPI_SUMMARY_LOCAL_ONLY`: plain local summary. This is what `get_summary()` returns, and it is also what `mpi_summary()` leaves behind when MPI support is disabled, timers are still active, descriptor hashes disagree across ranks, or another MPI-side failure forces fallback.
+- `FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED`: successful `mpi_summary()` result on rank 0. Local summary fields remain root-local; reduced MPI entry fields are populated and `has_mpi_data` is `.true.`.
+- `FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE`: successful `mpi_summary()` result on non-root ranks. Local summary fields still describe that non-root rank only; reduced MPI entry fields remain unset and `has_mpi_data` is `.false.`.
 
-Formatted summary output does not emit unsafe raw entry names literally.
+## OpenMP Limitations
 
-Escaped forms are stable:
+- OpenMP guard behavior is enabled only when the library is built with `FTIMER_USE_OPENMP=ON`
+- The implemented model is master-thread-only timing; this phase does not make `fTimer` generally thread-safe
+- Inside OpenMP parallel regions, the guarded `ftimer_core` timer operations run only on the master thread
+- Non-master calls to those guarded core timer operations become no-ops instead of mutating shared timer state
+- Suppressed non-master calls are skipped before normal validation, emit no stderr warning, and leave any caller-provided `ierr` unchanged
+- The OpenMP guards do not broaden support for concurrent access to other APIs; summary/report generation and other shared access remain unsupported in threaded regions
+- Thread-local timer instances, fuller concurrent timing support, and any `suppress_in_parallel` control remain deferred
 
-- leading blanks render as `\x20`
-- backslashes render as `\\`
-- tabs render as `\t`
-- newlines render as `\n`
-- carriage returns render as `\r`
-- other ASCII control characters render as `\xNN`
-- blank / empty raw names render as `<blank>`
+### Consequences for timing data
 
-## Summary Contract
+The silent worker-thread no-op model has specific, observable consequences that users must understand to avoid misreading summary output:
 
-### Local Summary
-
-`get_summary()` returns a local structured summary.
-
-`print_summary()` and `write_summary()` format local summary information only.
-
-### Local Fields
-
-Even after a successful MPI reduction call, the following fields remain local to the calling rank:
-
-- `start_date`
-- `end_date`
-- `total_time`
-- per-entry `inclusive_time`
-- per-entry `self_time`
-- per-entry `call_count`
-- per-entry `avg_time`
-- per-entry `pct_time`
+- **Timer calls made exclusively on worker threads are silently dropped**: no summary entry is created, no call count is incremented, and no timing data is recorded for those calls. A timer name that is started and stopped only on worker threads will not appear in the summary at all.
+- **Call counts reflect only master-thread invocations, not all-thread counts**: when all N threads in a parallel region call `start`/`stop` for the same timer, only the master thread's call is recorded; the summary shows `call_count = 1`, not `N`.
+- **Timing inside a parallel region captures only the master-thread timing window**: worker-thread work duration is not separately captured or aggregated into the timer's inclusive or self time.
+- **Supported pattern**: place `start`/`stop` calls outside the `!$omp parallel` block to time a parallel region as a whole. The master-thread timing window then spans the full wall-clock duration of the parallel work.
+- **Misleading pattern**: placing `start`/`stop` inside a parallel region with the expectation that each thread contributes timing data is not supported under this contract. Only the master thread's calls take effect; worker-thread contributions are silently absent.
 
 ## Callback Contract
 
-`on_event` is for normal timer transitions only.
-
-- normal `start` fires callback
-- normal `stop` fires callback
-- internal repair transitions do **not** fire callback
-
-`user_data` remains an opaque `c_ptr` for external state.
-
-## MPI Contract
-
-### Availability
-
-`mpi_summary()` is available only when built with `FTIMER_USE_MPI=ON`.
-
-When MPI support is not enabled:
-
-- `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED`
-- the summary remains local-only
-
-### Communicator Contract
-
-`mpi_summary()` is collective over the communicator captured by `init`.
-
-- omitting `comm` at `init` means `MPI_COMM_WORLD` is used
-- all participating ranks in that communicator must enter `mpi_summary()` with fully stopped timers
-
-### Consistency Preflight
-
-Before reduction, the implementation must verify that ranks agree on canonical timer descriptors.
-
-Descriptor mismatches such as:
-
-- extra timers
-- missing timers
-- renamed timers
-- hierarchy mismatches
-- context mismatches
-
-must not proceed into a misleading reduction.
-They must instead fall back to a local-only result with `FTIMER_ERR_MPI_INCON`.
-
-### Reduced MPI Fields
-
-The only cross-rank reduced entry fields are:
-
-- `min_time`
-- `max_time`
-- `avg_across_ranks`
-- `imbalance`
-
-These reduced MPI fields are valid only when the summary shape indicates they are valid on that rank.
-
-### MPI Summary Shape
-
-`summary%mpi_summary_state` makes the result shape explicit:
-
-- `FTIMER_MPI_SUMMARY_LOCAL_ONLY`
-  - plain local summary
-  - also used when MPI is disabled or fallback is required
-- `FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED`
-  - successful root result
-  - local fields remain root-local
-  - reduced MPI entry fields are populated
-- `FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE`
-  - successful non-root result
-  - local fields remain local to that non-root rank
-  - reduced MPI entry fields are not populated there
-
-`summary%has_mpi_data` means reduced MPI entry fields are valid on that rank.
-It does **not** mean the entire summary became a globally reduced copy.
-
-### Unsupported MPI Misuse
-
-Mismatched communicator choices across would-be participants are unsupported.
-This API does not attempt unsafe cross-communicator rendezvous to detect that misuse.
-
-## OpenMP Contract
-
-### Availability
-
-OpenMP guard behavior exists only when the library is built with `FTIMER_USE_OPENMP=ON`.
-
-### Current Model
-
-The current model is limited master-thread-only timing.
-
-This phase does **not** make `fTimer` generally thread-safe and does **not** provide thread-local timer instances.
-
-### Guard Behavior Inside Parallel Regions
-
-Inside OpenMP parallel regions:
-
-- guarded core timer operations run only on the master thread
-- non-master calls become silent no-ops
-- suppressed non-master calls do not mutate shared timer state
-- suppressed non-master calls emit no stderr warning
-- suppressed non-master calls leave any caller-provided `ierr` unchanged
-- worker-thread-only timer calls produce no summary entry
-
-### Consequences For Timing Data
-
-The silent worker-thread no-op model has important observable consequences:
-
-- timer calls made only on worker threads are dropped from the summary
-- call counts reflect only master-thread invocations
-- timing inside a parallel region captures only the master-thread timing window
-- worker-thread duration is not separately aggregated into inclusive or self time
-
-### Supported Pattern
-
-To time a parallel region as a whole, place `start` / `stop` outside the `!$omp parallel` block.
-
-### Unsupported / Misleading Pattern
-
-Placing `start` / `stop` inside a parallel region with the expectation that all threads contribute timing data is not supported.
-Only the master thread contributes under the current contract.
-
-## Procedural / OOP Surface Consistency
-
-The procedural wrappers are intended to be thin forwarding calls over the OOP core.
-
-Unless a task explicitly changes the public contract, procedural and OOP behavior should remain aligned for:
-
-- timer lifecycle behavior
-- timing accumulation
-- error handling
-- summary generation
-- MPI summary behavior
-- OpenMP guard behavior
-
-## Current Build-Surface Notes
-
-- CMake is the supported build system on current `main`
-- smoke tests are the default baseline
-- behavioral tests are opt-in
-- FPM support is intentionally deferred
+- `on_event` fires on normal start/stop only
+- Repair transitions do NOT fire callbacks
+- `user_data` c_ptr for opaque state

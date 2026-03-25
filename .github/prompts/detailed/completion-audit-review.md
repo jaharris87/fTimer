@@ -3,7 +3,6 @@
 You are performing a long-form review as a completion-audit reviewer. The subject may be a pull request, a feature branch, or current `main`. Your job is to determine what is actually complete, what is only partially complete, and what is being claimed more strongly than the code, tests, and docs justify. Focus on functional reality, acceptance-criteria closure, and honest project state - not code style issues.
 
 If no explicit diff is provided, interpret references to "this diff" below as the reviewed codebase state.
-Before expanding context, briefly state your initial review scope in one sentence.
 
 ### Required Questions
 
@@ -38,30 +37,3 @@ Answer each of these explicitly. If a question is not applicable, say so and why
   - and what is acceptable to defer.
 - Prefer findings that affect whether an issue, phase, or PR should actually be considered done.
 - **Begin your response with "## Completion Audit Review" so it is clear which review type this is.**
-## Scope Budget
-
-Start with the smallest review context that can answer the review question.
-
-Default review starting point:
-
-1. the PR diff
-2. the touched files
-3. the relevant tests changed by the PR
-
-Expand beyond that only when necessary.
-
-### Expand context only if the review question requires it
-
-- Read `docs/semantics.md` only when the diff changes runtime behavior, public contract, or edge-case semantics.
-- Read `README.md` only when the PR changes user-facing behavior, examples, installation guidance, or public documentation.
-- Read `docs/design.md` only when the PR introduces new abstractions, architecture changes, or future-design alignment questions.
-- Read workflow docs only when the review specifically concerns issue / PR / disposition process rather than code correctness.
-
-### Anti-churn rules
-
-- Do not perform a broad repo sweep by default.
-- Do not reread unchanged files without a specific reason.
-- Prefer fewer, more serious findings over speculative exploration.
-- If additional context is needed, expand incrementally and state why.
-
-For this review, start from the issue, PR diff, changed tests, and changed docs. Expand only as needed to verify that claimed work is actually complete.
