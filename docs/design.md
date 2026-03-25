@@ -31,7 +31,7 @@ Current `main` is intentionally narrower than the target design below:
 - `ftimer_core.F90` implements `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `print_summary`, and `write_summary`
 - `ftimer_summary.F90` implements local summary building and formatted text reporting
 - `ftimer.F90` now exports the current procedural surface: `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
-  Current Phase 6 note: the safe, documented positional `init` forms on current `main` are `call timer%init()` and `call ftimer_init()`. Pass `ierr`, `comm`, and `mismatch_mode` by keyword in both APIs. With the current Fortran interface, positional integer calls still compile but are ambiguous and can silently bind to `ierr`, so they are documented as unsupported traps.
+  `ierr` is now the last optional argument in both `init` signatures (`comm`, `mismatch_mode`, `ierr`). A single positional integer safely binds to `comm` (`intent(in)`), not `ierr` (`intent(out)`), eliminating the silent-clobber trap from earlier phases. Keywords are recommended for readability.
 - stack-based nesting, context-sensitive accounting, injectable clock use, and strict/warn/repair mismatch dispatch are implemented in the core runtime
 - pFUnit-backed behavioral tests exist for the Phase 2 core behaviors plus Phase 3 summary/self-time/file/callback coverage, Phase 4 procedural parity coverage, and Phase 5 MPI summary coverage
 - `mpi_summary()` / `ftimer_mpi_summary()` now provide MPI-reduced structured summaries on root after a descriptor-hash preflight, return local-only summaries with `FTIMER_ERR_MPI_INCON` on inconsistent ranks, return `FTIMER_ERR_NOT_IMPLEMENTED` in non-MPI builds, and require all timers to be stopped before cross-rank reduction
@@ -142,8 +142,8 @@ call timer%finalize([ierr])
 
 ### Procedural Convenience Interface
 ```fortran
-! Current main only supports the no-argument positional form.
-! Pass ierr, comm, and mismatch_mode by keyword.
+! Signature: ftimer_init([comm], [mismatch_mode], [ierr])
+! Keywords are recommended for readability.
 call ftimer_init()
 call ftimer_init(ierr=ierr)
 call ftimer_init(comm=..., mismatch_mode=..., ierr=...)
@@ -158,7 +158,7 @@ call ftimer_finalize([ierr])
 
 | Type-bound method | Procedural wrapper | Description |
 |---|---|---|
-| `timer%init(...)` | `ftimer_init(...)` | Initialize. The safe, documented positional form is `init()`; pass `ierr`, `comm`, and `mismatch_mode` by keyword. Positional integer calls still compile today but are ambiguous and unsupported. |
+| `timer%init(...)` | `ftimer_init(...)` | Initialize. Accepts optional `comm`, `mismatch_mode`, `ierr` (in that order). With `ierr` last, a single positional integer safely binds to `comm`, not `ierr`. Keywords are recommended for readability. |
 | `timer%finalize([ierr])` | `ftimer_finalize(...)` | Deallocate all. Warns if timers active. |
 | `timer%start(name [, ierr])` | `ftimer_start(...)` | Start timer by name (auto-creates). |
 | `timer%stop(name [, ierr])` | `ftimer_stop(...)` | Stop timer by name. |

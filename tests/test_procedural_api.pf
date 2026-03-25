@@ -121,25 +121,29 @@ contains
    end subroutine test_procedural_init_keyword_options_match_oop
 
    @test
-   subroutine test_init_positional_integer_trap_is_ambiguous_for_both_apis()
-      use ftimer_types, only: FTIMER_MISMATCH_WARN
+   subroutine test_init_positional_integer_binds_safely_to_comm()
       type(ftimer_t) :: oop_timer
       type(ftimer_test_state_t) :: oop_state
       type(ftimer_test_state_t) :: procedural_state
       integer :: ierr
-      integer :: oop_mode
-      integer :: procedural_mode
+      integer :: oop_val
+      integer :: procedural_val
 
-      oop_mode = FTIMER_MISMATCH_WARN
-      call oop_timer%init(oop_mode)
+      ! After reorder, a single positional integer binds to comm (intent(in)),
+      ! not ierr (intent(out)).  The caller's variable is NOT clobbered.
+      oop_val = 42
+      call oop_timer%init(oop_val)
       call snapshot_timer(oop_timer, oop_state)
 
-      procedural_mode = FTIMER_MISMATCH_WARN
-      call ftimer_init(procedural_mode)
+      procedural_val = 42
+      call ftimer_init(procedural_val)
       call snapshot_timer(ftimer_default_instance, procedural_state)
 
-      @assertEqual(FTIMER_SUCCESS, oop_mode)
-      @assertEqual(FTIMER_SUCCESS, procedural_mode)
+      ! Key safety assertion: caller's variable is NOT overwritten
+      @assertEqual(42, oop_val)
+      @assertEqual(42, procedural_val)
+
+      ! mismatch_mode defaults to strict (was not passed)
       @assertEqual(FTIMER_MISMATCH_STRICT, oop_state%mismatch_mode)
       @assertEqual(FTIMER_MISMATCH_STRICT, procedural_state%mismatch_mode)
 
@@ -147,7 +151,7 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
-   end subroutine test_init_positional_integer_trap_is_ambiguous_for_both_apis
+   end subroutine test_init_positional_integer_binds_safely_to_comm
 
    @test
    subroutine test_procedural_start_stop_matches_oop()
