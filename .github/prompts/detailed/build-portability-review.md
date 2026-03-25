@@ -30,3 +30,12 @@ Answer each of these explicitly. If a question is not applicable, say so and why
 - Explain which environment or build mode would fail and how.
 - Prefer findings that would affect CI, common HPC toolchains, or downstream consumers.
 - **Begin your response with "## Build / Portability Review" so it is clear which review type this is.**
+
+### Scope Budget
+
+Start from: (1) PR diff, (2) touched source files, (3) changed tests.
+Expand only when the review question requires it:
+- `docs/semantics.md` — only when the diff changes runtime behavior or contract.
+- `README.md` — only when user-facing behavior or docs may need updates.
+- `docs/design.md` — only for architectural or design-alignment questions.
+Do not perform a broad repo sweep. Prefer fewer, serious findings over speculative exploration.

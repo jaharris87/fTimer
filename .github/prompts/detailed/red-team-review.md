@@ -36,3 +36,12 @@ Suggest specific test cases that would expose weaknesses:
 - Propose a concrete test or check that would catch the problem.
 - Do not soften findings. If something is wrong, say it is wrong.
 - **Begin your response with "## Red Team Review" so it is clear which review type this is.**
+
+### Scope Budget
+
+Start from: (1) PR diff, (2) touched source files, (3) changed tests.
+Expand only when the review question requires it:
+- `docs/semantics.md` — only when the diff changes runtime behavior or contract.
+- `README.md` — only when user-facing behavior or docs may need updates.
+- `docs/design.md` — only for architectural or design-alignment questions.
+Do not perform a broad repo sweep. Prefer fewer, serious findings over speculative exploration.
