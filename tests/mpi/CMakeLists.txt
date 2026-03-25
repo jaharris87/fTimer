@@ -43,6 +43,13 @@ if(MPI_TESTS_PRESENT)
     LABELS mpi
     MAX_PES 4
   )
+
+  # pFUnit macro expansion can generate lines exceeding the default 132-char
+  # free-form limit, triggering -Werror=line-truncation with GNU Fortran.
+  if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(ftimer_mpi_tests PRIVATE -ffree-line-length-none)
+    target_compile_options(ftimer_mpi_tests_4pe PRIVATE -ffree-line-length-none)
+  endif()
 else()
   message(WARNING
     "Skipping ftimer_mpi_tests because Phase 5 MPI test sources are not present yet."

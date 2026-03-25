@@ -46,6 +46,12 @@ if(FTIMER_BUILD_TESTS)
     LINK_LIBRARIES ftimer_test
   )
 
+  # pFUnit macro expansion can generate lines exceeding the default 132-char
+  # free-form limit, triggering -Werror=line-truncation with GNU Fortran.
+  if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(ftimer_serial_tests PRIVATE -ffree-line-length-none)
+  endif()
+
   # MPI tests (only when MPI enabled)
   if(FTIMER_USE_MPI)
     add_subdirectory(mpi)

@@ -75,8 +75,9 @@ jobs:
       - name: Build pFUnit
         if: steps.pfunit-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch v4.16.0 https://github.com/Goddard-Fortran-Ecosystem/pFUnit.git /tmp/pfunit-src
-          cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit
+          mkdir -p /tmp/pfunit-src
+          curl -sL https://github.com/Goddard-Fortran-Ecosystem/pFUnit/releases/download/v4.16.0/pFUnit-v4.16.0.tar | tar x --strip-components=1 -C /tmp/pfunit-src
+          FC=gfortran cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit
           cmake --build /tmp/pfunit-build -j$(nproc)
           cmake --install /tmp/pfunit-build
 
@@ -112,7 +113,8 @@ jobs:
       - name: Build pFUnit (MPI)
         if: steps.pfunit-mpi-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch v4.16.0 https://github.com/Goddard-Fortran-Ecosystem/pFUnit.git /tmp/pfunit-src
+          mkdir -p /tmp/pfunit-src
+          curl -sL https://github.com/Goddard-Fortran-Ecosystem/pFUnit/releases/download/v4.16.0/pFUnit-v4.16.0.tar | tar x --strip-components=1 -C /tmp/pfunit-src
           FC=mpifort cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit-mpi -DMPI=YES
           cmake --build /tmp/pfunit-build -j$(nproc)
           cmake --install /tmp/pfunit-build
