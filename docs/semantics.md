@@ -119,6 +119,23 @@ Public timer creation / lookup paths:
 - reject names that begin with a blank
 - reject ASCII control characters
 
+Name validation failures return `FTIMER_ERR_INVALID_NAME` (code 8).
+
+**Deliberate warn-and-skip contract for `ierr`-absent callers** (issue #49, PR #43):
+
+When a caller omits `ierr` and passes an invalid timer name, the runtime:
+1. emits a diagnostic to stderr
+2. returns immediately without modifying any timer state
+
+The call is a no-op: no segment is created, no stack depth change occurs.
+Parent timers are not affected. Summary output will simply omit the rejected child;
+it does not produce a plausible-but-wrong child entry.
+
+This is the deliberate policy rather than a stronger failure (e.g. `error stop`),
+chosen for consistency with the library's error contract and because callers that
+omit `ierr` have opted into the permissive path. Callers that require hard
+enforcement should pass `ierr` and check it.
+
 ## Formatted Summary Text Policy
 
 Formatted summary output does not emit unsafe raw entry names literally.

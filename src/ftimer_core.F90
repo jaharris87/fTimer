@@ -2,7 +2,7 @@ module ftimer_core
    use, intrinsic :: iso_c_binding, only: c_null_ptr, c_ptr
    use, intrinsic :: iso_fortran_env, only: error_unit
    use ftimer_clock, only: ftimer_date_string, ftimer_default_clock, ftimer_mpi_clock
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MISMATCH, &
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
                            FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, &
                            FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_metadata_t, &
@@ -668,19 +668,19 @@ contains
       trimmed_len = len_trim(name)
 
       if (trimmed_len <= 0) then
-         status = FTIMER_ERR_UNKNOWN
+         status = FTIMER_ERR_INVALID_NAME
          message = "ftimer timer name must not be empty"
          return
       end if
 
       if (trimmed_len > FTIMER_NAME_LEN) then
-         status = FTIMER_ERR_UNKNOWN
+         status = FTIMER_ERR_INVALID_NAME
          write (message, '(a,i0)') "ftimer timer name exceeds FTIMER_NAME_LEN=", FTIMER_NAME_LEN
          return
       end if
 
       if (name(1:1) == ' ') then
-         status = FTIMER_ERR_UNKNOWN
+         status = FTIMER_ERR_INVALID_NAME
          message = "ftimer timer name must not begin with whitespace"
          return
       end if
@@ -688,7 +688,7 @@ contains
       do i = 1, trimmed_len
          code = iachar(name(i:i))
          if ((code < 32) .or. (code == 127)) then
-            status = FTIMER_ERR_UNKNOWN
+            status = FTIMER_ERR_INVALID_NAME
             write (message, '(a,i0)') "ftimer timer name contains control character at position ", i
             return
          end if
