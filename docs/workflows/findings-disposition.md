@@ -132,3 +132,10 @@ After handling the reviews, report:
 * what was deferred, including linked follow-up issue numbers
 * whether any deferred item is release-blocking but not merge-blocking
 * whether any merge-blocking findings remain
+
+## Related Templates
+
+Use these templates once actual review findings exist:
+
+- `docs/templates/prompt-findings-disposition.md` — to classify and respond to findings, decide fix/disagree/defer, and track follow-up work
+- `docs/templates/session-handoff.md` — to hand off remaining findings, post-disposition work, or merge-ready status

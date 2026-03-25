@@ -81,3 +81,11 @@ Useful commands:
 - GitHub does not expose perfect provenance from one trigger comment to one returned review object.
 
 Infer review type from returned content and trigger context when wrapper metadata is ambiguous.
+
+## Related Templates
+
+Use these templates during and after PR review monitoring:
+
+- `docs/templates/prompt-review-monitoring.md` — to check expected versus actual review artifacts and decide whether fallback review is needed
+- `docs/templates/prompt-fallback-review.md` — when native review is unavailable or insufficient and a manual review pass is needed
+- `docs/templates/session-handoff.md` — to hand off into fallback review or findings disposition

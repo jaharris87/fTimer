@@ -53,13 +53,23 @@ Prefer separate sessions or narrowly scoped review passes for distinct phases:
 
 When moving between phases, carry forward a compact handoff note instead of replaying the full prior conversation.
 
-Suggested handoff fields:
+Use [`docs/templates/session-handoff.md`](templates/session-handoff.md) as the default handoff format between maintainer phases.
 
-- issue / PR
-- scope
-- files touched
-- behavior changed
-- tests run
-- review status
-- open findings
-- recommended next step
+This is especially useful when moving between implementation, review monitoring, findings disposition, and post-merge follow-up, because it preserves the minimum durable context needed for the next phase.
+
+## Related Templates
+
+The reusable prompt and handoff templates live under `docs/templates/`.
+
+Use them to keep sessions phase-bounded and to avoid replaying full prior context.
+
+- `docs/templates/prompt-implement-issue.md` — implementation session for a scoped issue
+- `docs/templates/prompt-pr-open.md` — PR-opening and packaging session
+- `docs/templates/prompt-review-monitoring.md` — review-status checking session
+- `docs/templates/prompt-fallback-review.md` — fallback manual review session
+- `docs/templates/prompt-findings-disposition.md` — review-findings response and disposition session
+- `docs/templates/prompt-task-planning.md` — next-task planning session
+- `docs/templates/prompt-milestone-audit.md` — milestone / phase / release audit session
+- `docs/templates/session-handoff.md` — end-of-phase handoff note for the next session
+
+Prefer ending each major workflow phase with `docs/templates/session-handoff.md`.

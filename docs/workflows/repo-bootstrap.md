@@ -58,3 +58,12 @@ Occasionally verify that:
 - the trigger workflow still posts the expected `@codex review ...` comments
 - the detailed prompt library still matches current review categories
 - branch protection still matches intended merge policy
+
+## Related Templates
+
+This workflow usually does not require a dedicated prompt template.
+
+If bootstrap work is being planned as part of a broader maintenance effort, use:
+
+- `docs/templates/prompt-task-planning.md` — to scope the maintenance work
+- `docs/templates/session-handoff.md` — to hand off any remaining setup work

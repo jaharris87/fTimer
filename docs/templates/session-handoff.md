@@ -5,8 +5,22 @@ Use this template at the end of a major phase so the next session can start from
 ## Task
 
 - **Issue / PR:** 
-- **Phase:** implementation / review-monitoring / findings-disposition / planning
+- **Phase:**
 - **Objective of this session:** 
+
+## What “Phase” Means Here
+
+In this template, **phase** means the current **workflow stage of the session**, not a project roadmap phase such as “Phase 6”.
+
+Use one of:
+
+- `implementation`
+- `pr-open`
+- `review-monitoring`
+- `findings-disposition`
+- `planning`
+
+Choose the phase that best describes the main objective of the session being handed off.
 
 ## Scope
 

@@ -80,3 +80,10 @@ Use the detailed prompts for:
 Opening the PR should usually be the end of the implementation phase.
 
 Prefer not to continue into heavy review-monitoring or fallback-review work in the same already-large implementation session unless the change is urgent and the context is still small.
+
+## Related Templates
+
+Use these templates at the transition from implementation to PR packaging:
+
+- `docs/templates/prompt-pr-open.md` — to prepare the PR title, body, labels, and review setup
+- `docs/templates/session-handoff.md` — to close out the PR-opening phase and hand off into review monitoring

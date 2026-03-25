@@ -216,13 +216,10 @@ Prefer one major objective per session:
 * review/disposition
 * next-step planning
 
-End each phase with a short handoff note containing:
+End each phase with a short handoff note.
 
-* task or issue
-* files touched
-* behavior changed
-* tests run
-* open questions
-* recommended next step
+For a standard format, use [`docs/templates/session-handoff.md`](templates/session-handoff.md).
+
+When practical, fill out that template at the end of a phase instead of writing an ad hoc summary. This keeps the next session's starting context compact, consistent, and easy to reuse across implementation, review, and planning work.
 
 Use that handoff as the starting context for the next session instead of replaying the full prior thread.

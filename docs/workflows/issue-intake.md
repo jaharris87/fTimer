@@ -77,3 +77,11 @@ Make sure the issue identifies enough context to start with a minimal working se
 * likely touched tests
 * whether runtime contract changes are expected
 * whether public docs are likely affected
+
+## Related Templates
+
+Use these templates around issue intake:
+
+- `docs/templates/prompt-task-planning.md` — to decide the next best scoped piece of work or draft a new issue
+- `docs/templates/prompt-implement-issue.md` — once issue scope is clear and implementation is ready to begin
+- `docs/templates/session-handoff.md` — to hand off the scoped issue into the implementation phase
