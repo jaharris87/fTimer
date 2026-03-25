@@ -1,3 +1,11 @@
+> **When to read this**
+>
+> Read this file when the task is architectural, future-facing, or requires checking whether a change fits the intended long-term design.
+>
+> This file is forward-looking design guidance, not the primary source of truth for current behavior already implemented on `main`.
+>
+> Do **not** load this by default for routine bug fixes or narrowly scoped implementation work unless design alignment is part of the task.
+
 # fTimer: A Modern Fortran Wall-Clock Timing Library
 
 > This document is a forward-looking design reference. Unless a section explicitly says otherwise, it describes the target architecture and API for later phases rather than the exact runtime behavior on current `main`.
