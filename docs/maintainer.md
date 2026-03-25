@@ -1,6 +1,6 @@
 # Maintainer Guide
 
-This document covers repository operations, pull request workflow, and Codex review handling. It is intentionally separate from `CLAUDE.md`, which should stay focused on coding, build/test, architecture, and implementation guidance.
+This document covers repository operations, pull request workflow, and PR review handling. It is intentionally separate from `CLAUDE.md`, which should stay focused on coding, build/test, architecture, and implementation guidance.
 
 ## Repository Bootstrap
 
@@ -23,8 +23,8 @@ For every scoped piece of work:
 2. Create a feature branch from updated local `main`.
 3. Implement the change on that feature branch.
 4. Open a pull request to `main`.
-5. Apply the Codex review labels required by the diff.
-6. Monitor for Codex reviews and handle every finding.
+5. Apply the review labels required by the diff.
+6. Monitor for reviews and handle every finding.
 7. Do not merge while merge-blocking findings remain unresolved.
 
 ## Codex Review Workflow
@@ -61,23 +61,24 @@ Use the additional detailed prompts when you want a targeted repository review o
 
 After opening or materially updating the PR:
 
-1. Inform the user that you are monitoring for Codex reviews.
+1. Inform the user that you are monitoring for reviews.
 2. Poll every 60 seconds for up to 10 minutes.
 3. Inspect actual review artifacts, not just workflow success.
-4. Once all expected reviews have arrived, respond to every finding.
-5. If reviews have not arrived after 10 minutes, tell the user and ask how to proceed.
+4. Watch PR comments for a message from `chatgpt-codex-connector` indicating quota or usage limit reached — if one appears, switch to the fallback flow immediately without waiting for the full 10-minute window.
+5. Once all expected reviews have arrived, respond to every finding.
+6. If reviews have not arrived after 10 minutes and no quota message has appeared, tell the user and ask how to proceed.
 
 ### Fallback When Native Codex Review Is Unavailable
 
-Use this fallback only when the normal label-triggered Codex review path is unavailable or insufficient, for example:
+Use this fallback only when the label-triggered review path is unavailable or insufficient, for example:
 
-- Codex usage quota is exhausted
+- Codex usage quota is exhausted (signalled by a `chatgpt-codex-connector` comment on the PR)
 - the trigger workflow posts successfully but no actual review artifacts arrive after the normal wait window
 - the GitHub/Codex integration is unavailable
 
 Fallback procedure:
 
-1. Still apply the normal Codex review labels and monitor for the native review flow first.
+1. Still apply the review labels and monitor for the native review flow first.
 2. Request the missing review manually, for example via ChatGPT with GitHub integration.
    Use the matching detailed prompt from `.github/prompts/detailed/` when doing this.
 3. Ask the manual review to use the repository review heading convention:
@@ -120,7 +121,7 @@ In practice, infer review type from the review contents and the trigger context 
 
 ## Responding To Findings
 
-For every finding in every Codex review, post a reply on the PR in one of these categories:
+For every finding in every review (native, fallback, or manual), post a reply on the PR in one of these categories:
 
 - Agree and fix
 - Disagree with evidence
