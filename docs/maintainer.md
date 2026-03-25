@@ -175,7 +175,7 @@ A deferred finding is not considered handled until the PR disposition comment an
 **Rule of thumb for whether to open an issue:**
 
 - If the deferred item requires code, tests, docs, validation, or design work, open an issue.
-- If it is only a note with no action required, it can remain in the PR discussion.
+- If no code, docs, tests, or design work is expected to follow, it can remain in the PR discussion.
 - If it came from a formal software, methodology, or red-team review and is a real follow-up item, default to opening an issue.
 
 **Preferred wording.** Avoid vague language like "will do later." Use specific language:
@@ -215,9 +215,9 @@ Do not merge the PR if any finding classified as:
 
 remains unresolved without either a fix or a disagreement backed by evidence.
 
-Findings classified as `bug`, `leakage`, or `silent wrong answer` should not be deferred for merge unless the maintainer documents why the finding is not valid or not applicable in this context.
+Findings classified as `bug`, `leakage`, or `silent wrong answer` should not be deferred for merge unless the maintainer documents why the finding is not valid, not applicable to this PR (e.g., pre-existing and not introduced here), or not applicable in this context.
 
-A deferred finding may remain open at merge time only if it is explicitly recorded as non-merge-blocking and has durable follow-up tracking when required (see `### Deferring Findings Properly`).
+A deferred finding may remain open at merge time only if it is explicitly recorded as non-merge-blocking and has durable follow-up tracking when required (see [Deferring Findings Properly](#deferring-findings-properly)).
 
 Findings classified as nit, design concern, or methodology concern do not block merge unless the user decides otherwise.
 
