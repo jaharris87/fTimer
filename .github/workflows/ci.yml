@@ -60,24 +60,26 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # MPI is needed to build pFUnit (pfunit.mod requires MPI=YES).
+      # fTimer itself is built without MPI in this job.
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gfortran cmake
+          sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
       - name: Cache pFUnit
         uses: actions/cache@v4
         id: pfunit-cache
         with:
           path: /opt/pfunit
-          key: pfunit-serial-${{ runner.os }}-gfortran-v4.16.0
+          key: pfunit-${{ runner.os }}-gfortran-openmpi-v4.16.0
 
       - name: Build pFUnit
         if: steps.pfunit-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p /tmp/pfunit-src
           curl -sL https://github.com/Goddard-Fortran-Ecosystem/pFUnit/releases/download/v4.16.0/pFUnit-v4.16.0.tar | tar x --strip-components=1 -C /tmp/pfunit-src
-          FC=gfortran cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit
+          FC=mpifort cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit -DMPI=YES
           cmake --build /tmp/pfunit-build -j$(nproc)
           cmake --install /tmp/pfunit-build
 
@@ -103,24 +105,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
-      - name: Cache pFUnit (MPI)
+      - name: Cache pFUnit
         uses: actions/cache@v4
-        id: pfunit-mpi-cache
+        id: pfunit-cache
         with:
-          path: /opt/pfunit-mpi
-          key: pfunit-mpi-${{ runner.os }}-gfortran-openmpi-v4.16.0
+          path: /opt/pfunit
+          key: pfunit-${{ runner.os }}-gfortran-openmpi-v4.16.0
 
-      - name: Build pFUnit (MPI)
-        if: steps.pfunit-mpi-cache.outputs.cache-hit != 'true'
+      - name: Build pFUnit
+        if: steps.pfunit-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p /tmp/pfunit-src
           curl -sL https://github.com/Goddard-Fortran-Ecosystem/pFUnit/releases/download/v4.16.0/pFUnit-v4.16.0.tar | tar x --strip-components=1 -C /tmp/pfunit-src
-          FC=mpifort cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit-mpi -DMPI=YES
+          FC=mpifort cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit -DMPI=YES
           cmake --build /tmp/pfunit-build -j$(nproc)
           cmake --install /tmp/pfunit-build
 
       - name: Configure
-        run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/opt/pfunit-mpi
+        run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/opt/pfunit
 
       - name: Build
         run: cmake --build build -j$(nproc)
