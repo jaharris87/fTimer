@@ -64,7 +64,7 @@ After opening or materially updating the PR:
 1. Inform the user that you are monitoring for reviews.
 2. Poll every 60 seconds for up to 10 minutes.
 3. Inspect actual review artifacts, not just workflow success.
-4. Watch PR comments for a message from `chatgpt-codex-connector` indicating quota or usage limit reached — if one appears, switch to the fallback flow immediately without waiting for the full 10-minute window.
+4. Watch PR comments for a message from `chatgpt-codex-connector` indicating that native review will not proceed (e.g., quota exhausted, or environment not configured) — if one appears, switch to the fallback flow immediately without waiting for the full 10-minute window.
 5. Once all expected reviews have arrived, respond to every finding.
 6. If reviews have not arrived after 10 minutes and no quota message has appeared, tell the user and ask how to proceed.
 
@@ -72,7 +72,7 @@ After opening or materially updating the PR:
 
 Use this fallback only when the label-triggered review path is unavailable or insufficient, for example:
 
-- Codex usage quota is exhausted (signalled by a `chatgpt-codex-connector` comment on the PR)
+- a `chatgpt-codex-connector` comment on the PR indicates native review will not proceed (e.g., quota exhausted, or environment not configured)
 - the trigger workflow posts successfully but no actual review artifacts arrive after the normal wait window
 - the GitHub/Codex integration is unavailable
 
