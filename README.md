@@ -1,14 +1,12 @@
+# fTimer
+
+A lightweight, correctness-first wall-clock timing library for modern Fortran.
+
 > **When to read this**
 >
 > Read this file when you need the public-facing overview of `fTimer`: current capabilities on `main`, quick-start usage, build/install guidance, examples, and user-visible behavior.
 >
 > Do **not** treat this file as the canonical detailed runtime contract. For behavior edge cases and exact semantics, use `docs/semantics.md`.
->
-> For coding-agent workflows, do **not** load this by default for routine implementation tasks unless the task may change user-facing behavior, examples, installation guidance, or public documentation.
-
-# fTimer
-
-A lightweight, correctness-first wall-clock timing library for modern Fortran.
 
 ## Status
 
