@@ -23,9 +23,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake
 
-      # GitHub Actions currently exercises the default smoke-test path only.
-      # The repo also contains opt-in pFUnit suites, but this workflow does not
-      # provision PFUNIT_DIR or run those serial/MPI behavioral tests.
+      # Smoke tests validate the default build path (no pFUnit required).
+      # pFUnit behavioral tests run in the test-serial job below.
       - name: Configure (serial)
         run: cmake -B build
 
@@ -45,9 +44,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
-      # The MPI job also follows the smoke-test path only. pFUnit MPI suites
-      # exist in the repo but are not exercised here because PFUNIT_DIR is not
-      # provisioned in this workflow.
+      # MPI smoke tests validate the MPI-enabled build path (no pFUnit required).
+      # pFUnit MPI behavioral tests run in the test-mpi job below.
       - name: Configure (MPI)
         run: cmake -B build -DFTIMER_USE_MPI=ON
 
@@ -55,6 +53,83 @@ jobs:
         run: cmake --build build -j$(nproc)
 
       - name: Smoke test
+        run: ctest --test-dir build --output-on-failure
+
+  test-serial:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # MPI is needed to build pFUnit (pfunit.mod requires MPI=YES).
+      # fTimer itself is built without MPI in this job.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
+
+      - name: Cache pFUnit
+        uses: actions/cache@v4
+        id: pfunit-cache
+        with:
+          path: /opt/pfunit
+          key: pfunit-${{ runner.os }}-gfortran-openmpi-v4.16.0
+
+      - name: Build pFUnit
+        if: steps.pfunit-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/pfunit-src
+          curl -fsSL https://github.com/Goddard-Fortran-Ecosystem/pFUnit/releases/download/v4.16.0/pFUnit-v4.16.0.tar | tar x --strip-components=1 -C /tmp/pfunit-src
+          FC=mpifort cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit -DMPI=YES
+          cmake --build /tmp/pfunit-build -j$(nproc)
+          cmake --install /tmp/pfunit-build
+
+      - name: Configure
+        run: FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/opt/pfunit
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  test-mpi:
+    runs-on: ubuntu-latest
+    env:
+      OMPI_ALLOW_RUN_AS_ROOT: 1
+      OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+      OMPI_MCA_rmaps_base_oversubscribe: 1
+      PRTE_MCA_rmaps_default_mapping_policy: :oversubscribe
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
+
+      - name: Cache pFUnit
+        uses: actions/cache@v4
+        id: pfunit-cache
+        with:
+          path: /opt/pfunit
+          key: pfunit-${{ runner.os }}-gfortran-openmpi-v4.16.0
+
+      - name: Build pFUnit
+        if: steps.pfunit-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/pfunit-src
+          curl -fsSL https://github.com/Goddard-Fortran-Ecosystem/pFUnit/releases/download/v4.16.0/pFUnit-v4.16.0.tar | tar x --strip-components=1 -C /tmp/pfunit-src
+          FC=mpifort cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit -DMPI=YES
+          cmake --build /tmp/pfunit-build -j$(nproc)
+          cmake --install /tmp/pfunit-build
+
+      - name: Configure
+        run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/opt/pfunit
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
         run: ctest --test-dir build --output-on-failure
 
   lint:
