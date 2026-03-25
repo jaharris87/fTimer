@@ -81,7 +81,7 @@ endif()
 add_subdirectory(src)
 
 # Tests
-if(FTIMER_BUILD_TESTS OR FTIMER_BUILD_SMOKE_TESTS)
+if(FTIMER_BUILD_TESTS OR FTIMER_BUILD_SMOKE_TESTS OR FTIMER_BUILD_BENCH)
   enable_testing()
 endif()
 
