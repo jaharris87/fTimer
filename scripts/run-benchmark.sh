@@ -98,14 +98,10 @@ run_prompt() {
 import json, sys
 try:
     data = json.load(open(sys.argv[1]))
-    u = data.get('usage', data.get('result', {}).get('usage', {}))
-    # Try different JSON structures
-    if not u:
-        # Some formats nest usage differently
-        for key in ['usage', 'metadata']:
-            if key in data and isinstance(data[key], dict):
-                u = data[key]
-                break
+    u = data.get('usage')
+    if not isinstance(u, dict):
+        r = data.get('result')
+        u = r.get('usage', {}) if isinstance(r, dict) else {}
     inp = u.get('input_tokens', 0)
     out = u.get('output_tokens', 0)
     cc = u.get('cache_creation_input_tokens', 0)
