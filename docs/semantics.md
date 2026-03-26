@@ -82,6 +82,13 @@ The call is a no-op: no segment is created, no stack depth change occurs.
 Parent timers are not affected. Summary output will simply omit the rejected child;
 it does not produce a plausible-but-wrong child entry.
 
+**OpenMP carve-out**: this warn-and-skip contract applies in serial code and from the
+OpenMP master thread only. When built with `FTIMER_USE_OPENMP=ON`, calls from non-master
+threads are suppressed before validation reaches `normalize_name` or `report_status` — they
+produce no stderr diagnostic, return 0 (for `lookup`), and leave any caller-provided `ierr`
+unchanged. This is a consequence of the master-thread-only guard model documented in
+"OpenMP Limitations" below.
+
 This is the deliberate policy rather than a stronger failure (e.g. `error stop`),
 chosen for consistency with the library's error contract and because callers that
 omit `ierr` have opted into the permissive path. Callers that require hard

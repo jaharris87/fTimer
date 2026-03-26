@@ -290,6 +290,40 @@ contains
    end subroutine test_invalid_name_without_ierr_warns_stderr_and_is_noop
 
    @test
+   subroutine test_invalid_name_lookup_without_ierr_warns_stderr_and_is_noop()
+      ! Contract: lookup() with an invalid name and no ierr emits a stderr warning
+      ! and is a no-op: returns 0, no segment created, call stack depth unchanged.
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: id
+      integer :: saved_fd
+      logical :: has_warning
+
+      call timer%init()
+      call attach_mock_clock(timer)
+
+      call begin_stderr_capture('test_invalid_name_lookup_without_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      ! Leading space — rejected before any segment creation
+      id = timer%lookup(' bad')
+
+      call end_stderr_capture('test_invalid_name_lookup_without_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      @assertEqual(0, id)
+
+      has_warning = index(stderr_text, 'ftimer timer name') > 0
+      @assertTrue(has_warning)
+
+      call snapshot_timer(timer, state)
+      @assertEqual(0, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+   end subroutine test_invalid_name_lookup_without_ierr_warns_stderr_and_is_noop
+
+   @test
    subroutine test_dynamic_growth_creates_many_segments()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state
