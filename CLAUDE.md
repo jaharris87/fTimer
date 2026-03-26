@@ -201,11 +201,12 @@ Short version:
 - create or link the GitHub issue first
 - open a PR from a feature branch
 - always apply `codex-software-review`
-- also apply `codex-methodology-review` or `codex-red-team-review` when the diff warrants them
+- also apply `codex-methodology-review` when the diff touches: `src/ftimer_core.F90`, `src/ftimer_summary.F90`, `src/ftimer_mpi.F90`, or `docs/semantics.md`
+- also apply `codex-red-team-review` when the diff touches: `src/ftimer_core.F90` (especially `start`, `stop`, or `repair_mismatch`) or `src/ftimer_mpi.F90`
 - monitor for the actual Codex review output
 - reply to every finding, resolve every review thread, and do not merge while merge-blocking findings remain
 
-Use `docs/maintainer.md` for workflow routing, then load the phase-specific doc you need: `docs/workflows/pr-open.md` for opening PRs and labels, `docs/workflows/review-monitoring.md` for monitoring and fallback review, `docs/workflows/findings-disposition.md` for responding to findings and merge criteria.
+For deeper workflow details (monitoring, fallback review, findings disposition, merge criteria), use `docs/maintainer.md` for routing to: `docs/workflows/pr-open.md`, `docs/workflows/review-monitoring.md`, `docs/workflows/findings-disposition.md`.
 
 The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`. The long-form prompt library lives in `.github/prompts/detailed/`: it contains detailed versions of the three PR-triggered review types plus eight additional review prompts for API/compatibility, build/portability, completion auditing, docs/contracts, MPI safety, performance/overhead, pragmatic design, and test quality.
 
