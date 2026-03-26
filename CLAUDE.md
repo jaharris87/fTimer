@@ -155,7 +155,10 @@ Read additional docs only when the task requires them:
 - `docs/semantics.md` — when runtime behavior or contract is changing or unclear
 - `README.md` — when user-facing behavior, examples, or docs may need updates
 - `docs/design.md` — for architectural or future-facing questions
-- `docs/maintainer.md` — for issue/PR/review/disposition workflow tasks
+- `docs/maintainer.md` — for workflow routing; then load only the phase-specific doc you need:
+  - `docs/workflows/pr-open.md` — PR opening and review labels
+  - `docs/workflows/review-monitoring.md` — monitoring and fallback review
+  - `docs/workflows/findings-disposition.md` — responding to findings and merge criteria
 
 Context budget:
 
@@ -202,7 +205,7 @@ Short version:
 - monitor for the actual Codex review output
 - reply to every finding, resolve every review thread, and do not merge while merge-blocking findings remain
 
-Use `docs/maintainer.md` for the full operating procedure, investigation commands, merge criteria, and the fallback/detailed-review workflow when native Codex review is unavailable or when a longer-form review is needed.
+Use `docs/maintainer.md` for workflow routing, then load the phase-specific doc you need: `docs/workflows/pr-open.md` for opening PRs and labels, `docs/workflows/review-monitoring.md` for monitoring and fallback review, `docs/workflows/findings-disposition.md` for responding to findings and merge criteria.
 
 The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`. The long-form prompt library lives in `.github/prompts/detailed/`: it contains detailed versions of the three PR-triggered review types plus eight additional review prompts for API/compatibility, build/portability, completion auditing, docs/contracts, MPI safety, performance/overhead, pragmatic design, and test quality.
 

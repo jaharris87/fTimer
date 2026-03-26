@@ -1,3 +1,5 @@
+> **When to read this:** For architectural or future-facing design questions. This describes target architecture, not current behavior. Do not load this for routine coding tasks unless the task explicitly involves design alignment.
+
 # fTimer: A Modern Fortran Wall-Clock Timing Library
 
 > This document is a forward-looking design reference. Unless a section explicitly says otherwise, it describes the target architecture and API for later phases rather than the exact runtime behavior on current `main`.

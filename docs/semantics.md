@@ -1,3 +1,5 @@
+> **When to read this:** When runtime behavior or contract is changing or unclear. This is the canonical current runtime contract on `main`. Do not load this by default for routine coding tasks where the behavior is not in question.
+
 # fTimer Semantics Reference
 
 This document describes the current runtime contract on `main`.

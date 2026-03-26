@@ -1,0 +1,1 @@
+What files would you need to modify to add a new public API subroutine called `ftimer_pause` that pauses a running timer without stopping it (preserving accumulated time so far)? List only the files you would change and briefly explain why. Do not implement anything.
