@@ -41,7 +41,7 @@ Model:      $MODEL
 Max budget: \$$MAX_BUDGET per prompt
 Results:    $RESULTS_DIR
 
-This will run ${#PROMPT_DIR}/*.md prompts as read-only Claude sessions.
+This will run $(ls "$PROMPT_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ') prompts as read-only Claude sessions.
 Each prompt consumes real tokens.
 
 INFO
@@ -97,7 +97,7 @@ run_prompt() {
             python3 -c "
 import json, sys
 try:
-    data = json.load(open('$output_file'))
+    data = json.load(open(sys.argv[1]))
     u = data.get('usage', data.get('result', {}).get('usage', {}))
     # Try different JSON structures
     if not u:
@@ -115,7 +115,7 @@ try:
 except Exception as e:
     print(f'0\t0\t0\t0\t0', file=sys.stdout)
     print(f'Parse error: {e}', file=sys.stderr)
-" 2>>"$RESULTS_DIR/$name.stderr"
+" "$output_file" 2>>"$RESULTS_DIR/$name.stderr"
         )
     else
         input_tokens=0; output_tokens=0; cache_create=0; cache_read=0; total_context=0
