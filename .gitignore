@@ -21,5 +21,8 @@ CMakeFiles/
 .vscode/
 .idea/
 
+# Benchmark results (per-run, not committed)
+benchmark-results/
+
 # OS
 .DS_Store

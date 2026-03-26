@@ -92,6 +92,36 @@ ftimer.F90  (procedural wrappers + default global instance)
 - **MPI via integer comm handle**: Compatible with both `include 'mpif.h'` and `use mpi_f08` (via `comm%MPI_VAL`).
 - **OpenMP master-thread-only timing**: When built with `FTIMER_USE_OPENMP=ON`, all guarded timer operations run only on the master thread (thread 0). Worker-thread calls are silent no-ops: no summary entry is created, no call count is incremented, and no `ierr` is set. Timer calls made exclusively on worker threads produce no summary entry. The supported pattern is to place `start`/`stop` outside `!$omp parallel` blocks. Placing `start`/`stop` inside a parallel region expecting each thread to contribute is the misleading anti-pattern. See `docs/semantics.md` "Consequences for timing data" for the full contract.
 
+### Key Data Flow
+
+`start("name")` → lookup/create segment → find/create context (current call stack) → push onto call stack → record start_time. `stop("name")` → verify top-of-stack match → pop call stack → find context (now-current stack) → accumulate elapsed time.
+
+The call stack state CHANGES between start and stop — this is the most common source of context attribution bugs.
+
+### Correctness Priorities
+
+#### Timing Correctness (highest priority)
+
+- **Context mismatch in start/stop ordering**: `stop` must pop the call stack BEFORE looking up the context index. If the lookup happens before the pop, the context will be the "timer is running" stack instead of the "timer's parent" stack, silently zeroing times or attributing them to the wrong context.
+- **Iterative repair timestamp consistency**: When repairing a nesting mismatch, all unwound timers and the target timer must use a single `now` timestamp captured once. Independent clock reads for each step create timing gaps or double-counting that is invisible in output but makes times not sum correctly.
+- **Repair must NOT fire user callbacks**: Internal repair transitions (unwinding/restarting timers during mismatch repair) must not fire the `on_event` callback. If they do, external profiling tools (PAPI, likwid) will see phantom start/stop events that corrupt their measurements.
+- **Self-time computation boundaries**: Exclusive/self time is `inclusive - sum(direct children)`. If child iteration boundaries are wrong (e.g., iterating past the next sibling into cousins), self_time can go negative or exceed inclusive_time. Both conditions indicate a bug.
+
+#### Numerical Precision
+
+- **Double-precision truncation**: All timing arithmetic must use `real(wp)` where `wp = selected_real_kind(15, 307)`. Any implicit conversion to default `real` (single precision) degrades accuracy for runs longer than ~1 hour. Watch for literal constants without `_wp` suffix and mixed-precision arithmetic.
+
+#### MPI Correctness
+
+- **MPI summary hangs on inconsistent timer sets**: If ranks have different timer names or context structures, collective operations (MPI_Reduce, MPI_Allgather) will deadlock or produce garbage. The hash-based preflight check is mandatory before any collective — it must compare canonical timer descriptors across all ranks and fall back to local-only summary on mismatch.
+- **Array growth divergence across MPI ranks**: If ranks create timers in different orders or different counts, segment array indices diverge. MPI collectives that assume matching indices will reduce the wrong timers against each other, producing plausible but wrong cross-rank statistics.
+
+#### Code Quality Risks
+
+- **Docs drift**: `CLAUDE.md`, README, `docs/semantics.md`, and any user-facing help text must match the actual implementation. Discrepancies are real bugs.
+- **Test skepticism**: Ask whether tests actually exercise the behavior they claim to test. Mock clock tests that never advance time, or mismatch tests that don't verify the stack state after repair, provide false confidence.
+- **Silent fallbacks**: Any code path that substitutes a default value for missing data should be flagged. Silent fallbacks can mask real errors and produce plausible-looking but wrong output. In particular: missing `ierr` argument should warn, not silently succeed.
+
 ## Development Workflow
 
 Current `main` is in Phase 6. The shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, and limited OpenMP master-thread guards are implemented.
@@ -101,6 +131,41 @@ During Phase 6, keep the library, examples, install package, smoke tests, and pF
 Detailed repository operations and PR/review handling live in `docs/maintainer.md`. Use that file for GitHub workflow details; keep this file focused on coding/build/test behavior and the short mandatory PR summary below.
 
 **Phase 1 exception:** the types/clock foundation was compile-first work, not an early pFUnit phase. Starting in Phase 2, test-driven development is mandatory: write tests first, confirm they fail, then implement. All behavioral tests use the injectable mock clock for deterministic results — tests never sleep or depend on wall-clock timing.
+
+### Source-of-Truth Order
+
+When sources disagree:
+
+1. current code under `src/`
+2. current behavioral tests
+3. `docs/semantics.md` — intended runtime contract on `main`
+4. `README.md` — user-facing current-state behavior
+5. `docs/design.md` — forward-looking design intent
+
+### Working Rules
+
+Start every task with the smallest useful working set:
+
+1. the task or issue description
+2. touched source files
+3. touched tests
+
+Read additional docs only when the task requires them:
+
+- `docs/semantics.md` — when runtime behavior or contract is changing or unclear
+- `README.md` — when user-facing behavior, examples, or docs may need updates
+- `docs/design.md` — for architectural or future-facing questions
+- `docs/maintainer.md` — for workflow routing; then load only the phase-specific doc you need:
+  - `docs/workflows/pr-open.md` — PR opening and review labels
+  - `docs/workflows/review-monitoring.md` — monitoring and fallback review
+  - `docs/workflows/findings-disposition.md` — responding to findings and merge criteria
+
+Context budget:
+
+- Read each file once per phase unless it changed or ambiguity remains.
+- After the initial discovery pass, switch to implementation mode.
+- Prefer diff-based validation late in the task over broad repo sweeps.
+- Batch progress updates by phase, not by file or micro-step.
 
 ### Test Categories
 
@@ -136,13 +201,24 @@ Short version:
 - create or link the GitHub issue first
 - open a PR from a feature branch
 - always apply `codex-software-review`
-- also apply `codex-methodology-review` or `codex-red-team-review` when the diff warrants them
+- also apply `codex-methodology-review` when the diff touches: `src/ftimer_core.F90`, `src/ftimer_summary.F90`, `src/ftimer_mpi.F90`, or `docs/semantics.md`
+- also apply `codex-red-team-review` when the diff touches: `src/ftimer_core.F90` (especially `start`, `stop`, or `repair_mismatch`) or `src/ftimer_mpi.F90`
 - monitor for the actual Codex review output
 - reply to every finding, resolve every review thread, and do not merge while merge-blocking findings remain
 
-Use `docs/maintainer.md` for the full operating procedure, investigation commands, merge criteria, and the fallback/detailed-review workflow when native Codex review is unavailable or when a longer-form review is needed.
+For deeper workflow details (monitoring, fallback review, findings disposition, merge criteria), use `docs/maintainer.md` for routing to: `docs/workflows/pr-open.md`, `docs/workflows/review-monitoring.md`, `docs/workflows/findings-disposition.md`.
 
 The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`. The long-form prompt library lives in `.github/prompts/detailed/`: it contains detailed versions of the three PR-triggered review types plus eight additional review prompts for API/compatibility, build/portability, completion auditing, docs/contracts, MPI safety, performance/overhead, pragmatic design, and test quality.
+
+### Review Standards
+
+1. **Anchor findings in code**: Cite specific files, functions, and line numbers. Do not make vague claims.
+2. **Prioritize correctness over style**: A real bug matters more than a missing docstring.
+3. **Be skeptical of tests**: Ask whether the test actually exercises the behavior it claims to test.
+4. **Verify docs match implementation**: If the PR changes behavior, check that CLAUDE.md, README, and any relevant comments are updated.
+5. **Prefer fewer, more serious findings**: Two real concerns are worth more than twenty style nits.
+6. **Begin your response with the review type heading** expected by the prompt so it is clear which review you are responding to.
+7. **Match the detailed prompt library when used**: `.github/prompts/detailed/` also defines long-form review headings such as `## API / Compatibility Review`, `## Build / Portability Review`, `## Completion Audit Review`, `## Docs / Contract Review`, `## MPI Safety Review`, `## Performance / Overhead Review`, `## Pragmatic Design Review`, and `## Test Quality Review`.
 
 ## Configuration
 
