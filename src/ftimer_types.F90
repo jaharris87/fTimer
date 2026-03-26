@@ -11,6 +11,7 @@ module ftimer_types
    public :: FTIMER_ERR_MISMATCH
    public :: FTIMER_ERR_MPI_INCON
    public :: FTIMER_ERR_IO
+   public :: FTIMER_ERR_INVALID_NAME
    public :: FTIMER_NAME_LEN
    public :: FTIMER_MISMATCH_STRICT
    public :: FTIMER_MISMATCH_WARN
@@ -38,6 +39,7 @@ module ftimer_types
    integer, parameter :: FTIMER_ERR_MISMATCH = 5
    integer, parameter :: FTIMER_ERR_MPI_INCON = 6
    integer, parameter :: FTIMER_ERR_IO = 7
+   integer, parameter :: FTIMER_ERR_INVALID_NAME = 8
 
    integer, parameter :: wp = selected_real_kind(15, 307)
    integer, parameter :: FTIMER_NAME_LEN = 64

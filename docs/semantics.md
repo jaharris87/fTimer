@@ -68,6 +68,32 @@ Forward-looking target design notes belong in `docs/design.md`. When the two doc
 - `FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED`: successful `mpi_summary()` result on rank 0. Local summary fields remain root-local; reduced MPI entry fields are populated and `has_mpi_data` is `.true.`.
 - `FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE`: successful `mpi_summary()` result on non-root ranks. Local summary fields still describe that non-root rank only; reduced MPI entry fields remain unset and `has_mpi_data` is `.false.`.
 
+## Name Validation Error Contract
+
+Name validation failures return `FTIMER_ERR_INVALID_NAME` (code 8).
+
+**Deliberate warn-and-skip contract for `ierr`-absent callers** (issue #49, PR #43):
+
+When a caller omits `ierr` and passes an invalid timer name, the runtime:
+1. emits a diagnostic to stderr
+2. returns immediately without modifying any timer state
+
+The call is a no-op: no segment is created, no stack depth change occurs.
+Parent timers are not affected. Summary output will simply omit the rejected child;
+it does not produce a plausible-but-wrong child entry.
+
+**OpenMP carve-out**: this warn-and-skip contract applies in serial code and from the
+OpenMP master thread only. When built with `FTIMER_USE_OPENMP=ON`, calls from non-master
+threads are suppressed before validation reaches `normalize_name` or `report_status` — they
+produce no stderr diagnostic, return 0 (for `lookup`), and leave any caller-provided `ierr`
+unchanged. This is a consequence of the master-thread-only guard model documented in
+"OpenMP Limitations" below.
+
+This is the deliberate policy rather than a stronger failure (e.g. `error stop`),
+chosen for consistency with the library's error contract and because callers that
+omit `ierr` have opted into the permissive path. Callers that require hard
+enforcement should pass `ierr` and check it.
+
 ## OpenMP Limitations
 
 - OpenMP guard behavior is enabled only when the library is built with `FTIMER_USE_OPENMP=ON`

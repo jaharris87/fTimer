@@ -1,8 +1,8 @@
 module test_edge_cases
    use pfunit
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_NAME_LEN, &
-                           FTIMER_SUCCESS, ftimer_call_stack_t, wp
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, &
+                           FTIMER_NAME_LEN, FTIMER_SUCCESS, ftimer_call_stack_t, wp
    use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time, &
                            find_context_idx, snapshot_timer
    implicit none
@@ -172,7 +172,7 @@ contains
       @assertEqual(1, id_exact)
 
       id_long = timer%lookup(long_name, ierr=ierr)
-      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(FTIMER_ERR_INVALID_NAME, ierr)
       @assertEqual(0, id_long)
    end subroutine test_name_length_limit_accepts_exact_and_rejects_longer
 
@@ -199,19 +199,19 @@ contains
       @assertEqual(1, id)
 
       id = timer%lookup(' leading', ierr=ierr)
-      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(FTIMER_ERR_INVALID_NAME, ierr)
       @assertEqual(0, id)
 
       id = timer%lookup(carriage_name, ierr=ierr)
-      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(FTIMER_ERR_INVALID_NAME, ierr)
       @assertEqual(0, id)
 
       id = timer%lookup(tab_name, ierr=ierr)
-      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(FTIMER_ERR_INVALID_NAME, ierr)
       @assertEqual(0, id)
 
       id = timer%lookup(newline_name, ierr=ierr)
-      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(FTIMER_ERR_INVALID_NAME, ierr)
       @assertEqual(0, id)
 
       call snapshot_timer(timer, state)
@@ -239,10 +239,10 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       call timer%start(' bad', ierr=ierr)
-      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(FTIMER_ERR_INVALID_NAME, ierr)
 
       call timer%stop('bad'//achar(9)//'name', ierr=ierr)
-      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(FTIMER_ERR_INVALID_NAME, ierr)
 
       call snapshot_timer(timer, state)
       @assertEqual(1, state%num_segments)
@@ -254,6 +254,74 @@ contains
       call snapshot_timer(timer, state)
       @assertEqual(0, state%call_stack%depth)
    end subroutine test_start_stop_validation_preserves_state_and_right_trims
+
+   @test
+   subroutine test_invalid_name_without_ierr_warns_stderr_and_is_noop()
+      ! Contract: invalid-name calls without ierr emit a stderr warning and are no-ops.
+      ! Timer state must be unchanged — no segment created, call stack depth unchanged.
+      ! This is the deliberate warn-and-skip policy for ierr-absent invalid-name calls;
+      ! see docs/semantics.md "Timer Name Policy" and issue #49 / PR #43.
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: saved_fd
+      logical :: has_warning
+
+      call timer%init()
+      call attach_mock_clock(timer)
+
+      call begin_stderr_capture('test_invalid_name_without_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      ! Both calls are no-ops: leading space rejected, control char rejected
+      call timer%start(' bad')
+      call timer%stop('bad'//achar(9)//'name')
+
+      call end_stderr_capture('test_invalid_name_without_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_warning = index(stderr_text, 'ftimer timer name') > 0
+      @assertTrue(has_warning)
+
+      call snapshot_timer(timer, state)
+      @assertEqual(0, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+   end subroutine test_invalid_name_without_ierr_warns_stderr_and_is_noop
+
+   @test
+   subroutine test_invalid_name_lookup_without_ierr_warns_stderr_and_is_noop()
+      ! Contract: lookup() with an invalid name and no ierr emits a stderr warning
+      ! and is a no-op: returns 0, no segment created, call stack depth unchanged.
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: id
+      integer :: saved_fd
+      logical :: has_warning
+
+      call timer%init()
+      call attach_mock_clock(timer)
+
+      call begin_stderr_capture('test_invalid_name_lookup_without_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      ! Leading space — rejected before any segment creation
+      id = timer%lookup(' bad')
+
+      call end_stderr_capture('test_invalid_name_lookup_without_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      @assertEqual(0, id)
+
+      has_warning = index(stderr_text, 'ftimer timer name') > 0
+      @assertTrue(has_warning)
+
+      call snapshot_timer(timer, state)
+      @assertEqual(0, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+   end subroutine test_invalid_name_lookup_without_ierr_warns_stderr_and_is_noop
 
    @test
    subroutine test_dynamic_growth_creates_many_segments()
