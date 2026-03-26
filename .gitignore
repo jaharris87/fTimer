@@ -26,3 +26,6 @@ benchmark-results/
 
 # OS
 .DS_Store
+
+# Claude personalization
+.claude/skills/
