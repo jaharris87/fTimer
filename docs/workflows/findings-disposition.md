@@ -1,88 +1,74 @@
-> **When to read this**
->
-> Read this file when responding to review findings, deciding whether to fix/disagree/defer, enforcing merge-blocking rules, or closing out review.
->
-> Use it only after actual findings exist or when preparing final PR disposition.
->
-> Do **not** load this by default during implementation or early PR setup.
+> **When to read this:** When responding to review findings, deciding on deferrals, checking merge-blocking criteria, or closing out a PR. Do not load this during implementation or before reviews have arrived.
 
-# Findings Disposition Workflow
+# Findings Disposition
 
-This document covers how to respond to findings, defer work properly, enforce merge-blocking rules, and close out review.
+## Responding To Findings
 
-## Every Finding Must Be Addressed Explicitly
-
-For every finding in every review path:
-
-- native review
-- fallback manual review
-- targeted manual review
-
-post a reply on the PR in one of these categories:
+For every finding in every review (native, fallback, or manual), post a reply on the PR in one of these categories:
 
 - Agree and fix
 - Disagree with evidence
 - Defer with reason
 
-Do not leave substantive findings unclassified or implicit.
-
-## Response Expectations
+Every finding must be addressed explicitly.
 
 When responding:
 
 - cite the fix commit when you agree and fix
-- cite code, tests, or docs when you disagree
-- explain scope and risk clearly when you defer
-- if the review omitted a classification, assign one explicitly in your disposition comment using the repository categories below
+- cite code/tests/docs when you disagree
+- explain scope clearly when you defer
+- if the returned review omits a classification, assign one explicitly in your disposition comment using the repo categories below
 
 After replying:
 
-- resolve the related review thread
+- resolve the review thread
 - verify whether any unresolved review threads remain
 
 ## Deferring Findings Properly
 
-A deferred finding is an explicit decision to accept limited risk now and track follow-up work later.
-It is not a way to avoid addressing a finding.
+A deferred finding is an explicit decision to accept limited risk now and track the work for later. It is not a way to avoid addressing a finding.
 
-### Deferral Is Appropriate When
+**When deferral is appropriate:**
 
 - the finding is real or plausible enough to acknowledge
 - it is not merge-blocking under this guide
-- fixing it in the current PR would materially expand scope, delay intended work, or mix unrelated concerns
+- fixing it in the current PR would materially expand scope, delay the intended work, or mix unrelated changes
 - there is a clear follow-up path
 
-### Deferral Requires
+**What deferral requires:**
 
-1. A PR disposition reply that states:
+1. Post a PR disposition reply that states:
    - what the finding is
    - why it is not being fixed in this PR
    - the current risk or impact
    - the intended follow-up
    - whether it is acceptable risk for merge, or release-blocking but not merge-blocking
 
-2. A follow-up GitHub issue when the deferred item represents real engineering work.
-   Link both ways:
+2. Create a follow-up GitHub issue when the deferred item represents real engineering work. Link both ways:
    - in the PR reply: `Deferred to #NN`
    - in the issue body: `Deferred from PR #NN`
 
-3. Updating any parent, umbrella, or audit issue with a disposition line such as:
+3. Update any parent, umbrella, or audit issue with a disposition line such as:
    - `fixed`
    - `deferred to #NN`
    - `not applicable`
    - `disagreed with evidence`
 
-A deferred finding is not fully handled until the PR disposition comment and any required follow-up issue both exist.
+A deferred finding is not considered handled until the PR disposition comment and any required follow-up issue both exist.
 
-## Rule Of Thumb For Opening A Follow-Up Issue
+**Rule of thumb for whether to open an issue:**
 
 - If the deferred item requires code, tests, docs, validation, or design work, open an issue.
-- If no real follow-up work is expected, it can remain in PR discussion only.
+- If no code, docs, tests, or design work is expected to follow, it can remain in the PR discussion.
 - If it came from a formal software, methodology, or red-team review and is a real follow-up item, default to opening an issue.
 
-## Recommended Deferred-Finding Template
+**Preferred wording.** Avoid vague language like "will do later." Use specific language:
 
-```text
+> Deferred to #52 because this PR is scoped to packaging stability; the identified hardening work is real but non-blocking for merge and has explicit acceptance criteria in the follow-up issue.
+
+**Recommended PR disposition template for deferred findings:**
+
+```
 Disposition: Deferred to #NN
 Finding: <one-line summary of the finding>
 Why not fixed in this PR: <scope, sequencing, or mix-of-concerns reason>
@@ -91,9 +77,9 @@ Merge status: non-merge-blocking / release-blocking but not merge-blocking
 Follow-up: #NN — <one-line description of what the issue tracks>
 ```
 
-## Recommended Follow-Up Issue Skeleton
+**Recommended follow-up issue skeleton:**
 
-```text
+```
 Deferred from PR #NN
 Scope: <what area of the code or design this covers>
 Why deferred: <brief reason — scope, sequencing, risk level>
@@ -107,35 +93,25 @@ Acceptance criteria:
 
 Do not merge the PR if any finding classified as:
 
-* bug
-* leakage
-* silent wrong answer
+- bug
+- leakage
+- silent wrong answer
 
-remains unresolved without either:
+remains unresolved without either a fix or a disagreement backed by evidence.
 
-* a fix, or
-* a disagreement backed by evidence
+Findings classified as `bug`, `leakage`, or `silent wrong answer` should not be deferred for merge unless the maintainer documents why the finding is not valid, not applicable to this PR (e.g., pre-existing and not introduced here), or not applicable in this context.
 
-Findings classified as `bug`, `leakage`, or `silent wrong answer` should not be deferred for merge unless the maintainer documents why the finding is not valid, not applicable to this PR, or not applicable in this context.
+A deferred finding may remain open at merge time only if it is explicitly recorded as non-merge-blocking and has durable follow-up tracking when required (see [Deferring Findings Properly](#deferring-findings-properly)).
 
-A deferred finding may remain open at merge time only if it is explicitly recorded as non-merge-blocking and has durable follow-up tracking when required.
-
-Findings classified as nit, design concern, or methodology concern do not block merge unless the maintainer decides otherwise.
+Findings classified as nit, design concern, or methodology concern do not block merge unless the user decides otherwise.
 
 ## Closeout To The User
 
 After handling the reviews, report:
 
-* how many findings appeared per review type
-* what was fixed
-* what was disagreed with and why
-* what was deferred, including linked follow-up issue numbers
-* whether any deferred item is release-blocking but not merge-blocking
-* whether any merge-blocking findings remain
-
-## Related Templates
-
-Use these templates once actual review findings exist:
-
-- `docs/templates/prompt-findings-disposition.md` — to classify and respond to findings, decide fix/disagree/defer, and track follow-up work
-- `docs/templates/session-handoff.md` — to hand off remaining findings, post-disposition work, or merge-ready status
+- how many findings appeared per review type
+- what was fixed
+- what was disagreed with and why
+- what was deferred, including the linked follow-up issue number for each deferred finding
+- whether any deferred item is release-blocking but not merge-blocking
+- whether any merge-blocking findings remain

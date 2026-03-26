@@ -1,89 +1,41 @@
-> **When to read this**
->
-> Read this file when opening a pull request, preparing the PR body, and applying the correct review labels.
->
-> Use it at the transition from implementation to review.
->
-> Do **not** load this by default during routine coding before the change is ready to be packaged into a PR.
+> **When to read this:** When opening a pull request, preparing the PR body, and applying review labels. Do not load this during routine coding before the change is ready for PR.
 
-# Pull Request Opening Workflow
-
-This document covers how to open a PR and prepare the correct review path.
-
-## Before Opening the PR
-
-Before opening the PR, confirm:
-
-- the work is linked to an issue
-- the change is on a feature branch
-- the diff is scoped appropriately
-- relevant tests have been run
-- docs are updated when behavior changed
+# Pull Request Opening
 
 ## Standard PR Workflow
 
-For each scoped change:
+For every scoped piece of work:
 
 1. Create or link the GitHub issue first.
 2. Create a feature branch from updated local `main`.
 3. Implement the change on that feature branch.
 4. Open a pull request to `main`.
 5. Apply the review labels required by the diff.
-6. Monitor for actual review output.
-7. Address every finding before merge.
+6. Monitor for reviews and handle every finding.
+7. Do not merge while merge-blocking findings remain unresolved.
 
-## Required Review Labels
+## Which Labels To Apply
 
-Always apply:
+- Always apply `codex-software-review`.
+- Also apply `codex-methodology-review` when changes touch:
+  - `src/ftimer_core.F90`
+  - `src/ftimer_summary.F90`
+  - `src/ftimer_mpi.F90`
+  - `docs/semantics.md`
+- Also apply `codex-red-team-review` when changes touch:
+  - `src/ftimer_core.F90`, especially `start`, `stop`, or `repair_mismatch`
+  - `src/ftimer_mpi.F90`
 
-- `codex-software-review`
+## Detailed Prompt Library
 
-Also apply `codex-methodology-review` when changes touch:
+The native trigger workflow posts single-line `@codex review ...` comments built from `.github/prompts/`. The long-form prompt library lives in `.github/prompts/detailed/`. Keep the top-level prompts reserved for label-triggered native reviews; use the detailed prompts for manual fallback reviews or deeper repo-health reviews that are not wired to PR labels. Do not paste a detailed prompt into a PR unless you are intentionally using the documented fallback flow.
 
-- `src/ftimer_core.F90`
-- `src/ftimer_summary.F90`
-- `src/ftimer_mpi.F90`
-- `docs/semantics.md`
+The detailed prompt set has two roles:
 
-Also apply `codex-red-team-review` when changes touch:
+- long-form fallback versions of the three PR-triggered review types: `software-review.md`, `methodology-review.md`, and `red-team-review.md`
+- additional long-horizon review prompts that are not label-triggered by default: `api-compat-review.md`, `build-portability-review.md`, `completion-audit-review.md`, `docs-contract-review.md`, `mpi-safety-review.md`, `performance-overhead-review.md`, `pragmatic-design-review.md`, and `test-quality-review.md`
 
-- `src/ftimer_core.F90`, especially `start`, `stop`, or `repair_mismatch`
-- `src/ftimer_mpi.F90`
+Use the additional detailed prompts for targeted repository reviews outside the normal PR trigger flow, such as periodic maintainability checks, pre-release audits, or focused follow-up investigation on a risky area.
 
-## PR Body Expectations
-
-A good PR body should include:
-
-- what changed
-- why it changed
-- what did not change
-- tests run
-- whether user-facing behavior changed
-- any explicit follow-up or risk notes
-
-## Review Prompt Routing
-
-Native short trigger prompts live in `.github/prompts/`.
-
-Detailed fallback or targeted review prompts live in `.github/prompts/detailed/`.
-
-Use the short prompts for label-triggered native review.
-Use the detailed prompts for:
-
-- fallback manual review
-- targeted risk reviews
-- repository-health audits
-- pre-release or phase-boundary audits
-
-## Session Discipline
-
-Opening the PR should usually be the end of the implementation phase.
-
-Prefer not to continue into heavy review-monitoring or fallback-review work in the same already-large implementation session unless the change is urgent and the context is still small.
-
-## Related Templates
-
-Use these templates at the transition from implementation to PR packaging:
-
-- `docs/templates/prompt-pr-open.md` — to prepare the PR title, body, labels, and review setup
-- `docs/templates/session-handoff.md` — to close out the PR-opening phase and hand off into review monitoring
+- Use `completion-audit-review.md` at issue, phase, or release boundaries to verify that claimed work is actually complete and that docs, tests, and acceptance criteria are honestly closed. Not intended as a routine per-PR review.
+- Use `pragmatic-design-review.md` selectively on PRs that introduce new abstractions, wrappers, or architecture. Skip it for narrow bug fixes or documentation-only changes.

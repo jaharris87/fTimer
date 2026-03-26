@@ -1,60 +1,41 @@
-> **When to read this**
->
-> Read this file when monitoring native review, deciding whether fallback review is needed, or inspecting what actually happened on a PR.
->
-> Use it after a PR has been opened or materially updated.
->
-> Do **not** load this by default during implementation unless the task is explicitly in the review-monitoring phase.
+> **When to read this:** When monitoring for review output after opening or materially updating a PR. Do not load this during implementation or before the PR exists.
 
-# Review Monitoring Workflow
+# Review Monitoring
 
-This document covers how to monitor native review, detect failure modes, and decide when fallback review is needed.
-
-## Goal
-
-Do not assume review happened just because a trigger workflow passed.
-
-A passing workflow only proves that the trigger comment was posted.
-It does not prove that the expected review artifacts arrived.
-
-## Monitoring Procedure
+## Monitoring Reviews
 
 After opening or materially updating the PR:
 
 1. Inform the user that you are monitoring for reviews.
 2. Poll every 60 seconds for up to 10 minutes.
 3. Inspect actual review artifacts, not just workflow success.
-4. Watch for a `chatgpt-codex-connector` response to the trigger comment indicating the review will not proceed.
-5. Once all expected reviews arrive, move to findings disposition.
-6. If the wait window expires without review artifacts and without an explicit unavailability signal, tell the user and decide whether to use fallback review.
+4. After the trigger workflow completes, watch for a `chatgpt-codex-connector` response to the `@codex review` trigger comment indicating the review will not proceed (e.g., quota exhausted). Note: the connector may also post unrelated comments when PR text contains the word "Codex" — those are not fallback signals; only a response to the trigger itself counts.
+5. Once all expected reviews have arrived, respond to every finding.
+6. If reviews have not arrived after 10 minutes and no unavailability signal has appeared on the trigger comment, tell the user and ask how to proceed.
 
-## When Native Review Is Unavailable
+## Fallback When Native Codex Review Is Unavailable
 
-Treat native review as unavailable or insufficient when, for example:
+Use this fallback only when the label-triggered review path is unavailable or insufficient, for example:
 
-- a `chatgpt-codex-connector` response to the `@codex review` trigger comment indicates the review will not proceed
-- the trigger workflow succeeds but expected review artifacts do not arrive in the normal wait window
+- a `chatgpt-codex-connector` response to the `@codex review` trigger comment indicates the review will not proceed (e.g., quota exhausted) — note that connector comments triggered by PR text containing "Codex" are not this signal
+- the trigger workflow posts successfully but no actual review artifacts arrive after the normal wait window
 - the GitHub/Codex integration is unavailable
-- the native review returned is clearly insufficient for the risk level of the diff
 
-## Fallback Review Policy
+Fallback procedure:
 
-Fallback manual review is part of the intended workflow when native review is unavailable or insufficient.
+1. Still apply the review labels and monitor for the native review flow first.
+2. Request the missing review manually, for example via ChatGPT with GitHub integration.
+   Use the matching detailed prompt from `.github/prompts/detailed/` when doing this.
+3. Ask the manual review to use the repository review heading convention:
+   - `## Software Review`
+   - `## Methodology Review`
+   - `## Red Team Review`
+4. Post the manual review output to the PR as a comment, or post a durable link plus a short summary of the findings.
+5. Add a short PR comment explaining why fallback review was used and which review type it covered.
+6. Handle every finding exactly as in the normal workflow: agree and fix, disagree with evidence, or defer with reason.
+7. Resolve all related review threads or PR discussion threads before merge.
 
-When using fallback review:
-
-- still record that the native path was attempted first
-- use the matching detailed prompt from `.github/prompts/detailed/`
-- prefer a fresh or narrowly scoped review pass
-- start from the PR diff and touched files first
-- expand to broader repo context only if the review question requires it
-
-Fallback review may be performed in:
-
-- a fresh session, or
-- a review-focused subagent with narrowly scoped context
-
-The key requirement is that fallback review should behave like a fresh reviewer, not merely continue the full implementation context blindly.
+This fallback does not replace required CI, required PR checks, or the normal Codex-label workflow when native Codex review is available.
 
 ## How To Inspect What Actually Happened
 
@@ -76,16 +57,9 @@ Useful commands:
 ## Known Limitations Of Native Codex GitHub Reviews
 
 - A passing trigger workflow only proves that the `@codex review` comment was posted.
-- Returned review bodies may ignore some requested formatting.
-- A “no findings” outcome may appear as a generic comment or reaction rather than a type-specific review body.
-- GitHub does not expose perfect provenance from one trigger comment to one returned review object.
+- Native Codex review did not reliably follow the previous long-form trigger prompts, so the workflow now uses single-line trigger comments and keeps the detailed versions in a separate long-form prompt library for fallback and non-triggered deep reviews.
+- Codex review bodies may ignore prompt instructions about top-level headings.
+- A "no findings" outcome may appear as a generic comment or reaction rather than a distinct type-specific review body.
+- GitHub does not expose clean provenance from a particular trigger comment to a particular returned review object.
 
-Infer review type from returned content and trigger context when wrapper metadata is ambiguous.
-
-## Related Templates
-
-Use these templates during and after PR review monitoring:
-
-- `docs/templates/prompt-review-monitoring.md` — to check expected versus actual review artifacts and decide whether fallback review is needed
-- `docs/templates/prompt-fallback-review.md` — when native review is unavailable or insufficient and a manual review pass is needed
-- `docs/templates/session-handoff.md` — to hand off into fallback review or findings disposition
+In practice, infer review type from the review contents and the trigger context when the returned wrapper is generic.

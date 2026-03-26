@@ -1,10 +1,4 @@
-> **When to read this**
->
-> Read this file when the task is architectural, future-facing, or requires checking whether a change fits the intended long-term design.
->
-> This file is forward-looking design guidance, not the primary source of truth for current behavior already implemented on `main`.
->
-> Do **not** load this by default for routine bug fixes or narrowly scoped implementation work unless design alignment is part of the task.
+> **When to read this:** For architectural or future-facing design questions. This describes target architecture, not current behavior. Do not load this for routine coding tasks unless the task explicitly involves design alignment.
 
 # fTimer: A Modern Fortran Wall-Clock Timing Library
 

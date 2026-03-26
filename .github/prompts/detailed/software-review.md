@@ -1,7 +1,6 @@
 ## Software Review
 
 You are reviewing a pull request as a senior software engineer. Focus on correctness, not style.
-Before expanding context, briefly state your initial review scope in one sentence.
 
 ### Required Questions
 
@@ -30,30 +29,11 @@ Answer each of these explicitly. If a question is not applicable, say so and why
 - Limit nits to at most 3. Do not pad the review with cosmetic observations.
 - **Begin your response with "## Software Review" so it is clear which review type this is.**
 
-## Scope Budget
+### Scope Budget
 
-Start with the smallest review context that can answer the review question.
-
-Default review starting point:
-
-1. the PR diff
-2. the touched files
-3. the relevant tests changed by the PR
-
-Expand beyond that only when necessary.
-
-### Expand context only if the review question requires it
-
-- Read `docs/semantics.md` only when the diff changes runtime behavior, public contract, or edge-case semantics.
-- Read `README.md` only when the PR changes user-facing behavior, examples, installation guidance, or public documentation.
-- Read `docs/design.md` only when the PR introduces new abstractions, architecture changes, or future-design alignment questions.
-- Read workflow docs only when the review specifically concerns issue / PR / disposition process rather than code correctness.
-
-### Anti-churn rules
-
-- Do not perform a broad repo sweep by default.
-- Do not reread unchanged files without a specific reason.
-- Prefer fewer, more serious findings over speculative exploration.
-- If additional context is needed, expand incrementally and state why.
-
-For this review, start from the diff and touched files first; expand only if required to verify correctness, docs parity, or test coverage.
+Start from: (1) PR diff, (2) touched source files, (3) changed tests.
+Expand only when the review question requires it:
+- `docs/semantics.md` — only when the diff changes runtime behavior or contract.
+- `README.md` — only when user-facing behavior or docs may need updates.
+- `docs/design.md` — only for architectural or design-alignment questions.
+Do not perform a broad repo sweep. Prefer fewer, serious findings over speculative exploration.
