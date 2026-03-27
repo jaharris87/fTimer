@@ -172,7 +172,8 @@ contains
          do node = 1, size(entries)
             if (node_depth(node) /= depth) cycle
 
-            node_parent(node) = summary_tree_parent(path_child, segments(node_segment(node))%contexts%stacks(node_ctx(node)))
+            node_parent(node) = summary_tree_parent(path_child, &
+                                                    segments(node_segment(node))%contexts%stacks(node_ctx(node)))
             path_child(node_parent(node), node_segment(node)) = node
          end do
       end do
@@ -187,8 +188,9 @@ contains
       end do
 
       position = 0
-      call fill_summary_entries(entries, position, 0, first_child, next_sibling, segments, node_segment, node_depth, &
-                                node_inclusive, node_call_count, total_time)
+      call fill_summary_entries(entries, position, 0, first_child, next_sibling, &
+                                segments, node_segment, node_depth, node_inclusive, &
+                                node_call_count, total_time)
    end subroutine populate_summary_entries
 
    integer function summary_tree_parent(path_child, stack) result(parent)
@@ -211,8 +213,10 @@ contains
       name = repeat(' ', 2*entry%depth)//escaped_name
    end function display_name
 
-   recursive subroutine fill_summary_entries(entries, position, node, first_child, next_sibling, segments, node_segment, node_depth, &
-                                             node_inclusive, node_call_count, total_time)
+   recursive subroutine fill_summary_entries(entries, position, node, first_child, &
+                                             next_sibling, segments, node_segment, &
+                                             node_depth, node_inclusive, node_call_count, &
+                                             total_time)
       type(ftimer_summary_entry_t), intent(inout) :: entries(:)
       integer, intent(inout) :: position
       integer, intent(in) :: node
@@ -233,12 +237,14 @@ contains
          entries(position)%name = segments(node_segment(child))%name
          entries(position)%depth = node_depth(child)
          entries(position)%inclusive_time = node_inclusive(child)
-         child_sum = direct_child_inclusive(first_child, next_sibling, node_inclusive, child)
+         child_sum = direct_child_inclusive(first_child, next_sibling, &
+                                            node_inclusive, child)
          entries(position)%self_time = clamp_self_time(entries(position)%inclusive_time - child_sum, &
                                                        entries(position)%inclusive_time)
          entries(position)%call_count = node_call_count(child)
          if (entries(position)%call_count > 0) then
-            entries(position)%avg_time = entries(position)%inclusive_time/real(entries(position)%call_count, wp)
+            entries(position)%avg_time = entries(position)%inclusive_time/ &
+                                         real(entries(position)%call_count, wp)
          else
             entries(position)%avg_time = 0.0_wp
          end if
@@ -248,13 +254,16 @@ contains
             entries(position)%pct_time = 0.0_wp
          end if
 
-         call fill_summary_entries(entries, position, child, first_child, next_sibling, segments, node_segment, node_depth, &
-                                   node_inclusive, node_call_count, total_time)
+         call fill_summary_entries(entries, position, child, first_child, &
+                                   next_sibling, segments, node_segment, &
+                                   node_depth, node_inclusive, node_call_count, &
+                                   total_time)
          child = next_sibling(child)
       end do
    end subroutine fill_summary_entries
 
-   real(wp) function direct_child_inclusive(first_child, next_sibling, node_inclusive, node) result(total)
+   real(wp) function direct_child_inclusive(first_child, next_sibling, &
+                                            node_inclusive, node) result(total)
       integer, intent(in) :: first_child(0:)
       integer, intent(in) :: next_sibling(:)
       real(wp), intent(in) :: node_inclusive(:)
