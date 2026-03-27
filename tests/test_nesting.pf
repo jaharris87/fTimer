@@ -195,6 +195,114 @@ contains
    end subroutine test_warn_mismatch_without_ierr_repairs_and_continues
 
    @test
+   subroutine test_warn_mismatch_multilevel_with_ierr_repairs_silently()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      type(ftimer_call_stack_t) :: root_stack
+      type(ftimer_call_stack_t) :: a_stack
+      integer :: ierr
+      integer :: saved_fd
+      integer :: ctx_a
+      integer :: ctx_b_under_a
+      integer :: ctx_b_root
+      integer :: ctx_c_under_ab
+      integer :: ctx_c_under_b
+      logical :: is_silent
+      real(wp) :: time_a
+      real(wp) :: time_b_under_a
+      real(wp) :: time_c_under_ab
+
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_WARN, ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("B", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%start("C", ierr=ierr)
+      fake_time = 4.0_wp
+
+      call begin_stderr_capture('test_warn_mismatch_multilevel_with_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call timer%stop("A", ierr=ierr)
+
+      call end_stderr_capture('test_warn_mismatch_multilevel_with_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
+
+      call snapshot_timer(timer, state)
+      a_stack = build_stack([1])
+      ctx_a = find_context_idx(state, 1, root_stack)
+      ctx_b_under_a = find_context_idx(state, 2, a_stack)
+      ctx_b_root = find_context_idx(state, 2, root_stack)
+      ctx_c_under_ab = find_context_idx(state, 3, build_stack([1, 2]))
+      ctx_c_under_b = find_context_idx(state, 3, build_stack([2]))
+      time_a = state%segments(1)%time(ctx_a)
+      time_b_under_a = state%segments(2)%time(ctx_b_under_a)
+      time_c_under_ab = state%segments(3)%time(ctx_c_under_ab)
+
+      @assertEqual(2, state%call_stack%depth)
+      @assertEqual(3, state%call_stack%top())
+      @assertEqual(4.0_wp, time_a)
+      @assertEqual(3.0_wp, time_b_under_a)
+      @assertEqual(2.0_wp, time_c_under_ab)
+      @assertTrue(state%segments(2)%is_running(ctx_b_root))
+      @assertTrue(state%segments(3)%is_running(ctx_c_under_b))
+   end subroutine test_warn_mismatch_multilevel_with_ierr_repairs_silently
+
+   @test
+   subroutine test_warn_mismatch_multilevel_without_ierr_warns_and_repairs()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: saved_fd
+      integer :: ctx_b
+      integer :: ctx_c
+      integer :: warning_pos
+      logical :: has_warning
+
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_WARN)
+      call attach_mock_clock(timer)
+
+      call timer%start("A")
+      fake_time = 1.0_wp
+      call timer%start("B")
+      fake_time = 2.0_wp
+      call timer%start("C")
+      fake_time = 4.0_wp
+
+      call begin_stderr_capture('test_warn_mismatch_multilevel_without_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call timer%stop("A")
+
+      call end_stderr_capture('test_warn_mismatch_multilevel_without_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      warning_pos = index(stderr_text, 'ftimer stop mismatch: requested A but top of stack is C')
+      has_warning = warning_pos > 0
+      @assertTrue(has_warning)
+      @assertEqual(1, warning_pos)
+
+      call snapshot_timer(timer, state)
+      ctx_b = find_context_idx(state, 2, root_stack)
+      ctx_c = find_context_idx(state, 3, build_stack([2]))
+
+      @assertEqual(2, state%call_stack%depth)
+      @assertEqual(3, state%call_stack%top())
+      @assertTrue(state%segments(2)%is_running(ctx_b))
+      @assertTrue(state%segments(3)%is_running(ctx_c))
+   end subroutine test_warn_mismatch_multilevel_without_ierr_warns_and_repairs
+
+   @test
    subroutine test_repair_mismatch_repairs_silently()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state
