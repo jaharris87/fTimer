@@ -37,4 +37,27 @@ contains
       @assertEqual(capacity_after_growth, size(stack%ids))
    end subroutine test_pop_to_empty_preserves_capacity_for_reuse
 
+   @test
+   subroutine test_copy_uses_logical_depth_not_spare_capacity()
+      type(ftimer_call_stack_t) :: stack
+      type(ftimer_call_stack_t) :: copied
+      integer :: i
+      integer :: popped_id
+
+      do i = 1, 40
+         call stack%push(i)
+      end do
+
+      do i = 40, 3, -1
+         popped_id = stack%pop()
+         @assertEqual(i, popped_id)
+      end do
+
+      call copied%copy(stack)
+
+      @assertEqual(2, copied%depth)
+      @assertEqual(2, size(copied%ids))
+      @assertTrue(copied%equals(stack))
+   end subroutine test_copy_uses_logical_depth_not_spare_capacity
+
 end module test_call_stack

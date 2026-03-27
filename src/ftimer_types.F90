@@ -200,12 +200,11 @@ contains
       self%depth = other%depth
       if (allocated(self%ids)) deallocate (self%ids)
 
-      if (allocated(other%ids)) then
-         allocate (self%ids(size(other%ids)))
-         self%ids = 0
-         if (other%depth > 0) then
-            self%ids(1:other%depth) = other%ids(1:other%depth)
-         end if
+      if (other%depth > 0) then
+         allocate (self%ids(other%depth))
+         self%ids = other%ids(1:other%depth)
+      else if (allocated(other%ids)) then
+         allocate (self%ids(0))
       end if
    end subroutine ftimer_call_stack_copy
 
