@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Performance measurement harness (serial, no pFUnit required)
-cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON
+cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-bench --target ftimer_bench
 ./build-bench/bench/ftimer_bench
 
@@ -177,6 +177,7 @@ Context budget:
 ### Test Infrastructure
 
 - **Current default**: smoke-test baseline (`FTIMER_BUILD_SMOKE_TESTS=ON`, `FTIMER_BUILD_TESTS=OFF`)
+- **Build-contract smoke coverage**: the smoke baseline now also includes script-driven regression checks for the configure-time MPI/OpenMP gates plus `make mpi` / `make openmp` wrapper semantics. These tests skip cleanly when the required external toolchain pieces are not present, and CI runs them in a dedicated build-contract job with `gfortran`, `mpifort`, and a non-GNU Fortran compiler installed.
 - **Behavioral suite**: pFUnit, enabled explicitly with `-DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=...`
 - **Mock clock**: Module-level `fake_time` variable with `mock_clock()` function. Inject via `timer%clock => mock_clock`. Advance deterministically: set `fake_time`, call start/stop, assert exact accumulated times.
 - **Golden output tests**: `test_summary.pf` compares `print_summary()` output against expected text.
@@ -224,7 +225,7 @@ The native Codex trigger comments are intentionally posted as single-line `@code
 
 - **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` can populate cross-rank fields. The supported path is an MPI wrapper compiler such as `mpifort`; configure now fails early if the active compiler cannot compile a minimal `use mpi` probe against the discovered MPI toolchain. When OFF, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the summary local-only.
 - **`FTIMER_USE_OPENMP`** (CMake option, default OFF): Enables the Phase 6 `!$omp master` guards around the guarded `ftimer_core` entry points. This is limited master-thread-only protection, not full thread safety. The documented/supported build path is GNU Fortran (`gfortran`).
-- **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the current smoke-test baseline.
+- **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the current smoke-test baseline, including install/export consumer verification and the script-driven build-contract regression checks when their toolchain prerequisites are available.
 - **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables the pFUnit-backed behavioral and MPI test suites.
 - **`CMAKE_INSTALL_PREFIX`**: Where `make install` places the library and module files.
 - **pFUnit**: Optional dependency for behavioral tests. Set `PFUNIT_DIR` explicitly when enabling `FTIMER_BUILD_TESTS`.

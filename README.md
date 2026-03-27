@@ -83,10 +83,10 @@ fTimer is intended to provide stack-based hierarchical timing with:
 
 ## Performance Measurement
 
-A standalone measurement harness (`bench/ftimer_bench.F90`) covers the main overhead risks: hot-path start/stop, name-lookup scaling with timer count, call-stack push/pop scaling with nesting depth, and summary-generation scaling with timer count. No pFUnit required.
+A standalone measurement harness (`bench/ftimer_bench.F90`) covers the main overhead risks: hot-path start/stop, name-lookup scaling with timer count, call-stack push/pop scaling with nesting depth, summary-generation scaling with timer count, direct `build_summary()` cost on prebuilt segments, and date-stamp formatting/cache overhead. Run it in `Release` mode for meaningful before/after performance comparisons. No pFUnit required.
 
 ```bash
-cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON
+cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-bench --target ftimer_bench
 ./build-bench/bench/ftimer_bench
 ```
