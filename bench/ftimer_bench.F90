@@ -16,8 +16,7 @@
 !  6-9. Nesting depth 1/5/10/20      -- id-based; each cycle does D pushes +
 !                                       D pops; shows stack bookkeeping cost
 !                                       scaling with nesting depth
-! 10-12. get_summary N=10/50/100     -- summary build + self-time pass scaling
-!                                       with timer count
+! 10-12. get_summary N=10/50/100     -- summary build scaling with timer count
 !
 ! METRICS
 !   Reps       number of operations (start/stop pairs or summary calls)
@@ -226,9 +225,9 @@ contains
 
    ! Scenarios 10-12: get_summary overhead with N flat timers.
    ! Creates N timers each called once, then measures the cost of repeatedly
-   ! calling get_summary().  The summary build traverses all segments, computes
-   ! self-times (O(N^2) pass), and allocates the entries array.
-   ! Comparing N=10, 50, 100 reveals the scaling behavior.
+   ! calling get_summary().  The summary build walks the visible timer tree,
+   ! computes self-times from direct children, and allocates the entries array.
+   ! Comparing N=10, 50, 100 reveals the remaining scaling behavior.
    subroutine bench_summary(num_timers, reps, count_rate)
       integer, intent(in) :: num_timers
       integer, intent(in) :: reps

@@ -1,9 +1,10 @@
 module test_summary
    use pfunit
    use ftimer_core, only: ftimer_t
-   use ftimer_summary, only: format_summary
-   use ftimer_types, only: FTIMER_SUCCESS, ftimer_metadata_t, ftimer_summary_t, wp
-   use test_support, only: attach_mock_clock, fake_time, read_unit_text
+   use ftimer_summary, only: build_summary, format_summary
+   use ftimer_types, only: FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_metadata_t, ftimer_segment_t, &
+                           ftimer_summary_t, wp
+   use test_support, only: attach_mock_clock, build_stack, fake_time, read_unit_text
    implicit none
 
 contains
@@ -206,6 +207,89 @@ contains
       @assertEqual(-1.0_wp, summary%entries(1)%inclusive_time)
       @assertEqual(-1.0_wp, summary%entries(1)%self_time)
    end subroutine test_get_summary_surfaces_backward_clock_deltas
+
+   @test
+   subroutine test_get_summary_keeps_same_timer_distinct_across_parents()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      logical :: first_matches
+      logical :: second_matches
+      logical :: third_matches
+      logical :: fourth_matches
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("work", ierr=ierr)
+      fake_time = 3.0_wp
+      call timer%stop("work", ierr=ierr)
+      fake_time = 4.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      call timer%start("B", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%start("work", ierr=ierr)
+      fake_time = 8.0_wp
+      call timer%stop("work", ierr=ierr)
+      fake_time = 9.0_wp
+      call timer%stop("B", ierr=ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+
+      first_matches = trim(summary%entries(1)%name) == 'A'
+      second_matches = trim(summary%entries(2)%name) == 'work'
+      third_matches = trim(summary%entries(3)%name) == 'B'
+      fourth_matches = trim(summary%entries(4)%name) == 'work'
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(4, summary%num_entries)
+      @assertTrue(first_matches)
+      @assertTrue(second_matches)
+      @assertTrue(third_matches)
+      @assertTrue(fourth_matches)
+      @assertEqual(0, summary%entries(1)%depth)
+      @assertEqual(1, summary%entries(2)%depth)
+      @assertEqual(0, summary%entries(3)%depth)
+      @assertEqual(1, summary%entries(4)%depth)
+      @assertEqual(4.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(2.0_wp, summary%entries(2)%inclusive_time)
+      @assertEqual(5.0_wp, summary%entries(3)%inclusive_time)
+      @assertEqual(3.0_wp, summary%entries(4)%inclusive_time)
+      @assertEqual(2.0_wp, summary%entries(1)%self_time)
+      @assertEqual(2.0_wp, summary%entries(2)%self_time)
+      @assertEqual(2.0_wp, summary%entries(3)%self_time)
+      @assertEqual(3.0_wp, summary%entries(4)%self_time)
+   end subroutine test_get_summary_keeps_same_timer_distinct_across_parents
+
+   @test
+   subroutine test_build_summary_skips_visible_child_without_visible_parent()
+      type(ftimer_call_stack_t) :: root_stack
+      type(ftimer_segment_t) :: segments(2)
+      type(ftimer_summary_t) :: summary
+      integer :: ctx
+
+      segments(1)%name = 'A'
+      ctx = segments(1)%contexts%add(root_stack)
+      allocate (segments(1)%call_count(1))
+      allocate (segments(1)%time(1))
+      segments(1)%call_count(ctx) = 0
+      segments(1)%time(ctx) = 0.0_wp
+
+      segments(2)%name = 'B'
+      ctx = segments(2)%contexts%add(build_stack([1]))
+      allocate (segments(2)%call_count(1))
+      allocate (segments(2)%time(1))
+      segments(2)%call_count(ctx) = 1
+      segments(2)%time(ctx) = 2.0_wp
+
+      call build_summary(summary, segments, 0.0_wp, 'start', 2.0_wp, 'end')
+
+      @assertEqual(0, summary%num_entries)
+      @assertEqual(2.0_wp, summary%total_time)
+   end subroutine test_build_summary_skips_visible_child_without_visible_parent
 
    @test
    subroutine test_format_summary_escapes_unsafe_names()
