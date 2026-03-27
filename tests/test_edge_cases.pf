@@ -324,6 +324,45 @@ contains
    end subroutine test_invalid_name_lookup_without_ierr_warns_stderr_and_is_noop
 
    @test
+   subroutine test_stderr_capture_isolates_sequential_warning_blocks()
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: first_stderr
+      character(len=:), allocatable :: second_stderr
+      integer :: capture_ierr
+      integer :: saved_fd
+      logical :: first_has_start
+      logical :: first_has_stop
+      logical :: second_has_start
+      logical :: second_has_stop
+
+      call begin_stderr_capture('test_stderr_capture_isolates_first.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call timer%start('first')
+
+      call end_stderr_capture('test_stderr_capture_isolates_first.err', saved_fd, first_stderr, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call begin_stderr_capture('test_stderr_capture_isolates_second.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call timer%stop('second')
+
+      call end_stderr_capture('test_stderr_capture_isolates_second.err', saved_fd, second_stderr, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      first_has_start = index(first_stderr, 'ftimer start before init') > 0
+      first_has_stop = index(first_stderr, 'ftimer stop before init') > 0
+      second_has_start = index(second_stderr, 'ftimer start before init') > 0
+      second_has_stop = index(second_stderr, 'ftimer stop before init') > 0
+
+      @assertTrue(first_has_start)
+      @assertFalse(first_has_stop)
+      @assertFalse(second_has_start)
+      @assertTrue(second_has_stop)
+   end subroutine test_stderr_capture_isolates_sequential_warning_blocks
+
+   @test
    subroutine test_dynamic_growth_creates_many_segments()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state
