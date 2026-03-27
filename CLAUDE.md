@@ -14,7 +14,7 @@ cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON
 cmake --build build-bench --target ftimer_bench
 ./build-bench/bench/ftimer_bench
 
-# Smoke-test-only build
+# Smoke-test-only build (includes install/export consumer verification)
 cmake -B build-smoke
 cmake --build build-smoke
 ctest --test-dir build-smoke --output-on-failure
