@@ -76,7 +76,7 @@ Master-thread-only timing. Light touch — guards only, not thread-local instanc
 
 - [x] Add `!$omp master` / `!$omp end master` guards around all timer operations in `ftimer_core.F90`
 - [x] Document OpenMP limitations in `docs/semantics.md`: master-thread-only, not thread-safe, non-master calls are no-ops
-- [ ] Optional: `suppress_in_parallel` flag to skip timer calls within parallel regions
+- [x] Defer any `suppress_in_parallel` control beyond the current release; Phase 6 keeps the documented master-thread-only no-op semantics
 
 ## Phase 7: Documentation + Examples
 
@@ -88,16 +88,19 @@ Master-thread-only timing. Light touch — guards only, not thread-local instanc
 
 ## Phase 8: Polish + CI Verification
 
-- [ ] Run `fprettify` on all source files, fix any formatting issues
-- [ ] Verify default smoke CI path: `cmake -B build-smoke && cmake --build build-smoke && ctest --test-dir build-smoke`
-- [ ] Verify MPI smoke CI path: `cmake -B build-mpi -DFTIMER_USE_MPI=ON && cmake --build build-mpi && ctest --test-dir build-mpi`
-- [ ] Verify all examples run and produce expected output
-- [ ] Final review: CLAUDE.md, README, docs/semantics.md all match implementation
+- [x] Run `fprettify` on `src/`, `tests/`, and `examples/`; fix any formatting issues
+- [x] Verify default smoke CI path: `cmake -B build-smoke && cmake --build build-smoke && ctest --test-dir build-smoke`
+- [x] Verify MPI smoke path on the documented supported toolchain: `FC=mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON && cmake --build build-mpi && ctest --test-dir build-mpi --output-on-failure`
+- [x] Verify OpenMP smoke path on the documented supported toolchain: `FC=gfortran cmake --fresh -B build-openmp-smoke -DFTIMER_USE_OPENMP=ON && cmake --build build-openmp-smoke && ctest --test-dir build-openmp-smoke --output-on-failure`
+- [x] Verify example executables run and match the documented current contract: `basic_usage`, `nested_timers`, `mpi_example` (MPI build), `openmp_example` (OpenMP build)
+- [x] Final implementation-doc review: `CLAUDE.md`, `AGENTS.md`, `README.md`, and `docs/semantics.md` all match the code under `src/`
 
 ## Verification
 
-- [ ] All tests pass (`ctest --test-dir build --output-on-failure`)
-- [ ] MPI tests pass (`ctest --test-dir build -L mpi`)
-- [ ] Linter clean (`fprettify --diff src/*.F90`)
-- [ ] CI green on all jobs
-- [ ] README accurate and complete
+- [x] Default smoke/build-contract baseline passes (`ctest --test-dir build-smoke --output-on-failure`)
+- [x] Serial pFUnit suite passes (`ctest --test-dir build-serial-tests --output-on-failure`)
+- [x] MPI pFUnit suite passes (`ctest --test-dir build-mpi-tests --output-on-failure -L mpi`)
+- [x] OpenMP pFUnit suite passes (`ctest --test-dir build-openmp-tests --output-on-failure`)
+- [x] Linter clean across `src/`, `tests/`, and `examples/`
+- [ ] CI green on all jobs (serial smoke, MPI smoke, OpenMP smoke, build-contract regressions, serial/MPI/OpenMP pFUnit, bench, lint)
+- [x] Implementation documentation accurate and complete (`CLAUDE.md`, `AGENTS.md`, `README.md`, `docs/semantics.md`)
