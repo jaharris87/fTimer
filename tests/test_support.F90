@@ -1,7 +1,7 @@
 module test_support
    use ftimer_core, only: ftimer_t, ftimer_test_get_state, ftimer_test_state_t
    use ftimer_types, only: ftimer_call_stack_t, wp
-   use, intrinsic :: iso_c_binding, only: c_char, c_int, c_null_char, c_null_ptr, c_ptr
+   use, intrinsic :: iso_c_binding, only: c_associated, c_char, c_int, c_null_char, c_null_ptr, c_ptr
    use, intrinsic :: iso_fortran_env, only: error_unit, iostat_end, iostat_eor
    implicit none
    private
@@ -26,17 +26,7 @@ module test_support
    integer, save :: scripted_time_idx = 0
    logical, save :: use_scripted_times = .false.
 
-#ifdef __APPLE__
-   integer(c_int), parameter :: O_WRONLY = int(z'0001', c_int)
-   integer(c_int), parameter :: O_CREAT = int(z'0200', c_int)
-   integer(c_int), parameter :: O_TRUNC = int(z'0400', c_int)
-#else
-   integer(c_int), parameter :: O_WRONLY = int(z'0001', c_int)
-   integer(c_int), parameter :: O_CREAT = int(z'0040', c_int)
-   integer(c_int), parameter :: O_TRUNC = int(z'0200', c_int)
-#endif
    integer(c_int), parameter :: STDERR_FILENO = 2_c_int
-   integer(c_int), parameter :: STDERR_MODE = int(z'0180', c_int)
 
    interface
       integer(c_int) function c_close(fd) bind(C, name="close")
@@ -60,12 +50,21 @@ module test_support
          type(c_ptr), value :: stream
       end function c_fflush
 
-      integer(c_int) function c_open(path, flags, mode) bind(C, name="open")
-         import :: c_char, c_int
+      type(c_ptr) function c_fopen(path, mode) bind(C, name="fopen")
+         import :: c_char, c_ptr
          character(kind=c_char), intent(in) :: path(*)
-         integer(c_int), value :: flags
-         integer(c_int), value :: mode
-      end function c_open
+         character(kind=c_char), intent(in) :: mode(*)
+      end function c_fopen
+
+      integer(c_int) function c_fclose(stream) bind(C, name="fclose")
+         import :: c_int, c_ptr
+         type(c_ptr), value :: stream
+      end function c_fclose
+
+      integer(c_int) function c_fileno(stream) bind(C, name="fileno")
+         import :: c_int, c_ptr
+         type(c_ptr), value :: stream
+      end function c_fileno
    end interface
 
 contains
@@ -92,8 +91,10 @@ contains
       character(len=*), intent(in) :: path
       integer, intent(out) :: saved_fd
       integer, intent(out) :: ierr
+      character(kind=c_char, len=2), parameter :: c_write_mode = 'w'//c_null_char
       character(kind=c_char, len=:), allocatable :: c_path
       integer(c_int) :: capture_fd
+      type(c_ptr) :: capture_stream
       integer(c_int) :: saved_fd_c
 
       call delete_file_if_exists(path)
@@ -112,10 +113,23 @@ contains
          return
       end if
 
-      capture_fd = c_open(c_path, O_WRONLY + O_CREAT + O_TRUNC, STDERR_MODE)
+      ! Use stdio here instead of open(..., O_CREAT, mode): the variadic open
+      ! binding is not reliable on the affected macOS toolchain, and it can
+      ! leave capture files unreadable for later restore/read/delete steps.
+      capture_stream = c_fopen(c_path, c_write_mode)
+      if (.not. c_associated(capture_stream)) then
+         ierr = 1
+         saved_fd = int(saved_fd_c)
+         if (c_close(saved_fd_c) < 0_c_int) ierr = 1
+         saved_fd = -1
+         return
+      end if
+
+      capture_fd = c_fileno(capture_stream)
       if (capture_fd < 0_c_int) then
          ierr = 1
          saved_fd = int(saved_fd_c)
+         if (c_fclose(capture_stream) < 0_c_int) ierr = 1
          if (c_close(saved_fd_c) < 0_c_int) ierr = 1
          saved_fd = -1
          return
@@ -124,13 +138,13 @@ contains
       if (c_dup2(capture_fd, STDERR_FILENO) < 0_c_int) then
          ierr = 1
          saved_fd = int(saved_fd_c)
-         if (c_close(capture_fd) < 0_c_int) ierr = 1
+         if (c_fclose(capture_stream) < 0_c_int) ierr = 1
          if (c_close(saved_fd_c) < 0_c_int) ierr = 1
          saved_fd = -1
          return
       end if
 
-      if (c_close(capture_fd) < 0_c_int) then
+      if (c_fclose(capture_stream) < 0_c_int) then
          ierr = 1
          if (c_dup2(saved_fd_c, STDERR_FILENO) < 0_c_int) ierr = 1
          if (c_close(saved_fd_c) < 0_c_int) ierr = 1
