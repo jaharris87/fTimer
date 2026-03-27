@@ -208,6 +208,62 @@ contains
    end subroutine test_get_summary_surfaces_backward_clock_deltas
 
    @test
+   subroutine test_get_summary_keeps_same_timer_distinct_across_parents()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      logical :: first_matches
+      logical :: second_matches
+      logical :: third_matches
+      logical :: fourth_matches
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("work", ierr=ierr)
+      fake_time = 3.0_wp
+      call timer%stop("work", ierr=ierr)
+      fake_time = 4.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      call timer%start("B", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%start("work", ierr=ierr)
+      fake_time = 8.0_wp
+      call timer%stop("work", ierr=ierr)
+      fake_time = 9.0_wp
+      call timer%stop("B", ierr=ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+
+      first_matches = trim(summary%entries(1)%name) == 'A'
+      second_matches = trim(summary%entries(2)%name) == 'work'
+      third_matches = trim(summary%entries(3)%name) == 'B'
+      fourth_matches = trim(summary%entries(4)%name) == 'work'
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(4, summary%num_entries)
+      @assertTrue(first_matches)
+      @assertTrue(second_matches)
+      @assertTrue(third_matches)
+      @assertTrue(fourth_matches)
+      @assertEqual(0, summary%entries(1)%depth)
+      @assertEqual(1, summary%entries(2)%depth)
+      @assertEqual(0, summary%entries(3)%depth)
+      @assertEqual(1, summary%entries(4)%depth)
+      @assertEqual(4.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(2.0_wp, summary%entries(2)%inclusive_time)
+      @assertEqual(5.0_wp, summary%entries(3)%inclusive_time)
+      @assertEqual(3.0_wp, summary%entries(4)%inclusive_time)
+      @assertEqual(2.0_wp, summary%entries(1)%self_time)
+      @assertEqual(2.0_wp, summary%entries(2)%self_time)
+      @assertEqual(2.0_wp, summary%entries(3)%self_time)
+      @assertEqual(3.0_wp, summary%entries(4)%self_time)
+   end subroutine test_get_summary_keeps_same_timer_distinct_across_parents
+
+   @test
    subroutine test_format_summary_escapes_unsafe_names()
       type(ftimer_summary_t) :: summary
       character(len=:), allocatable :: text

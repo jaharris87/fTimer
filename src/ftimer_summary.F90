@@ -17,8 +17,6 @@ contains
       real(wp), intent(in) :: end_time
       character(len=*), intent(in) :: init_date
       character(len=*), intent(in) :: end_date
-      type(ftimer_call_stack_t) :: root_stack
-      integer :: position
 
       call clear_summary(summary)
       summary%start_date = init_date
@@ -28,7 +26,7 @@ contains
       summary%mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
 
       if (present(segments)) then
-         summary%num_entries = count_summary_entries(segments, root_stack, end_time)
+         summary%num_entries = count_visible_summary_nodes(segments, end_time)
       else
          summary%num_entries = 0
       end if
@@ -36,9 +34,7 @@ contains
       allocate (summary%entries(summary%num_entries))
       if (summary%num_entries <= 0) return
 
-      position = 0
-      call fill_summary_entries(summary%entries, position, segments, root_stack, 0, summary%total_time, end_time)
-      call compute_self_times(summary)
+      call populate_summary_entries(summary%entries, segments, summary%total_time, end_time)
    end subroutine build_summary
 
    subroutine format_summary(summary, text, metadata)
@@ -114,52 +110,97 @@ contains
       summary%mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
    end subroutine clear_summary
 
-   subroutine compute_self_times(summary)
-      type(ftimer_summary_t), intent(inout) :: summary
-      integer :: i
-      integer :: j
-      real(wp) :: child_sum
-      real(wp) :: tolerance
-
-      do i = 1, summary%num_entries
-         child_sum = 0.0_wp
-         j = i + 1
-         do while (j <= summary%num_entries)
-            if (summary%entries(j)%depth <= summary%entries(i)%depth) exit
-            if (summary%entries(j)%depth == summary%entries(i)%depth + 1) then
-               child_sum = child_sum + summary%entries(j)%inclusive_time
-            end if
-            j = j + 1
-         end do
-
-         summary%entries(i)%self_time = summary%entries(i)%inclusive_time - child_sum
-         tolerance = 100.0_wp*epsilon(1.0_wp)*max(1.0_wp, abs(summary%entries(i)%inclusive_time))
-         if ((summary%entries(i)%self_time < 0.0_wp) .and. (abs(summary%entries(i)%self_time) <= tolerance)) then
-            summary%entries(i)%self_time = 0.0_wp
-         end if
-      end do
-   end subroutine compute_self_times
-
-   recursive integer function count_summary_entries(segments, parent_stack, end_time) result(count)
+   integer function count_visible_summary_nodes(segments, end_time) result(visible_count)
       type(ftimer_segment_t), intent(in) :: segments(:)
-      type(ftimer_call_stack_t), intent(in) :: parent_stack
       real(wp), intent(in) :: end_time
-      type(ftimer_call_stack_t) :: child_stack
       integer :: ctx
       integer :: i
 
-      count = 0
+      visible_count = 0
       do i = 1, size(segments)
-         ctx = segments(i)%contexts%find(parent_stack)
-         if (ctx <= 0) cycle
-         if (.not. context_is_visible(segments(i), ctx, end_time)) cycle
-
-         count = count + 1
-         call child_stack%copy(parent_stack)
-         call child_stack%push(i)
-         count = count + count_summary_entries(segments, child_stack, end_time)
+         do ctx = 1, segments(i)%contexts%count
+            if (.not. context_is_visible(segments(i), ctx, end_time)) cycle
+            visible_count = visible_count + 1
+         end do
       end do
-   end function count_summary_entries
+   end function count_visible_summary_nodes
+
+   subroutine populate_summary_entries(entries, segments, total_time, end_time)
+      type(ftimer_summary_entry_t), intent(inout) :: entries(:)
+      type(ftimer_segment_t), intent(in) :: segments(:)
+      real(wp), intent(in) :: total_time
+      real(wp), intent(in) :: end_time
+      integer :: first_child(0:size(entries))
+      integer :: last_child(0:size(entries))
+      integer :: next_sibling(size(entries))
+      integer :: node_call_count(size(entries))
+      integer :: node_ctx(size(entries))
+      integer :: node_depth(size(entries))
+      integer :: node_parent(size(entries))
+      integer :: node_segment(size(entries))
+      integer :: path_child(0:size(entries), size(segments))
+      integer :: ctx
+      integer :: depth
+      integer :: i
+      integer :: max_depth
+      integer :: node
+      integer :: position
+      real(wp) :: node_inclusive(size(entries))
+
+      first_child = 0
+      last_child = 0
+      next_sibling = 0
+      node_parent = 0
+      path_child = 0
+      max_depth = 0
+
+      node = 0
+      do i = 1, size(segments)
+         do ctx = 1, segments(i)%contexts%count
+            if (.not. context_is_visible(segments(i), ctx, end_time)) cycle
+            node = node + 1
+            node_segment(node) = i
+            node_ctx(node) = ctx
+            node_depth(node) = segments(i)%contexts%stacks(ctx)%depth
+            node_inclusive(node) = inclusive_for_context(segments(i), ctx, end_time)
+            node_call_count(node) = call_count_for_context(segments(i), ctx)
+            max_depth = max(max_depth, node_depth(node))
+         end do
+      end do
+
+      do depth = 0, max_depth
+         do node = 1, size(entries)
+            if (node_depth(node) /= depth) cycle
+
+            node_parent(node) = summary_tree_parent(path_child, segments(node_segment(node))%contexts%stacks(node_ctx(node)))
+            path_child(node_parent(node), node_segment(node)) = node
+         end do
+      end do
+
+      do node = 1, size(entries)
+         if (first_child(node_parent(node)) <= 0) then
+            first_child(node_parent(node)) = node
+         else
+            next_sibling(last_child(node_parent(node))) = node
+         end if
+         last_child(node_parent(node)) = node
+      end do
+
+      position = 0
+      call fill_summary_entries(entries, position, 0, first_child, next_sibling, segments, node_segment, node_depth, &
+                                node_inclusive, node_call_count, total_time)
+   end subroutine populate_summary_entries
+
+   integer function summary_tree_parent(path_child, stack) result(parent)
+      integer, intent(in) :: path_child(0:, :)
+      type(ftimer_call_stack_t), intent(in) :: stack
+      integer :: level
+
+      parent = 0
+      do level = 1, stack%depth
+         parent = path_child(parent, stack%ids(level))
+      end do
+   end function summary_tree_parent
 
    function display_name(entry) result(name)
       type(ftimer_summary_entry_t), intent(in) :: entry
@@ -170,29 +211,32 @@ contains
       name = repeat(' ', 2*entry%depth)//escaped_name
    end function display_name
 
-   recursive subroutine fill_summary_entries(entries, position, segments, parent_stack, depth, total_time, end_time)
+   recursive subroutine fill_summary_entries(entries, position, node, first_child, next_sibling, segments, node_segment, node_depth, &
+                                             node_inclusive, node_call_count, total_time)
       type(ftimer_summary_entry_t), intent(inout) :: entries(:)
       integer, intent(inout) :: position
+      integer, intent(in) :: node
+      integer, intent(in) :: first_child(0:)
+      integer, intent(in) :: next_sibling(:)
       type(ftimer_segment_t), intent(in) :: segments(:)
-      type(ftimer_call_stack_t), intent(in) :: parent_stack
-      integer, intent(in) :: depth
+      integer, intent(in) :: node_segment(:)
+      integer, intent(in) :: node_depth(:)
+      real(wp), intent(in) :: node_inclusive(:)
+      integer, intent(in) :: node_call_count(:)
       real(wp), intent(in) :: total_time
-      real(wp), intent(in) :: end_time
-      type(ftimer_call_stack_t) :: child_stack
-      integer :: ctx
-      integer :: i
+      integer :: child
+      real(wp) :: child_sum
 
-      do i = 1, size(segments)
-         ctx = segments(i)%contexts%find(parent_stack)
-         if (ctx <= 0) cycle
-         if (.not. context_is_visible(segments(i), ctx, end_time)) cycle
-
+      child = first_child(node)
+      do while (child > 0)
          position = position + 1
-         entries(position)%name = segments(i)%name
-         entries(position)%depth = depth
-         entries(position)%inclusive_time = inclusive_for_context(segments(i), ctx, end_time)
-         entries(position)%self_time = entries(position)%inclusive_time
-         entries(position)%call_count = call_count_for_context(segments(i), ctx)
+         entries(position)%name = segments(node_segment(child))%name
+         entries(position)%depth = node_depth(child)
+         entries(position)%inclusive_time = node_inclusive(child)
+         child_sum = direct_child_inclusive(first_child, next_sibling, node_inclusive, child)
+         entries(position)%self_time = clamp_self_time(entries(position)%inclusive_time - child_sum, &
+                                                       entries(position)%inclusive_time)
+         entries(position)%call_count = node_call_count(child)
          if (entries(position)%call_count > 0) then
             entries(position)%avg_time = entries(position)%inclusive_time/real(entries(position)%call_count, wp)
          else
@@ -204,11 +248,36 @@ contains
             entries(position)%pct_time = 0.0_wp
          end if
 
-         call child_stack%copy(parent_stack)
-         call child_stack%push(i)
-         call fill_summary_entries(entries, position, segments, child_stack, depth + 1, total_time, end_time)
+         call fill_summary_entries(entries, position, child, first_child, next_sibling, segments, node_segment, node_depth, &
+                                   node_inclusive, node_call_count, total_time)
+         child = next_sibling(child)
       end do
    end subroutine fill_summary_entries
+
+   real(wp) function direct_child_inclusive(first_child, next_sibling, node_inclusive, node) result(total)
+      integer, intent(in) :: first_child(0:)
+      integer, intent(in) :: next_sibling(:)
+      real(wp), intent(in) :: node_inclusive(:)
+      integer, intent(in) :: node
+      integer :: child
+
+      total = 0.0_wp
+      child = first_child(node)
+      do while (child > 0)
+         total = total + node_inclusive(child)
+         child = next_sibling(child)
+      end do
+   end function direct_child_inclusive
+
+   real(wp) function clamp_self_time(self_time, inclusive_time) result(clamped)
+      real(wp), intent(in) :: self_time
+      real(wp), intent(in) :: inclusive_time
+      real(wp) :: tolerance
+
+      clamped = self_time
+      tolerance = 100.0_wp*epsilon(1.0_wp)*max(1.0_wp, abs(inclusive_time))
+      if ((clamped < 0.0_wp) .and. (abs(clamped) <= tolerance)) clamped = 0.0_wp
+   end function clamp_self_time
 
    integer function call_count_for_context(segment, ctx) result(count)
       type(ftimer_segment_t), intent(in) :: segment
