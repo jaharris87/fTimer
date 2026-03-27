@@ -1,0 +1,40 @@
+module test_call_stack
+   use pfunit
+   use ftimer_types, only: ftimer_call_stack_t
+   implicit none
+
+contains
+
+   @test
+   subroutine test_pop_to_empty_preserves_capacity_for_reuse()
+      type(ftimer_call_stack_t) :: stack
+      integer :: capacity_after_growth
+      integer :: i
+      integer :: popped_id
+
+      do i = 1, 40
+         call stack%push(i)
+      end do
+
+      capacity_after_growth = size(stack%ids)
+      @assertTrue(capacity_after_growth >= 40)
+      @assertEqual(40, stack%depth)
+
+      do i = 40, 1, -1
+         popped_id = stack%pop()
+         @assertEqual(i, popped_id)
+      end do
+
+      @assertEqual(0, stack%depth)
+      @assertTrue(allocated(stack%ids))
+      @assertEqual(capacity_after_growth, size(stack%ids))
+
+      call stack%push(99)
+      call stack%push(100)
+
+      @assertEqual(2, stack%depth)
+      @assertEqual(100, stack%top())
+      @assertEqual(capacity_after_growth, size(stack%ids))
+   end subroutine test_pop_to_empty_preserves_capacity_for_reuse
+
+end module test_call_stack
