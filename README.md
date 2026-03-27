@@ -137,7 +137,7 @@ Requires: a Fortran compiler with preprocess support, CMake >= 3.16, pFUnit when
 Current defaults:
 
 - CMake is the only supported build path right now.
-- Smoke tests are enabled by default and cover both the in-tree phase-0 smoke executable and an out-of-tree installed-package consumer configure/build check.
+- Smoke tests are enabled by default and cover the in-tree phase-0 smoke executable, an out-of-tree installed-package consumer configure/build check, and script-driven regression checks for the configure-time MPI/OpenMP gates plus `make mpi` / `make openmp` wrapper semantics when the needed external toolchain pieces are available.
 - pFUnit-backed behavioral tests are opt-in via `FTIMER_BUILD_TESTS=ON`.
 - Installing `fTimer` always exports the same consumer-facing library/modules whether or not `FTIMER_BUILD_TESTS=ON`; test-only modules stay build-tree-only and are not installed.
 - `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`; incompatible default-compiler MPI paths now fail during configure with guidance instead of reaching a later compile failure.

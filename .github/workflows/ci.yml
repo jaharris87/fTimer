@@ -153,6 +153,24 @@ jobs:
       - name: Smoke test
         run: ctest --test-dir build --output-on-failure
 
+  build-contract-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake make libopenmpi-dev openmpi-bin flang-19
+
+      # These checks cover the configure-time negative gates and the Makefile
+      # wrapper defaults that Issue #51 tracks as automated regressions.
+      - name: Configure contract checks
+        run: cmake -B build-contract -DFTIMER_BUILD_EXAMPLES=OFF
+
+      - name: Run contract regression tests
+        run: ctest --test-dir build-contract --output-on-failure -R "ftimer_(configure|make)_.*contracts"
+
   test-openmp:
     runs-on: ubuntu-latest
     steps:

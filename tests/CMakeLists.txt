@@ -24,6 +24,22 @@ if(FTIMER_BUILD_SMOKE_TESTS)
       "-DTEST_CONFIG=$<CONFIG>"
       -P ${CMAKE_CURRENT_SOURCE_DIR}/check_installed_package_consumer.cmake
   )
+
+  add_test(NAME ftimer_configure_contracts
+    COMMAND ${CMAKE_COMMAND}
+      -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+      -DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/configure_contracts
+      -DCMAKE_GENERATOR=${CMAKE_GENERATOR}
+      -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/check_configure_contracts.cmake
+  )
+
+  add_test(NAME ftimer_make_wrapper_contracts
+    COMMAND ${CMAKE_COMMAND}
+      -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+      -DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/make_wrapper_contracts
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/check_make_wrapper_contracts.cmake
+  )
 endif()
 
 if(FTIMER_BUILD_TESTS)
