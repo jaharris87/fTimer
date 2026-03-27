@@ -209,7 +209,7 @@ Short version:
 
 For deeper workflow details (monitoring, fallback review, findings disposition, merge criteria), use `docs/maintainer.md` for routing to: `docs/workflows/pr-open.md`, `docs/workflows/review-monitoring.md`, `docs/workflows/findings-disposition.md`.
 
-The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`. The long-form prompt library lives in `.github/prompts/detailed/`: it contains detailed versions of the three PR-triggered review types plus eight additional review prompts for API/compatibility, build/portability, completion auditing, docs/contracts, MPI safety, performance/overhead, pragmatic design, and test quality.
+The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`. Keep those top-level prompts reserved for the label-triggered PR workflow. Use the detailed prompt library for manual fallback reviews or deeper repository-health reviews that are not wired to PR labels, and treat `.github/prompts/detailed/README.md` as the authoritative catalog of prompt names and usage context.
 
 ### Review Standards
 
@@ -219,7 +219,7 @@ The native Codex trigger comments are intentionally posted as single-line `@code
 4. **Verify docs match implementation**: If the PR changes behavior, check that CLAUDE.md, README, and any relevant comments are updated.
 5. **Prefer fewer, more serious findings**: Two real concerns are worth more than twenty style nits.
 6. **Begin your response with the review type heading** expected by the prompt so it is clear which review you are responding to.
-7. **Match the detailed prompt library when used**: `.github/prompts/detailed/` also defines long-form review headings such as `## API / Compatibility Review`, `## Build / Portability Review`, `## Completion Audit Review`, `## Docs / Contract Review`, `## MPI Safety Review`, `## Performance / Overhead Review`, `## Pragmatic Design Review`, and `## Test Quality Review`.
+7. **Match the detailed prompt library when used**: follow the prompt names, headings, and usage context documented in `.github/prompts/detailed/README.md`.
 
 ## Configuration
 

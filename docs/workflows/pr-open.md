@@ -28,14 +28,8 @@ For every scoped piece of work:
 
 ## Detailed Prompt Library
 
-The native trigger workflow posts single-line `@codex review ...` comments built from `.github/prompts/`. The long-form prompt library lives in `.github/prompts/detailed/`. Keep the top-level prompts reserved for label-triggered native reviews; use the detailed prompts for manual fallback reviews or deeper repo-health reviews that are not wired to PR labels. Do not paste a detailed prompt into a PR unless you are intentionally using the documented fallback flow.
+The native trigger workflow posts single-line `@codex review ...` comments built from `.github/prompts/`. The authoritative inventory for the long-form prompt library lives in `.github/prompts/detailed/README.md`.
 
-The detailed prompt set has two roles:
+Keep the top-level prompts reserved for label-triggered native reviews. Use the detailed prompts for manual fallback reviews or deeper repo-health reviews that are not wired to PR labels by default. Do not paste a detailed prompt into a PR unless you are intentionally using the documented fallback flow.
 
-- long-form fallback versions of the three PR-triggered review types: `software-review.md`, `methodology-review.md`, and `red-team-review.md`
-- additional long-horizon review prompts that are not label-triggered by default: `api-compat-review.md`, `build-portability-review.md`, `completion-audit-review.md`, `docs-contract-review.md`, `mpi-safety-review.md`, `performance-overhead-review.md`, `pragmatic-design-review.md`, and `test-quality-review.md`
-
-Use the additional detailed prompts for targeted repository reviews outside the normal PR trigger flow, such as periodic maintainability checks, pre-release audits, or focused follow-up investigation on a risky area.
-
-- Use `completion-audit-review.md` at issue, phase, or release boundaries to verify that claimed work is actually complete and that docs, tests, and acceptance criteria are honestly closed. Not intended as a routine per-PR review.
-- Use `pragmatic-design-review.md` selectively on PRs that introduce new abstractions, wrappers, or architecture. Skip it for narrow bug fixes or documentation-only changes.
+When you need the available detailed prompt names or their intended usage context, consult `.github/prompts/detailed/README.md` instead of duplicating that inventory here.
