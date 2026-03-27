@@ -29,3 +29,4 @@ benchmark-results/
 
 # Claude personalization
 .claude/skills/
+.agents/skills/
