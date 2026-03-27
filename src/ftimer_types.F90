@@ -54,6 +54,7 @@ module ftimer_types
    integer, parameter :: FTIMER_MPI_SUMMARY_LOCAL_ONLY = 0
    integer, parameter :: FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED = 1
    integer, parameter :: FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE = 2
+   integer, parameter :: FTIMER_CALL_STACK_INITIAL_CAPACITY = 32
 
    type :: ftimer_metadata_t
       character(len=FTIMER_NAME_LEN) :: key = ''
@@ -140,36 +141,33 @@ contains
       class(ftimer_call_stack_t), intent(inout) :: self
       integer, intent(in) :: id
       integer, allocatable :: new_ids(:)
+      integer :: new_capacity
 
-      allocate (new_ids(self%depth + 1))
-      if (self%depth > 0) then
-         new_ids(1:self%depth) = self%ids(1:self%depth)
+      if (.not. allocated(self%ids)) then
+         allocate (self%ids(FTIMER_CALL_STACK_INITIAL_CAPACITY))
+      else if (self%depth >= size(self%ids)) then
+         new_capacity = max(FTIMER_CALL_STACK_INITIAL_CAPACITY, 2*size(self%ids))
+         allocate (new_ids(new_capacity))
+         if (self%depth > 0) then
+            new_ids(1:self%depth) = self%ids(1:self%depth)
+         end if
+         call move_alloc(new_ids, self%ids)
       end if
-      new_ids(self%depth + 1) = id
 
-      call move_alloc(new_ids, self%ids)
       self%depth = self%depth + 1
+      self%ids(self%depth) = id
    end subroutine ftimer_call_stack_push
 
    integer function ftimer_call_stack_pop(self) result(id)
       class(ftimer_call_stack_t), intent(inout) :: self
-      integer, allocatable :: new_ids(:)
 
       id = 0
       if (self%depth <= 0) then
          self%depth = 0
-         if (allocated(self%ids)) deallocate (self%ids)
          return
       end if
 
       id = self%ids(self%depth)
-      if (self%depth == 1) then
-         deallocate (self%ids)
-      else
-         allocate (new_ids(self%depth - 1))
-         new_ids = self%ids(1:self%depth - 1)
-         call move_alloc(new_ids, self%ids)
-      end if
       self%depth = self%depth - 1
    end function ftimer_call_stack_pop
 
@@ -205,6 +203,8 @@ contains
       if (other%depth > 0) then
          allocate (self%ids(other%depth))
          self%ids = other%ids(1:other%depth)
+      else if (allocated(other%ids)) then
+         allocate (self%ids(0))
       end if
    end subroutine ftimer_call_stack_copy
 

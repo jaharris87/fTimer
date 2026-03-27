@@ -14,8 +14,8 @@
 !  3-5. Lookup scaling N=1/10/50     -- name-based, measures how the linear
 !                                       find_segment_index scan scales with N
 !  6-9. Nesting depth 1/5/10/20      -- id-based; each cycle does D pushes +
-!                                       D pops; shows call-stack allocation
-!                                       churn scaling with nesting depth
+!                                       D pops; shows stack bookkeeping cost
+!                                       scaling with nesting depth
 ! 10-12. get_summary N=10/50/100     -- summary build + self-time pass scaling
 !                                       with timer count
 !
@@ -32,7 +32,8 @@
 !
 ! INTERPRETATION
 !   Compare "flat name-based" vs "flat id-based" to isolate name-lookup cost.
-!   Compare nesting depths to measure stack push/pop allocation scaling.
+!   Compare nesting depths to measure stack push/pop scaling after context
+!   warm-up has removed first-growth effects.
 !   Compare get_summary timer counts to see summary-generation scaling.
 
 program ftimer_bench
@@ -177,10 +178,11 @@ contains
 
    ! Scenarios 6-9: id-based nesting at increasing depths.
    ! Each cycle does D id-based starts then D id-based stops.
-   ! Using id-based ops isolates the call-stack push/pop allocation churn
-   ! from name-lookup cost.  Each push allocates a new array of size depth+1
-   ! and copies; each pop allocates a new array of size depth-1 and copies.
-   ! Comparing depths 1, 5, 10, 20 shows how allocation churn scales with D.
+   ! Using id-based ops isolates call-stack bookkeeping cost from
+   ! name-lookup cost.  After the warm-up cycle has grown the stack to the
+   ! required depth, steady-state reps reuse the existing capacity.
+   ! Comparing depths 1, 5, 10, 20 shows how the remaining stack overhead
+   ! scales with D.
    subroutine bench_nesting(reps, depth, count_rate)
       integer, intent(in) :: reps
       integer, intent(in) :: depth

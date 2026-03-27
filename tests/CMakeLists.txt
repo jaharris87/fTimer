@@ -46,6 +46,7 @@ if(FTIMER_BUILD_TESTS)
   # Serial pFUnit tests
   set(SERIAL_TEST_SOURCES
     test_basic.pf
+    test_call_stack.pf
     test_nesting.pf
     test_context.pf
     test_callcount.pf
