@@ -1,14 +1,35 @@
 cmake_minimum_required(VERSION 3.16)
 
 function(ftimer_copy_tracked_repo repo_root destination)
+  find_program(ftimer_git_executable NAMES git)
+  if(NOT ftimer_git_executable)
+    message(STATUS
+      "Skipping Makefile wrapper regression: git is not available to materialize an isolated worktree copy."
+    )
+    set(FTIMER_MAKE_WRAPPER_SKIP TRUE PARENT_SCOPE)
+    return()
+  endif()
+
+  if(NOT EXISTS "${repo_root}/.git")
+    message(STATUS
+      "Skipping Makefile wrapper regression: repository metadata is unavailable outside a Git checkout."
+    )
+    set(FTIMER_MAKE_WRAPPER_SKIP TRUE PARENT_SCOPE)
+    return()
+  endif()
+
   execute_process(
-    COMMAND git -C "${repo_root}" ls-files
+    COMMAND "${ftimer_git_executable}" -C "${repo_root}" ls-files
     RESULT_VARIABLE ls_files_result
     OUTPUT_VARIABLE tracked_files_output
     ERROR_VARIABLE ls_files_error
   )
   if(NOT ls_files_result EQUAL 0)
-    message(FATAL_ERROR "Failed to enumerate tracked files.\n${ls_files_error}")
+    message(STATUS
+      "Skipping Makefile wrapper regression: could not enumerate tracked files.\n${ls_files_error}"
+    )
+    set(FTIMER_MAKE_WRAPPER_SKIP TRUE PARENT_SCOPE)
+    return()
   endif()
 
   string(REPLACE "\n" ";" tracked_files "${tracked_files_output}")
@@ -59,7 +80,10 @@ file(MAKE_DIRECTORY "${TEST_BINARY_DIR}")
 
 find_program(ftimer_make_executable NAMES gmake make)
 if(NOT ftimer_make_executable)
-  message(FATAL_ERROR "Could not find a make executable for wrapper regression testing.")
+  message(STATUS
+    "Skipping Makefile wrapper regression: no make-compatible executable is available on PATH."
+  )
+  return()
 endif()
 
 find_program(ftimer_gfortran_compiler NAMES gfortran)
@@ -74,6 +98,9 @@ endif()
 
 set(worktree "${TEST_BINARY_DIR}/repo")
 ftimer_copy_tracked_repo("${REPO_ROOT}" "${worktree}")
+if(FTIMER_MAKE_WRAPPER_SKIP)
+  return()
+endif()
 
 set(common_flags "-DFTIMER_BUILD_SMOKE_TESTS=OFF -DFTIMER_BUILD_TESTS=OFF -DFTIMER_BUILD_EXAMPLES=OFF -DFTIMER_BUILD_BENCH=OFF")
 
