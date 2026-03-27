@@ -1,8 +1,8 @@
-# Implementation TODO
+# Implementation History
 
 The in-repo design reference for implementation is [docs/design.md](docs/design.md).
 
-This file is a historical roadmap plus backlog, not the authoritative statement of what ships today. Checked items record work already landed on `main`; unchecked items are remaining follow-up work or release chores. For the current user-facing contract, use `README.md`, `docs/semantics.md`, and the implementation in `src/`.
+This file preserves the historical phase roadmap that led to the current implementation on `main`. It is not the authoritative statement of what ships today. For the current user-facing contract, use `README.md`, `docs/semantics.md`, and the implementation in `src/`.
 
 ## Phase 1: Types + Clock
 
