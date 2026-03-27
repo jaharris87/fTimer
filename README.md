@@ -213,7 +213,7 @@ This is useful for before/after regression checks when changing hot-path timing 
 ## More Detail
 
 - Runtime semantics: [`docs/semantics.md`](docs/semantics.md)
-- Forward-looking design notes: [`docs/design.md`](docs/design.md)
+- Current architecture reference: [`docs/design.md`](docs/design.md)
 
 When those sources disagree, the current implementation under `src/` is the source of truth.
 
