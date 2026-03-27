@@ -68,6 +68,7 @@ For metadata headers, construct `ftimer_metadata_t` values directly by assigning
 - `examples/basic_usage.F90`: serial procedural usage with `start`, `stop`, `get_summary`, and `print_summary`
 - `examples/nested_timers.F90`: nested timers plus manual `ftimer_metadata_t` header fields
 - `examples/mpi_example.F90`: MPI-only example showing `ftimer_init(comm=...)` and root-side reduced summary fields from `ftimer_mpi_summary()`
+- `examples/openmp_example.F90`: OpenMP-only example showing the supported pattern of placing `start`/`stop` outside the `!$omp parallel` block to time the full parallel region wall-clock duration
 
 ## Target Capabilities
 

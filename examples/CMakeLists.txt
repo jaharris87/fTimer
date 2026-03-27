@@ -9,3 +9,8 @@ if(FTIMER_USE_MPI)
   add_executable(mpi_example mpi_example.F90)
   target_link_libraries(mpi_example PRIVATE ftimer)
 endif()
+
+if(FTIMER_USE_OPENMP)
+  add_executable(openmp_example openmp_example.F90)
+  target_link_libraries(openmp_example PRIVATE ftimer)
+endif()
