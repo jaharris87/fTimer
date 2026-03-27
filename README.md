@@ -1,44 +1,38 @@
 # fTimer
 
-A lightweight, correctness-first wall-clock timing library for modern Fortran.
+fTimer is a lightweight, correctness-first wall-clock timing library for modern Fortran. It is built for codes that need hierarchical timers, predictable accounting, and summaries you can inspect programmatically instead of scraping from ad hoc text output.
 
-## Status
+For a first release, the focus is a small, dependable core:
 
-Current `main` implements the Phase 6 runtime contract: shared types/clock foundation, a real core timer runtime, structured local summaries and reporting, the procedural convenience API, MPI-reduced structured summaries, and limited OpenMP master-thread guards when built with `FTIMER_USE_OPENMP=ON`.
+- strict, stack-based start/stop timing by default
+- context-sensitive accounting for the same timer name under different parents
+- inclusive and self time in structured summaries
+- procedural wrappers and an OOP core API
+- optional MPI summary reduction for cross-rank min/max/avg/imbalance data
+- an installable CMake package for downstream projects
 
-Future-facing design notes still live in `docs/design.md`; when a design note conflicts with this README or the source in `src/`, the current implementation on `main` is the source of truth.
+## Why Use fTimer
 
-## Current Phase 6 Behavior
+fTimer fits best when you want timing behavior you can trust:
 
-Current `main` provides:
+- nested timers are treated as a real hierarchy, not a flat label list
+- mismatch handling is explicit and configurable (`strict`, `warn`, `repair`)
+- summaries are available as data first (`get_summary()`), with text formatting layered on top
+- an injectable clock supports deterministic tests and controlled benchmarking
+- callback hooks let external tools react to timer start/stop events
 
-- CMake-based serial and MPI builds
-- `ftimer_types` exports shared kinds, constants, summary/container types, and abstract clock/hook interfaces
-- `ftimer_clock` exports `ftimer_default_clock()`, `ftimer_mpi_clock()` for MPI-enabled builds, and `ftimer_date_string()`
-- `ftimer_core` exports a real `ftimer_t` implementation with `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `mpi_summary`, `print_summary`, and `write_summary`
-- `ftimer_summary` builds structured local summaries with hierarchical entries, inclusive time, self time, call counts, and formatted text output
-- `ftimer_mpi` adds canonical descriptor hashing, cross-rank consistency preflight, and MPI reduction helpers for structured summaries
-- Strict-by-default stack-based timing with context-sensitive accounting and configurable mismatch handling (`strict` / `warn` / `repair`)
-- Timer names are right-trimmed for normal Fortran character compatibility, but they must otherwise be non-empty, fit within `FTIMER_NAME_LEN`, must not begin with a blank, and must not contain ASCII control characters
-- Optional OpenMP master-thread guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`; inside OpenMP parallel regions, non-master calls to the guarded core timer operations are silent no-ops: no summary entry is created, no call count is incremented, no `ierr` is set, and no stderr warning is emitted. Timer calls made exclusively on worker threads vanish silently and produce no summary entry. When all threads in a parallel region call start/stop for the same timer, only the master thread's call is recorded — the call count reflects 1, not the thread count. To time a parallel region as a whole, place start/stop calls outside the `!$omp parallel` block.
-- A default smoke-test path plus optional pFUnit behavioral/integration/MPI tests using an injectable mock clock
-- Example programs that compile and link against the library
-- An installable CMake package export (`fTimerTargets.cmake`, `fTimerConfig.cmake`, `fTimerConfigVersion.cmake`)
+If you need a tiny serial timing helper, you can use fTimer that way. If you need structured local summaries, optional MPI reductions, and a clear error contract, that is where the library is strongest.
 
-Current public surface on `main` supports both usage styles:
+## Supported Workflows
 
-- `use ftimer` exports `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
-  `ierr` is now the last optional argument in both `init` signatures (`comm`, `mismatch_mode`, `ierr`). A single positional integer safely binds to `comm` (`intent(in)`), not `ierr` (`intent(out)`), eliminating the silent-clobber trap from earlier phases. Keywords are recommended for readability.
-- OOP core: `init`, `finalize`, `start`, `stop`, `start_id`, `stop_id`, `lookup`, `reset`, `get_summary`, `mpi_summary`, `print_summary`, and `write_summary`
-- `use ftimer` does not re-export shared types or constants. Import `ftimer_summary_t`, `ftimer_metadata_t`, `FTIMER_MISMATCH_*`, and `FTIMER_MPI_SUMMARY_*` from `ftimer_types`.
-- Procedural wrappers are thin forwarding calls over the existing OOP implementation and preserve the intended `ierr`/stderr error contract
-- `get_summary()`, `print_summary()`, and `write_summary()` remain local-only
-- Formatted local summaries escape unsafe raw summary-entry names instead of emitting them literally: leading blanks render as `\x20`, backslashes render as `\\`, tabs/newlines/carriage returns render as `\t`/`\n`/`\r`, other ASCII control characters render as `\xNN`, and blank/empty raw names render as `<blank>`
-- `mpi_summary()` / `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init` (`MPI_COMM_WORLD` when `comm` is omitted). They perform a hash-based timer-descriptor preflight before reduction, fall back to a plain local-only summary with `FTIMER_ERR_MPI_INCON` on inconsistent ranks, populate min/max/avg/imbalance fields only on communicator root, and do not attempt to rescue mismatched communicator choices across would-be participants
-- After a successful `mpi_summary()`, `start_date`, `end_date`, `total_time`, `inclusive_time`, `self_time`, `call_count`, `avg_time`, and `pct_time` still describe only the calling rank's local summary
-- On rank 0 only, a successful `mpi_summary()` also populates `min_time`, `max_time`, `avg_across_ranks`, and `imbalance`; `has_mpi_data=.true.` means only those reduced MPI entry fields are valid on this rank, not that the whole summary is globally reduced
-- `summary%mpi_summary_state` makes the result shape explicit: `FTIMER_MPI_SUMMARY_LOCAL_ONLY` for plain local summaries, `FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED` for the root-local-plus-reduced root result, and `FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE` for successful non-root calls that still expose only local fields
-- OpenMP support is intentionally limited: Phase 6 does not make `fTimer` thread-safe or add thread-local timer instances; the supported model is master-thread-only timing. Timings reported in a summary reflect only what the master thread observed; worker-thread work is not separately captured.
+fTimer currently supports these usage paths:
+
+- Serial timing with local summaries and formatted reports
+- MPI builds that use `MPI_Wtime()` and can populate root-side reduced timing fields
+- OpenMP builds with master-thread-only timer guards for timing a parallel region as a whole
+- Downstream consumption through `find_package(fTimer CONFIG REQUIRED)`
+
+Important limitations are documented later in this README. The short version is that MPI support is real but opt-in, and OpenMP support is intentionally limited to the documented master-thread-only model.
 
 ## Quick Start
 
@@ -61,30 +55,152 @@ program quick_start
 end program quick_start
 ```
 
-For metadata headers, construct `ftimer_metadata_t` values directly by assigning `%key` and `%value`. Current `main` does not provide a helper constructor such as `ftimer_metadata(...)`.
+Use `ftimer` for the procedural API and `ftimer_types` for shared types and constants such as `ftimer_summary_t`, `ftimer_metadata_t`, `FTIMER_MISMATCH_*`, and `FTIMER_MPI_SUMMARY_*`.
+
+For metadata headers, construct `ftimer_metadata_t` values by assigning `%key` and `%value` directly. fTimer does not currently provide a helper constructor such as `ftimer_metadata(...)`.
+
+## First Success
+
+The fastest evaluation path is the serial smoke build plus the `basic_usage` example:
+
+```bash
+cmake -B build-smoke
+cmake --build build-smoke --target basic_usage
+./build-smoke/examples/basic_usage
+```
+
+You should see output shaped like this:
+
+```text
+Recorded timers: 1
+Total time (s) : <small positive number>
+
+Timer name  Inclusive (s)     Self (s)    Calls   % Total
+---------------------------------------------------------
+work            <positive>      <positive>       1   <nonzero>
+```
+
+The exact timings vary by machine and compiler, but a successful run should show:
+
+- one recorded timer
+- a positive total time
+- a `work` row with one call and positive inclusive/self time
+
+This is the default happy path for first-time evaluation. It exercises the library build, links an example program, and produces believable summary output without requiring MPI or pFUnit.
+
+## Install And Use From Another Project
+
+Install fTimer to a prefix:
+
+```bash
+cmake -B build-install -DCMAKE_INSTALL_PREFIX=/path/to/ftimer-install
+cmake --build build-install
+cmake --install build-install
+```
+
+Then consume it from a downstream CMake project:
+
+```cmake
+cmake_minimum_required(VERSION 3.16)
+project(my_app LANGUAGES Fortran)
+
+find_package(fTimer CONFIG REQUIRED)
+
+add_executable(my_app main.F90)
+target_link_libraries(my_app PRIVATE fTimer::ftimer)
+```
+
+Configure the downstream build with `CMAKE_PREFIX_PATH` pointing at the installed prefix:
+
+```bash
+cmake -S my_app -B my_app/build -DCMAKE_PREFIX_PATH=/path/to/ftimer-install
+cmake --build my_app/build
+```
+
+The supported downstream contract is the installed package export. New adopters should not need to infer the intended consumption model from the test suite.
+
+## API Surface
+
+The public API supports two styles:
+
+- Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
+- OOP API through `type(ftimer_t)` in `ftimer_core`
+
+Operational notes:
+
+- `ierr` is now the last optional argument in both `init` signatures (`comm`, `mismatch_mode`, `ierr`), so a single positional integer binds to `comm`, not `ierr`. Keywords are recommended for readability.
+- `get_summary()`, `print_summary()`, and `write_summary()` are local-only summary/reporting paths.
+- `mpi_summary()` and `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init`.
+- On a successful MPI reduction, reduced `min_time`, `max_time`, `avg_across_ranks`, and `imbalance` fields are populated only on communicator root.
+- Import shared types and constants from `ftimer_types`; `use ftimer` does not re-export them.
 
 ## Examples
 
-- `examples/basic_usage.F90`: serial procedural usage with `start`, `stop`, `get_summary`, and `print_summary`
-- `examples/nested_timers.F90`: nested timers plus manual `ftimer_metadata_t` header fields
-- `examples/mpi_example.F90`: MPI-only example showing `ftimer_init(comm=...)` and root-side reduced summary fields from `ftimer_mpi_summary()`
-- `examples/openmp_example.F90`: OpenMP-only example showing the supported pattern of placing `start`/`stop` outside the `!$omp parallel` block to time the full parallel region wall-clock duration
+- `examples/basic_usage.F90`: serial start/stop plus summary retrieval and formatted output
+- `examples/nested_timers.F90`: nested timers and metadata headers
+- `examples/mpi_example.F90`: MPI timing with root-side reduced summary fields
+- `examples/openmp_example.F90`: the supported OpenMP pattern, where timers bracket the parallel region instead of running inside worker threads
 
-## Target Capabilities
+## Build And Test
 
-fTimer is intended to provide stack-based hierarchical timing with:
+Minimum requirements:
 
-- Context-sensitive accounting (same timer name tracked independently under different parents)
-- Configurable mismatch handling (strict / warn / repair)
-- Structured summary data (`get_summary()`) and formatted text reports (`print_summary()`)
-- Exclusive/self time alongside inclusive time
-- Optional MPI cross-rank statistics (min/max/avg/imbalance)
-- Callback hooks for external profiling tools (PAPI, likwid, etc.)
-- Injectable clock for deterministic testing
+- CMake 3.16 or newer
+- A Fortran compiler with preprocess support
+- pFUnit only when `FTIMER_BUILD_TESTS=ON`
+- An MPI wrapper/compiler pair only when `FTIMER_USE_MPI=ON`
+- GNU Fortran only when `FTIMER_USE_OPENMP=ON`
+
+```bash
+# Smoke-test path (includes install/export consumer verification)
+cmake -B build-smoke
+cmake --build build-smoke
+ctest --test-dir build-smoke --output-on-failure
+
+# Serial build with pFUnit tests
+FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+cmake --build build
+ctest --test-dir build --output-on-failure
+
+# MPI build with pFUnit tests
+FC=mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+cmake --build build-mpi
+ctest --test-dir build-mpi --output-on-failure -L mpi
+
+# OpenMP build with pFUnit tests
+FC=gfortran cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+cmake --build build-openmp
+ctest --test-dir build-openmp --output-on-failure
+
+# Convenience Makefile wrapper
+make
+make mpi
+make openmp
+make test
+```
+
+Supported toolchain matrix:
+
+- Serial smoke/library build: any Fortran compiler that can build the project normally
+- Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
+- MPI: an MPI wrapper compiler such as `mpifort`
+- OpenMP: GNU Fortran only for the documented supported path
+
+Use a separate build directory for each compiler or mode. Reconfiguring the same build tree with a different Fortran compiler is not a supported workflow in this repository.
+
+## Current Limitations And Contracts
+
+- CMake is the supported build and package path. FPM support is intentionally deferred.
+- `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`. Configure now fails early if the active compiler cannot compile a minimal `use mpi` probe against the discovered MPI installation.
+- `mpi_summary()` does not produce a fully global summary object on every rank. After a successful collective, local summary fields still describe the calling rank's local data; only communicator root also receives reduced cross-rank fields.
+- `FTIMER_USE_OPENMP=ON` enables limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
+- OpenMP support does not make fTimer thread-safe and does not provide thread-local timer instances.
+- If `FTIMER_USE_MPI=OFF`, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the result local-only.
+- Formatted summary/report output is local-only.
 
 ## Performance Measurement
 
-A standalone measurement harness (`bench/ftimer_bench.F90`) covers the main overhead risks: hot-path start/stop, name-lookup scaling with timer count, call-stack push/pop scaling with nesting depth, summary-generation scaling with timer count, direct `build_summary()` cost on prebuilt segments, and date-stamp formatting/cache overhead. Run it in `Release` mode for meaningful before/after performance comparisons. No pFUnit required.
+The repository includes a standalone benchmark harness for measuring timer overhead and summary-generation cost:
 
 ```bash
 cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
@@ -92,68 +208,14 @@ cmake --build build-bench --target ftimer_bench
 ./build-bench/bench/ftimer_bench
 ```
 
-This produces a structured table of per-operation nanosecond costs useful for identifying regression targets and comparing before/after optimizations. See `bench/ftimer_bench.F90` for scenario descriptions.
+This is useful for before/after regression checks when changing hot-path timing behavior.
 
-## Build
+## More Detail
 
-```bash
-# Smoke-test-only path (includes install/export consumer verification)
-cmake -B build-smoke
-cmake --build build-smoke
-ctest --test-dir build-smoke --output-on-failure
+- Runtime semantics: [`docs/semantics.md`](docs/semantics.md)
+- Forward-looking design notes: [`docs/design.md`](docs/design.md)
 
-# Serial build with pFUnit tests (documented path: GNU Fortran + matching pFUnit install)
-FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
-cmake --build build
-ctest --test-dir build --output-on-failure
-
-# MPI build + MPI tests (documented path: MPI wrapper compiler)
-FC=mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
-cmake --build build-mpi
-ctest --test-dir build-mpi --output-on-failure -L mpi
-
-# OpenMP-guard build + tests (currently supported with GNU Fortran)
-FC=gfortran cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
-cmake --build build-openmp
-ctest --test-dir build-openmp --output-on-failure
-
-# Or use the Makefile wrapper
-make        # serial build
-make mpi    # MPI build (defaults FC=mpifort)
-make openmp # OpenMP build (defaults FC=gfortran)
-make test   # build + test
-```
-
-Supported toolchain matrix:
-
-- Serial smoke/library build: the active Fortran compiler that CMake selects, as long as it can build the project normally.
-- Serial + pFUnit tests: GNU Fortran (`gfortran`) with a pFUnit installation built for the same compiler/toolchain.
-- MPI: an MPI wrapper compiler such as `mpifort`. `FTIMER_USE_MPI=ON` now probes a minimal `use mpi` compile at configure time and fails early if the active compiler cannot consume the discovered MPI module files.
-- OpenMP: GNU Fortran (`gfortran`) only for the documented/supported path. Other compiler families are not currently an advertised OpenMP build path for this repo.
-
-Use a separate build directory for each mode/compiler combination. Reconfiguring an existing CMake build tree with a different Fortran compiler is not a supported workflow here.
-
-Requires: a Fortran compiler with preprocess support, CMake >= 3.16, pFUnit when `FTIMER_BUILD_TESTS=ON`, an MPI wrapper/compiler pair when `FTIMER_USE_MPI=ON`, and GNU Fortran when `FTIMER_USE_OPENMP=ON`.
-
-Current defaults:
-
-- CMake is the only supported build path right now.
-- Smoke tests are enabled by default and cover the in-tree phase-0 smoke executable, an out-of-tree installed-package consumer configure/build check, and script-driven regression checks for the configure-time MPI/OpenMP gates plus `make mpi` / `make openmp` wrapper semantics when the needed external toolchain pieces are available.
-- pFUnit-backed behavioral tests are opt-in via `FTIMER_BUILD_TESTS=ON`.
-- Installing `fTimer` always exports the same consumer-facing library/modules whether or not `FTIMER_BUILD_TESTS=ON`; test-only modules stay build-tree-only and are not installed.
-- `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`; incompatible default-compiler MPI paths now fail during configure with guidance instead of reaching a later compile failure.
-- FPM support is deferred until the public API stabilizes.
-- MPI-reduced structured summaries require `FTIMER_USE_MPI=ON`; otherwise `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and a local-only summary.
-- OpenMP master-thread guards require `FTIMER_USE_OPENMP=ON` with GNU Fortran; otherwise the OpenMP directives compile away and fTimer behaves as the serial/MPI-only runtime already described above.
-- Formatted summary/report output is still local-only.
-
-## Deferred Items
-
-These are intentionally postponed beyond Phase 6:
-
-- broader OpenMP support beyond Phase 6's master-thread-only guards
-- FPM manifest/support
-- secondary repo hygiene such as Dependabot, `.editorconfig`, and broader governance files
+When those sources disagree, the current implementation under `src/` is the source of truth.
 
 ## License
 
