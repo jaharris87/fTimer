@@ -201,7 +201,8 @@ This workflow is **mandatory** for every PR. Do not skip any step.
 Short version:
 
 - create or link the GitHub issue first
-- open a PR from a feature branch
+- open a ready-for-review PR from a feature branch
+- do not open a draft PR unless the user explicitly asks for a draft
 - always apply `codex-software-review`
 - also apply `codex-methodology-review` when the diff touches: `src/ftimer_core.F90`, `src/ftimer_summary.F90`, `src/ftimer_mpi.F90`, or `docs/semantics.md`
 - also apply `codex-red-team-review` when the diff touches: `src/ftimer_core.F90` (especially `start`, `stop`, or `repair_mismatch`) or `src/ftimer_mpi.F90`
