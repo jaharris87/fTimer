@@ -7,18 +7,19 @@
 After opening or materially updating the PR:
 
 1. Inform the user that you are monitoring for reviews.
-2. Poll every 60 seconds for up to 10 minutes.
+2. Poll every 30-60 seconds for up to 10 minutes.
 3. Inspect actual review artifacts, not just workflow success.
-4. After the trigger workflow completes, watch for a `chatgpt-codex-connector` response to the `@codex review` trigger comment indicating the review will not proceed (e.g., quota exhausted). Note: the connector may also post unrelated comments when PR text contains the word "Codex" — those are not fallback signals; only a response to the trigger itself counts.
-5. Once all expected reviews have arrived, respond to every finding.
-6. If reviews have not arrived after 10 minutes and no unavailability signal has appeared on the trigger comment, tell the user and ask how to proceed.
+4. Unless the connector explicitly reports that the review will not proceed, give the native `@codex` review flow at least 5 minutes before considering any manual fallback.
+5. After the trigger workflow completes, watch for a `chatgpt-codex-connector` response to the `@codex review` trigger comment indicating the review will not proceed (e.g., quota exhausted). Note: the connector may also post unrelated comments when PR text contains the word "Codex" — those are not fallback signals; only a response to the trigger itself counts.
+6. Once all expected reviews have arrived, respond to every finding.
+7. If reviews have not arrived after 10 minutes and no unavailability signal has appeared on the trigger comment, tell the user and ask how to proceed.
 
 ## Fallback When Native Codex Review Is Unavailable
 
 Use this fallback only when the label-triggered review path is unavailable or insufficient, for example:
 
 - a `chatgpt-codex-connector` response to the `@codex review` trigger comment indicates the review will not proceed (e.g., quota exhausted) — note that connector comments triggered by PR text containing "Codex" are not this signal
-- the trigger workflow posts successfully but no actual review artifacts arrive after the normal wait window
+- the trigger workflow posts successfully but no actual review artifacts arrive after the normal wait window, with at least 5 minutes already given to the native flow
 - the GitHub/Codex integration is unavailable
 
 Fallback procedure:

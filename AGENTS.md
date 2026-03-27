@@ -207,6 +207,7 @@ Short version:
 - also apply `codex-methodology-review` when the diff touches: `src/ftimer_core.F90`, `src/ftimer_summary.F90`, `src/ftimer_mpi.F90`, or `docs/semantics.md`
 - also apply `codex-red-team-review` when the diff touches: `src/ftimer_core.F90` (especially `start`, `stop`, or `repair_mismatch`) or `src/ftimer_mpi.F90`
 - monitor for the actual Codex review output
+- when waiting on `@codex` review, poll in small intervals but give the native review flow at least 5 minutes before considering manual fallback unless the connector explicitly reports that review will not proceed
 - reply to every finding, resolve every review thread, and do not merge while merge-blocking findings remain
 
 For deeper workflow details (monitoring, fallback review, findings disposition, merge criteria), use `docs/maintainer.md` for routing to: `docs/workflows/pr-open.md`, `docs/workflows/review-monitoring.md`, `docs/workflows/findings-disposition.md`.
