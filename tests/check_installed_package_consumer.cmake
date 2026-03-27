@@ -26,8 +26,8 @@ if(DEFINED CMAKE_Fortran_COMPILER AND NOT CMAKE_Fortran_COMPILER STREQUAL "")
   list(APPEND configure_args -DCMAKE_Fortran_COMPILER=${CMAKE_Fortran_COMPILER})
 endif()
 
-if(DEFINED CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE STREQUAL "")
-  list(APPEND configure_args -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+if(DEFINED TEST_BUILD_TYPE AND NOT TEST_BUILD_TYPE STREQUAL "")
+  list(APPEND configure_args -DCMAKE_BUILD_TYPE=${TEST_BUILD_TYPE})
 endif()
 
 execute_process(
@@ -38,16 +38,30 @@ if(NOT producer_configure_result EQUAL 0)
   message(FATAL_ERROR "Failed to configure the producer install tree.")
 endif()
 
+set(producer_build_args
+  --build "${TEST_BINARY_DIR}/producer-build"
+)
+if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
+  list(APPEND producer_build_args --config "${TEST_CONFIG}")
+endif()
+
 execute_process(
-  COMMAND "${CMAKE_COMMAND}" --build "${TEST_BINARY_DIR}/producer-build"
+  COMMAND "${CMAKE_COMMAND}" ${producer_build_args}
   RESULT_VARIABLE producer_build_result
 )
 if(NOT producer_build_result EQUAL 0)
   message(FATAL_ERROR "Failed to build the producer install tree.")
 endif()
 
+set(producer_install_args
+  --install "${TEST_BINARY_DIR}/producer-build"
+)
+if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
+  list(APPEND producer_install_args --config "${TEST_CONFIG}")
+endif()
+
 execute_process(
-  COMMAND "${CMAKE_COMMAND}" --install "${TEST_BINARY_DIR}/producer-build"
+  COMMAND "${CMAKE_COMMAND}" ${producer_install_args}
   RESULT_VARIABLE producer_install_result
 )
 if(NOT producer_install_result EQUAL 0)
@@ -69,8 +83,8 @@ if(DEFINED CMAKE_Fortran_COMPILER AND NOT CMAKE_Fortran_COMPILER STREQUAL "")
   list(APPEND consumer_configure_args -DCMAKE_Fortran_COMPILER=${CMAKE_Fortran_COMPILER})
 endif()
 
-if(DEFINED CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE STREQUAL "")
-  list(APPEND consumer_configure_args -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+if(DEFINED TEST_BUILD_TYPE AND NOT TEST_BUILD_TYPE STREQUAL "")
+  list(APPEND consumer_configure_args -DCMAKE_BUILD_TYPE=${TEST_BUILD_TYPE})
 endif()
 
 execute_process(
@@ -81,8 +95,15 @@ if(NOT consumer_configure_result EQUAL 0)
   message(FATAL_ERROR "Failed to configure the installed-package consumer.")
 endif()
 
+set(consumer_build_args
+  --build "${consumer_build_dir}"
+)
+if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
+  list(APPEND consumer_build_args --config "${TEST_CONFIG}")
+endif()
+
 execute_process(
-  COMMAND "${CMAKE_COMMAND}" --build "${consumer_build_dir}"
+  COMMAND "${CMAKE_COMMAND}" ${consumer_build_args}
   RESULT_VARIABLE consumer_build_result
 )
 if(NOT consumer_build_result EQUAL 0)
