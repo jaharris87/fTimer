@@ -12,6 +12,20 @@ add_test(NAME ftimer_init_contract_docs
     -P ${CMAKE_CURRENT_SOURCE_DIR}/check_init_contract_docs.cmake
 )
 
+if(FTIMER_BUILD_SMOKE_TESTS)
+  add_test(NAME ftimer_installed_package_consumer
+    COMMAND ${CMAKE_COMMAND}
+      -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+      -DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer
+      -DCMAKE_GENERATOR=${CMAKE_GENERATOR}
+      -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+      -DCMAKE_Fortran_COMPILER=${CMAKE_Fortran_COMPILER}
+      -DTEST_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+      "-DTEST_CONFIG=$<CONFIG>"
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/check_installed_package_consumer.cmake
+  )
+endif()
+
 if(FTIMER_BUILD_TESTS)
   # Serial pFUnit tests
   set(SERIAL_TEST_SOURCES

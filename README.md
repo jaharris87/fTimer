@@ -96,7 +96,7 @@ This produces a structured table of per-operation nanosecond costs useful for id
 ## Build
 
 ```bash
-# Smoke-test-only path
+# Smoke-test-only path (includes install/export consumer verification)
 cmake -B build-smoke
 cmake --build build-smoke
 ctest --test-dir build-smoke --output-on-failure
@@ -137,7 +137,7 @@ Requires: a Fortran compiler with preprocess support, CMake >= 3.16, pFUnit when
 Current defaults:
 
 - CMake is the only supported build path right now.
-- Smoke tests are enabled by default and stay intentionally minimal.
+- Smoke tests are enabled by default and cover both the in-tree phase-0 smoke executable and an out-of-tree installed-package consumer configure/build check.
 - pFUnit-backed behavioral tests are opt-in via `FTIMER_BUILD_TESTS=ON`.
 - Installing `fTimer` always exports the same consumer-facing library/modules whether or not `FTIMER_BUILD_TESTS=ON`; test-only modules stay build-tree-only and are not installed.
 - `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`; incompatible default-compiler MPI paths now fail during configure with guidance instead of reaching a later compile failure.
