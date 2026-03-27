@@ -4,8 +4,10 @@ module test_procedural_api
                      ftimer_lookup, ftimer_print_summary, ftimer_reset, ftimer_start, ftimer_start_id, &
                      ftimer_stop, ftimer_stop_id, ftimer_write_summary
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
-   use ftimer_types, only: FTIMER_MISMATCH_STRICT, FTIMER_SUCCESS, ftimer_metadata_t, ftimer_summary_t, wp
-   use test_support, only: attach_mock_clock, fake_time, read_file_text, read_unit_text, snapshot_timer
+   use ftimer_types, only: FTIMER_MISMATCH_STRICT, FTIMER_ERR_NOT_INIT, FTIMER_SUCCESS, ftimer_metadata_t, &
+                           ftimer_summary_t, wp
+   use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time, read_file_text, &
+                           read_unit_text, snapshot_timer
    implicit none
 
 contains
@@ -323,6 +325,153 @@ contains
 
       call cleanup_matching_timers(oop_timer, ierr)
    end subroutine test_procedural_print_summary_matches_oop
+
+   @test
+   subroutine test_procedural_start_before_init_matches_oop_stderr_contract()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_test_state_t) :: oop_state
+      type(ftimer_test_state_t) :: procedural_state
+      character(len=:), allocatable :: oop_stderr
+      character(len=:), allocatable :: procedural_stderr
+      integer :: capture_ierr
+      integer :: ierr
+      integer :: saved_fd
+      logical :: oop_silent
+      logical :: procedural_silent
+      logical :: oop_warned
+      logical :: procedural_warned
+
+      call begin_stderr_capture('test_procedural_start_before_init_oop_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call oop_timer%start("before_init", ierr=ierr)
+      call end_stderr_capture('test_procedural_start_before_init_oop_ierr.err', saved_fd, oop_stderr, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+
+      call begin_stderr_capture('test_procedural_start_before_init_procedural_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_start("before_init", ierr=ierr)
+      call end_stderr_capture('test_procedural_start_before_init_procedural_ierr.err', saved_fd, procedural_stderr, &
+                              capture_ierr)
+      @assertEqual(0, capture_ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+
+      oop_silent = len_trim(oop_stderr) == 0
+      procedural_silent = len_trim(procedural_stderr) == 0
+      @assertTrue(oop_silent)
+      @assertTrue(procedural_silent)
+
+      call begin_stderr_capture('test_procedural_start_before_init_oop_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call oop_timer%start("before_init")
+      call end_stderr_capture('test_procedural_start_before_init_oop_warn.err', saved_fd, oop_stderr, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call begin_stderr_capture('test_procedural_start_before_init_procedural_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_start("before_init")
+      call end_stderr_capture('test_procedural_start_before_init_procedural_warn.err', saved_fd, procedural_stderr, &
+                              capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      oop_warned = index(oop_stderr, 'ftimer start before init') > 0
+      procedural_warned = index(procedural_stderr, 'ftimer start before init') > 0
+      @assertTrue(oop_warned)
+      @assertTrue(procedural_warned)
+
+      call snapshot_timer(oop_timer, oop_state)
+      call snapshot_timer(ftimer_default_instance, procedural_state)
+      @assertFalse(oop_state%initialized)
+      @assertFalse(procedural_state%initialized)
+      @assertEqual(0, oop_state%num_segments)
+      @assertEqual(0, procedural_state%num_segments)
+      @assertEqual(0, oop_state%call_stack%depth)
+      @assertEqual(0, procedural_state%call_stack%depth)
+   end subroutine test_procedural_start_before_init_matches_oop_stderr_contract
+
+   @test
+   subroutine test_procedural_print_summary_before_init_matches_oop()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_test_state_t) :: oop_state
+      type(ftimer_test_state_t) :: procedural_state
+      character(len=:), allocatable :: oop_stderr
+      character(len=:), allocatable :: procedural_stderr
+      character(len=:), allocatable :: oop_text
+      character(len=:), allocatable :: procedural_text
+      integer :: capture_ierr
+      integer :: ierr
+      integer :: oop_unit
+      integer :: procedural_unit
+      integer :: saved_fd
+      logical :: oop_warned
+      logical :: procedural_warned
+      logical :: oop_silent
+      logical :: procedural_silent
+
+      open (newunit=oop_unit, status='scratch', action='readwrite')
+      open (newunit=procedural_unit, status='scratch', action='readwrite')
+
+      call begin_stderr_capture('test_procedural_print_summary_before_init_oop.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call oop_timer%print_summary(unit=oop_unit)
+      call end_stderr_capture('test_procedural_print_summary_before_init_oop.err', saved_fd, oop_stderr, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call begin_stderr_capture('test_procedural_print_summary_before_init_procedural.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_print_summary(unit=procedural_unit)
+      call end_stderr_capture('test_procedural_print_summary_before_init_procedural.err', saved_fd, procedural_stderr, &
+                              capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      oop_text = read_unit_text(oop_unit)
+      procedural_text = read_unit_text(procedural_unit)
+      oop_warned = index(oop_stderr, 'ftimer print_summary before init') > 0
+      procedural_warned = index(procedural_stderr, 'ftimer print_summary before init') > 0
+
+      @assertTrue(oop_warned)
+      @assertTrue(procedural_warned)
+      @assertEqual('', oop_text)
+      @assertEqual('', procedural_text)
+
+      call begin_stderr_capture('test_procedural_print_summary_before_init_oop_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call oop_timer%print_summary(unit=oop_unit, ierr=ierr)
+      call end_stderr_capture('test_procedural_print_summary_before_init_oop_ierr.err', saved_fd, oop_stderr, &
+                              capture_ierr)
+      @assertEqual(0, capture_ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+
+      call begin_stderr_capture('test_procedural_print_summary_before_init_procedural_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_print_summary(unit=procedural_unit, ierr=ierr)
+      call end_stderr_capture('test_procedural_print_summary_before_init_procedural_ierr.err', saved_fd, &
+                              procedural_stderr, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+
+      oop_text = read_unit_text(oop_unit)
+      procedural_text = read_unit_text(procedural_unit)
+      oop_silent = len_trim(oop_stderr) == 0
+      procedural_silent = len_trim(procedural_stderr) == 0
+
+      @assertEqual('', oop_text)
+      @assertEqual('', procedural_text)
+      @assertTrue(oop_silent)
+      @assertTrue(procedural_silent)
+
+      call snapshot_timer(oop_timer, oop_state)
+      call snapshot_timer(ftimer_default_instance, procedural_state)
+      @assertFalse(oop_state%initialized)
+      @assertFalse(procedural_state%initialized)
+      @assertEqual(0, oop_state%num_segments)
+      @assertEqual(0, procedural_state%num_segments)
+      @assertEqual(0, oop_state%call_stack%depth)
+      @assertEqual(0, procedural_state%call_stack%depth)
+
+      close (oop_unit)
+      close (procedural_unit)
+   end subroutine test_procedural_print_summary_before_init_matches_oop
 
    @test
    subroutine test_procedural_write_summary_matches_oop()

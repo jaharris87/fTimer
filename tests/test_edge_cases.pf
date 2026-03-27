@@ -3,8 +3,9 @@ module test_edge_cases
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, &
                            FTIMER_NAME_LEN, FTIMER_SUCCESS, ftimer_call_stack_t, wp
+   use, intrinsic :: iso_fortran_env, only: error_unit
    use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time, &
-                           find_context_idx, snapshot_timer
+                           find_context_idx, read_unit_text, snapshot_timer
    implicit none
 
 contains
@@ -24,43 +25,79 @@ contains
    @test
    subroutine test_print_summary_before_init_with_ierr_is_silent()
       type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: after_state
+      type(ftimer_test_state_t) :: before_state
       character(len=:), allocatable :: stderr_text
       integer :: capture_ierr
       integer :: ierr
       integer :: saved_fd
+      integer :: unit
       logical :: is_silent
+      logical :: state_unchanged
+      character(len=:), allocatable :: unit_text
 
+      call snapshot_timer(timer, before_state)
+      open (newunit=unit, status='scratch', action='readwrite')
       call begin_stderr_capture('test_print_summary_before_init_with_ierr.err', saved_fd, capture_ierr)
       @assertEqual(0, capture_ierr)
 
-      call timer%print_summary(ierr=ierr)
+      call timer%print_summary(unit=unit, ierr=ierr)
 
       call end_stderr_capture('test_print_summary_before_init_with_ierr.err', saved_fd, stderr_text, capture_ierr)
       @assertEqual(0, capture_ierr)
       @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
 
       is_silent = len_trim(stderr_text) == 0
+      unit_text = read_unit_text(unit)
+      call snapshot_timer(timer, after_state)
+      state_unchanged = (after_state%initialized .eqv. before_state%initialized) .and. &
+                        (after_state%num_segments == before_state%num_segments) .and. &
+                        (after_state%call_stack%depth == before_state%call_stack%depth) .and. &
+                        (after_state%init_wtime == before_state%init_wtime) .and. &
+                        (after_state%init_date == before_state%init_date)
+
       @assertTrue(is_silent)
+      @assertEqual('', unit_text)
+      @assertTrue(state_unchanged)
+      close (unit)
    end subroutine test_print_summary_before_init_with_ierr_is_silent
 
    @test
    subroutine test_print_summary_before_init_without_ierr_warns_to_stderr()
       type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: after_state
+      type(ftimer_test_state_t) :: before_state
       character(len=:), allocatable :: stderr_text
       integer :: capture_ierr
       integer :: saved_fd
+      integer :: unit
       logical :: has_warning
+      logical :: state_unchanged
+      character(len=:), allocatable :: unit_text
 
+      call snapshot_timer(timer, before_state)
+      open (newunit=unit, status='scratch', action='readwrite')
       call begin_stderr_capture('test_print_summary_before_init_without_ierr.err', saved_fd, capture_ierr)
       @assertEqual(0, capture_ierr)
 
-      call timer%print_summary()
+      call timer%print_summary(unit=unit)
 
       call end_stderr_capture('test_print_summary_before_init_without_ierr.err', saved_fd, stderr_text, capture_ierr)
       @assertEqual(0, capture_ierr)
 
       has_warning = index(stderr_text, 'ftimer print_summary before init') > 0
+      unit_text = read_unit_text(unit)
+      call snapshot_timer(timer, after_state)
+      state_unchanged = (after_state%initialized .eqv. before_state%initialized) .and. &
+                        (after_state%num_segments == before_state%num_segments) .and. &
+                        (after_state%call_stack%depth == before_state%call_stack%depth) .and. &
+                        (after_state%init_wtime == before_state%init_wtime) .and. &
+                        (after_state%init_date == before_state%init_date)
+
       @assertTrue(has_warning)
+      @assertEqual('', unit_text)
+      @assertTrue(state_unchanged)
+      close (unit)
    end subroutine test_print_summary_before_init_without_ierr_warns_to_stderr
 
    @test
@@ -361,6 +398,36 @@ contains
       @assertFalse(second_has_start)
       @assertTrue(second_has_stop)
    end subroutine test_stderr_capture_isolates_sequential_warning_blocks
+
+   @test
+   subroutine test_stderr_capture_restores_and_isolates_direct_stderr_writes()
+      character(len=:), allocatable :: first_stderr
+      character(len=:), allocatable :: second_stderr
+      integer :: capture_ierr
+      integer :: saved_fd
+      logical :: first_has_message
+      logical :: second_is_silent
+
+      call begin_stderr_capture('test_stderr_capture_direct_first.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      write (error_unit, '(a)') 'direct stderr message'
+
+      call end_stderr_capture('test_stderr_capture_direct_first.err', saved_fd, first_stderr, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call begin_stderr_capture('test_stderr_capture_direct_second.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call end_stderr_capture('test_stderr_capture_direct_second.err', saved_fd, second_stderr, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      first_has_message = index(first_stderr, 'direct stderr message') > 0
+      second_is_silent = len_trim(second_stderr) == 0
+
+      @assertTrue(first_has_message)
+      @assertTrue(second_is_silent)
+   end subroutine test_stderr_capture_restores_and_isolates_direct_stderr_writes
 
    @test
    subroutine test_dynamic_growth_creates_many_segments()
