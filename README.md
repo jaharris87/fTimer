@@ -57,6 +57,8 @@ end program quick_start
 
 Use `ftimer` for the procedural API and `ftimer_types` for shared types and constants such as `ftimer_summary_t`, `ftimer_metadata_t`, `FTIMER_MISMATCH_*`, and `FTIMER_MPI_SUMMARY_*`.
 
+For metadata headers, construct `ftimer_metadata_t` values by assigning `%key` and `%value` directly. fTimer does not currently provide a helper constructor such as `ftimer_metadata(...)`.
+
 ## First Success
 
 The fastest evaluation path is the serial smoke build plus the `basic_usage` example:
