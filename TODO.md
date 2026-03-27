@@ -102,5 +102,5 @@ Master-thread-only timing. Light touch — guards only, not thread-local instanc
 - [x] MPI pFUnit suite passes (`ctest --test-dir build-mpi-tests --output-on-failure -L mpi`)
 - [x] OpenMP pFUnit suite passes (`ctest --test-dir build-openmp-tests --output-on-failure`)
 - [x] Linter clean across `src/`, `tests/`, and `examples/`
-- [ ] CI green on all jobs (serial smoke, MPI smoke, OpenMP smoke, build-contract regressions, serial/MPI/OpenMP pFUnit, bench, lint)
+- [x] CI green on all jobs (serial smoke, MPI smoke, OpenMP smoke, build-contract regressions, serial/MPI/OpenMP pFUnit, bench, lint)
 - [x] Implementation documentation accurate and complete (`CLAUDE.md`, `AGENTS.md`, `README.md`, `docs/semantics.md`)
