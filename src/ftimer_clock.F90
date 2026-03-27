@@ -47,11 +47,12 @@ contains
       character(len=40) :: stamp
       character(len=5) :: zone
       integer(int64) :: count
+      integer(int64) :: count_max
       integer(int64) :: rate
       integer :: values(8)
 
-      call system_clock(count=count, count_rate=rate)
-      if (has_cached_date_stamp .and. (rate > 0_int64) .and. (cached_date_rate == rate)) then
+      call system_clock(count=count, count_rate=rate, count_max=count_max)
+      if (has_cached_date_stamp .and. clock_cache_supported(rate, count_max) .and. (cached_date_rate == rate)) then
          if (count < cached_next_refresh_count) then
             stamp = cached_date_stamp
             return
@@ -62,7 +63,7 @@ contains
       write (stamp, '(i4.4,"-",i2.2,"-",i2.2," ",i2.2,":",i2.2,":",i2.2," ",a)') &
          values(1), values(2), values(3), values(5), values(6), values(7), zone
 
-      if (rate > 0_int64) then
+      if (clock_cache_supported(rate, count_max)) then
          call system_clock(count=count)
          cached_date_stamp = stamp
          cached_date_rate = rate
@@ -85,5 +86,12 @@ contains
       delta = (millis64*rate + 999_int64)/1000_int64
       if (delta <= 0_int64) delta = 1_int64
    end function milliseconds_to_clock_counts
+
+   logical function clock_cache_supported(rate, count_max) result(supported)
+      integer(int64), intent(in) :: rate
+      integer(int64), intent(in) :: count_max
+
+      supported = (rate > 0_int64) .and. (count_max == huge(count_max))
+   end function clock_cache_supported
 
 end module ftimer_clock
