@@ -17,6 +17,7 @@ This directory is the authoritative inventory for the long-form review prompt li
 
 ### Additional detailed reviews
 
+- `adoptability-review.md` — targeted review for onboarding friction, downstream integration effort, and time-to-first-success for new users and contributors.
 - `api-compat-review.md` — targeted review for API stability, user-facing compatibility, and upgrade risk.
 - `build-portability-review.md` — targeted review for build behavior, toolchain assumptions, and portability regressions.
 - `completion-audit-review.md` — use at issue, phase, or release boundaries to verify that claimed work is actually complete and that docs, tests, and acceptance criteria are honestly closed. Not intended as a routine per-PR review.
