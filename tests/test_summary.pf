@@ -1,9 +1,10 @@
 module test_summary
    use pfunit
    use ftimer_core, only: ftimer_t
-   use ftimer_summary, only: format_summary
-   use ftimer_types, only: FTIMER_SUCCESS, ftimer_metadata_t, ftimer_summary_t, wp
-   use test_support, only: attach_mock_clock, fake_time, read_unit_text
+   use ftimer_summary, only: build_summary, format_summary
+   use ftimer_types, only: FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_metadata_t, ftimer_segment_t, &
+                           ftimer_summary_t, wp
+   use test_support, only: attach_mock_clock, build_stack, fake_time, read_unit_text
    implicit none
 
 contains
@@ -262,6 +263,33 @@ contains
       @assertEqual(2.0_wp, summary%entries(3)%self_time)
       @assertEqual(3.0_wp, summary%entries(4)%self_time)
    end subroutine test_get_summary_keeps_same_timer_distinct_across_parents
+
+   @test
+   subroutine test_build_summary_skips_visible_child_without_visible_parent()
+      type(ftimer_call_stack_t) :: root_stack
+      type(ftimer_segment_t) :: segments(2)
+      type(ftimer_summary_t) :: summary
+      integer :: ctx
+
+      segments(1)%name = 'A'
+      ctx = segments(1)%contexts%add(root_stack)
+      allocate (segments(1)%call_count(1))
+      allocate (segments(1)%time(1))
+      segments(1)%call_count(ctx) = 0
+      segments(1)%time(ctx) = 0.0_wp
+
+      segments(2)%name = 'B'
+      ctx = segments(2)%contexts%add(build_stack([1]))
+      allocate (segments(2)%call_count(1))
+      allocate (segments(2)%time(1))
+      segments(2)%call_count(ctx) = 1
+      segments(2)%time(ctx) = 2.0_wp
+
+      call build_summary(summary, segments, 0.0_wp, 'start', 2.0_wp, 'end')
+
+      @assertEqual(0, summary%num_entries)
+      @assertEqual(2.0_wp, summary%total_time)
+   end subroutine test_build_summary_skips_visible_child_without_visible_parent
 
    @test
    subroutine test_format_summary_escapes_unsafe_names()
