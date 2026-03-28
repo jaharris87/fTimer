@@ -8,9 +8,10 @@ name: Codex Review Routing and Triggers
 # reliably follow previous long-form trigger prompts. The long-form prompt
 # library still lives under .github/prompts/detailed/ for fallback reviews and
 # deeper manual review roles. On synchronize events, active reviews rerun only
-# when the latest-push file delta still matches that role's routing rules. The
-# role catalog and auto-routing rules now live in .github/codex-review-roles.json
-# so docs and automation share one source.
+# when the latest-push file delta still matches that role's routing rules, and
+# only after the previous trigger comment for that role no longer has Codex's
+# in-progress `eyes` reaction. The role catalog and auto-routing rules now live
+# in .github/codex-review-roles.json so docs and automation share one source.
 #
 # Prerequisites:
 #   1. Create a fine-grained PAT with pull-requests:write on this repo
@@ -177,6 +178,31 @@ jobs:
                   | last.sha // empty
                 ' /tmp/codex-comments.json
             )"
+
+            previous_role_comment_id="$(
+              jq -r \
+                --arg role_id "$role_id" '
+                  [
+                    .[]
+                    | select((.body // "") | test("codex-review role=" + $role_id + " sha=[0-9a-f]+ v="))
+                    | {created_at, id}
+                  ]
+                  | sort_by(.created_at)
+                  | last.id // empty
+                ' /tmp/codex-comments.json
+            )"
+
+            if [ -n "$previous_role_comment_id" ]; then
+              previous_role_reactions="$(
+                gh api -H 'Accept: application/vnd.github+json' \
+                  "repos/${{ github.repository }}/issues/comments/${previous_role_comment_id}/reactions"
+              )"
+
+              if jq -e 'any(.[]; .content == "eyes")' <<<"$previous_role_reactions" >/dev/null; then
+                echo "Skipping ${label} because the previous trigger comment ${previous_role_comment_id} still has an in-progress eyes reaction."
+                continue
+              fi
+            fi
 
             if [ "$event_action" = "synchronize" ] && [ -n "$previous_role_sha" ] && [ "$previous_role_sha" != "$head_sha" ]; then
               compare_file="/tmp/codex-compare-${previous_role_sha}-${head_sha}.json"
