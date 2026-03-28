@@ -42,10 +42,30 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
         run: |
-          last_created_at="$(
-            gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
-              --jq '[.[] | select(.body | startswith("@codex review ")) | .created_at] | last // empty'
-          )"
+          last_created_at=""
+          page=1
+
+          while true; do
+            page_comments="$(
+              gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?sort=created&direction=desc&per_page=100&page=${page}"
+            )"
+            page_count="$(printf '%s' "$page_comments" | jq 'length')"
+
+            if [ "$page_count" -eq 0 ]; then
+              break
+            fi
+
+            last_created_at="$(
+              printf '%s' "$page_comments" \
+                | jq -r '[.[] | select(.body | startswith("@codex review ")) | .created_at] | first // empty'
+            )"
+
+            if [ -n "$last_created_at" ]; then
+              break
+            fi
+
+            page="$((page + 1))"
+          done
 
           if [ -n "$last_created_at" ]; then
             now_epoch="$(date -u +%s)"
@@ -83,10 +103,30 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
         run: |
-          last_created_at="$(
-            gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
-              --jq '[.[] | select(.body | startswith("@codex review ")) | .created_at] | last // empty'
-          )"
+          last_created_at=""
+          page=1
+
+          while true; do
+            page_comments="$(
+              gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?sort=created&direction=desc&per_page=100&page=${page}"
+            )"
+            page_count="$(printf '%s' "$page_comments" | jq 'length')"
+
+            if [ "$page_count" -eq 0 ]; then
+              break
+            fi
+
+            last_created_at="$(
+              printf '%s' "$page_comments" \
+                | jq -r '[.[] | select(.body | startswith("@codex review ")) | .created_at] | first // empty'
+            )"
+
+            if [ -n "$last_created_at" ]; then
+              break
+            fi
+
+            page="$((page + 1))"
+          done
 
           if [ -n "$last_created_at" ]; then
             now_epoch="$(date -u +%s)"
@@ -124,10 +164,30 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
         run: |
-          last_created_at="$(
-            gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
-              --jq '[.[] | select(.body | startswith("@codex review ")) | .created_at] | last // empty'
-          )"
+          last_created_at=""
+          page=1
+
+          while true; do
+            page_comments="$(
+              gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?sort=created&direction=desc&per_page=100&page=${page}"
+            )"
+            page_count="$(printf '%s' "$page_comments" | jq 'length')"
+
+            if [ "$page_count" -eq 0 ]; then
+              break
+            fi
+
+            last_created_at="$(
+              printf '%s' "$page_comments" \
+                | jq -r '[.[] | select(.body | startswith("@codex review ")) | .created_at] | first // empty'
+            )"
+
+            if [ -n "$last_created_at" ]; then
+              break
+            fi
+
+            page="$((page + 1))"
+          done
 
           if [ -n "$last_created_at" ]; then
             now_epoch="$(date -u +%s)"
