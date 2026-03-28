@@ -58,6 +58,7 @@ Useful commands:
 ## Known Limitations Of Native Codex GitHub Reviews
 
 - A passing trigger workflow only proves that the `@codex review` comment was posted.
+- When multiple review labels are applied in quick succession, the trigger workflow serializes those jobs per PR and spaces subsequent `@codex review` comments by at least 30 seconds to reduce cross-trigger mix-ups.
 - Native Codex review did not reliably follow the previous long-form trigger prompts, so the workflow now uses single-line trigger comments and keeps the detailed versions in a separate long-form prompt library for fallback and non-triggered deep reviews.
 - Codex review bodies may ignore prompt instructions about top-level headings.
 - A "no findings" outcome may appear as a generic comment or reaction rather than a distinct type-specific review body.

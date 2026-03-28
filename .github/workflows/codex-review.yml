@@ -25,15 +25,59 @@ permissions:
   pull-requests: write
   issues: write
 
+env:
+  CODEX_REVIEW_COMMENT_SPACING_SECONDS: 30
+
 jobs:
   software-review:
     if: github.event.label.name == 'codex-software-review'
     concurrency:
-      group: codex-software-review-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      group: codex-review-trigger-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Wait for review trigger spacing window
+        env:
+          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
+        run: |
+          last_created_at=""
+          page=1
+
+          while true; do
+            page_comments="$(
+              gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?sort=created&direction=desc&per_page=100&page=${page}"
+            )"
+            page_count="$(printf '%s' "$page_comments" | jq 'length')"
+
+            if [ "$page_count" -eq 0 ]; then
+              break
+            fi
+
+            last_created_at="$(
+              printf '%s' "$page_comments" \
+                | jq -r '[.[] | select(.body | startswith("@codex review ")) | .created_at] | first // empty'
+            )"
+
+            if [ -n "$last_created_at" ]; then
+              break
+            fi
+
+            page="$((page + 1))"
+          done
+
+          if [ -n "$last_created_at" ]; then
+            now_epoch="$(date -u +%s)"
+            last_epoch="$(date -u -d "$last_created_at" +%s)"
+            elapsed="$((now_epoch - last_epoch))"
+            remaining="$((CODEX_REVIEW_COMMENT_SPACING_SECONDS - elapsed))"
+
+            if [ "$remaining" -gt 0 ]; then
+              echo "Sleeping ${remaining}s to keep @codex review comments at least ${CODEX_REVIEW_COMMENT_SPACING_SECONDS}s apart."
+              sleep "$remaining"
+            fi
+          fi
 
       - name: Post condensed software review trigger
         env:
@@ -49,11 +93,52 @@ jobs:
   methodology-review:
     if: github.event.label.name == 'codex-methodology-review'
     concurrency:
-      group: codex-methodology-review-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      group: codex-review-trigger-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Wait for review trigger spacing window
+        env:
+          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
+        run: |
+          last_created_at=""
+          page=1
+
+          while true; do
+            page_comments="$(
+              gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?sort=created&direction=desc&per_page=100&page=${page}"
+            )"
+            page_count="$(printf '%s' "$page_comments" | jq 'length')"
+
+            if [ "$page_count" -eq 0 ]; then
+              break
+            fi
+
+            last_created_at="$(
+              printf '%s' "$page_comments" \
+                | jq -r '[.[] | select(.body | startswith("@codex review ")) | .created_at] | first // empty'
+            )"
+
+            if [ -n "$last_created_at" ]; then
+              break
+            fi
+
+            page="$((page + 1))"
+          done
+
+          if [ -n "$last_created_at" ]; then
+            now_epoch="$(date -u +%s)"
+            last_epoch="$(date -u -d "$last_created_at" +%s)"
+            elapsed="$((now_epoch - last_epoch))"
+            remaining="$((CODEX_REVIEW_COMMENT_SPACING_SECONDS - elapsed))"
+
+            if [ "$remaining" -gt 0 ]; then
+              echo "Sleeping ${remaining}s to keep @codex review comments at least ${CODEX_REVIEW_COMMENT_SPACING_SECONDS}s apart."
+              sleep "$remaining"
+            fi
+          fi
 
       - name: Post condensed methodology review trigger
         env:
@@ -69,11 +154,52 @@ jobs:
   red-team-review:
     if: github.event.label.name == 'codex-red-team-review'
     concurrency:
-      group: codex-red-team-review-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      group: codex-review-trigger-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Wait for review trigger spacing window
+        env:
+          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
+        run: |
+          last_created_at=""
+          page=1
+
+          while true; do
+            page_comments="$(
+              gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?sort=created&direction=desc&per_page=100&page=${page}"
+            )"
+            page_count="$(printf '%s' "$page_comments" | jq 'length')"
+
+            if [ "$page_count" -eq 0 ]; then
+              break
+            fi
+
+            last_created_at="$(
+              printf '%s' "$page_comments" \
+                | jq -r '[.[] | select(.body | startswith("@codex review ")) | .created_at] | first // empty'
+            )"
+
+            if [ -n "$last_created_at" ]; then
+              break
+            fi
+
+            page="$((page + 1))"
+          done
+
+          if [ -n "$last_created_at" ]; then
+            now_epoch="$(date -u +%s)"
+            last_epoch="$(date -u -d "$last_created_at" +%s)"
+            elapsed="$((now_epoch - last_epoch))"
+            remaining="$((CODEX_REVIEW_COMMENT_SPACING_SECONDS - elapsed))"
+
+            if [ "$remaining" -gt 0 ]; then
+              echo "Sleeping ${remaining}s to keep @codex review comments at least ${CODEX_REVIEW_COMMENT_SPACING_SECONDS}s apart."
+              sleep "$remaining"
+            fi
+          fi
 
       - name: Post condensed red team review trigger
         env:

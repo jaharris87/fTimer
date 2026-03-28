@@ -28,7 +28,7 @@ For every scoped piece of work:
 
 ## Detailed Prompt Library
 
-The native trigger workflow posts single-line `@codex review ...` comments built from `.github/prompts/`. The authoritative inventory for the long-form prompt library lives in `.github/prompts/detailed/README.md`.
+The native trigger workflow posts single-line `@codex review ...` comments built from `.github/prompts/`. When multiple review labels are applied close together, the workflow now serializes those trigger jobs per PR and waits to keep subsequent `@codex review` comments at least 30 seconds apart. The authoritative inventory for the long-form prompt library lives in `.github/prompts/detailed/README.md`.
 
 Keep the top-level prompts reserved for label-triggered native reviews. Use the detailed prompts for manual fallback reviews or deeper repo-health reviews that are not wired to PR labels by default. Do not paste a detailed prompt into a PR unless you are intentionally using the documented fallback flow.
 
