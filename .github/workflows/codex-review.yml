@@ -7,8 +7,10 @@ name: Codex Review Routing and Triggers
 # The condensed prompts remain single-line because native Codex review did not
 # reliably follow previous long-form trigger prompts. The long-form prompt
 # library still lives under .github/prompts/detailed/ for fallback reviews and
-# deeper manual review roles. The role catalog and auto-routing rules now live
-# in .github/codex-review-roles.json so docs and automation share one source.
+# deeper manual review roles. On synchronize events, active reviews rerun only
+# when the latest-push file delta still matches that role's routing rules. The
+# role catalog and auto-routing rules now live in .github/codex-review-roles.json
+# so docs and automation share one source.
 #
 # Prerequisites:
 #   1. Create a fine-grained PAT with pull-requests:write on this repo
@@ -106,6 +108,7 @@ jobs:
         run: |
           set -euo pipefail
 
+          event_action="${{ github.event.action }}"
           head_sha="${{ github.event.pull_request.head.sha }}"
 
           jq -n \
@@ -141,18 +144,60 @@ jobs:
               --slurpfile current /tmp/codex-active-review-labels.json \
               '.roles[]
                | select(.label as $label | any($current[0][]; . == $label))
-               | [.id, .label, .prompt_file, (.prompt_version | tostring)] | @tsv' \
+               | @base64' \
               "$CODEX_REVIEW_ROLE_MANIFEST"
           )
 
           for row in "${review_rows[@]}"; do
-            IFS=$'\t' read -r role_id label prompt_file prompt_version <<< "$row"
+            role_json="$(printf '%s' "$row" | base64 --decode)"
+            role_id="$(jq -r '.id' <<<"$role_json")"
+            label="$(jq -r '.label' <<<"$role_json")"
+            prompt_file="$(jq -r '.prompt_file' <<<"$role_json")"
+            prompt_version="$(jq -r '.prompt_version' <<<"$role_json")"
             token="codex-review role=${role_id} sha=${head_sha} v=${prompt_version}"
 
             if jq -e --arg token "$token" 'any(.[]; (.body // "") | contains($token))' \
               /tmp/codex-comments.json >/dev/null; then
               echo "Review for ${label} already triggered at ${head_sha} with prompt v${prompt_version}."
               continue
+            fi
+
+            previous_role_sha="$(
+              jq -r \
+                --arg role_id "$role_id" '
+                  [
+                    .[]
+                    | select((.body // "") | test("codex-review role=" + $role_id + " sha=[0-9a-f]+ v="))
+                    | {
+                        created_at,
+                        sha: ((.body // "") | capture("codex-review role=" + $role_id + " sha=(?<sha>[0-9a-f]+) v=").sha)
+                      }
+                  ]
+                  | sort_by(.created_at)
+                  | last.sha // empty
+                ' /tmp/codex-comments.json
+            )"
+
+            if [ "$event_action" = "synchronize" ] && [ -n "$previous_role_sha" ] && [ "$previous_role_sha" != "$head_sha" ]; then
+              compare_file="/tmp/codex-compare-${previous_role_sha}-${head_sha}.json"
+
+              if [ ! -f "$compare_file" ]; then
+                gh api "repos/${{ github.repository }}/compare/${previous_role_sha}...${head_sha}" \
+                  | jq '[.files[]?.filename] | sort | unique' \
+                  > "$compare_file"
+              fi
+
+              if ! jq -e \
+                --slurpfile files "$compare_file" \
+                '
+                  def matches_role:
+                    (.selectors.always // false)
+                    or ([ (.selectors.path_regex_any // [])[] as $re | any($files[0][]; test($re)) ] | any);
+                  matches_role
+                ' <<<"$role_json" >/dev/null; then
+                echo "Skipping ${label} on synchronize because files changed since ${previous_role_sha} do not match this role."
+                continue
+              fi
             fi
 
             now_epoch="$(date -u +%s)"
