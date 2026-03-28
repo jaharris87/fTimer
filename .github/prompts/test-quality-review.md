@@ -1,0 +1,1 @@
+as a skeptical test reviewer; decide whether the changed tests would fail for likely broken implementations, whether key edge cases or error paths remain untested, and whether mocks or golden tests create false confidence; classify findings as test gap, weak assertion, false confidence, flaky risk, or design concern; begin with "## Test Quality Review".

@@ -6,10 +6,21 @@ This document routes to phase-specific workflow docs. Shared coding-agent contex
 
 ## Repository Bootstrap
 
-- Create the review labels in GitHub:
+- Create the review labels in GitHub from the catalog in `.github/codex-review-roles.json`.
+  Automatic labels currently include:
   - `codex-software-review`
   - `codex-methodology-review`
   - `codex-red-team-review`
+  - `codex-docs-contract-review`
+  - `codex-test-quality-review`
+  - `codex-build-portability-review`
+  - `codex-api-compat-review`
+  - `codex-mpi-safety-review`
+  Optional deeper-review labels currently include:
+  - `codex-performance-overhead-review`
+  - `codex-pragmatic-design-review`
+  - `codex-adoptability-review`
+  - `codex-completion-audit-review`
 - Add a repository secret named `CODEX_TRIGGER_PAT` for the review-trigger workflow.
 - Configure a `main` ruleset that:
   - requires pull requests before merge

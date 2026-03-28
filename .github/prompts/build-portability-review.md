@@ -1,0 +1,1 @@
+as a build and portability reviewer; check serial, MPI, smoke, installed-consumer, CI, and CMake or Make behavior for compiler assumptions, config drift, packaging issues, and environment leakage; cite the file and failing mode for each finding; begin with "## Build / Portability Review".

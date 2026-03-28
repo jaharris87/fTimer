@@ -1,0 +1,1 @@
+as a completion-audit reviewer; determine what this PR demonstrably completes, what remains partial or overstated, what evidence is still missing, and what can safely be deferred; classify findings as completion gap, overstated claim, validation gap, safe deferral, or blocking gap; begin with "## Completion Audit Review".

@@ -1,0 +1,1 @@
+as an MPI safety reviewer; focus on collective ordering, rank-consistency checks, canonical descriptor ordering, mismatch fallback behavior, and root versus non-root result validity; classify findings as deadlock risk, MPI safety, silent wrong answer, rank inconsistency, or fallback bug; begin with "## MPI Safety Review".

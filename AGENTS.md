@@ -207,16 +207,14 @@ Short version:
 - create or link the GitHub issue first
 - open a ready-for-review PR from a feature branch
 - do not open a draft PR unless the user explicitly asks for a draft
-- always apply `codex-software-review`
-- also apply `codex-methodology-review` when the diff touches: `src/ftimer_core.F90`, `src/ftimer_summary.F90`, `src/ftimer_mpi.F90`, or `docs/semantics.md`
-- also apply `codex-red-team-review` when the diff touches: `src/ftimer_core.F90` (especially `start`, `stop`, or `repair_mismatch`) or `src/ftimer_mpi.F90`
+- let the Codex review router reconcile automatic labels from `.github/codex-review-roles.json`, then verify the result and add any optional deeper-review labels you still want
 - monitor for the actual Codex review output
 - when waiting on `@codex` review, poll in small intervals but give the native review flow at least 5 minutes before considering manual fallback unless the connector explicitly reports that review will not proceed
 - reply to every finding, resolve every review thread, and do not merge while merge-blocking findings remain
 
 For deeper workflow details (monitoring, fallback review, findings disposition, merge criteria), use `docs/maintainer.md` for routing to: `docs/workflows/pr-open.md`, `docs/workflows/review-monitoring.md`, `docs/workflows/findings-disposition.md`.
 
-The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`, with subsequent trigger comments for the same PR spaced by at least 30 seconds to reduce mixed-up responses when multiple review labels land close together. Keep those top-level prompts reserved for the label-triggered PR workflow. Use the detailed prompt library for manual fallback reviews or deeper repository-health reviews that are not wired to PR labels, and treat `.github/prompts/detailed/README.md` as the authoritative catalog of prompt names and usage context.
+The native Codex trigger comments are intentionally posted as single-line `@codex review ...` comments built from `.github/prompts/*.md`, with subsequent trigger comments for the same PR spaced by at least 30 seconds to reduce mixed-up responses when multiple review labels land close together. That automated queue is intentionally limited to the initial PR head SHA; after a push, automated rerouting stops and any additional review requests are manual unless the workflow design changes again. The workflow reads the routing manifest and condensed prompt files from the PR base revision rather than from PR-controlled content. The shared routing and label catalog lives in `.github/codex-review-roles.json`. Keep the top-level prompts reserved for the label-triggered PR workflow. Use the detailed prompt library for manual fallback reviews or deeper repository-health reviews that are not wired to PR labels, and treat `.github/prompts/detailed/README.md` as the authoritative catalog of prompt names and usage context.
 
 ### Review Standards
 
