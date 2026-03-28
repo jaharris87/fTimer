@@ -1,0 +1,71 @@
+name: Strategic question
+description: Frame a product, API, or positioning question before implementation work proceeds.
+title: "Strategic question: "
+labels:
+  - question
+  - strategic-question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when the next valuable step is making a decision rather than writing code.
+        These issues should clarify what needs to be decided, why the decision matters, and what artifact will count as resolution.
+
+  - type: textarea
+    id: framing_question
+    attributes:
+      label: Framing question
+      description: State the question that needs a decision.
+      placeholder: What concrete adopter and workflow is this project or feature trying to serve first?
+    validations:
+      required: true
+
+  - type: textarea
+    id: why_matters
+    attributes:
+      label: Why this matters
+      description: Explain why this decision is important now.
+      placeholder: Several roadmap and API choices depend on this answer, and the current state supports more than one interpretation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_state_pressure
+    attributes:
+      label: Pressure from the current state
+      description: List the concrete implementation, docs, tests, or adopter signals creating the question.
+      placeholder: |
+        - Current API shape makes two conflicting interpretations plausible.
+        - Docs claim broader support than the validated toolchain matrix demonstrates.
+        - Existing examples push users toward an unclear workflow.
+    validations:
+      required: true
+
+  - type: textarea
+    id: options_or_tensions
+    attributes:
+      label: Options or tensions
+      description: Capture the main choices, tradeoffs, or conflicting goals.
+      placeholder: |
+        - Support the broader use case and accept higher implementation complexity.
+        - Narrow the product position and make the constraints explicit.
+    validations:
+      required: false
+
+  - type: textarea
+    id: desired_decision_output
+    attributes:
+      label: Desired decision output
+      description: Describe what will count as resolving this issue.
+      placeholder: A documented position, updated README and semantics docs, and links to any resulting implementation issues.
+    validations:
+      required: true
+
+  - type: textarea
+    id: related_context
+    attributes:
+      label: Related context
+      description: Link related issues, code paths, docs, benchmarks, or external constraints.
+      placeholder: "#129, src/ftimer_mpi.F90, docs/semantics.md"
+    validations:
+      required: false
