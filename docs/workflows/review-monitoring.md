@@ -13,7 +13,32 @@ After opening the PR, or after manually requesting another review on a later pus
 5. Unless the connector explicitly reports that the review will not proceed, give the native `@codex` review flow at least 5 minutes before considering any manual fallback.
 6. After the trigger workflow completes, watch for a `chatgpt-codex-connector` response to the `@codex review` trigger comment indicating the review will not proceed (e.g., quota exhausted). Note: the connector may also post unrelated comments when PR text contains the word "Codex" — those are not fallback signals; only a response to the trigger itself counts.
 7. Once all expected reviews have arrived, respond to every finding.
-8. If reviews have not arrived after 10 minutes and no unavailability signal has appeared on the trigger comment, tell the user and ask how to proceed.
+8. Post a coverage marker comment for each active review role on the current head SHA so the `Codex Review Coverage` check can pass.
+9. If reviews have not arrived after 10 minutes and no unavailability signal has appeared on the trigger comment, tell the user and ask how to proceed.
+
+## Codex Review Coverage Check
+
+The separate `Codex Review Coverage` workflow is the durable merge gate for review coverage.
+
+It checks two things:
+
+1. the automatic review labels still match the current PR diff
+2. every active review role has an explicit coverage marker for the current head SHA
+
+Coverage markers are top-level PR comments that contain a hidden token like one of these:
+
+```text
+Codex review coverage: software covered for <HEAD_SHA> via native review.
+<!-- codex-review-coverage role=software sha=<HEAD_SHA> status=covered source=native -->
+
+Codex review coverage: docs-contract covered for <HEAD_SHA> via manual fallback.
+<!-- codex-review-coverage role=docs-contract sha=<HEAD_SHA> status=covered source=manual-fallback -->
+
+Codex review coverage: red-team waived for <HEAD_SHA> because native review was unavailable and the maintainer accepted the risk.
+<!-- codex-review-coverage role=red-team sha=<HEAD_SHA> status=waived source=maintainer-override -->
+```
+
+Use `status=covered` when the role was actually satisfied, whether by native review or manual fallback. Use `status=waived` only for an explicit maintainer override with a written reason.
 
 ## Fallback When Native Codex Review Is Unavailable
 
@@ -60,6 +85,7 @@ Useful commands:
 - Trigger comments now include hidden `role`, `sha`, and prompt-version metadata so you can tell whether the latest relevant commit has actually been queued for the expected review.
 - Automatic posting is intentionally limited to the initial automated review wave for a given PR head. Once the PR head changes after that first wave begins, the router does not reroute or post more review requests unless a human does so manually.
 - Automatic labels are reconciled in both directions against the current PR diff, so stale auto-routed labels are removed when their selectors no longer match.
+- `Codex Review Coverage` is the durable status check for review coverage. It fails when the active review labels are out of sync with the current diff or when the current head SHA is missing coverage markers for active roles.
 - The role manifest and condensed prompt files are read from the PR base revision rather than from PR-controlled content.
 - The router now enforces a global Codex review lock per PR by looking at the PR body's Codex `eyes` reaction. If that reaction is still present, no new `@codex review` trigger is posted yet.
 - If the PR contains a newer plain manual `@codex review` comment without the workflow metadata token, the router treats that PR as manually managed and does not post additional automated review requests.

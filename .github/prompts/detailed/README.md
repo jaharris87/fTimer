@@ -2,6 +2,7 @@
 
 This directory is the authoritative inventory for the long-form review prompt library.
 
+- `.github/prompts/README.md` is the authoritative contract for the condensed native prompt set used by the label-triggered workflow.
 - `.github/prompts/*.md` remains the condensed prompt set used by the native label-triggered Codex PR workflow.
 - `.github/codex-review-roles.json` is the authoritative machine-readable catalog for label names, prompt files, prompt versions, and automatic-routing rules.
 - Keep the top-level prompts reserved for label-triggered native reviews.

@@ -6,7 +6,7 @@
       "label": "codex-software-review",
       "prompt_file": ".github/prompts/software-review.md",
       "detailed_prompt_file": ".github/prompts/detailed/software-review.md",
-      "prompt_version": 2,
+      "prompt_version": 3,
       "automatic": true,
       "selectors": {
         "always": true
@@ -17,7 +17,7 @@
       "label": "codex-methodology-review",
       "prompt_file": ".github/prompts/methodology-review.md",
       "detailed_prompt_file": ".github/prompts/detailed/methodology-review.md",
-      "prompt_version": 2,
+      "prompt_version": 3,
       "automatic": true,
       "selectors": {
         "path_regex_any": [
@@ -33,7 +33,7 @@
       "label": "codex-red-team-review",
       "prompt_file": ".github/prompts/red-team-review.md",
       "detailed_prompt_file": ".github/prompts/detailed/red-team-review.md",
-      "prompt_version": 2,
+      "prompt_version": 3,
       "automatic": true,
       "selectors": {
         "path_regex_any": [
@@ -49,7 +49,7 @@
       "label": "codex-docs-contract-review",
       "prompt_file": ".github/prompts/docs-contract-review.md",
       "detailed_prompt_file": ".github/prompts/detailed/docs-contract-review.md",
-      "prompt_version": 1,
+      "prompt_version": 2,
       "automatic": true,
       "selectors": {
         "path_regex_any": [

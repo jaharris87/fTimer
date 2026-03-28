@@ -22,7 +22,21 @@ When responding:
 After replying:
 
 - resolve the review thread
+- once a review role is actually satisfied for the current head SHA, post a coverage marker comment so `Codex Review Coverage` can pass
 - verify whether any unresolved review threads remain
+
+Coverage marker examples:
+
+```text
+Codex review coverage: software covered for <HEAD_SHA> via native review.
+<!-- codex-review-coverage role=software sha=<HEAD_SHA> status=covered source=native -->
+
+Codex review coverage: test-quality covered for <HEAD_SHA> via manual fallback.
+<!-- codex-review-coverage role=test-quality sha=<HEAD_SHA> status=covered source=manual-fallback -->
+
+Codex review coverage: red-team waived for <HEAD_SHA> because native review was unavailable and the maintainer accepted the risk.
+<!-- codex-review-coverage role=red-team sha=<HEAD_SHA> status=waived source=maintainer-override -->
+```
 
 ## Deferring Findings Properly
 
@@ -115,3 +129,4 @@ After handling the reviews, report:
 - what was deferred, including the linked follow-up issue number for each deferred finding
 - whether any deferred item is release-blocking but not merge-blocking
 - whether any merge-blocking findings remain
+- whether `Codex Review Coverage` is now satisfied for the current head SHA

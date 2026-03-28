@@ -1,0 +1,209 @@
+name: Codex Review Coverage
+
+# This workflow evaluates whether the current PR head has the expected Codex
+# review coverage recorded for each active review role. It is intentionally
+# separate from the trigger workflow so maintainers can require this status
+# check in branch protection without conflating "queued" with "covered".
+#
+# Coverage is satisfied per active role only when the PR thread contains an
+# explicit coverage marker for the current head SHA:
+#   <!-- codex-review-coverage role=<role-id> sha=<head-sha> status=covered source=native -->
+# or
+#   <!-- codex-review-coverage role=<role-id> sha=<head-sha> status=covered source=manual-fallback -->
+# or
+#   <!-- codex-review-coverage role=<role-id> sha=<head-sha> status=waived source=maintainer-override -->
+#
+# The workflow also keeps the automatic-review labels honest for the current
+# diff, even after later pushes: if the active automatic labels no longer match
+# the current PR files, this check fails until a maintainer reconciles them.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, labeled, unlabeled]
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+env:
+  CODEX_REVIEW_ROLE_MANIFEST_PATH: .github/codex-review-roles.json
+
+jobs:
+  coverage:
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate review coverage for the current PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          pr_number="${{ github.event.pull_request.number || github.event.issue.number }}"
+          pr_json="$(
+            gh api "repos/${{ github.repository }}/pulls/${pr_number}"
+          )"
+
+          pr_state="$(jq -r '.state' <<<"$pr_json")"
+          draft="$(jq -r '.draft' <<<"$pr_json")"
+          head_sha="$(jq -r '.head.sha' <<<"$pr_json")"
+          base_sha="$(jq -r '.base.sha' <<<"$pr_json")"
+
+          if [ "$pr_state" != "open" ]; then
+            echo "PR #${pr_number} is not open; skipping coverage evaluation." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$draft" = "true" ]; then
+            cat >>"$GITHUB_STEP_SUMMARY" <<EOF
+          ## Codex Review Coverage
+
+          PR #${pr_number} is in draft, so Codex review coverage is not required yet.
+          EOF
+            exit 0
+          fi
+
+          gh api --paginate "repos/${{ github.repository }}/pulls/${pr_number}/files?per_page=100" \
+            | jq -s 'add // [] | map(.filename) | sort | unique' \
+            > /tmp/codex-coverage-files.json
+
+          gh api "repos/${{ github.repository }}/contents/${CODEX_REVIEW_ROLE_MANIFEST_PATH}?ref=${base_sha}" \
+            | jq -r '.content' \
+            | tr -d '\n' \
+            | base64 --decode \
+            > /tmp/codex-coverage-roles.json
+
+          gh api "repos/${{ github.repository }}/issues/${pr_number}/labels?per_page=100" \
+            | jq '[.[].name] | sort | unique' > /tmp/codex-coverage-current-labels.json
+
+          gh api --paginate "repos/${{ github.repository }}/issues/${pr_number}/comments?per_page=100" \
+            | jq -s 'add // []' > /tmp/codex-coverage-comments.json
+
+          jq --slurpfile files /tmp/codex-coverage-files.json '
+            def matches_role:
+              (.selectors.always // false)
+              or ([ (.selectors.path_regex_any // [])[] as $re | any($files[0][]; test($re)) ] | any);
+            {
+              automatic_labels: [
+                .roles[]
+                | select(.automatic)
+                | select(matches_role)
+                | .label
+              ],
+              automatic_known_labels: [
+                .roles[]
+                | select(.automatic)
+                | .label
+              ],
+              roles: [
+                .roles[]
+                | {
+                    id,
+                    label,
+                    automatic
+                  }
+              ]
+            }
+          ' /tmp/codex-coverage-roles.json > /tmp/codex-coverage-routing.json
+
+          jq -n \
+            --slurpfile routing /tmp/codex-coverage-routing.json \
+            --slurpfile current /tmp/codex-coverage-current-labels.json \
+            '{
+              expected_auto: $routing[0].automatic_labels,
+              current_auto: [
+                $current[0][]
+                | select(. as $label | any($routing[0].automatic_known_labels[]; . == $label))
+              ],
+              active_roles: [
+                $routing[0].roles[]
+                | select(.label as $label | any($current[0][]; . == $label))
+              ]
+            }
+            | .missing_auto = (.expected_auto - .current_auto)
+            | .stale_auto = (.current_auto - .expected_auto)
+          ' > /tmp/codex-coverage-state.json
+
+          mapfile -t active_role_rows < <(jq -r '.active_roles[] | @base64' /tmp/codex-coverage-state.json)
+          missing_coverage=()
+          covered_roles=()
+
+          for row in "${active_role_rows[@]}"; do
+            role_json="$(printf '%s' "$row" | base64 --decode)"
+            role_id="$(jq -r '.id' <<<"$role_json")"
+            label="$(jq -r '.label' <<<"$role_json")"
+
+            if jq -e --arg role_id "$role_id" --arg sha "$head_sha" '
+              any(
+                .[];
+                (.body // "") | test(
+                  "codex-review-coverage role=" + $role_id
+                  + " sha=" + $sha
+                  + " status=(covered|waived) source=[^ ]+"
+                )
+              )
+            ' /tmp/codex-coverage-comments.json >/dev/null; then
+              covered_roles+=("$role_id ($label)")
+            else
+              missing_coverage+=("$role_id ($label)")
+            fi
+          done
+
+          {
+            echo "## Codex Review Coverage"
+            echo
+            echo "- PR: #${pr_number}"
+            echo "- Head SHA: \`${head_sha}\`"
+            echo
+            echo "### Automatic label sync"
+            echo
+            echo "- Expected automatic labels: \`$(jq -r '.expected_auto | join(", ") // ""' /tmp/codex-coverage-state.json)\`"
+            echo "- Current automatic labels: \`$(jq -r '.current_auto | join(", ") // ""' /tmp/codex-coverage-state.json)\`"
+            echo
+            echo "### Active review roles"
+            echo
+
+            if [ "${#covered_roles[@]}" -gt 0 ]; then
+              for role in "${covered_roles[@]}"; do
+                echo "- covered: \`${role}\`"
+              done
+            fi
+
+            if [ "${#missing_coverage[@]}" -gt 0 ]; then
+              for role in "${missing_coverage[@]}"; do
+                echo "- missing coverage marker: \`${role}\`"
+              done
+            fi
+
+            echo
+            echo "### Coverage marker examples"
+            echo
+            echo '```text'
+            echo "Codex review coverage: software covered for ${head_sha} via native review."
+            echo "<!-- codex-review-coverage role=software sha=${head_sha} status=covered source=native -->"
+            echo
+            echo "Codex review coverage: docs-contract covered for ${head_sha} via manual fallback."
+            echo "<!-- codex-review-coverage role=docs-contract sha=${head_sha} status=covered source=manual-fallback -->"
+            echo
+            echo "Codex review coverage: red-team waived for ${head_sha} because native review was unavailable and the maintainer accepted the risk."
+            echo "<!-- codex-review-coverage role=red-team sha=${head_sha} status=waived source=maintainer-override -->"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+          if [ "$(jq '.missing_auto | length' /tmp/codex-coverage-state.json)" -gt 0 ] || \
+             [ "$(jq '.stale_auto | length' /tmp/codex-coverage-state.json)" -gt 0 ]; then
+            echo "Automatic review labels are out of sync with the current PR diff."
+            echo "Missing automatic labels: $(jq -r '.missing_auto | join(", ")' /tmp/codex-coverage-state.json)"
+            echo "Stale automatic labels: $(jq -r '.stale_auto | join(", ")' /tmp/codex-coverage-state.json)"
+            exit 1
+          fi
+
+          if [ "${#missing_coverage[@]}" -gt 0 ]; then
+            echo "Missing Codex review coverage markers for the current head SHA: ${missing_coverage[*]}"
+            exit 1
+          fi
