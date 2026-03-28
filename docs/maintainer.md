@@ -24,7 +24,7 @@ This document routes to phase-specific workflow docs. Shared coding-agent contex
 - Add a repository secret named `CODEX_TRIGGER_PAT` for the review-trigger workflow.
 - Configure a `main` ruleset that:
   - requires pull requests before merge
-  - requires CI and lint checks
+  - requires CI, lint, and `Codex Review Coverage`
   - blocks direct pushes and force pushes
   - requires conversation resolution
 

@@ -2,13 +2,14 @@
 
 # Codex Review Flow
 
-This document explains the current automated Codex review workflow implemented in `.github/workflows/codex-review.yml` and driven by `.github/codex-review-roles.json`.
+This document explains the current automated Codex review trigger workflow implemented in `.github/workflows/codex-review.yml` and driven by `.github/codex-review-roles.json`.
 
 Important scope note:
 
 - the workflow reads the review manifest and condensed prompt files from the PR base revision, not from PR-controlled content
 - the workflow only auto-routes the initial PR head SHA
 - after any later push, re-routing and additional review requests are manual by design
+- the separate `Codex Review Coverage` workflow is the durable merge gate for active-role coverage on the current head SHA
 
 The key design choice is:
 
@@ -27,6 +28,7 @@ If you only remember one thing, remember this:
 ## Source Files
 
 - Workflow: `.github/workflows/codex-review.yml`
+- Coverage check: `.github/workflows/codex-review-coverage.yml`
 - Role catalog: `.github/codex-review-roles.json`
 - Condensed trigger prompts: `.github/prompts/*.md`
 - Detailed fallback prompts: `.github/prompts/detailed/*.md`
@@ -322,7 +324,7 @@ Use it to answer:
 
 ## Summary
 
-The workflow is best understood as:
+The trigger workflow is best understood as:
 
 1. route labels from the current PR diff
 2. maintain a single global review queue
@@ -330,3 +332,11 @@ The workflow is best understood as:
 4. stand down if a maintainer posts a newer manual `@codex review` request
 5. never post a new trigger while the PR body is still marked in-progress
 6. walk the initial automated wave sequentially inside one run
+
+That is only half of the review control.
+
+The other half is the separate `Codex Review Coverage` check:
+
+1. verify the active automatic labels still match the current PR diff
+2. require an explicit coverage marker for each active review role on the current head SHA
+3. let maintainers satisfy coverage via native review, manual fallback, or a documented maintainer override
