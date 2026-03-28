@@ -1,11 +1,14 @@
-name: Codex Review Triggers
+name: Codex Review Routing and Triggers
 
-# This workflow does NOT call any AI API. It posts @codex review comments
-# which trigger native Codex GitHub review via your ChatGPT-linked account.
-# The trigger comments are intentionally condensed to single lines because
-# native Codex review did not reliably follow the previous long-form prompts.
-# The long-form prompt library lives under .github/prompts/detailed/ for
-# manual fallback reviews and non-triggered deep reviews.
+# This workflow does NOT call any AI API. It reconciles Codex review labels
+# against the PR diff, then posts @codex review comments which trigger native
+# Codex GitHub review via your ChatGPT-linked account.
+#
+# The condensed prompts remain single-line because native Codex review did not
+# reliably follow previous long-form trigger prompts. The long-form prompt
+# library still lives under .github/prompts/detailed/ for fallback reviews and
+# deeper manual review roles. The role catalog and auto-routing rules now live
+# in .github/codex-review-roles.json so docs and automation share one source.
 #
 # Prerequisites:
 #   1. Create a fine-grained PAT with pull-requests:write on this repo
@@ -13,12 +16,14 @@ name: Codex Review Triggers
 #   3. Create the review labels documented in docs/maintainer.md
 #
 # Why a PAT instead of github.token?
-#   Codex ignores @codex review comments from github-actions[bot].
-#   The PAT makes comments appear from your user account.
+#   Codex ignores @codex review comments from github-actions[bot], and label
+#   changes made with github.token would not reliably trigger follow-on review
+#   workflows. The PAT makes comments and label mutations appear from your user
+#   account.
 
 on:
   pull_request:
-    types: [labeled]
+    types: [opened, reopened, synchronize, ready_for_review, labeled]
 
 permissions:
   contents: read
@@ -27,187 +32,150 @@ permissions:
 
 env:
   CODEX_REVIEW_COMMENT_SPACING_SECONDS: 30
+  CODEX_REVIEW_ROLE_MANIFEST: .github/codex-review-roles.json
 
 jobs:
-  software-review:
-    if: github.event.label.name == 'codex-software-review'
+  route-and-trigger:
+    if: github.event.pull_request.state == 'open'
     concurrency:
-      group: codex-review-trigger-${{ github.event.pull_request.number }}
+      group: codex-review-${{ github.event.pull_request.number }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Wait for review trigger spacing window
+      - name: Determine expected automatic review labels
         env:
           GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
         run: |
-          last_created_at=""
-          page=1
+          set -euo pipefail
 
-          while true; do
-            page_comments="$(
-              gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?sort=created&direction=desc&per_page=100&page=${page}"
-            )"
-            page_count="$(printf '%s' "$page_comments" | jq 'length')"
+          gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files?per_page=100" \
+            | jq -s 'add // [] | map(.filename) | sort | unique' \
+            > /tmp/codex-changed-files.json
 
-            if [ "$page_count" -eq 0 ]; then
-              break
+          jq --slurpfile files /tmp/codex-changed-files.json '
+            def matches_role:
+              (.selectors.always // false)
+              or ([ (.selectors.path_regex_any // [])[] as $re | any($files[0][]; test($re)) ] | any);
+            {
+              automatic_labels: [
+                .roles[]
+                | select(.automatic)
+                | select(matches_role)
+                | .label
+              ],
+              known_labels: [ .roles[].label ]
+            }
+          ' "$CODEX_REVIEW_ROLE_MANIFEST" > /tmp/codex-routing.json
+
+      - name: Reconcile automatic labels with the current diff
+        env:
+          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
+        run: |
+          set -euo pipefail
+
+          gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels?per_page=100" \
+            | jq '[.[].name] | sort | unique' > /tmp/codex-current-labels.json
+
+          jq -n \
+            --slurpfile routing /tmp/codex-routing.json \
+            --slurpfile current /tmp/codex-current-labels.json \
+            '$routing[0].automatic_labels - $current[0]' \
+            > /tmp/codex-missing-labels.json
+
+          if [ "$(jq 'length' /tmp/codex-missing-labels.json)" -gt 0 ]; then
+            mapfile -t missing_labels < <(jq -r '.[]' /tmp/codex-missing-labels.json)
+            label_args=()
+
+            for label in "${missing_labels[@]}"; do
+              label_args+=(-f "labels[]=${label}")
+            done
+
+            gh api -X POST "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels" \
+              "${label_args[@]}" >/dev/null
+          fi
+
+          gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels?per_page=100" \
+            | jq '[.[].name] | sort | unique' > /tmp/codex-current-labels.json
+
+      - name: Trigger current-sha reviews for active Codex labels
+        if: github.event.pull_request.draft == false
+        env:
+          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
+        run: |
+          set -euo pipefail
+
+          head_sha="${{ github.event.pull_request.head.sha }}"
+
+          jq -n \
+            --slurpfile routing /tmp/codex-routing.json \
+            --slurpfile current /tmp/codex-current-labels.json \
+            '[
+              $routing[0].known_labels[]
+              | select(. as $known | any($current[0][]; . == $known))
+            ]' \
+            > /tmp/codex-active-review-labels.json
+
+          if [ "$(jq 'length' /tmp/codex-active-review-labels.json)" -eq 0 ]; then
+            echo "No Codex review labels are active for this PR."
+            exit 0
+          fi
+
+          gh api --paginate "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
+            | jq -s 'add // []' > /tmp/codex-comments.json
+
+          last_trigger_created_at="$(
+            jq -r '[.[] | select((.body // "") | startswith("@codex review ")) | .created_at] | sort | last // empty' \
+              /tmp/codex-comments.json
+          )"
+
+          if [ -n "$last_trigger_created_at" ]; then
+            last_trigger_epoch="$(date -u -d "$last_trigger_created_at" +%s)"
+          else
+            last_trigger_epoch=0
+          fi
+
+          mapfile -t review_rows < <(
+            jq -r \
+              --slurpfile current /tmp/codex-active-review-labels.json \
+              '.roles[]
+               | select(.label as $label | any($current[0][]; . == $label))
+               | [.id, .label, .prompt_file, (.prompt_version | tostring)] | @tsv' \
+              "$CODEX_REVIEW_ROLE_MANIFEST"
+          )
+
+          for row in "${review_rows[@]}"; do
+            IFS=$'\t' read -r role_id label prompt_file prompt_version <<< "$row"
+            token="codex-review role=${role_id} sha=${head_sha} v=${prompt_version}"
+
+            if jq -e --arg token "$token" 'any(.[]; (.body // "") | contains($token))' \
+              /tmp/codex-comments.json >/dev/null; then
+              echo "Review for ${label} already triggered at ${head_sha} with prompt v${prompt_version}."
+              continue
             fi
 
-            last_created_at="$(
-              printf '%s' "$page_comments" \
-                | jq -r '[.[] | select(.body | startswith("@codex review ")) | .created_at] | first // empty'
-            )"
-
-            if [ -n "$last_created_at" ]; then
-              break
-            fi
-
-            page="$((page + 1))"
-          done
-
-          if [ -n "$last_created_at" ]; then
             now_epoch="$(date -u +%s)"
-            last_epoch="$(date -u -d "$last_created_at" +%s)"
-            elapsed="$((now_epoch - last_epoch))"
+            elapsed="$((now_epoch - last_trigger_epoch))"
             remaining="$((CODEX_REVIEW_COMMENT_SPACING_SECONDS - elapsed))"
 
-            if [ "$remaining" -gt 0 ]; then
+            if [ "$last_trigger_epoch" -gt 0 ] && [ "$remaining" -gt 0 ]; then
               echo "Sleeping ${remaining}s to keep @codex review comments at least ${CODEX_REVIEW_COMMENT_SPACING_SECONDS}s apart."
               sleep "$remaining"
             fi
-          fi
 
-      - name: Post condensed software review trigger
-        env:
-          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
-        run: |
-          printf '@codex review %s\n' "$(cat .github/prompts/software-review.md)" \
-            > /tmp/codex-software-comment.md
+            prompt_text="$(tr '\n' ' ' < "$prompt_file" | tr -s ' ')"
 
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --body-file /tmp/codex-software-comment.md
+            printf '@codex review %s <!-- %s -->\n' "$prompt_text" "$token" \
+              > /tmp/codex-review-comment.md
 
-  methodology-review:
-    if: github.event.label.name == 'codex-methodology-review'
-    concurrency:
-      group: codex-review-trigger-${{ github.event.pull_request.number }}
-      cancel-in-progress: false
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
+            gh pr comment "${{ github.event.pull_request.number }}" \
+              --repo "${{ github.repository }}" \
+              --body-file /tmp/codex-review-comment.md
 
-      - name: Wait for review trigger spacing window
-        env:
-          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
-        run: |
-          last_created_at=""
-          page=1
+            last_trigger_epoch="$(date -u +%s)"
 
-          while true; do
-            page_comments="$(
-              gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?sort=created&direction=desc&per_page=100&page=${page}"
-            )"
-            page_count="$(printf '%s' "$page_comments" | jq 'length')"
-
-            if [ "$page_count" -eq 0 ]; then
-              break
-            fi
-
-            last_created_at="$(
-              printf '%s' "$page_comments" \
-                | jq -r '[.[] | select(.body | startswith("@codex review ")) | .created_at] | first // empty'
-            )"
-
-            if [ -n "$last_created_at" ]; then
-              break
-            fi
-
-            page="$((page + 1))"
+            jq --arg token "$token" '. + [{body: $token}]' /tmp/codex-comments.json \
+              > /tmp/codex-comments-updated.json
+            mv /tmp/codex-comments-updated.json /tmp/codex-comments.json
           done
-
-          if [ -n "$last_created_at" ]; then
-            now_epoch="$(date -u +%s)"
-            last_epoch="$(date -u -d "$last_created_at" +%s)"
-            elapsed="$((now_epoch - last_epoch))"
-            remaining="$((CODEX_REVIEW_COMMENT_SPACING_SECONDS - elapsed))"
-
-            if [ "$remaining" -gt 0 ]; then
-              echo "Sleeping ${remaining}s to keep @codex review comments at least ${CODEX_REVIEW_COMMENT_SPACING_SECONDS}s apart."
-              sleep "$remaining"
-            fi
-          fi
-
-      - name: Post condensed methodology review trigger
-        env:
-          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
-        run: |
-          printf '@codex review %s\n' "$(cat .github/prompts/methodology-review.md)" \
-            > /tmp/codex-methodology-comment.md
-
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --body-file /tmp/codex-methodology-comment.md
-
-  red-team-review:
-    if: github.event.label.name == 'codex-red-team-review'
-    concurrency:
-      group: codex-review-trigger-${{ github.event.pull_request.number }}
-      cancel-in-progress: false
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Wait for review trigger spacing window
-        env:
-          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
-        run: |
-          last_created_at=""
-          page=1
-
-          while true; do
-            page_comments="$(
-              gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?sort=created&direction=desc&per_page=100&page=${page}"
-            )"
-            page_count="$(printf '%s' "$page_comments" | jq 'length')"
-
-            if [ "$page_count" -eq 0 ]; then
-              break
-            fi
-
-            last_created_at="$(
-              printf '%s' "$page_comments" \
-                | jq -r '[.[] | select(.body | startswith("@codex review ")) | .created_at] | first // empty'
-            )"
-
-            if [ -n "$last_created_at" ]; then
-              break
-            fi
-
-            page="$((page + 1))"
-          done
-
-          if [ -n "$last_created_at" ]; then
-            now_epoch="$(date -u +%s)"
-            last_epoch="$(date -u -d "$last_created_at" +%s)"
-            elapsed="$((now_epoch - last_epoch))"
-            remaining="$((CODEX_REVIEW_COMMENT_SPACING_SECONDS - elapsed))"
-
-            if [ "$remaining" -gt 0 ]; then
-              echo "Sleeping ${remaining}s to keep @codex review comments at least ${CODEX_REVIEW_COMMENT_SPACING_SECONDS}s apart."
-              sleep "$remaining"
-            fi
-          fi
-
-      - name: Post condensed red team review trigger
-        env:
-          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
-        run: |
-          printf '@codex review %s\n' "$(cat .github/prompts/red-team-review.md)" \
-            > /tmp/codex-red-team-comment.md
-
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --body-file /tmp/codex-red-team-comment.md

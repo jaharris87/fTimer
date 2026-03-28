@@ -1,0 +1,1 @@
+as an API and compatibility reviewer; inspect public symbols, procedural versus OOP parity, argument names and ordering, defaults, install or export surfaces, and user-facing compatibility risk; classify findings as api break, compatibility risk, parity gap, package/export issue, or design concern; begin with "## API / Compatibility Review".

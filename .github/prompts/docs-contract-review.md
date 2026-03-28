@@ -1,0 +1,1 @@
+as a docs and contract reviewer; compare touched README, docs, examples, maintainer guidance, and workflow text against the implemented code and tests, looking for contract drift, docs mismatch, workflow mismatch, example drift, or clarity concerns; cite the file and statement for each finding; begin with "## Docs / Contract Review".

@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "roles": [
+    {
+      "id": "software",
+      "label": "codex-software-review",
+      "prompt_file": ".github/prompts/software-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/software-review.md",
+      "prompt_version": 2,
+      "automatic": true,
+      "selectors": {
+        "always": true
+      }
+    },
+    {
+      "id": "methodology",
+      "label": "codex-methodology-review",
+      "prompt_file": ".github/prompts/methodology-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/methodology-review.md",
+      "prompt_version": 2,
+      "automatic": true,
+      "selectors": {
+        "path_regex_any": [
+          "^src/ftimer_(core|summary|mpi|clock|types)\\.F90$",
+          "^docs/semantics\\.md$",
+          "^tests/test_(summary|self_time|callbacks|openmp_guards)\\.pf$",
+          "^tests/mpi/"
+        ]
+      }
+    },
+    {
+      "id": "red-team",
+      "label": "codex-red-team-review",
+      "prompt_file": ".github/prompts/red-team-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/red-team-review.md",
+      "prompt_version": 2,
+      "automatic": true,
+      "selectors": {
+        "path_regex_any": [
+          "^src/ftimer_(core|summary|mpi)\\.F90$",
+          "^docs/semantics\\.md$",
+          "^tests/test_(summary|self_time|callbacks|openmp_guards)\\.pf$",
+          "^tests/mpi/"
+        ]
+      }
+    },
+    {
+      "id": "docs-contract",
+      "label": "codex-docs-contract-review",
+      "prompt_file": ".github/prompts/docs-contract-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/docs-contract-review.md",
+      "prompt_version": 1,
+      "automatic": true,
+      "selectors": {
+        "path_regex_any": [
+          "^AGENTS\\.md$",
+          "^CLAUDE\\.md$",
+          "^README\\.md$",
+          "^docs/",
+          "^examples/",
+          "^\\.github/pull_request_template\\.md$",
+          "^\\.github/workflows/codex-review\\.yml$",
+          "^\\.github/codex-review-roles\\.json$",
+          "^\\.github/prompts/"
+        ]
+      }
+    },
+    {
+      "id": "test-quality",
+      "label": "codex-test-quality-review",
+      "prompt_file": ".github/prompts/test-quality-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/test-quality-review.md",
+      "prompt_version": 1,
+      "automatic": true,
+      "selectors": {
+        "path_regex_any": [
+          "^src/",
+          "^tests/"
+        ]
+      }
+    },
+    {
+      "id": "build-portability",
+      "label": "codex-build-portability-review",
+      "prompt_file": ".github/prompts/build-portability-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/build-portability-review.md",
+      "prompt_version": 1,
+      "automatic": true,
+      "selectors": {
+        "path_regex_any": [
+          "^CMakeLists\\.txt$",
+          "^Makefile$",
+          "^cmake/",
+          "^fixtures/",
+          "^scripts/",
+          "^tests/install-consumer/",
+          "^\\.github/workflows/ci\\.yml$",
+          "^\\.github/workflows/codex-review\\.yml$"
+        ]
+      }
+    },
+    {
+      "id": "api-compat",
+      "label": "codex-api-compat-review",
+      "prompt_file": ".github/prompts/api-compat-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/api-compat-review.md",
+      "prompt_version": 1,
+      "automatic": true,
+      "selectors": {
+        "path_regex_any": [
+          "^src/ftimer\\.F90$",
+          "^src/ftimer_(core|types)\\.F90$",
+          "^tests/install-consumer/",
+          "^examples/"
+        ]
+      }
+    },
+    {
+      "id": "mpi-safety",
+      "label": "codex-mpi-safety-review",
+      "prompt_file": ".github/prompts/mpi-safety-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/mpi-safety-review.md",
+      "prompt_version": 1,
+      "automatic": true,
+      "selectors": {
+        "path_regex_any": [
+          "^src/ftimer_mpi\\.F90$",
+          "^tests/mpi/",
+          "^docs/semantics\\.md$",
+          "^CMakeLists\\.txt$"
+        ]
+      }
+    },
+    {
+      "id": "performance-overhead",
+      "label": "codex-performance-overhead-review",
+      "prompt_file": ".github/prompts/performance-overhead-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/performance-overhead-review.md",
+      "prompt_version": 1,
+      "automatic": false,
+      "selectors": {}
+    },
+    {
+      "id": "pragmatic-design",
+      "label": "codex-pragmatic-design-review",
+      "prompt_file": ".github/prompts/pragmatic-design-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/pragmatic-design-review.md",
+      "prompt_version": 1,
+      "automatic": false,
+      "selectors": {}
+    },
+    {
+      "id": "adoptability",
+      "label": "codex-adoptability-review",
+      "prompt_file": ".github/prompts/adoptability-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/adoptability-review.md",
+      "prompt_version": 1,
+      "automatic": false,
+      "selectors": {}
+    },
+    {
+      "id": "completion-audit",
+      "label": "codex-completion-audit-review",
+      "prompt_file": ".github/prompts/completion-audit-review.md",
+      "detailed_prompt_file": ".github/prompts/detailed/completion-audit-review.md",
+      "prompt_version": 1,
+      "automatic": false,
+      "selectors": {}
+    }
+  ]
+}

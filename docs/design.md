@@ -223,17 +223,17 @@ Repository workflow guidance lives in [`docs/maintainer.md`](maintainer.md) and 
 2. Create a feature branch from updated local `main`.
 3. Implement and validate the change.
 4. Open a pull request to `main`.
-5. Apply the review labels required by the diff.
+5. Let the review router apply automatic labels, then verify the result and add any extra labels the diff still needs.
 6. Monitor review output and address every finding.
 7. Do not merge while merge-blocking findings remain unresolved.
 
 The required label policy is current and specific:
 
-- always apply `codex-software-review`
-- also apply `codex-methodology-review` when the diff touches `src/ftimer_core.F90`, `src/ftimer_summary.F90`, `src/ftimer_mpi.F90`, or `docs/semantics.md`
-- also apply `codex-red-team-review` when the diff touches `src/ftimer_core.F90` or `src/ftimer_mpi.F90`, especially timing-critical paths
+- the Codex review router always applies `codex-software-review`
+- the router may also auto-apply methodology, red-team, docs-contract, test-quality, build-portability, API-compat, and MPI-safety labels when the diff matches the rules in `.github/codex-review-roles.json`
+- maintainers may still add optional deeper-review labels such as performance-overhead, pragmatic-design, adoptability, or completion-audit when the diff warrants them
 
-The repository also carries a detailed prompt library under `.github/prompts/detailed/` for fallback reviews and selective deeper review roles such as docs-contract, build-portability, completion-audit, and test-quality reviews.
+The repository also carries a detailed prompt library under `.github/prompts/detailed/` for fallback reviews and selective deeper review roles. The machine-readable review-routing catalog lives in `.github/codex-review-roles.json`.
 
 ## Documentation Boundaries
 

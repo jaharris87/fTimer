@@ -1,0 +1,1 @@
+as an adoptability reviewer; judge how hard this PR makes first use and downstream integration for a new engineer, focusing on onboarding friction, mental-model clarity, discoverability, integration burden, and example quality; cite the blocking file, step, or example for each finding; begin with "## Adoptability Review".

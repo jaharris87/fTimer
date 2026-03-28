@@ -1,0 +1,1 @@
+as a pragmatic design reviewer; find unnecessary abstraction, wrapper drift risk, state complexity, testing burden, or API surface growth that adds mechanism without clear payoff, and suggest simpler alternatives when possible; cite the file or interface for each finding; begin with "## Pragmatic Design Review".
