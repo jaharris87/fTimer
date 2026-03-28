@@ -30,7 +30,7 @@ In practice:
 
 ## Detailed Prompt Library
 
-The native trigger workflow posts single-line `@codex review ...` comments built from `.github/prompts/`. It now routes labels from the manifest, serializes trigger jobs per PR, reruns only the active roles whose latest-push file delta still matches their routing rules, skips retriggering a role while its previous trigger comment still carries Codex's in-progress `eyes` reaction, and keeps subsequent `@codex review` comments at least 30 seconds apart. The authoritative inventory for long-form prompts lives in `.github/prompts/detailed/README.md`, and the authoritative label-routing catalog lives in `.github/codex-review-roles.json`.
+The native trigger workflow posts single-line `@codex review ...` comments built from `.github/prompts/`. It now uses a single global Codex review queue per PR: it routes labels from the manifest, posts at most one new `@codex review` trigger per run, waits until no earlier trigger comment still carries Codex's in-progress `eyes` reaction, and then advances to the next needed role in manifest order. On `synchronize`, it only reruns roles whose latest-push file delta still matches their routing rules. The authoritative inventory for long-form prompts lives in `.github/prompts/detailed/README.md`, and the authoritative label-routing catalog lives in `.github/codex-review-roles.json`.
 
 Keep the top-level prompts reserved for label-triggered native reviews. Use the detailed prompts for manual fallback reviews or deeper repo-health reviews that are not wired to PR labels by default. Do not paste a detailed prompt into a PR unless you are intentionally using the documented fallback flow.
 

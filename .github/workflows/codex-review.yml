@@ -7,11 +7,12 @@ name: Codex Review Routing and Triggers
 # The condensed prompts remain single-line because native Codex review did not
 # reliably follow previous long-form trigger prompts. The long-form prompt
 # library still lives under .github/prompts/detailed/ for fallback reviews and
-# deeper manual review roles. On synchronize events, active reviews rerun only
-# when the latest-push file delta still matches that role's routing rules, and
-# only after the previous trigger comment for that role no longer has Codex's
-# in-progress `eyes` reaction. The role catalog and auto-routing rules now live
-# in .github/codex-review-roles.json so docs and automation share one source.
+# deeper manual review roles. The workflow maintains a single global Codex
+# review queue per PR: it posts at most one new `@codex review` trigger per run,
+# waits until no earlier trigger comment still has Codex's in-progress `eyes`
+# reaction, and then advances to the next needed role in manifest order. The
+# role catalog and auto-routing rules now live in .github/codex-review-roles.json
+# so docs and automation share one source.
 #
 # Prerequisites:
 #   1. Create a fine-grained PAT with pull-requests:write on this repo
@@ -27,6 +28,10 @@ name: Codex Review Routing and Triggers
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, labeled]
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: read
@@ -39,9 +44,12 @@ env:
 
 jobs:
   route-and-trigger:
-    if: github.event.pull_request.state == 'open'
+    if: |
+      (github.event_name == 'pull_request' && github.event.pull_request.state == 'open') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.user.login == 'chatgpt-codex-connector[bot]') ||
+      (github.event_name == 'pull_request_review' && github.event.pull_request.state == 'open' && github.event.review.user.login == 'chatgpt-codex-connector[bot]')
     concurrency:
-      group: codex-review-${{ github.event.pull_request.number }}
+      group: codex-review-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
@@ -52,8 +60,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          pr_number="${{ github.event.pull_request.number || github.event.issue.number }}"
 
-          gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files?per_page=100" \
+          gh api --paginate "repos/${{ github.repository }}/pulls/${pr_number}/files?per_page=100" \
             | jq -s 'add // [] | map(.filename) | sort | unique' \
             > /tmp/codex-changed-files.json
 
@@ -77,8 +86,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          pr_number="${{ github.event.pull_request.number || github.event.issue.number }}"
 
-          gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels?per_page=100" \
+          gh api "repos/${{ github.repository }}/issues/${pr_number}/labels?per_page=100" \
             | jq '[.[].name] | sort | unique' > /tmp/codex-current-labels.json
 
           jq -n \
@@ -95,22 +105,25 @@ jobs:
               label_args+=(-f "labels[]=${label}")
             done
 
-            gh api -X POST "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels" \
+            gh api -X POST "repos/${{ github.repository }}/issues/${pr_number}/labels" \
               "${label_args[@]}" >/dev/null
           fi
 
-          gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels?per_page=100" \
+          gh api "repos/${{ github.repository }}/issues/${pr_number}/labels?per_page=100" \
             | jq '[.[].name] | sort | unique' > /tmp/codex-current-labels.json
 
       - name: Trigger current-sha reviews for active Codex labels
-        if: github.event.pull_request.draft == false
+        if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
         env:
           GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
         run: |
           set -euo pipefail
 
-          event_action="${{ github.event.action }}"
-          head_sha="${{ github.event.pull_request.head.sha }}"
+          pr_number="${{ github.event.pull_request.number || github.event.issue.number }}"
+          head_sha="$(
+            gh api "repos/${{ github.repository }}/pulls/${pr_number}" \
+              | jq -r '.head.sha'
+          )"
 
           jq -n \
             --slurpfile routing /tmp/codex-routing.json \
@@ -126,8 +139,24 @@ jobs:
             exit 0
           fi
 
-          gh api --paginate "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
+          gh api --paginate "repos/${{ github.repository }}/issues/${pr_number}/comments?per_page=100" \
             | jq -s 'add // []' > /tmp/codex-comments.json
+
+          mapfile -t trigger_comment_ids < <(
+            jq -r '.[] | select((.body // "") | startswith("@codex review ")) | .id' /tmp/codex-comments.json
+          )
+
+          for trigger_comment_id in "${trigger_comment_ids[@]}"; do
+            trigger_reactions="$(
+              gh api -H 'Accept: application/vnd.github+json' \
+                "repos/${{ github.repository }}/issues/comments/${trigger_comment_id}/reactions"
+            )"
+
+            if jq -e 'any(.[]; .content == "eyes")' <<<"$trigger_reactions" >/dev/null; then
+              echo "A previous trigger comment (${trigger_comment_id}) is still in progress, so the global review queue is locked."
+              exit 0
+            fi
+          done
 
           last_trigger_created_at="$(
             jq -r '[.[] | select((.body // "") | startswith("@codex review ")) | .created_at] | sort | last // empty' \
@@ -179,32 +208,7 @@ jobs:
                 ' /tmp/codex-comments.json
             )"
 
-            previous_role_comment_id="$(
-              jq -r \
-                --arg role_id "$role_id" '
-                  [
-                    .[]
-                    | select((.body // "") | test("codex-review role=" + $role_id + " sha=[0-9a-f]+ v="))
-                    | {created_at, id}
-                  ]
-                  | sort_by(.created_at)
-                  | last.id // empty
-                ' /tmp/codex-comments.json
-            )"
-
-            if [ -n "$previous_role_comment_id" ]; then
-              previous_role_reactions="$(
-                gh api -H 'Accept: application/vnd.github+json' \
-                  "repos/${{ github.repository }}/issues/comments/${previous_role_comment_id}/reactions"
-              )"
-
-              if jq -e 'any(.[]; .content == "eyes")' <<<"$previous_role_reactions" >/dev/null; then
-                echo "Skipping ${label} because the previous trigger comment ${previous_role_comment_id} still has an in-progress eyes reaction."
-                continue
-              fi
-            fi
-
-            if [ "$event_action" = "synchronize" ] && [ -n "$previous_role_sha" ] && [ "$previous_role_sha" != "$head_sha" ]; then
+            if [ -n "$previous_role_sha" ] && [ "$previous_role_sha" != "$head_sha" ]; then
               compare_file="/tmp/codex-compare-${previous_role_sha}-${head_sha}.json"
 
               if [ ! -f "$compare_file" ]; then
@@ -240,7 +244,7 @@ jobs:
             printf '@codex review %s <!-- %s -->\n' "$prompt_text" "$token" \
               > /tmp/codex-review-comment.md
 
-            gh pr comment "${{ github.event.pull_request.number }}" \
+            gh pr comment "${pr_number}" \
               --repo "${{ github.repository }}" \
               --body-file /tmp/codex-review-comment.md
 
@@ -249,4 +253,7 @@ jobs:
             jq --arg token "$token" '. + [{body: $token}]' /tmp/codex-comments.json \
               > /tmp/codex-comments-updated.json
             mv /tmp/codex-comments-updated.json /tmp/codex-comments.json
+
+            echo "Posted one queued Codex review for ${label}; leaving the remaining roles for later queue advancement."
+            break
           done
