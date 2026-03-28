@@ -6,7 +6,7 @@ name: Codex Review Coverage
 # check in branch protection without conflating "queued" with "covered".
 #
 # Coverage is satisfied per active role only when the PR thread contains an
-# explicit coverage marker for the current head SHA:
+# explicit coverage marker from a trusted repo commenter for the current head SHA:
 #   <!-- codex-review-coverage role=<role-id> sha=<head-sha> status=covered source=native -->
 # or
 #   <!-- codex-review-coverage role=<role-id> sha=<head-sha> status=covered source=manual-fallback -->
@@ -30,6 +30,8 @@ permissions:
 
 env:
   CODEX_REVIEW_ROLE_MANIFEST_PATH: .github/codex-review-roles.json
+  CODEX_REVIEW_INITIAL_LABEL_WAIT_SECONDS: 60
+  CODEX_REVIEW_INITIAL_LABEL_POLL_SECONDS: 5
 
 jobs:
   coverage:
@@ -84,6 +86,34 @@ jobs:
           gh api --paginate "repos/${{ github.repository }}/issues/${pr_number}/comments?per_page=100" \
             | jq -s 'add // []' > /tmp/codex-coverage-comments.json
 
+          printf '{}\n' > /tmp/codex-coverage-commenter-permissions.json
+          mapfile -t commenter_logins < <(
+            jq -r '.[].user.login // empty' /tmp/codex-coverage-comments.json | sort -u
+          )
+
+          for login in "${commenter_logins[@]}"; do
+            if [ "$login" = "github-actions[bot]" ] || \
+               [ "$login" = "chatgpt-codex-connector" ] || \
+               [ "$login" = "chatgpt-codex-connector[bot]" ]; then
+              permission="allowed-bot"
+            else
+              if permission_json="$(
+                gh api "repos/${{ github.repository }}/collaborators/${login}/permission" 2>/dev/null
+              )"; then
+                permission="$(jq -r '.permission // "none"' <<<"$permission_json")"
+              else
+                permission="none"
+              fi
+            fi
+
+            jq --arg login "$login" --arg permission "$permission" \
+              '. + {($login): $permission}' \
+              /tmp/codex-coverage-commenter-permissions.json \
+              > /tmp/codex-coverage-commenter-permissions-updated.json
+            mv /tmp/codex-coverage-commenter-permissions-updated.json \
+              /tmp/codex-coverage-commenter-permissions.json
+          done
+
           jq --slurpfile files /tmp/codex-coverage-files.json '
             def matches_role:
               (.selectors.always // false)
@@ -111,23 +141,48 @@ jobs:
             }
           ' /tmp/codex-coverage-roles.json > /tmp/codex-coverage-routing.json
 
-          jq -n \
-            --slurpfile routing /tmp/codex-coverage-routing.json \
-            --slurpfile current /tmp/codex-coverage-current-labels.json \
-            '{
-              expected_auto: $routing[0].automatic_labels,
-              current_auto: [
-                $current[0][]
-                | select(. as $label | any($routing[0].automatic_known_labels[]; . == $label))
-              ],
-              active_roles: [
-                $routing[0].roles[]
-                | select(.label as $label | any($current[0][]; . == $label))
-              ]
-            }
-            | .missing_auto = (.expected_auto - .current_auto)
-            | .stale_auto = (.current_auto - .expected_auto)
-          ' > /tmp/codex-coverage-state.json
+          build_coverage_state() {
+            gh api "repos/${{ github.repository }}/issues/${pr_number}/labels?per_page=100" \
+              | jq '[.[].name] | sort | unique' > /tmp/codex-coverage-current-labels.json
+
+            jq -n \
+              --slurpfile routing /tmp/codex-coverage-routing.json \
+              --slurpfile current /tmp/codex-coverage-current-labels.json \
+              '{
+                expected_auto: $routing[0].automatic_labels,
+                current_auto: [
+                  $current[0][]
+                  | select(. as $label | any($routing[0].automatic_known_labels[]; . == $label))
+                ],
+                active_roles: [
+                  $routing[0].roles[]
+                  | select(.label as $label | any($current[0][]; . == $label))
+                ]
+              }
+              | .missing_auto = (.expected_auto - .current_auto)
+              | .stale_auto = (.current_auto - .expected_auto)
+            ' > /tmp/codex-coverage-state.json
+          }
+
+          build_coverage_state
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            case "${{ github.event.action }}" in
+              opened|reopened|ready_for_review)
+                label_wait_deadline="$(( $(date -u +%s) + CODEX_REVIEW_INITIAL_LABEL_WAIT_SECONDS ))"
+
+                while [ "$(jq '.missing_auto | length' /tmp/codex-coverage-state.json)" -gt 0 ] || \
+                      [ "$(jq '.stale_auto | length' /tmp/codex-coverage-state.json)" -gt 0 ]; do
+                  if [ "$(date -u +%s)" -ge "$label_wait_deadline" ]; then
+                    break
+                  fi
+
+                  sleep "$CODEX_REVIEW_INITIAL_LABEL_POLL_SECONDS"
+                  build_coverage_state
+                done
+                ;;
+            esac
+          fi
 
           mapfile -t active_role_rows < <(jq -r '.active_roles[] | @base64' /tmp/codex-coverage-state.json)
           missing_coverage=()
@@ -138,14 +193,32 @@ jobs:
             role_id="$(jq -r '.id' <<<"$role_json")"
             label="$(jq -r '.label' <<<"$role_json")"
 
-            if jq -e --arg role_id "$role_id" --arg sha "$head_sha" '
+            if jq -e \
+              --arg role_id "$role_id" \
+              --arg sha "$head_sha" \
+              --slurpfile permissions /tmp/codex-coverage-commenter-permissions.json '
+              def trusted_marker_author:
+                (.user.login // "") as $login
+                | ($permissions[0][$login] // "none") as $permission
+                | ($permission == "allowed-bot")
+                  or ($permission == "admin")
+                  or ($permission == "maintain")
+                  or ($permission == "write");
+              def valid_marker($role_id; $sha):
+                ((.body // "") | capture(
+                  "codex-review-coverage role=(?<role_id>[^ ]+) sha=(?<sha>[^ ]+) status=(?<status>covered|waived) source=(?<source>native|manual-fallback|maintainer-override)"
+                )?) as $marker
+                | ($marker != null)
+                and ($marker.role_id == $role_id)
+                and ($marker.sha == $sha)
+                and (
+                  ($marker.status == "covered" and ($marker.source == "native" or $marker.source == "manual-fallback"))
+                  or
+                  ($marker.status == "waived" and $marker.source == "maintainer-override")
+                );
               any(
                 .[];
-                (.body // "") | test(
-                  "codex-review-coverage role=" + $role_id
-                  + " sha=" + $sha
-                  + " status=(covered|waived) source=[^ ]+"
-                )
+                trusted_marker_author and valid_marker($role_id; $sha)
               )
             ' /tmp/codex-coverage-comments.json >/dev/null; then
               covered_roles+=("$role_id ($label)")

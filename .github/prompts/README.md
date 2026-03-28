@@ -3,7 +3,9 @@
 This directory contains the condensed one-line prompts used by the native
 label-triggered Codex PR workflow.
 
-- Each file in this directory must remain a single line with no embedded newline.
+- Each condensed native prompt file in this directory must remain a single line
+  with no embedded newline. Supporting docs such as this README are normal
+  multi-line Markdown files.
 - The trigger workflow reads these prompt files from the PR base revision, not
   from PR-controlled content.
 - `.github/codex-review-roles.json` is the authoritative machine-readable

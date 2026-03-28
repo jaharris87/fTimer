@@ -39,6 +39,7 @@ Codex review coverage: red-team waived for <HEAD_SHA> because native review was 
 ```
 
 Use `status=covered` when the role was actually satisfied, whether by native review or manual fallback. Use `status=waived` only for an explicit maintainer override with a written reason.
+Only trusted repo commenters count for coverage markers: accounts with repo `write`, `maintain`, or `admin` permission, plus any explicitly allowed bot account.
 
 ## Fallback When Native Codex Review Is Unavailable
 

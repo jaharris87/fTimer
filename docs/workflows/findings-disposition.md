@@ -24,6 +24,7 @@ After replying:
 - resolve the review thread
 - once a review role is actually satisfied for the current head SHA, post a coverage marker comment so `Codex Review Coverage` can pass
 - verify whether any unresolved review threads remain
+- post coverage markers only from a trusted repo commenter account with repo `write`, `maintain`, or `admin` permission, or from an explicitly allowed bot account; untrusted PR-author comments do not satisfy the coverage gate
 
 Coverage marker examples:
 
