@@ -16,10 +16,10 @@ name: Codex Review Routing and Triggers
 #   3. Create the review labels documented in docs/maintainer.md
 #
 # Why a PAT instead of github.token?
-#   Codex ignores @codex review comments from github-actions[bot], and label
-#   changes made with github.token would not reliably trigger follow-on review
-#   workflows. The PAT makes comments and label mutations appear from your user
-#   account.
+#   Codex ignores @codex review comments from github-actions[bot], so the PAT
+#   is still required for posting trigger comments. Automatic label
+#   reconciliation intentionally uses github.token to avoid self-trigger churn
+#   from workflow-generated label events.
 
 on:
   pull_request:
@@ -46,7 +46,7 @@ jobs:
 
       - name: Determine expected automatic review labels
         env:
-          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -71,7 +71,7 @@ jobs:
 
       - name: Reconcile automatic labels with the current diff
         env:
-          GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
