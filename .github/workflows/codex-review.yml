@@ -10,9 +10,10 @@ name: Codex Review Routing and Triggers
 # deeper manual review roles. The workflow maintains a single global Codex
 # review queue per PR: it posts at most one new `@codex review` trigger per run,
 # waits until the PR body no longer has Codex's in-progress `eyes` reaction,
-# and stands down entirely if a plain manual `@codex review` comment is present.
-# When automation is active, it advances to the next needed role in manifest
-# order. The
+# stands down entirely if a plain manual `@codex review` comment is present,
+# and stops auto-advancing once the PR head changes after the first automated
+# review wave. When automation is active, it advances to the next needed role in
+# manifest order. The
 # role catalog and auto-routing rules now live in .github/codex-review-roles.json
 # so docs and automation share one source.
 #
@@ -29,7 +30,7 @@ name: Codex Review Routing and Triggers
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review, labeled]
+    types: [opened, reopened, ready_for_review, labeled]
   issue_comment:
     types: [created]
   pull_request_review:
@@ -144,6 +145,26 @@ jobs:
           gh api --paginate "repos/${{ github.repository }}/issues/${pr_number}/comments?per_page=100" \
             | jq -s 'add // []' > /tmp/codex-comments.json
 
+          initial_automated_sha="$(
+            jq -r '
+              [
+                .[]
+                | select((.body // "") | contains("codex-review role="))
+                | {
+                    created_at,
+                    sha: ((.body // "") | capture(" sha=(?<sha>[0-9a-f]+) v=").sha)
+                  }
+              ]
+              | sort_by(.created_at)
+              | first.sha // empty
+            ' /tmp/codex-comments.json
+          )"
+
+          if [ -n "$initial_automated_sha" ] && [ "$initial_automated_sha" != "$head_sha" ]; then
+            echo "The PR head moved from the initial automated review wave at ${initial_automated_sha} to ${head_sha}, so automatic review requests stop after that first wave. Use manual @codex review comments if you want more review on newer commits."
+            exit 0
+          fi
+
           if jq -e '
             any(
               .[];
@@ -198,44 +219,6 @@ jobs:
               /tmp/codex-comments.json >/dev/null; then
               echo "Review for ${label} already triggered at ${head_sha} with prompt v${prompt_version}."
               continue
-            fi
-
-            previous_role_sha="$(
-              jq -r \
-                --arg role_id "$role_id" '
-                  [
-                    .[]
-                    | select((.body // "") | test("codex-review role=" + $role_id + " sha=[0-9a-f]+ v="))
-                    | {
-                        created_at,
-                        sha: ((.body // "") | capture("codex-review role=" + $role_id + " sha=(?<sha>[0-9a-f]+) v=").sha)
-                      }
-                  ]
-                  | sort_by(.created_at)
-                  | last.sha // empty
-                ' /tmp/codex-comments.json
-            )"
-
-            if [ -n "$previous_role_sha" ] && [ "$previous_role_sha" != "$head_sha" ]; then
-              compare_file="/tmp/codex-compare-${previous_role_sha}-${head_sha}.json"
-
-              if [ ! -f "$compare_file" ]; then
-                gh api "repos/${{ github.repository }}/compare/${previous_role_sha}...${head_sha}" \
-                  | jq '[.files[]?.filename] | sort | unique' \
-                  > "$compare_file"
-              fi
-
-              if ! jq -e \
-                --slurpfile files "$compare_file" \
-                '
-                  def matches_role:
-                    (.selectors.always // false)
-                    or ([ (.selectors.path_regex_any // [])[] as $re | any($files[0][]; test($re)) ] | any);
-                  matches_role
-                ' <<<"$role_json" >/dev/null; then
-                echo "Skipping ${label} on synchronize because files changed since ${previous_role_sha} do not match this role."
-                continue
-              fi
             fi
 
             now_epoch="$(date -u +%s)"

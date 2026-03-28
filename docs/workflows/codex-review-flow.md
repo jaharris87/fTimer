@@ -11,6 +11,7 @@ The key design choice is:
 3. at most one new `@codex review` trigger is posted per workflow run
 4. no new trigger is posted while the PR body still has Codex's in-progress `eyes` reaction
 5. if a plain manual `@codex review` comment appears, the automated queue stands down for that PR
+6. once the PR head moves past the first automated review wave, the automated queue stops and any further reviews are manual
 
 If you only remember one thing, remember this:
 
@@ -31,17 +32,17 @@ flowchart TD
     B --> C["Compute automatic review labels"]
     C --> D["Apply missing automatic labels"]
     D --> E["Read active review labels on the PR"]
-    E --> F{"Plain manual @codex review comment exists?"}
-    F -->|"Yes"| G["Manual mode: post nothing"]
-    F -->|"No"| H{"PR body still has Codex eyes?"}
-    H -->|"Yes"| I["Queue locked: post nothing"]
-    H -->|"No"| J["Find the next needed role in manifest order"]
-    J --> K{"Already requested for current head SHA?"}
-    K -->|"Yes"| J
-    K -->|"No"| L{"Role still relevant to latest push delta?"}
-    L -->|"No"| J
-    L -->|"Yes"| M["Post one new @codex review trigger comment"]
-    M --> N["Stop and wait for a later wake-up event"]
+    E --> F{"PR head still matches first automated review SHA?"}
+    F -->|"No"| G["Post nothing: later reviews are manual"]
+    F -->|"Yes"| H{"Plain manual @codex review comment exists?"}
+    H -->|"Yes"| I["Manual mode: post nothing"]
+    H -->|"No"| J{"PR body still has Codex eyes?"}
+    J -->|"Yes"| K["Queue locked: post nothing"]
+    J -->|"No"| L["Find the next needed role in manifest order"]
+    L --> M{"Already requested for current head SHA?"}
+    M -->|"Yes"| L
+    M -->|"No"| N["Post one new @codex review trigger comment"]
+    N --> O["Stop and wait for a later wake-up event"]
 ```
 
 ## What Wakes Up The Workflow
@@ -50,11 +51,10 @@ The workflow can wake up from three kinds of events.
 
 ### 1. Pull Request Events
 
-These are the normal routing and rerun events:
+These are the normal routing events:
 
 - `opened`
 - `reopened`
-- `synchronize`
 - `ready_for_review`
 - `labeled`
 
@@ -62,7 +62,6 @@ Use this mental model:
 
 - `opened` and `reopened` start the queue
 - `labeled` can add a manually requested role to the queue
-- `synchronize` updates the PR head SHA and may make some prior roles stale
 - `ready_for_review` resumes review activity after draft mode
 
 ### 2. Connector Comment Events
@@ -133,9 +132,31 @@ Today that order is effectively:
 
 Manifest order matters because the queue only posts one new review request per run.
 
-## Phase 3: Global Queue Lock
+## Phase 3: Initial-Wave Guard
 
 This is the most important part of the workflow now.
+
+Before posting anything new, the workflow looks for the first automated trigger comment it ever posted on the PR and reads the SHA from its hidden metadata token.
+
+If the current PR head SHA is different from that first automated-review SHA, the workflow stops immediately.
+
+That is the rule that prevents iterative auto-review loops after follow-up pushes.
+
+In plain language:
+
+- the router may take a few wake-up events to finish posting the initial review wave
+- but it only keeps doing that while the PR head has not changed
+- after a push, any additional review requests are manual on purpose
+
+```mermaid
+flowchart TD
+    A["Load PR comments"] --> B["Find first automated trigger SHA"]
+    B --> C{"Current head SHA still matches?"}
+    C -->|"No"| D["Automation stops after initial wave"]
+    C -->|"Yes"| E["Continue into queue checks"]
+```
+
+## Phase 4: Global Queue Lock
 
 Before posting anything new, the workflow checks whether the PR already contains a plain manual `@codex review` comment without the workflow metadata token.
 
@@ -177,9 +198,9 @@ The manual-override rule sits even earlier than that lock. Its purpose is simple
 - the automated queue should stop posting its own requests,
 - otherwise manual and automatic queue state can drift apart and duplicate requests can appear.
 
-## Phase 4: Decide Whether A Role Still Needs A Review
+## Phase 5: Decide Whether A Role Still Needs A Review
 
-For each active role, the workflow asks three questions.
+For each active role, the workflow asks one question.
 
 ### Question 1: Was this exact role already requested for the current head SHA?
 
@@ -193,27 +214,9 @@ codex-review role=<role-id> sha=<head-sha> v=<prompt-version>
 
 So a role will not be re-requested for the same commit and the same prompt version.
 
-### Question 2: Did this role run before, but only on an older SHA?
+If no, the role is eligible now, as long as the queue is still within the initial automated-review wave for the current head SHA.
 
-If no, the role is eligible now.
-
-If yes, keep going.
-
-### Question 3: Does the file delta from that older SHA to the current head SHA still match this role's selectors?
-
-If no, skip it.
-
-If yes, it is eligible for rerun.
-
-This is the noise-reduction logic for `synchronize`-style updates.
-
-It means:
-
-- a docs-only follow-up should not rerun MPI-focused reviews
-- a workflow-only follow-up should not rerun test-quality unless the selectors say it should
-- a role is rerun only when the latest change is still relevant to that role
-
-## Phase 5: Post One New Trigger
+## Phase 6: Post One New Trigger
 
 If the queue is free and the workflow finds an eligible role, it:
 
@@ -243,7 +246,6 @@ Instead, it waits for a future event.
 
 The next wake-up may come from:
 
-- a new push to the PR
 - a manual label being added
 - a connector comment
 - a connector PR review
@@ -251,9 +253,10 @@ The next wake-up may come from:
 When the workflow wakes up again, it repeats the same checks:
 
 1. are automatic labels still correct?
-2. did a manual `@codex review` comment take over this PR?
-3. is the global queue still locked?
-4. what is the next still-needed role?
+2. has the PR head moved past the first automated-review SHA?
+3. did a manual `@codex review` comment take over this PR?
+4. is the global queue still locked?
+5. what is the next still-needed role?
 
 If the PR-body `eyes` reaction is gone, the queue can advance to the next review.
 
@@ -286,6 +289,8 @@ The queue behavior would look like this:
 12. Workflow stops again.
 13. Later, the same process repeats for `build-portability`.
 
+If the PR head changes anywhere in the middle of that sequence, the automated queue stops there. Any new review requests after that push are manual.
+
 ## Current Tradeoffs
 
 ### Benefits
@@ -301,6 +306,7 @@ The queue behavior would look like this:
 - The queue can stall if the connector leaves `eyes` behind longer than expected.
 - Queue progress now depends on the PR-body reaction staying accurate.
 - Manual `@codex review` comments intentionally disable automatic queue posting for that PR until the manual request is removed or handled out of band.
+- A push can intentionally cut the initial automated wave short; later reviews then require manual judgment instead of automatic reruns.
 - Queue advancement depends on later wake-up events, not just the initial PR-open event.
 
 ## Practical Debug Checklist
@@ -308,10 +314,10 @@ The queue behavior would look like this:
 If a review did not get posted, ask these in order:
 
 1. Does the PR have any active Codex labels?
-2. Is there a plain manual `@codex review` comment causing the automation to stand down?
-3. Did the role already get requested for the current `head.sha`?
-4. Does the PR body still have Codex's `eyes` reaction?
-5. If this is a rerun, did the file delta since the role's last-reviewed SHA still match the role's selectors?
+2. Has the PR head moved past the first automated-review SHA?
+3. Is there a plain manual `@codex review` comment causing the automation to stand down?
+4. Did the role already get requested for the current `head.sha`?
+5. Does the PR body still have Codex's `eyes` reaction?
 6. Did the workflow stop after posting one earlier role in the queue?
 
 ## Reading The Hidden Metadata
@@ -334,7 +340,7 @@ The workflow is best understood as:
 
 1. route labels from the current PR diff
 2. maintain a single global review queue
-3. stand down if a maintainer starts manual `@codex review` requests
-4. never post a new trigger while the PR body is still marked in-progress
-5. post one new role at a time
-6. only rerun a role when the latest change is still relevant to that role
+3. stop automated posting once the PR moves past the first automated-review SHA
+4. stand down if a maintainer starts manual `@codex review` requests
+5. never post a new trigger while the PR body is still marked in-progress
+6. post one new role at a time

@@ -16,7 +16,7 @@ For every scoped piece of work:
 
 ## Which Labels To Expect Or Add
 
-The review router now auto-applies the automatic Codex labels on PR `opened`, `reopened`, `ready_for_review`, and `synchronize` events using `.github/codex-review-roles.json`.
+The review router now auto-applies the automatic Codex labels on PR `opened`, `reopened`, `ready_for_review`, and `labeled` events using `.github/codex-review-roles.json`.
 
 - Verify that the automatic routing result matches the actual diff.
 - If the router missed a needed review, add the label manually and treat that as a signal to tighten the manifest heuristics afterward.
@@ -30,7 +30,7 @@ In practice:
 
 ## Detailed Prompt Library
 
-The native trigger workflow posts single-line `@codex review ...` comments built from `.github/prompts/`. It now uses a single global Codex review queue per PR: it routes labels from the manifest, posts at most one new `@codex review` trigger per run, waits until the PR body no longer carries Codex's in-progress `eyes` reaction, and stands down entirely if a plain manual `@codex review` comment is present on the PR. When automation is active, it advances to the next needed role in manifest order. On `synchronize`, it only reruns roles whose latest-push file delta still matches their routing rules. The authoritative inventory for long-form prompts lives in `.github/prompts/detailed/README.md`, and the authoritative label-routing catalog lives in `.github/codex-review-roles.json`.
+The native trigger workflow posts single-line `@codex review ...` comments built from `.github/prompts/`. It now uses a single global Codex review queue per PR: it routes labels from the manifest, posts at most one new `@codex review` trigger per run, waits until the PR body no longer carries Codex's in-progress `eyes` reaction, and stands down entirely if a plain manual `@codex review` comment is present on the PR. It will continue advancing only while the PR head SHA still matches the first automated review wave; after a push, any additional review requests are manual by design. The authoritative inventory for long-form prompts lives in `.github/prompts/detailed/README.md`, and the authoritative label-routing catalog lives in `.github/codex-review-roles.json`.
 
 Keep the top-level prompts reserved for label-triggered native reviews. Use the detailed prompts for manual fallback reviews or deeper repo-health reviews that are not wired to PR labels by default. Do not paste a detailed prompt into a PR unless you are intentionally using the documented fallback flow.
 
