@@ -8,14 +8,15 @@ The key design choice is:
 
 1. automatic labels are derived from the PR diff
 2. review requests are posted through a single global queue per PR
-3. at most one new `@codex review` trigger is posted per workflow run
+3. the initial automated review wave advances sequentially inside one workflow run
 4. no new trigger is posted while the PR body still has Codex's in-progress `eyes` reaction
 5. if a plain manual `@codex review` comment appears, the automated queue stands down for that PR
 6. once the PR head moves past the first automated review wave, the automated queue stops and any further reviews are manual
+7. automatic labels are reconciled in both directions so stale auto labels are removed when the current PR diff no longer matches
 
 If you only remember one thing, remember this:
 
-> The workflow does **not** try to post every needed review at once anymore. It keeps a queue and advances one review request at a time.
+> The workflow keeps the initial automated review wave sequential, but it advances that wave inside one run instead of depending on later bot wake-up events.
 
 ## Source Files
 
@@ -30,7 +31,7 @@ If you only remember one thing, remember this:
 flowchart TD
     A["Workflow wakes up"] --> B["Read PR diff"]
     B --> C["Compute automatic review labels"]
-    C --> D["Apply missing automatic labels"]
+    C --> D["Add missing auto labels and remove stale ones"]
     D --> E["Read active review labels on the PR"]
     E --> F{"PR head still matches first automated review SHA?"}
     F -->|"No"| G["Post nothing: later reviews are manual"]
@@ -38,18 +39,19 @@ flowchart TD
     H -->|"Yes"| I["Manual mode: post nothing"]
     H -->|"No"| J{"PR body still has Codex eyes?"}
     J -->|"Yes"| K["Queue locked: post nothing"]
-    J -->|"No"| L["Find the next needed role in manifest order"]
+    J -->|"No"| L["Walk active roles in manifest order"]
     L --> M{"Already requested for current head SHA?"}
     M -->|"Yes"| L
     M -->|"No"| N["Post one new @codex review trigger comment"]
-    N --> O["Stop and wait for a later wake-up event"]
+    N --> O{"More roles remain?"}
+    O -->|"No"| P["Stop"]
+    O -->|"Yes"| Q["Wait for Codex eyes to clear, then continue"]
+    Q --> L
 ```
 
 ## What Wakes Up The Workflow
 
-The workflow can wake up from three kinds of events.
-
-### 1. Pull Request Events
+The workflow wakes up from pull-request events.
 
 These are the normal routing events:
 
@@ -63,23 +65,6 @@ Use this mental model:
 - `opened` and `reopened` start the queue
 - `labeled` can add a manually requested role to the queue
 - `ready_for_review` resumes review activity after draft mode
-
-### 2. Connector Comment Events
-
-If `chatgpt-codex-connector[bot]` posts an issue comment on the PR thread, the workflow wakes up again.
-
-Why this matters:
-
-- Codex often leaves comments as part of review completion or review-status signaling
-- those comments give the queue a chance to advance after an earlier review finishes
-
-### 3. Connector Review Events
-
-If `chatgpt-codex-connector[bot]` submits a PR review, the workflow also wakes up again.
-
-Why this matters:
-
-- a completed review is another signal that the queue may be able to advance
 
 ## Phase 1: Compute Automatic Labels
 
@@ -105,7 +90,14 @@ If the PR touches `src/ftimer_mpi.F90`, several roles may match:
 - test-quality
 - mpi-safety
 
-The workflow then applies any missing automatic labels to the PR using `github.token`.
+The workflow then reconciles automatic labels using `github.token`.
+
+That means it does both of these:
+
+- adds automatic labels that now match the PR diff
+- removes automatic labels that no longer match the PR diff
+
+A label that was just added manually on the current `pull_request.labeled` event is not immediately removed as stale by that same reconciliation pass.
 
 That token choice is deliberate:
 
@@ -130,7 +122,7 @@ Today that order is effectively:
 8. mpi-safety
 9. optional deeper reviews after that, if labeled manually
 
-Manifest order matters because the queue only posts one new review request per run.
+Manifest order matters because the workflow walks the initial review wave in that order.
 
 ## Phase 3: Initial-Wave Guard
 
@@ -144,7 +136,7 @@ That is the rule that prevents iterative auto-review loops after follow-up pushe
 
 In plain language:
 
-- the router may take a few wake-up events to finish posting the initial review wave
+- the router may post multiple initial review requests for the same head SHA
 - but it only keeps doing that while the PR head has not changed
 - after a push, any additional review requests are manual on purpose
 
@@ -216,7 +208,7 @@ So a role will not be re-requested for the same commit and the same prompt versi
 
 If no, the role is eligible now, as long as the queue is still within the initial automated-review wave for the current head SHA.
 
-## Phase 6: Post One New Trigger
+## Phase 6: Advance The Initial Wave
 
 If the queue is free and the workflow finds an eligible role, it:
 
@@ -224,9 +216,10 @@ If the queue is free and the workflow finds an eligible role, it:
 2. loads the condensed one-line prompt for that role
 3. posts a single `@codex review ...` comment
 4. appends the hidden metadata token
-5. stops immediately after posting that one comment
+5. if more roles remain, waits for Codex's PR-body `eyes` reaction to clear
+6. continues to the next eligible role in the same run
 
-This is why the queue advances gradually rather than in a burst.
+This is why the queue remains sequential without depending on later bot wake-up events.
 
 ```mermaid
 flowchart TD
@@ -235,30 +228,17 @@ flowchart TD
     C -->|"No"| B
     C -->|"Yes"| D["Respect 30-second spacing window"]
     D --> E["Post one @codex review comment"]
-    E --> F["Stop this run"]
+    E --> F{"More roles remain?"}
+    F -->|"No"| G["Stop this run"]
+    F -->|"Yes"| H["Wait for PR-body eyes to clear"]
+    H --> B
 ```
 
-## How The Queue Advances Later
+The workflow also uses a timeout-based fallback while waiting between roles:
 
-After one trigger is posted, the workflow does not continue posting the next role in the same run.
-
-Instead, it waits for a future event.
-
-The next wake-up may come from:
-
-- a manual label being added
-- a connector comment
-- a connector PR review
-
-When the workflow wakes up again, it repeats the same checks:
-
-1. are automatic labels still correct?
-2. has the PR head moved past the first automated-review SHA?
-3. did a manual `@codex review` comment take over this PR?
-4. is the global queue still locked?
-5. what is the next still-needed role?
-
-If the PR-body `eyes` reaction is gone, the queue can advance to the next review.
+- if Codex never adds the PR-body `eyes` reaction, the workflow eventually proceeds anyway
+- if Codex adds `eyes` but never clears it, the workflow times out and stops rather than hanging forever
+- if the PR becomes draft or the head SHA changes during that wait, the workflow stops immediately
 
 ## End-To-End Example
 
@@ -280,14 +260,11 @@ The queue behavior would look like this:
 3. No plain manual request exists.
 4. Queue is free.
 5. Workflow posts `software`.
-6. Workflow stops.
+6. Workflow waits for Codex's PR-body `eyes` reaction to clear.
 7. Codex adds `eyes` to the PR body.
-8. A later workflow wake-up sees `eyes`, so it posts nothing.
-9. Codex finishes and removes `eyes`.
-10. A later workflow wake-up sees the queue is free.
-11. Workflow posts `docs-contract`.
-12. Workflow stops again.
-13. Later, the same process repeats for `build-portability`.
+8. Codex finishes and removes `eyes`.
+9. The same workflow run posts `docs-contract`.
+10. The same process repeats for `build-portability`.
 
 If the PR head changes anywhere in the middle of that sequence, the automated queue stops there. Any new review requests after that push are manual.
 
@@ -299,6 +276,7 @@ If the PR head changes anywhere in the middle of that sequence, the automated qu
 - Much clearer “one review at a time” behavior.
 - Easier to reason about whether Codex is currently busy.
 - Safer against overlapping or mixed-up reviews.
+- The initial automated wave no longer depends on later connector comments or reviews to keep moving.
 
 ### Costs
 
@@ -307,7 +285,7 @@ If the PR head changes anywhere in the middle of that sequence, the automated qu
 - Queue progress now depends on the PR-body reaction staying accurate.
 - Manual `@codex review` comments intentionally disable automatic queue posting for that PR until the manual request is removed or handled out of band.
 - A push can intentionally cut the initial automated wave short; later reviews then require manual judgment instead of automatic reruns.
-- Queue advancement depends on later wake-up events, not just the initial PR-open event.
+- The workflow may spend longer in a single run while it waits between initial-wave review requests.
 
 ## Practical Debug Checklist
 
@@ -318,7 +296,7 @@ If a review did not get posted, ask these in order:
 3. Is there a plain manual `@codex review` comment causing the automation to stand down?
 4. Did the role already get requested for the current `head.sha`?
 5. Does the PR body still have Codex's `eyes` reaction?
-6. Did the workflow stop after posting one earlier role in the queue?
+6. Did the workflow time out while waiting for `eyes` to appear or clear between roles?
 
 ## Reading The Hidden Metadata
 
@@ -343,4 +321,4 @@ The workflow is best understood as:
 3. stop automated posting once the PR moves past the first automated-review SHA
 4. stand down if a maintainer starts manual `@codex review` requests
 5. never post a new trigger while the PR body is still marked in-progress
-6. post one new role at a time
+6. walk the initial automated wave sequentially inside one run

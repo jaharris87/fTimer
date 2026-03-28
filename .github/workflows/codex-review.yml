@@ -8,12 +8,13 @@ name: Codex Review Routing and Triggers
 # reliably follow previous long-form trigger prompts. The long-form prompt
 # library still lives under .github/prompts/detailed/ for fallback reviews and
 # deeper manual review roles. The workflow maintains a single global Codex
-# review queue per PR: it posts at most one new `@codex review` trigger per run,
-# waits until the PR body no longer has Codex's in-progress `eyes` reaction,
+# review queue per PR: it posts one initial review wave sequentially,
+# waits until the PR body no longer has Codex's in-progress `eyes` reaction
+# between trigger comments,
 # stands down entirely if a plain manual `@codex review` comment is present,
 # and stops auto-advancing once the PR head changes after the first automated
-# review wave. When automation is active, it advances to the next needed role in
-# manifest order. The
+# review wave. When automation is active, it advances through the needed roles in
+# manifest order inside the same run. The
 # role catalog and auto-routing rules now live in .github/codex-review-roles.json
 # so docs and automation share one source.
 #
@@ -31,10 +32,6 @@ name: Codex Review Routing and Triggers
 on:
   pull_request:
     types: [opened, reopened, ready_for_review, labeled]
-  issue_comment:
-    types: [created]
-  pull_request_review:
-    types: [submitted]
 
 permissions:
   contents: read
@@ -43,14 +40,14 @@ permissions:
 
 env:
   CODEX_REVIEW_COMMENT_SPACING_SECONDS: 30
+  CODEX_REVIEW_LOCK_POLL_SECONDS: 15
+  CODEX_REVIEW_LOCK_APPEAR_TIMEOUT_SECONDS: 90
+  CODEX_REVIEW_LOCK_CLEAR_TIMEOUT_SECONDS: 900
   CODEX_REVIEW_ROLE_MANIFEST: .github/codex-review-roles.json
 
 jobs:
   route-and-trigger:
-    if: |
-      (github.event_name == 'pull_request' && github.event.pull_request.state == 'open') ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.user.login == 'chatgpt-codex-connector[bot]') ||
-      (github.event_name == 'pull_request_review' && github.event.pull_request.state == 'open' && github.event.review.user.login == 'chatgpt-codex-connector[bot]')
+    if: github.event.pull_request.state == 'open'
     concurrency:
       group: codex-review-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: false
@@ -80,6 +77,11 @@ jobs:
                 | select(matches_role)
                 | .label
               ],
+              automatic_known_labels: [
+                .roles[]
+                | select(.automatic)
+                | .label
+              ],
               known_labels: [ .roles[].label ]
             }
           ' "$CODEX_REVIEW_ROLE_MANIFEST" > /tmp/codex-routing.json
@@ -90,6 +92,11 @@ jobs:
         run: |
           set -euo pipefail
           pr_number="${{ github.event.pull_request.number || github.event.issue.number }}"
+          manual_opt_in_label=""
+
+          if [ "${{ github.event.action }}" = "labeled" ]; then
+            manual_opt_in_label="${{ github.event.label.name }}"
+          fi
 
           gh api "repos/${{ github.repository }}/issues/${pr_number}/labels?per_page=100" \
             | jq '[.[].name] | sort | unique' > /tmp/codex-current-labels.json
@@ -97,11 +104,24 @@ jobs:
           jq -n \
             --slurpfile routing /tmp/codex-routing.json \
             --slurpfile current /tmp/codex-current-labels.json \
-            '$routing[0].automatic_labels - $current[0]' \
+            '{
+              missing: ($routing[0].automatic_labels - $current[0]),
+              stale: (
+                ($routing[0].automatic_known_labels - $routing[0].automatic_labels)
+                | map(select(. as $label | any($current[0][]; . == $label)))
+              )
+            }' \
             > /tmp/codex-missing-labels.json
 
-          if [ "$(jq 'length' /tmp/codex-missing-labels.json)" -gt 0 ]; then
-            mapfile -t missing_labels < <(jq -r '.[]' /tmp/codex-missing-labels.json)
+          if [ -n "$manual_opt_in_label" ]; then
+            jq --arg manual_opt_in_label "$manual_opt_in_label" \
+              '.stale |= map(select(. != $manual_opt_in_label))' \
+              /tmp/codex-missing-labels.json > /tmp/codex-missing-labels-updated.json
+            mv /tmp/codex-missing-labels-updated.json /tmp/codex-missing-labels.json
+          fi
+
+          if [ "$(jq '.missing | length' /tmp/codex-missing-labels.json)" -gt 0 ]; then
+            mapfile -t missing_labels < <(jq -r '.missing[]' /tmp/codex-missing-labels.json)
             label_args=()
 
             for label in "${missing_labels[@]}"; do
@@ -112,11 +132,19 @@ jobs:
               "${label_args[@]}" >/dev/null
           fi
 
+          if [ "$(jq '.stale | length' /tmp/codex-missing-labels.json)" -gt 0 ]; then
+            mapfile -t stale_labels < <(jq -r '.stale[]' /tmp/codex-missing-labels.json)
+
+            for label in "${stale_labels[@]}"; do
+              gh api -X DELETE "repos/${{ github.repository }}/issues/${pr_number}/labels/${label}" >/dev/null
+            done
+          fi
+
           gh api "repos/${{ github.repository }}/issues/${pr_number}/labels?per_page=100" \
             | jq '[.[].name] | sort | unique' > /tmp/codex-current-labels.json
 
       - name: Trigger current-sha reviews for active Codex labels
-        if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+        if: github.event.pull_request.draft == false
         env:
           GH_TOKEN: ${{ secrets.CODEX_TRIGGER_PAT }}
         run: |
@@ -141,6 +169,74 @@ jobs:
             echo "No Codex review labels are active for this PR."
             exit 0
           fi
+
+          wait_for_queue_to_clear() {
+            appear_deadline="$(( $(date -u +%s) + CODEX_REVIEW_LOCK_APPEAR_TIMEOUT_SECONDS ))"
+            clear_deadline="$(( $(date -u +%s) + CODEX_REVIEW_LOCK_CLEAR_TIMEOUT_SECONDS ))"
+            saw_eyes=0
+
+            while true; do
+              pr_json="$(
+                gh api "repos/${{ github.repository }}/pulls/${pr_number}"
+              )"
+              current_head_sha="$(jq -r '.head.sha' <<<"$pr_json")"
+              current_draft="$(jq -r '.draft' <<<"$pr_json")"
+              gh api --paginate "repos/${{ github.repository }}/issues/${pr_number}/comments?per_page=100" \
+                | jq -s 'add // []' > /tmp/codex-comments-wait.json
+
+              if jq -e '
+                any(
+                  .[];
+                  ((.body // "") | startswith("@codex review "))
+                  and ((.body // "") | contains("codex-review role=") | not)
+                )
+              ' /tmp/codex-comments-wait.json >/dev/null; then
+                echo "Detected a plain manual @codex review comment while waiting, so automatic queue posting is disabled."
+                exit 0
+              fi
+
+              if [ "$current_draft" = "true" ]; then
+                echo "The PR is draft again, so automated review requests stop."
+                exit 0
+              fi
+
+              if [ "$current_head_sha" != "$head_sha" ]; then
+                echo "The PR head moved from ${head_sha} to ${current_head_sha}, so automatic review requests stop after the initial wave."
+                exit 0
+              fi
+
+              pr_reactions="$(
+                gh api -H 'Accept: application/vnd.github+json' \
+                  "repos/${{ github.repository }}/issues/${pr_number}/reactions"
+              )"
+
+              if jq -e 'any(.[]; .content == "eyes" and .user.login == "chatgpt-codex-connector[bot]")' \
+                <<<"$pr_reactions" >/dev/null; then
+                saw_eyes=1
+              fi
+
+              now_epoch="$(date -u +%s)"
+
+              if [ "$saw_eyes" -eq 1 ]; then
+                if ! jq -e 'any(.[]; .content == "eyes" and .user.login == "chatgpt-codex-connector[bot]")' \
+                  <<<"$pr_reactions" >/dev/null; then
+                  break
+                fi
+
+                if [ "$now_epoch" -ge "$clear_deadline" ]; then
+                  echo "Timed out waiting for Codex's PR-body eyes reaction to clear."
+                  exit 0
+                fi
+              else
+                if [ "$now_epoch" -ge "$appear_deadline" ]; then
+                  echo "Codex never added the PR-body eyes reaction, so proceeding after the appearance timeout."
+                  break
+                fi
+              fi
+
+              sleep "$CODEX_REVIEW_LOCK_POLL_SECONDS"
+            done
+          }
 
           gh api --paginate "repos/${{ github.repository }}/issues/${pr_number}/comments?per_page=100" \
             | jq -s 'add // []' > /tmp/codex-comments.json
@@ -207,7 +303,10 @@ jobs:
               "$CODEX_REVIEW_ROLE_MANIFEST"
           )
 
-          for row in "${review_rows[@]}"; do
+          review_count="${#review_rows[@]}"
+
+          for index in "${!review_rows[@]}"; do
+            row="${review_rows[$index]}"
             role_json="$(printf '%s' "$row" | base64 --decode)"
             role_id="$(jq -r '.id' <<<"$role_json")"
             label="$(jq -r '.label' <<<"$role_json")"
@@ -245,6 +344,9 @@ jobs:
               > /tmp/codex-comments-updated.json
             mv /tmp/codex-comments-updated.json /tmp/codex-comments.json
 
-            echo "Posted one queued Codex review for ${label}; leaving the remaining roles for later queue advancement."
-            break
+            echo "Posted one queued Codex review for ${label}."
+
+            if [ "$index" -lt "$((review_count - 1))" ]; then
+              wait_for_queue_to_clear
+            fi
           done
