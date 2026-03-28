@@ -265,6 +265,45 @@ contains
    end subroutine test_get_summary_keeps_same_timer_distinct_across_parents
 
    @test
+   subroutine test_get_summary_preserves_large_time_precision()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      real(wp), parameter :: base_time = 1.0e12_wp
+      real(wp) :: outer_diff
+      real(wp) :: inner_diff
+      real(wp) :: self_diff
+      integer :: ierr
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      fake_time = base_time
+      call timer%start("outer", ierr=ierr)
+      fake_time = base_time + 1.25_wp
+      call timer%start("inner", ierr=ierr)
+      fake_time = base_time + 1.75_wp
+      call timer%stop("inner", ierr=ierr)
+      fake_time = base_time + 2.5_wp
+      call timer%stop("outer", ierr=ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+
+      outer_diff = abs(summary%entries(1)%inclusive_time - 2.5_wp)
+      inner_diff = abs(summary%entries(2)%inclusive_time - 0.5_wp)
+      self_diff = abs(summary%entries(1)%self_time - 2.0_wp)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, summary%num_entries)
+      @assertTrue(outer_diff < 1.0e-12_wp)
+      @assertTrue(inner_diff < 1.0e-12_wp)
+      @assertTrue(self_diff < 1.0e-12_wp)
+      @assertTrue(abs(summary%total_time - 2.5_wp) < 1.0e-12_wp)
+      @assertTrue(abs(summary%entries(2)%self_time - 0.5_wp) < 1.0e-12_wp)
+      @assertEqual(1, summary%entries(1)%call_count)
+      @assertEqual(1, summary%entries(2)%call_count)
+   end subroutine test_get_summary_preserves_large_time_precision
+
+   @test
    subroutine test_build_summary_skips_visible_child_without_visible_parent()
       type(ftimer_call_stack_t) :: root_stack
       type(ftimer_segment_t) :: segments(2)

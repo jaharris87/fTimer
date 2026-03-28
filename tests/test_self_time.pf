@@ -97,4 +97,51 @@ contains
       @assertEqual(2.0_wp, summary%entries(3)%self_time)
    end subroutine test_nested_self_time_uses_direct_children_only
 
+   @test
+   subroutine test_self_time_stops_at_next_sibling_boundary()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%start("B", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%start("C", ierr=ierr)
+      fake_time = 9.0_wp
+      call timer%stop("C", ierr=ierr)
+      fake_time = 12.0_wp
+      call timer%stop("B", ierr=ierr)
+      fake_time = 14.0_wp
+      call timer%start("D", ierr=ierr)
+      fake_time = 19.0_wp
+      call timer%stop("D", ierr=ierr)
+      fake_time = 25.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(4, summary%num_entries)
+      @assertEqual(0, summary%entries(1)%depth)
+      @assertEqual(1, summary%entries(2)%depth)
+      @assertEqual(2, summary%entries(3)%depth)
+      @assertEqual(1, summary%entries(4)%depth)
+      @assertEqual(25.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(10.0_wp, summary%entries(1)%self_time)
+      @assertEqual(10.0_wp, summary%entries(2)%inclusive_time)
+      @assertEqual(6.0_wp, summary%entries(2)%self_time)
+      @assertEqual(4.0_wp, summary%entries(3)%inclusive_time)
+      @assertEqual(4.0_wp, summary%entries(3)%self_time)
+      @assertEqual(5.0_wp, summary%entries(4)%inclusive_time)
+      @assertEqual(5.0_wp, summary%entries(4)%self_time)
+      @assertTrue(summary%entries(1)%self_time >= 0.0_wp)
+      @assertTrue(summary%entries(2)%self_time >= 0.0_wp)
+      @assertTrue(summary%entries(1)%self_time <= summary%entries(1)%inclusive_time)
+      @assertTrue(summary%entries(2)%self_time <= summary%entries(2)%inclusive_time)
+   end subroutine test_self_time_stops_at_next_sibling_boundary
+
 end module test_self_time

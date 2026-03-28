@@ -6,6 +6,29 @@ if(FTIMER_BUILD_SMOKE_TESTS)
   add_test(NAME ftimer_phase0_smoke COMMAND ftimer_phase0_smoke)
 endif()
 
+function(ftimer_add_installed_consumer_test test_name test_binary_dir)
+  set(options ENABLE_MPI ENABLE_OPENMP)
+  set(oneValueArgs REQUIRED_COMPILER_NAMES)
+  cmake_parse_arguments(FTIMER_CONSUMER "${options}" "${oneValueArgs}" "" ${ARGN})
+
+  add_test(NAME ${test_name}
+    COMMAND ${CMAKE_COMMAND}
+      -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+      -DTEST_NAME=${test_name}
+      -DTEST_BINARY_DIR=${test_binary_dir}
+      -DCMAKE_GENERATOR=${CMAKE_GENERATOR}
+      -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+      -DCMAKE_Fortran_COMPILER=${CMAKE_Fortran_COMPILER}
+      -DTEST_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+      "-DTEST_CONFIG=$<CONFIG>"
+      -DTEST_REQUIRED_COMPILER_NAMES=${FTIMER_CONSUMER_REQUIRED_COMPILER_NAMES}
+      -DTEST_ENABLE_MPI=${FTIMER_CONSUMER_ENABLE_MPI}
+      -DTEST_ENABLE_OPENMP=${FTIMER_CONSUMER_ENABLE_OPENMP}
+      -DTEST_EXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/check_installed_package_consumer.cmake
+  )
+endfunction()
+
 add_test(NAME ftimer_init_contract_docs
   COMMAND ${CMAKE_COMMAND}
     -DREPO_ROOT=${CMAKE_SOURCE_DIR}
@@ -13,16 +36,23 @@ add_test(NAME ftimer_init_contract_docs
 )
 
 if(FTIMER_BUILD_SMOKE_TESTS)
-  add_test(NAME ftimer_installed_package_consumer
-    COMMAND ${CMAKE_COMMAND}
-      -DREPO_ROOT=${CMAKE_SOURCE_DIR}
-      -DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer
-      -DCMAKE_GENERATOR=${CMAKE_GENERATOR}
-      -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
-      -DCMAKE_Fortran_COMPILER=${CMAKE_Fortran_COMPILER}
-      -DTEST_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-      "-DTEST_CONFIG=$<CONFIG>"
-      -P ${CMAKE_CURRENT_SOURCE_DIR}/check_installed_package_consumer.cmake
+  ftimer_add_installed_consumer_test(
+    ftimer_installed_package_consumer
+    ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer
+  )
+
+  ftimer_add_installed_consumer_test(
+    ftimer_installed_package_consumer_mpi
+    ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer_mpi
+    REQUIRED_COMPILER_NAMES mpifort,mpif90,mpif77
+    ENABLE_MPI
+  )
+
+  ftimer_add_installed_consumer_test(
+    ftimer_installed_package_consumer_openmp
+    ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer_openmp
+    REQUIRED_COMPILER_NAMES gfortran
+    ENABLE_OPENMP
   )
 
   add_test(NAME ftimer_configure_contracts

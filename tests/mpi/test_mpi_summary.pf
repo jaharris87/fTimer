@@ -92,6 +92,66 @@ contains
    end subroutine test_mpi_summary_reduces_nested_timer_statistics
 
    @test
+   subroutine test_mpi_summary_preserves_large_time_precision(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      integer :: nprocs
+      integer :: rank
+      logical :: has_mpi_data
+      real(wp) :: expected_inner
+      real(wp) :: expected_outer
+      real(wp) :: expected_outer_self
+
+      rank = this%getProcessRank()
+      nprocs = this%getNumProcesses()
+      @assertEqual(2, nprocs)
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_large_timestamp_nested_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      expected_outer = 2.5_wp + real(rank, wp)
+      expected_inner = 0.5_wp + 0.25_wp*real(rank, wp)
+      expected_outer_self = expected_outer - expected_inner
+      has_mpi_data = summary%has_mpi_data
+
+      @assertEqual(2, summary%num_entries)
+      call assert_real_close(summary%entries(1)%inclusive_time, expected_outer)
+      call assert_real_close(summary%entries(1)%self_time, expected_outer_self)
+      @assertEqual(1, summary%entries(1)%call_count)
+      call assert_real_close(summary%entries(2)%inclusive_time, expected_inner)
+      call assert_real_close(summary%entries(2)%self_time, expected_inner)
+      @assertEqual(1, summary%entries(2)%call_count)
+
+      if (rank == 0) then
+         @assertTrue(has_mpi_data)
+         @assertEqual(FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED, summary%mpi_summary_state)
+         call assert_real_close(summary%entries(1)%min_time, 2.5_wp)
+         call assert_real_close(summary%entries(1)%max_time, 3.5_wp)
+         call assert_real_close(summary%entries(1)%avg_across_ranks, 3.0_wp)
+         call assert_real_close(summary%entries(1)%imbalance, 3.5_wp/3.0_wp)
+         call assert_real_close(summary%entries(2)%min_time, 0.5_wp)
+         call assert_real_close(summary%entries(2)%max_time, 0.75_wp)
+         call assert_real_close(summary%entries(2)%avg_across_ranks, 0.625_wp)
+         call assert_real_close(summary%entries(2)%imbalance, 0.75_wp/0.625_wp)
+      else
+         @assertFalse(has_mpi_data)
+         @assertEqual(FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE, summary%mpi_summary_state)
+      end if
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_summary_preserves_large_time_precision
+
+   @test
    subroutine test_mpi_summary_uses_canonical_order_for_consistent_timer_sets(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
@@ -329,6 +389,28 @@ contains
       fake_time = 10.0_wp + 4.0_wp*real(rank, wp)
       call timer%stop("outer", ierr=ierr)
    end subroutine build_nested_timers
+
+   subroutine build_large_timestamp_nested_timers(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+      real(wp), parameter :: base_time = 1.0e12_wp
+
+      fake_time = base_time
+      call timer%start("outer", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = base_time + 1.25_wp + 0.25_wp*real(rank, wp)
+      call timer%start("inner", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = base_time + 1.75_wp + 0.5_wp*real(rank, wp)
+      call timer%stop("inner", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = base_time + 2.5_wp + real(rank, wp)
+      call timer%stop("outer", ierr=ierr)
+   end subroutine build_large_timestamp_nested_timers
 
    subroutine build_nested_timers_procedural(rank, ierr)
       integer, intent(in) :: rank

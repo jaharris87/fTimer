@@ -6,7 +6,7 @@ This document is the current-state architecture reference for `fTimer`.
 
 Use it to understand how the repository is organized today, how the major modules fit together, what validation paths are real, and how the documented maintainer workflow ties into the codebase. For the exact runtime contract, prefer [`docs/semantics.md`](semantics.md). For the user-facing quick-start and build/install guidance, prefer [`README.md`](../README.md). For the historical phase roadmap that led to the current implementation, use [`docs/implementation-history.md`](implementation-history.md).
 
-When sources disagree, treat the implementation under `src/` as the final source of truth, then reconcile the docs.
+When current-state sources disagree, use this repository-wide precedence order: current code under `src/`, then current behavioral tests, then `docs/semantics.md`, then `README.md`, then `docs/design.md`.
 
 ## Current Scope
 
@@ -167,7 +167,7 @@ The repository supports three distinct validation layers, and the architecture d
 
 Supported local build paths today are:
 
-- serial smoke/library build with the active Fortran compiler
+- serial smoke/library build validated with GNU Fortran and LLVM Flang
 - serial pFUnit tests with `gfortran` plus a matching pFUnit install
 - MPI builds through an MPI wrapper compiler such as `mpifort`
 - OpenMP builds with `gfortran`
@@ -191,7 +191,7 @@ The MPI and OpenMP enablement paths are guarded at configure time:
 
 The current test inventory is:
 
-- smoke tests in `tests/test_phase0_smoke.F90` plus installed-package and build-contract regression checks under `tests/check_*_contracts.cmake`
+- smoke tests in `tests/test_phase0_smoke.F90`, runtime execution of `basic_usage`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
 - serial pFUnit tests for core behavior, summaries, callbacks, reset behavior, call-stack behavior, and procedural parity
 - MPI pFUnit tests under `tests/mpi/`
 - OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`
@@ -203,6 +203,7 @@ The default repository baseline is still the smoke/build-contract path. The full
 `.github/workflows/ci.yml` currently runs these jobs:
 
 - `build-serial`
+- `build-serial-flang`
 - `build-mpi`
 - `test-serial`
 - `test-mpi`
