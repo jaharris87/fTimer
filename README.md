@@ -121,6 +121,8 @@ The supported downstream contract is the installed package export. New adopters 
 
 The downstream example under [`tests/install-consumer/`](tests/install-consumer/) is also part of the smoke path. It shows the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer_types`, timer start/stop calls, and summary retrieval from an installed prefix.
 
+The installed public module surface is intentionally curated to these modules: `ftimer`, `ftimer_clock`, `ftimer_core`, `ftimer_mpi`, `ftimer_summary`, and `ftimer_types`. The current validated toolchain matrix does not require any extra compiler-specific companion artifacts in the installed include tree. If a future compiler proves that such artifacts are truly required for downstream consumption, they should be added deliberately and documented as an explicit exception rather than leaked accidentally.
+
 ## API Surface
 
 The public API supports two styles:

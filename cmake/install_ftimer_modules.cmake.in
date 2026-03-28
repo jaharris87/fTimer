@@ -1,7 +1,5 @@
-# Install a curated public module surface rather than copying the entire
-# compiler module output directory wholesale. Compiler-specific companion
-# artifacts for the public `ftimer_core` surface are installed only when the
-# compiler emits them.
+# Install the intentional public module surface rather than copying the entire
+# compiler module output directory wholesale.
 
 set(ftimer_install_module_dir "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_INCLUDEDIR@/ftimer")
 file(MAKE_DIRECTORY "${ftimer_install_module_dir}")
@@ -27,27 +25,5 @@ foreach(ftimer_module_name IN LISTS ftimer_public_module_names)
     DESTINATION "${ftimer_install_module_dir}"
     TYPE FILE
     FILES "${ftimer_module_file}"
-  )
-endforeach()
-
-set(ftimer_public_companion_globs
-  "@CMAKE_BINARY_DIR@/mod/ftimer/ftimer_core-*.mod"
-  "@CMAKE_BINARY_DIR@/mod/ftimer/ftimer_core-*.smod"
-  "@CMAKE_BINARY_DIR@/mod/ftimer_core-*.mod"
-  "@CMAKE_BINARY_DIR@/mod/ftimer_core-*.smod"
-)
-
-set(ftimer_public_companion_files)
-foreach(ftimer_companion_glob IN LISTS ftimer_public_companion_globs)
-  file(GLOB ftimer_globbed_companions LIST_DIRECTORIES FALSE "${ftimer_companion_glob}")
-  list(APPEND ftimer_public_companion_files ${ftimer_globbed_companions})
-endforeach()
-list(REMOVE_DUPLICATES ftimer_public_companion_files)
-
-foreach(ftimer_companion_file IN LISTS ftimer_public_companion_files)
-  file(INSTALL
-    DESTINATION "${ftimer_install_module_dir}"
-    TYPE FILE
-    FILES "${ftimer_companion_file}"
   )
 endforeach()
