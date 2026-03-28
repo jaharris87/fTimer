@@ -4,6 +4,7 @@ set(install_prefix "${TEST_BINARY_DIR}/prefix")
 set(consumer_build_dir "${TEST_BINARY_DIR}/consumer-build")
 set(consumer_source_dir "${REPO_ROOT}/tests/install-consumer")
 set(test_name "${TEST_NAME}")
+set(installed_module_dir "${install_prefix}/include/ftimer")
 
 if(test_name STREQUAL "")
   set(test_name "ftimer_installed_package_consumer")
@@ -94,6 +95,35 @@ execute_process(
 )
 if(NOT producer_install_result EQUAL 0)
   message(FATAL_ERROR "Failed to install the producer package.")
+endif()
+
+set(expected_installed_modules
+  ftimer.mod
+  ftimer_clock.mod
+  ftimer_core.mod
+  ftimer_mpi.mod
+  ftimer_summary.mod
+  ftimer_types.mod
+)
+
+file(GLOB installed_module_paths LIST_DIRECTORIES FALSE "${installed_module_dir}/*")
+set(installed_module_names)
+foreach(installed_module_path IN LISTS installed_module_paths)
+  get_filename_component(installed_module_name "${installed_module_path}" NAME)
+  list(APPEND installed_module_names "${installed_module_name}")
+endforeach()
+
+list(SORT expected_installed_modules)
+list(SORT installed_module_names)
+
+if(NOT installed_module_names STREQUAL expected_installed_modules)
+  list(JOIN expected_installed_modules ", " expected_installed_modules_text)
+  list(JOIN installed_module_names ", " installed_module_names_text)
+  message(FATAL_ERROR
+    "Installed module surface mismatch.\n"
+    "Expected: ${expected_installed_modules_text}\n"
+    "Actual: ${installed_module_names_text}"
+  )
 endif()
 
 set(consumer_configure_args
