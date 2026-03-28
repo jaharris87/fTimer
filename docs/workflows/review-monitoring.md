@@ -9,7 +9,7 @@ After opening the PR, or after manually requesting another review on a later pus
 1. Inform the user that you are monitoring for reviews.
 2. Poll every 30-60 seconds for up to 10 minutes.
 3. Inspect actual review artifacts, not just workflow success.
-4. Remember that the review router now maintains one global Codex review queue per PR only for the initial automated review wave. Within that initial wave it advances sequentially inside one workflow run, waits for the PR body to lose Codex's `eyes` reaction before moving to the next automated role, and stands down entirely if a plain manual `@codex review` comment is present on the PR. Once the PR head moves past that first automated-review SHA, the router stops posting further automated review requests, so any later-push review is manual by design.
+4. Remember that the review router now maintains one global Codex review queue per PR only for the initial automated review wave. Within that initial wave it advances sequentially inside one workflow run, waits for the PR body to lose Codex's `eyes` reaction before moving to the next automated role, and stands down if a newer plain manual `@codex review` comment appears after the latest automated trigger. Once the PR head moves past that first automated-review SHA, the router stops posting further automated review requests and rerouting, so any later-push review is manual by design.
 5. Unless the connector explicitly reports that the review will not proceed, give the native `@codex` review flow at least 5 minutes before considering any manual fallback.
 6. After the trigger workflow completes, watch for a `chatgpt-codex-connector` response to the `@codex review` trigger comment indicating the review will not proceed (e.g., quota exhausted). Note: the connector may also post unrelated comments when PR text contains the word "Codex" — those are not fallback signals; only a response to the trigger itself counts.
 7. Once all expected reviews have arrived, respond to every finding.
@@ -58,10 +58,11 @@ Useful commands:
 
 - A passing trigger workflow only proves that labels were reconciled and the `@codex review` comment was posted.
 - Trigger comments now include hidden `role`, `sha`, and prompt-version metadata so you can tell whether the latest relevant commit has actually been queued for the expected review.
-- Automatic posting is intentionally limited to the initial automated review wave for a given PR head. Once the PR head changes after that first wave begins, the router does not post more review requests unless a human does so manually.
+- Automatic posting is intentionally limited to the initial automated review wave for a given PR head. Once the PR head changes after that first wave begins, the router does not reroute or post more review requests unless a human does so manually.
 - Automatic labels are reconciled in both directions against the current PR diff, so stale auto-routed labels are removed when their selectors no longer match.
+- The role manifest and condensed prompt files are read from the PR base revision rather than from PR-controlled content.
 - The router now enforces a global Codex review lock per PR by looking at the PR body's Codex `eyes` reaction. If that reaction is still present, no new `@codex review` trigger is posted yet.
-- If the PR contains a plain manual `@codex review` comment without the workflow metadata token, the router treats that PR as manually managed and does not post additional automated review requests.
+- If the PR contains a newer plain manual `@codex review` comment without the workflow metadata token, the router treats that PR as manually managed and does not post additional automated review requests.
 - When multiple review labels are active together, the trigger workflow serializes those jobs per PR, spaces subsequent `@codex review` comments by at least 30 seconds, and waits between them inside the same run.
 - Native Codex review did not reliably follow the previous long-form trigger prompts, so the workflow now uses single-line trigger comments and keeps the detailed versions in a separate long-form prompt library for fallback and non-triggered deep reviews.
 - Codex review bodies may ignore prompt instructions about top-level headings.

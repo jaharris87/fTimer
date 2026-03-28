@@ -16,7 +16,8 @@ name: Codex Review Routing and Triggers
 # review wave. When automation is active, it advances through the needed roles in
 # manifest order inside the same run. The
 # role catalog and auto-routing rules now live in .github/codex-review-roles.json
-# so docs and automation share one source.
+# so docs and automation share one source. The workflow intentionally reads that
+# review configuration from the PR base revision, not from PR-controlled content.
 #
 # Prerequisites:
 #   1. Create a fine-grained PAT with pull-requests:write on this repo
@@ -54,6 +55,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Determine expected automatic review labels
         env:
@@ -170,6 +173,23 @@ jobs:
             exit 0
           fi
 
+          manual_takeover_requested() {
+            comments_file="$1"
+
+            jq -e '
+              def is_plain_manual:
+                ((.body // "") | startswith("@codex review "))
+                and ((.body // "") | contains("codex-review role=") | not)
+                and ((.user.login // "") != "chatgpt-codex-connector[bot]")
+                and ((.user.login // "") != "github-actions[bot]");
+              def latest_created_at(stream):
+                [stream | .created_at] | sort | last // "";
+              (latest_created_at(.[] | select(is_plain_manual))) as $manual
+              | (latest_created_at(.[] | select((.body // "") | contains("codex-review role=")))) as $auto
+              | ($manual != "" and ($auto == "" or $manual > $auto))
+            ' "$comments_file" >/dev/null
+          }
+
           wait_for_queue_to_clear() {
             appear_deadline="$(( $(date -u +%s) + CODEX_REVIEW_LOCK_APPEAR_TIMEOUT_SECONDS ))"
             clear_deadline="$(( $(date -u +%s) + CODEX_REVIEW_LOCK_CLEAR_TIMEOUT_SECONDS ))"
@@ -184,14 +204,8 @@ jobs:
               gh api --paginate "repos/${{ github.repository }}/issues/${pr_number}/comments?per_page=100" \
                 | jq -s 'add // []' > /tmp/codex-comments-wait.json
 
-              if jq -e '
-                any(
-                  .[];
-                  ((.body // "") | startswith("@codex review "))
-                  and ((.body // "") | contains("codex-review role=") | not)
-                )
-              ' /tmp/codex-comments-wait.json >/dev/null; then
-                echo "Detected a plain manual @codex review comment while waiting, so automatic queue posting is disabled."
+              if manual_takeover_requested /tmp/codex-comments-wait.json; then
+                echo "Detected a newer plain manual @codex review comment while waiting, so automatic queue posting is disabled."
                 exit 0
               fi
 
@@ -206,8 +220,9 @@ jobs:
               fi
 
               pr_reactions="$(
-                gh api -H 'Accept: application/vnd.github+json' \
-                  "repos/${{ github.repository }}/issues/${pr_number}/reactions"
+                gh api --paginate -H 'Accept: application/vnd.github+json' \
+                  "repos/${{ github.repository }}/issues/${pr_number}/reactions?per_page=100" \
+                  | jq -s 'add // []'
               )"
 
               if jq -e 'any(.[]; .content == "eyes" and .user.login == "chatgpt-codex-connector[bot]")' \
@@ -261,20 +276,15 @@ jobs:
             exit 0
           fi
 
-          if jq -e '
-            any(
-              .[];
-              ((.body // "") | startswith("@codex review "))
-              and ((.body // "") | contains("codex-review role=") | not)
-            )
-          ' /tmp/codex-comments.json >/dev/null; then
-            echo "Detected a plain manual @codex review comment on this PR, so automatic queue posting is disabled."
+          if manual_takeover_requested /tmp/codex-comments.json; then
+            echo "Detected a newer plain manual @codex review comment on this PR, so automatic queue posting is disabled."
             exit 0
           fi
 
           pr_reactions="$(
-            gh api -H 'Accept: application/vnd.github+json' \
-              "repos/${{ github.repository }}/issues/${pr_number}/reactions"
+            gh api --paginate -H 'Accept: application/vnd.github+json' \
+              "repos/${{ github.repository }}/issues/${pr_number}/reactions?per_page=100" \
+              | jq -s 'add // []'
           )"
 
           if jq -e 'any(.[]; .content == "eyes" and .user.login == "chatgpt-codex-connector[bot]")' \

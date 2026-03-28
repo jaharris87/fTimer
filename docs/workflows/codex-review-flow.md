@@ -4,13 +4,19 @@
 
 This document explains the current automated Codex review workflow implemented in `.github/workflows/codex-review.yml` and driven by `.github/codex-review-roles.json`.
 
+Important scope note:
+
+- the workflow reads the review manifest and condensed prompt files from the PR base revision, not from PR-controlled content
+- the workflow only auto-routes the initial PR head SHA
+- after any later push, re-routing and additional review requests are manual by design
+
 The key design choice is:
 
 1. automatic labels are derived from the PR diff
 2. review requests are posted through a single global queue per PR
 3. the initial automated review wave advances sequentially inside one workflow run
 4. no new trigger is posted while the PR body still has Codex's in-progress `eyes` reaction
-5. if a plain manual `@codex review` comment appears, the automated queue stands down for that PR
+5. if a newer plain manual `@codex review` comment appears after the latest automated trigger, the automated queue stands down for that PR
 6. once the PR head moves past the first automated review wave, the automated queue stops and any further reviews are manual
 7. automatic labels are reconciled in both directions so stale auto labels are removed when the current PR diff no longer matches
 
@@ -35,7 +41,7 @@ flowchart TD
     D --> E["Read active review labels on the PR"]
     E --> F{"PR head still matches first automated review SHA?"}
     F -->|"No"| G["Post nothing: later reviews are manual"]
-    F -->|"Yes"| H{"Plain manual @codex review comment exists?"}
+    F -->|"Yes"| H{"Newer plain manual @codex review comment exists?"}
     H -->|"Yes"| I["Manual mode: post nothing"]
     H -->|"No"| J{"PR body still has Codex eyes?"}
     J -->|"Yes"| K["Queue locked: post nothing"]
@@ -77,6 +83,8 @@ Each automatic role has:
 - a detailed prompt file
 - a prompt version
 - routing selectors such as `path_regex_any`
+
+The role manifest and condensed prompt files are loaded from the checked-out PR base revision so the PR under review cannot rewrite its own automated reviewer.
 
 ### Example
 
@@ -150,9 +158,9 @@ flowchart TD
 
 ## Phase 4: Global Queue Lock
 
-Before posting anything new, the workflow checks whether the PR already contains a plain manual `@codex review` comment without the workflow metadata token.
+Before posting anything new, the workflow checks whether the PR contains a newer plain manual `@codex review` comment without the workflow metadata token.
 
-If such a comment exists, the workflow assumes the PR is being driven manually and posts nothing further automatically.
+If such a newer comment exists, the workflow assumes the PR is being driven manually and posts nothing further automatically.
 
 Only if there is no plain manual request does it continue to the PR-body `eyes` lock check.
 
@@ -162,7 +170,7 @@ If the PR body still has the `eyes` reaction from Codex, the queue is treated as
 
 ```mermaid
 flowchart TD
-    A["Load PR comments"] --> B{"Plain manual @codex review comment exists?"}
+    A["Load PR comments"] --> B{"Newer plain manual @codex review comment exists?"}
     B -->|"Yes"| C["Automation stands down"]
     B -->|"No"| D["Load reactions on the PR body"]
     D --> E{"PR body still has Codex eyes?"}
@@ -188,7 +196,7 @@ The manual-override rule sits even earlier than that lock. Its purpose is simple
 
 - if a maintainer starts posting plain `@codex review` comments directly,
 - the automated queue should stop posting its own requests,
-- otherwise manual and automatic queue state can drift apart and duplicate requests can appear.
+- but stale older manual comments should not keep jamming later automated work forever.
 
 ## Phase 5: Decide Whether A Role Still Needs A Review
 
@@ -257,7 +265,7 @@ The queue behavior would look like this:
 
 1. PR opens.
 2. Automatic labels are applied.
-3. No plain manual request exists.
+3. No newer plain manual request exists.
 4. Queue is free.
 5. Workflow posts `software`.
 6. Workflow waits for Codex's PR-body `eyes` reaction to clear.
@@ -283,7 +291,7 @@ If the PR head changes anywhere in the middle of that sequence, the automated qu
 - Reviews arrive more slowly.
 - The queue can stall if the connector leaves `eyes` behind longer than expected.
 - Queue progress now depends on the PR-body reaction staying accurate.
-- Manual `@codex review` comments intentionally disable automatic queue posting for that PR until the manual request is removed or handled out of band.
+- A newer manual `@codex review` comment intentionally disables automatic queue posting for that PR.
 - A push can intentionally cut the initial automated wave short; later reviews then require manual judgment instead of automatic reruns.
 - The workflow may spend longer in a single run while it waits between initial-wave review requests.
 
@@ -293,7 +301,7 @@ If a review did not get posted, ask these in order:
 
 1. Does the PR have any active Codex labels?
 2. Has the PR head moved past the first automated-review SHA?
-3. Is there a plain manual `@codex review` comment causing the automation to stand down?
+3. Is there a newer plain manual `@codex review` comment causing the automation to stand down?
 4. Did the role already get requested for the current `head.sha`?
 5. Does the PR body still have Codex's `eyes` reaction?
 6. Did the workflow time out while waiting for `eyes` to appear or clear between roles?
@@ -319,6 +327,6 @@ The workflow is best understood as:
 1. route labels from the current PR diff
 2. maintain a single global review queue
 3. stop automated posting once the PR moves past the first automated-review SHA
-4. stand down if a maintainer starts manual `@codex review` requests
+4. stand down if a maintainer posts a newer manual `@codex review` request
 5. never post a new trigger while the PR body is still marked in-progress
 6. walk the initial automated wave sequentially inside one run
