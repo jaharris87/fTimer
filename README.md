@@ -119,12 +119,16 @@ cmake --build my_app/build
 
 The supported downstream contract is the installed package export. New adopters should not need to infer the intended consumption model from the test suite.
 
+The downstream example under [`tests/install-consumer/`](tests/install-consumer/) is also part of the smoke path. It shows the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer_types`, timer start/stop calls, and summary retrieval from an installed prefix.
+
 ## API Surface
 
 The public API supports two styles:
 
 - Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, and `ftimer_default_instance`
 - OOP API through `type(ftimer_t)` in `ftimer_core`
+
+New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock injection and lifecycle on a specific timer object.
 
 Operational notes:
 
@@ -181,10 +185,12 @@ make test
 
 Supported toolchain matrix:
 
-- Serial smoke/library build: any Fortran compiler that can build the project normally
+- Serial smoke/library build: GNU Fortran and LLVM Flang are validated in automation
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
 - MPI: an MPI wrapper compiler such as `mpifort`
 - OpenMP: GNU Fortran only for the documented supported path
+
+Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 
 Use a separate build directory for each compiler or mode. Reconfiguring the same build tree with a different Fortran compiler is not a supported workflow in this repository.
 
@@ -193,6 +199,7 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - CMake is the supported build and package path. FPM support is intentionally deferred.
 - `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`. Configure now fails early if the active compiler cannot compile a minimal `use mpi` probe against the discovered MPI installation.
 - `mpi_summary()` does not produce a fully global summary object on every rank. After a successful collective, local summary fields still describe the calling rank's local data; only communicator root also receives reduced cross-rank fields.
+- All ranks that participate in `mpi_summary()` must agree on the communicator captured by `init`. If would-be participants diverge onto different communicators, the library cannot safely discover that mistake after the split; the practical failure mode is a hang, not a clean local fallback.
 - `FTIMER_USE_OPENMP=ON` enables limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
 - OpenMP support does not make fTimer thread-safe and does not provide thread-local timer instances.
 - If `FTIMER_USE_MPI=OFF`, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the result local-only.
@@ -215,7 +222,13 @@ This is useful for before/after regression checks when changing hot-path timing 
 - Runtime semantics: [`docs/semantics.md`](docs/semantics.md)
 - Current architecture reference: [`docs/design.md`](docs/design.md)
 
-When those sources disagree, the current implementation under `src/` is the source of truth.
+When current-state sources disagree, use this repository-wide precedence order:
+
+1. current code under `src/`
+2. current behavioral tests
+3. `docs/semantics.md`
+4. `README.md`
+5. `docs/design.md`
 
 ## License
 

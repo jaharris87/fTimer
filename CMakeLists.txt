@@ -114,9 +114,14 @@ install(TARGETS ftimer
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ftimer
 )
-install(DIRECTORY ${FTIMER_PUBLIC_MODULE_DIR}/
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ftimer
+
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/install_ftimer_modules.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/install_ftimer_modules.cmake
+  @ONLY
 )
+
+install(SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/install_ftimer_modules.cmake)
 
 install(EXPORT fTimerTargets
   FILE fTimerTargets.cmake

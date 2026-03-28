@@ -1,4 +1,4 @@
-> **When to read this:** When runtime behavior or contract is changing or unclear. This is the canonical current runtime contract on `main`. Do not load this by default for routine coding tasks where the behavior is not in question.
+> **When to read this:** When runtime behavior or contract is changing or unclear. This is the primary current runtime contract document on `main`. Do not load this by default for routine coding tasks where the behavior is not in question.
 
 # fTimer Semantics Reference
 
@@ -6,7 +6,7 @@ This document describes the current runtime contract on `main`.
 
 Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `mpi_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, root-side MPI min/max/avg/imbalance fields, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with a local-only summary.
 
-Current architecture, validation, and workflow notes belong in `docs/design.md`. Historical phase-roadmap notes belong in `docs/implementation-history.md`. When the documents differ, `README.md` and the implementation under `src/` define the current user-facing contract.
+Current architecture, validation, and workflow notes belong in `docs/design.md`. Historical phase-roadmap notes belong in `docs/implementation-history.md`. When current-state sources disagree, use this repository-wide precedence order: current code under `src/`, then current behavioral tests, then `docs/semantics.md`, then `README.md`, then `docs/design.md`.
 
 ## Timing Model
 
@@ -54,6 +54,14 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 - Extra timers, missing timers, renamed timers, and hierarchy/context mismatches fall back to the local-only summary with `FTIMER_ERR_MPI_INCON`
 - Min/max/avg/imbalance fields are valid only on communicator root when `has_mpi_data=.true.`
 - Mismatched communicator choices across would-be participants are unsupported; this API has no safe cross-communicator rendezvous to detect that misuse without risking the same MPI deadlock it is trying to avoid
+
+### Unsupported communicator mismatch example
+
+Suppose ranks 0-1 initialize a timer with one communicator split and later call `mpi_summary()`, while ranks 2-3 reach `mpi_summary()` through a different communicator choice. That is unsupported misuse.
+
+This is not like descriptor inconsistency within one communicator, where every participant can still enter the same collective and the library can fall back locally after a preflight mismatch. Once ranks have already diverged onto different communicators, `mpi_summary()` has no safe second rendezvous it can use to discover the mistake without risking the same deadlock it is trying to avoid. The practical failure mode is a hang, not `FTIMER_ERR_MPI_INCON`.
+
+The supported pattern is simple: capture one communicator consistently at `init`, then have that same participant set enter `mpi_summary()` together.
 
 ## MPI Summary Contract
 

@@ -34,6 +34,38 @@ jobs:
       - name: Smoke test
         run: ctest --test-dir build --output-on-failure
 
+  build-serial-flang:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flang-19 cmake
+
+      - name: Resolve Flang
+        run: |
+          if command -v flang-19 >/dev/null 2>&1; then
+            echo "FTIMER_FLANG_COMPILER=flang-19" >> "$GITHUB_ENV"
+          elif command -v flang-new-19 >/dev/null 2>&1; then
+            echo "FTIMER_FLANG_COMPILER=flang-new-19" >> "$GITHUB_ENV"
+          elif command -v flang >/dev/null 2>&1; then
+            echo "FTIMER_FLANG_COMPILER=flang" >> "$GITHUB_ENV"
+          else
+            echo "No supported Flang executable found on PATH." >&2
+            exit 1
+          fi
+
+      - name: Configure (Flang serial)
+        run: FC=${{ env.FTIMER_FLANG_COMPILER }} cmake -B build
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Smoke test
+        run: ctest --test-dir build --output-on-failure
+
   build-mpi:
     runs-on: ubuntu-latest
     steps:

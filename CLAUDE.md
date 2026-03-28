@@ -51,10 +51,12 @@ make install    # install to CMAKE_INSTALL_PREFIX
 
 Supported toolchain matrix:
 
-- Serial smoke/library build: the active Fortran compiler that CMake selects, as long as it can build the project normally.
+- Serial smoke/library build: GNU Fortran and LLVM Flang are the validated automation paths.
 - Serial + pFUnit tests: GNU Fortran (`gfortran`) with a pFUnit installation built for the same compiler/toolchain.
 - MPI: an MPI wrapper compiler such as `mpifort`. `FTIMER_USE_MPI=ON` now runs a configure-time `use mpi` probe and fails early if the active compiler cannot consume the discovered MPI module files.
 - OpenMP: GNU Fortran (`gfortran`) only for the documented/supported path.
+
+Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 
 Use a separate build directory for each mode/compiler combination. Reconfiguring an existing CMake build tree with a different Fortran compiler is not a supported workflow here.
 
@@ -142,6 +144,8 @@ When sources disagree:
 4. `README.md` — user-facing current-state behavior
 5. `docs/design.md` — current architecture, validation, and workflow context
 
+Use this same repository-wide order when reconciling README, docs, tests, and agent guidance.
+
 ### Working Rules
 
 Start every task with the smallest useful working set:
@@ -178,7 +182,7 @@ Context budget:
 ### Test Infrastructure
 
 - **Current default**: smoke-test baseline (`FTIMER_BUILD_SMOKE_TESTS=ON`, `FTIMER_BUILD_TESTS=OFF`)
-- **Build-contract smoke coverage**: the smoke baseline now also includes script-driven regression checks for the configure-time MPI/OpenMP gates plus `make mpi` / `make openmp` wrapper semantics. These tests skip cleanly when the required external toolchain pieces are not present, and CI runs them in a dedicated build-contract job with `gfortran`, `mpifort`, and a non-GNU Fortran compiler installed.
+- **Build-contract smoke coverage**: the smoke baseline now also runs `examples/basic_usage`, builds and executes the installed-package consumer fixture, exercises supported feature-enabled installed-consumer paths when their compilers are available, and includes the script-driven configure/make contract checks. These tests skip cleanly when the required external toolchain pieces are not present, and CI validates serial smoke with both GNU Fortran and LLVM Flang.
 - **Behavioral suite**: pFUnit, enabled explicitly with `-DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=...`
 - **Mock clock**: Module-level `fake_time` variable with `mock_clock()` function. Inject via `timer%clock => mock_clock`. Advance deterministically: set `fake_time`, call start/stop, assert exact accumulated times.
 - **Golden output tests**: `test_summary.pf` compares `print_summary()` output against expected text.
