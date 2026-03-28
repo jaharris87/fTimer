@@ -288,12 +288,13 @@ contains
 
       call timer%get_summary(summary, ierr=ierr)
 
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, summary%num_entries)
+
       outer_diff = abs(summary%entries(1)%inclusive_time - 2.5_wp)
       inner_diff = abs(summary%entries(2)%inclusive_time - 0.5_wp)
       self_diff = abs(summary%entries(1)%self_time - 2.0_wp)
 
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      @assertEqual(2, summary%num_entries)
       @assertTrue(outer_diff < 1.0e-12_wp)
       @assertTrue(inner_diff < 1.0e-12_wp)
       @assertTrue(self_diff < 1.0e-12_wp)

@@ -44,7 +44,7 @@ if(FTIMER_BUILD_SMOKE_TESTS)
   ftimer_add_installed_consumer_test(
     ftimer_installed_package_consumer_mpi
     ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer_mpi
-    REQUIRED_COMPILER_NAMES mpifort,mpif90,mpif77
+    REQUIRED_COMPILER_NAMES mpifort,mpif90
     ENABLE_MPI
   )
 
