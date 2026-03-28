@@ -140,7 +140,7 @@ When sources disagree:
 2. current behavioral tests
 3. `docs/semantics.md` — intended runtime contract on `main`
 4. `README.md` — user-facing current-state behavior
-5. `docs/design.md` — forward-looking design intent
+5. `docs/design.md` — current architecture, validation, and workflow context
 
 ### Working Rules
 
@@ -154,7 +154,8 @@ Read additional docs only when the task requires them:
 
 - `docs/semantics.md` — when runtime behavior or contract is changing or unclear
 - `README.md` — when user-facing behavior, examples, or docs may need updates
-- `docs/design.md` — for architectural or future-facing questions
+- `docs/design.md` — for architectural or repository-structure questions
+- `docs/implementation-history.md` — for historical phase-plan context or landed roadmap history
 - `docs/maintainer.md` — for workflow routing; then load only the phase-specific doc you need:
   - `docs/workflows/pr-open.md` — PR opening and review labels
   - `docs/workflows/review-monitoring.md` — monitoring and fallback review
@@ -200,11 +201,13 @@ This workflow is **mandatory** for every PR. Do not skip any step.
 Short version:
 
 - create or link the GitHub issue first
-- open a PR from a feature branch
+- open a ready-for-review PR from a feature branch
+- do not open a draft PR unless the user explicitly asks for a draft
 - always apply `codex-software-review`
 - also apply `codex-methodology-review` when the diff touches: `src/ftimer_core.F90`, `src/ftimer_summary.F90`, `src/ftimer_mpi.F90`, or `docs/semantics.md`
 - also apply `codex-red-team-review` when the diff touches: `src/ftimer_core.F90` (especially `start`, `stop`, or `repair_mismatch`) or `src/ftimer_mpi.F90`
 - monitor for the actual Codex review output
+- when waiting on `@codex` review, poll in small intervals but give the native review flow at least 5 minutes before considering manual fallback unless the connector explicitly reports that review will not proceed
 - reply to every finding, resolve every review thread, and do not merge while merge-blocking findings remain
 
 For deeper workflow details (monitoring, fallback review, findings disposition, merge criteria), use `docs/maintainer.md` for routing to: `docs/workflows/pr-open.md`, `docs/workflows/review-monitoring.md`, `docs/workflows/findings-disposition.md`.

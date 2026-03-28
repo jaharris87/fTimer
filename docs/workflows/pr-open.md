@@ -9,7 +9,7 @@ For every scoped piece of work:
 1. Create or link the GitHub issue first.
 2. Create a feature branch from updated local `main`.
 3. Implement the change on that feature branch.
-4. Open a pull request to `main`.
+4. Open a ready-for-review pull request to `main`. Do not open a draft PR unless the user explicitly asks for one.
 5. Apply the review labels required by the diff.
 6. Monitor for reviews and handle every finding.
 7. Do not merge while merge-blocking findings remain unresolved.
