@@ -9,7 +9,7 @@ After opening or materially updating the PR:
 1. Inform the user that you are monitoring for reviews.
 2. Poll every 30-60 seconds for up to 10 minutes.
 3. Inspect actual review artifacts, not just workflow success.
-4. Remember that the review router now maintains one global Codex review queue per PR. It posts at most one new trigger at a time, waits for the previous trigger comment to lose Codex's `eyes` reaction, and on `synchronize` only reruns roles whose latest-push file delta still matches their routing rules, so inspect the latest trigger comment metadata before deciding a review is stale.
+4. Remember that the review router now maintains one global Codex review queue per PR. It posts at most one new trigger at a time, waits for the PR body to lose Codex's `eyes` reaction, and stands down entirely if a plain manual `@codex review` comment is present on the PR. On `synchronize`, it only reruns roles whose latest-push file delta still matches their routing rules, so inspect the latest trigger comment metadata before deciding a review is stale.
 5. Unless the connector explicitly reports that the review will not proceed, give the native `@codex` review flow at least 5 minutes before considering any manual fallback.
 6. After the trigger workflow completes, watch for a `chatgpt-codex-connector` response to the `@codex review` trigger comment indicating the review will not proceed (e.g., quota exhausted). Note: the connector may also post unrelated comments when PR text contains the word "Codex" — those are not fallback signals; only a response to the trigger itself counts.
 7. Once all expected reviews have arrived, respond to every finding.
@@ -58,7 +58,8 @@ Useful commands:
 
 - A passing trigger workflow only proves that labels were reconciled and the `@codex review` comment was posted.
 - Trigger comments now include hidden `role`, `sha`, and prompt-version metadata so you can tell whether the latest relevant commit has actually been queued for the expected review.
-- The router now enforces a global Codex review lock per PR: if any prior trigger comment still has Codex's `eyes` reaction, no new `@codex review` trigger is posted yet.
+- The router now enforces a global Codex review lock per PR by looking at the PR body's Codex `eyes` reaction. If that reaction is still present, no new `@codex review` trigger is posted yet.
+- If the PR contains a plain manual `@codex review` comment without the workflow metadata token, the router treats that PR as manually managed and does not post additional automated review requests.
 - When multiple review labels are active together, the trigger workflow serializes those jobs per PR and spaces subsequent `@codex review` comments by at least 30 seconds to reduce cross-trigger mix-ups.
 - Native Codex review did not reliably follow the previous long-form trigger prompts, so the workflow now uses single-line trigger comments and keeps the detailed versions in a separate long-form prompt library for fallback and non-triggered deep reviews.
 - Codex review bodies may ignore prompt instructions about top-level headings.

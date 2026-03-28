@@ -9,8 +9,10 @@ name: Codex Review Routing and Triggers
 # library still lives under .github/prompts/detailed/ for fallback reviews and
 # deeper manual review roles. The workflow maintains a single global Codex
 # review queue per PR: it posts at most one new `@codex review` trigger per run,
-# waits until no earlier trigger comment still has Codex's in-progress `eyes`
-# reaction, and then advances to the next needed role in manifest order. The
+# waits until the PR body no longer has Codex's in-progress `eyes` reaction,
+# and stands down entirely if a plain manual `@codex review` comment is present.
+# When automation is active, it advances to the next needed role in manifest
+# order. The
 # role catalog and auto-routing rules now live in .github/codex-review-roles.json
 # so docs and automation share one source.
 #
@@ -142,21 +144,27 @@ jobs:
           gh api --paginate "repos/${{ github.repository }}/issues/${pr_number}/comments?per_page=100" \
             | jq -s 'add // []' > /tmp/codex-comments.json
 
-          mapfile -t trigger_comment_ids < <(
-            jq -r '.[] | select((.body // "") | startswith("@codex review ")) | .id' /tmp/codex-comments.json
-          )
+          if jq -e '
+            any(
+              .[];
+              ((.body // "") | startswith("@codex review "))
+              and ((.body // "") | contains("codex-review role=") | not)
+            )
+          ' /tmp/codex-comments.json >/dev/null; then
+            echo "Detected a plain manual @codex review comment on this PR, so automatic queue posting is disabled."
+            exit 0
+          fi
 
-          for trigger_comment_id in "${trigger_comment_ids[@]}"; do
-            trigger_reactions="$(
-              gh api -H 'Accept: application/vnd.github+json' \
-                "repos/${{ github.repository }}/issues/comments/${trigger_comment_id}/reactions"
-            )"
+          pr_reactions="$(
+            gh api -H 'Accept: application/vnd.github+json' \
+              "repos/${{ github.repository }}/issues/${pr_number}/reactions"
+          )"
 
-            if jq -e 'any(.[]; .content == "eyes")' <<<"$trigger_reactions" >/dev/null; then
-              echo "A previous trigger comment (${trigger_comment_id}) is still in progress, so the global review queue is locked."
-              exit 0
-            fi
-          done
+          if jq -e 'any(.[]; .content == "eyes" and .user.login == "chatgpt-codex-connector[bot]")' \
+            <<<"$pr_reactions" >/dev/null; then
+            echo "The PR body still has Codex's in-progress eyes reaction, so the global review queue is locked."
+            exit 0
+          fi
 
           last_trigger_created_at="$(
             jq -r '[.[] | select((.body // "") | startswith("@codex review ")) | .created_at] | sort | last // empty' \

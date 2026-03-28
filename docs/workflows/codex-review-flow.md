@@ -9,7 +9,8 @@ The key design choice is:
 1. automatic labels are derived from the PR diff
 2. review requests are posted through a single global queue per PR
 3. at most one new `@codex review` trigger is posted per workflow run
-4. no new trigger is posted while an earlier trigger comment still has Codex's in-progress `eyes` reaction
+4. no new trigger is posted while the PR body still has Codex's in-progress `eyes` reaction
+5. if a plain manual `@codex review` comment appears, the automated queue stands down for that PR
 
 If you only remember one thing, remember this:
 
@@ -30,15 +31,17 @@ flowchart TD
     B --> C["Compute automatic review labels"]
     C --> D["Apply missing automatic labels"]
     D --> E["Read active review labels on the PR"]
-    E --> F{"Any previous trigger comment still has eyes?"}
-    F -->|"Yes"| G["Queue locked: post nothing"]
-    F -->|"No"| H["Find the next needed role in manifest order"]
-    H --> I{"Already requested for current head SHA?"}
-    I -->|"Yes"| H
-    I -->|"No"| J{"Role still relevant to latest push delta?"}
-    J -->|"No"| H
-    J -->|"Yes"| K["Post one new @codex review trigger comment"]
-    K --> L["Stop and wait for a later wake-up event"]
+    E --> F{"Plain manual @codex review comment exists?"}
+    F -->|"Yes"| G["Manual mode: post nothing"]
+    F -->|"No"| H{"PR body still has Codex eyes?"}
+    H -->|"Yes"| I["Queue locked: post nothing"]
+    H -->|"No"| J["Find the next needed role in manifest order"]
+    J --> K{"Already requested for current head SHA?"}
+    K -->|"Yes"| J
+    K -->|"No"| L{"Role still relevant to latest push delta?"}
+    L -->|"No"| J
+    L -->|"Yes"| M["Post one new @codex review trigger comment"]
+    M --> N["Stop and wait for a later wake-up event"]
 ```
 
 ## What Wakes Up The Workflow
@@ -134,18 +137,26 @@ Manifest order matters because the queue only posts one new review request per r
 
 This is the most important part of the workflow now.
 
-Before posting anything new, the workflow fetches all prior `@codex review` trigger comments on the PR and checks their reactions.
+Before posting anything new, the workflow checks whether the PR already contains a plain manual `@codex review` comment without the workflow metadata token.
 
-If **any** earlier trigger comment still has the `eyes` reaction from Codex, the queue is treated as globally locked.
+If such a comment exists, the workflow assumes the PR is being driven manually and posts nothing further automatically.
+
+Only if there is no plain manual request does it continue to the PR-body `eyes` lock check.
+
+Before posting anything new, the workflow then checks reactions on the PR body itself.
+
+If the PR body still has the `eyes` reaction from Codex, the queue is treated as globally locked.
 
 ```mermaid
 flowchart TD
-    A["Load all prior @codex review trigger comments"] --> B["Check reactions on each trigger comment"]
-    B --> C{"Any trigger comment still has eyes?"}
-    C -->|"Yes"| D["Global queue locked"]
-    D --> E["Post nothing"]
-    C -->|"No"| F["Queue is free"]
-    F --> G["Try to post exactly one new review request"]
+    A["Load PR comments"] --> B{"Plain manual @codex review comment exists?"}
+    B -->|"Yes"| C["Automation stands down"]
+    B -->|"No"| D["Load reactions on the PR body"]
+    D --> E{"PR body still has Codex eyes?"}
+    E -->|"Yes"| F["Global queue locked"]
+    F --> G["Post nothing"]
+    E -->|"No"| H["Queue is free"]
+    H --> I["Try to post exactly one new review request"]
 ```
 
 ### Why The Lock Is Global
@@ -157,6 +168,14 @@ That means:
 - the queue will never stack multiple in-flight Codex review requests
 - the tradeoff is slower throughput
 - the benefit is less PR crowding and simpler behavior
+
+The workflow now uses the PR body reaction as that lock signal because it is a single shared place Codex already updates, and it avoids having to reason about many separate trigger comments.
+
+The manual-override rule sits even earlier than that lock. Its purpose is simple:
+
+- if a maintainer starts posting plain `@codex review` comments directly,
+- the automated queue should stop posting its own requests,
+- otherwise manual and automatic queue state can drift apart and duplicate requests can appear.
 
 ## Phase 4: Decide Whether A Role Still Needs A Review
 
@@ -232,10 +251,11 @@ The next wake-up may come from:
 When the workflow wakes up again, it repeats the same checks:
 
 1. are automatic labels still correct?
-2. is the global queue still locked?
-3. what is the next still-needed role?
+2. did a manual `@codex review` comment take over this PR?
+3. is the global queue still locked?
+4. what is the next still-needed role?
 
-If the prior trigger has completed and the `eyes` reaction is gone, the queue can advance to the next review.
+If the PR-body `eyes` reaction is gone, the queue can advance to the next review.
 
 ## End-To-End Example
 
@@ -254,16 +274,17 @@ The queue behavior would look like this:
 
 1. PR opens.
 2. Automatic labels are applied.
-3. Queue is free.
-4. Workflow posts `software`.
-5. Workflow stops.
-6. Codex reacts with `eyes`.
-7. A later workflow wake-up sees `eyes`, so it posts nothing.
-8. Codex finishes and removes `eyes`.
-9. A later workflow wake-up sees the queue is free.
-10. Workflow posts `docs-contract`.
-11. Workflow stops again.
-12. Later, the same process repeats for `build-portability`.
+3. No plain manual request exists.
+4. Queue is free.
+5. Workflow posts `software`.
+6. Workflow stops.
+7. Codex adds `eyes` to the PR body.
+8. A later workflow wake-up sees `eyes`, so it posts nothing.
+9. Codex finishes and removes `eyes`.
+10. A later workflow wake-up sees the queue is free.
+11. Workflow posts `docs-contract`.
+12. Workflow stops again.
+13. Later, the same process repeats for `build-portability`.
 
 ## Current Tradeoffs
 
@@ -278,7 +299,8 @@ The queue behavior would look like this:
 
 - Reviews arrive more slowly.
 - The queue can stall if the connector leaves `eyes` behind longer than expected.
-- Older overlapping trigger comments from before the global-lock design can temporarily keep the queue blocked.
+- Queue progress now depends on the PR-body reaction staying accurate.
+- Manual `@codex review` comments intentionally disable automatic queue posting for that PR until the manual request is removed or handled out of band.
 - Queue advancement depends on later wake-up events, not just the initial PR-open event.
 
 ## Practical Debug Checklist
@@ -286,10 +308,11 @@ The queue behavior would look like this:
 If a review did not get posted, ask these in order:
 
 1. Does the PR have any active Codex labels?
-2. Did the role already get requested for the current `head.sha`?
-3. Does any earlier trigger comment still have `eyes`?
-4. If this is a rerun, did the file delta since the role's last-reviewed SHA still match the role's selectors?
-5. Did the workflow stop after posting one earlier role in the queue?
+2. Is there a plain manual `@codex review` comment causing the automation to stand down?
+3. Did the role already get requested for the current `head.sha`?
+4. Does the PR body still have Codex's `eyes` reaction?
+5. If this is a rerun, did the file delta since the role's last-reviewed SHA still match the role's selectors?
+6. Did the workflow stop after posting one earlier role in the queue?
 
 ## Reading The Hidden Metadata
 
@@ -311,6 +334,7 @@ The workflow is best understood as:
 
 1. route labels from the current PR diff
 2. maintain a single global review queue
-3. never post a new trigger while any old trigger is still marked in-progress
-4. post one new role at a time
-5. only rerun a role when the latest change is still relevant to that role
+3. stand down if a maintainer starts manual `@codex review` requests
+4. never post a new trigger while the PR body is still marked in-progress
+5. post one new role at a time
+6. only rerun a role when the latest change is still relevant to that role
