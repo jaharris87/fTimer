@@ -55,6 +55,8 @@ contains
       @assertEqual(-1.0_wp, summary%entries(2)%max_time)
       @assertEqual(-1.0_wp, summary%entries(2)%avg_across_ranks)
       @assertEqual(-1.0_wp, summary%entries(2)%imbalance)
+      @assertTrue(summary%entries(1)%node_id > 0)
+      @assertTrue(summary%entries(2)%node_id > 0)
 
       if (rank == 0) then
          @assertEqual(0, summary%entries(1)%depth)

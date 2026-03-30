@@ -4,7 +4,7 @@ module test_mpi_disabled
    use ftimer_core, only: ftimer_t
    use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_MPI_SUMMARY_LOCAL_ONLY, &
                            FTIMER_SUCCESS, ftimer_summary_t, wp
-   use test_support, only: attach_mock_clock, fake_time
+   use test_support, only: attach_mock_clock, fake_time, summary_node_ids_unique, summary_parent_index
    implicit none
 
 contains
@@ -104,17 +104,24 @@ contains
       type(ftimer_summary_t), intent(in) :: lhs
       type(ftimer_summary_t), intent(in) :: rhs
       logical :: names_match
+      integer :: lhs_parent_idx
+      integer :: rhs_parent_idx
 
       @assertEqual(rhs%num_entries, lhs%num_entries)
       @assertEqual(rhs%has_mpi_data, lhs%has_mpi_data)
       @assertEqual(rhs%mpi_summary_state, lhs%mpi_summary_state)
       @assertEqual(rhs%total_time, lhs%total_time)
+      @assertTrue(summary_node_ids_unique(lhs))
+      @assertTrue(summary_node_ids_unique(rhs))
 
       names_match = trim(lhs%entries(1)%name) == trim(rhs%entries(1)%name)
       @assertTrue(names_match)
       @assertEqual(rhs%entries(1)%depth, lhs%entries(1)%depth)
-      @assertEqual(rhs%entries(1)%node_id, lhs%entries(1)%node_id)
-      @assertEqual(rhs%entries(1)%parent_id, lhs%entries(1)%parent_id)
+      lhs_parent_idx = summary_parent_index(lhs, 1)
+      rhs_parent_idx = summary_parent_index(rhs, 1)
+      @assertTrue(lhs_parent_idx >= 0)
+      @assertTrue(rhs_parent_idx >= 0)
+      @assertEqual(rhs_parent_idx, lhs_parent_idx)
       @assertEqual(rhs%entries(1)%inclusive_time, lhs%entries(1)%inclusive_time)
       @assertEqual(rhs%entries(1)%self_time, lhs%entries(1)%self_time)
       @assertEqual(rhs%entries(1)%call_count, lhs%entries(1)%call_count)

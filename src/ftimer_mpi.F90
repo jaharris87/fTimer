@@ -218,6 +218,9 @@ contains
       integer :: component_len
       integer :: i
       integer :: max_len
+      integer :: max_node_id
+      integer, allocatable :: node_to_entry(:)
+      integer :: parent_entry
       integer :: parent_id
       integer, allocatable :: prefix_lengths(:)
 
@@ -227,9 +230,22 @@ contains
          return
       end if
 
+      max_node_id = 0
+      do i = 1, summary%num_entries
+         max_node_id = max(max_node_id, summary%entries(i)%node_id)
+      end do
+
       allocate (prefix_lengths(summary%num_entries))
+      allocate (node_to_entry(max(max_node_id, 1)))
       prefix_lengths = 0
+      node_to_entry = 0
       max_len = 1
+
+      do i = 1, summary%num_entries
+         if (summary%entries(i)%node_id > 0) then
+            node_to_entry(summary%entries(i)%node_id) = i
+         end if
+      end do
 
       do i = 1, summary%num_entries
          parent_id = summary%entries(i)%parent_id
@@ -237,7 +253,13 @@ contains
          if (parent_id <= 0) then
             prefix_lengths(i) = component_len
          else
-            prefix_lengths(i) = prefix_lengths(parent_id) + component_len
+            parent_entry = 0
+            if (parent_id <= size(node_to_entry)) parent_entry = node_to_entry(parent_id)
+            if (parent_entry > 0) then
+               prefix_lengths(i) = prefix_lengths(parent_entry) + component_len
+            else
+               prefix_lengths(i) = component_len
+            end if
          end if
          max_len = max(max_len, prefix_lengths(i))
       end do
@@ -255,7 +277,13 @@ contains
          if (parent_id <= 0) then
             path_strings(i) = component(1:component_len)
          else
-            path_strings(i) = trim(path_strings(parent_id))//component(1:component_len)
+            parent_entry = 0
+            if (parent_id <= size(node_to_entry)) parent_entry = node_to_entry(parent_id)
+            if (parent_entry > 0) then
+               path_strings(i) = trim(path_strings(parent_entry))//component(1:component_len)
+            else
+               path_strings(i) = component(1:component_len)
+            end if
          end if
          descriptors(i) = path_strings(i)
          permutation(i) = i

@@ -64,9 +64,6 @@ module ftimer_types
    type :: ftimer_summary_entry_t
       character(len=FTIMER_NAME_LEN) :: name = ''
       integer :: depth = 0
-      ! Stable only within one produced summary object. Root nodes use parent_id = 0.
-      integer :: node_id = 0
-      integer :: parent_id = 0
       real(wp) :: inclusive_time = 0.0_wp
       real(wp) :: self_time = 0.0_wp
       integer :: call_count = 0
@@ -77,6 +74,9 @@ module ftimer_types
       real(wp) :: max_time = -1.0_wp
       real(wp) :: avg_across_ranks = -1.0_wp
       real(wp) :: imbalance = -1.0_wp
+      ! Stable only within one produced summary object. Root nodes use parent_id = 0.
+      integer :: node_id = 0
+      integer :: parent_id = 0
    end type ftimer_summary_entry_t
 
    type :: ftimer_summary_t
