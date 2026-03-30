@@ -70,7 +70,7 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 
 Suppose ranks 0-1 initialize a timer with one communicator split and later call `mpi_summary()`, while ranks 2-3 reach `mpi_summary()` through a different communicator choice. That is unsupported misuse.
 
-This is not like descriptor inconsistency within one communicator, where every participant can still enter the same collective and the library can fall back locally after a preflight mismatch. Once ranks have already diverged onto different communicators, `mpi_summary()` has no safe second rendezvous it can use to discover the mistake without risking the same deadlock it is trying to avoid. The practical failure mode is a hang, not `FTIMER_ERR_MPI_INCON`.
+This is not like descriptor inconsistency within one communicator, where every participant can still enter the same collective and the library can fail the MPI summary cleanly after a preflight mismatch. Once ranks have already diverged onto different communicators, `mpi_summary()` has no safe second rendezvous it can use to discover the mistake without risking the same deadlock it is trying to avoid. The practical failure mode is a hang, not `FTIMER_ERR_MPI_INCON`.
 
 The supported pattern is simple: capture one communicator consistently at `init`, then have that same participant set enter `mpi_summary()` together.
 

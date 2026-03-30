@@ -138,7 +138,8 @@ contains
       integer, allocatable :: max_calls(:)
       integer, allocatable :: min_calls(:)
       integer, allocatable :: permutation(:)
-      integer, allocatable :: sum_calls(:)
+      integer(int64), allocatable :: local_sum_calls(:)
+      integer(int64), allocatable :: sum_calls(:)
       integer(int64) :: local_hashes(2)
       integer(int64), allocatable :: gathered_hashes(:, :)
       real(wp) :: avg_total_time
@@ -238,6 +239,7 @@ contains
       allocate (max_pct(entry_count))
       allocate (sum_pct(entry_count))
       allocate (local_calls(entry_count))
+      allocate (local_sum_calls(entry_count))
       allocate (min_calls(entry_count))
       allocate (max_calls(entry_count))
       allocate (sum_calls(entry_count))
@@ -247,6 +249,7 @@ contains
          local_inclusive(i) = local_summary%entries(local_idx)%inclusive_time
          local_self(i) = local_summary%entries(local_idx)%self_time
          local_calls(i) = local_summary%entries(local_idx)%call_count
+         local_sum_calls(i) = int(local_calls(i), int64)
          local_pct(i) = local_summary%entries(local_idx)%pct_time
       end do
 
@@ -327,7 +330,7 @@ contains
          return
       end if
 
-      call MPI_Allreduce(local_calls, sum_calls, entry_count, MPI_INTEGER, MPI_SUM, active_comm, mpierr)
+      call MPI_Allreduce(local_sum_calls, sum_calls, entry_count, MPI_INTEGER8, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN

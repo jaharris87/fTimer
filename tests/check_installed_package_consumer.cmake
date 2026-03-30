@@ -199,14 +199,32 @@ if(TEST_ENABLE_MPI)
     endif()
   endif()
 
-  find_program(ftimer_mpiexec NAMES mpiexec mpirun)
+  if(DEFINED TEST_MPIEXEC_EXECUTABLE AND NOT TEST_MPIEXEC_EXECUTABLE STREQUAL "")
+    set(ftimer_mpiexec "${TEST_MPIEXEC_EXECUTABLE}")
+  else()
+    find_program(ftimer_mpiexec NAMES mpiexec mpirun)
+  endif()
   if(NOT ftimer_mpiexec)
     message(STATUS "Skipping ${test_name} MPI run: no mpiexec/mpirun found on PATH.")
     return()
   endif()
 
+  set(ftimer_mpi_launch_command "${ftimer_mpiexec}")
+  if(DEFINED TEST_MPIEXEC_NUMPROC_FLAG AND NOT TEST_MPIEXEC_NUMPROC_FLAG STREQUAL "")
+    list(APPEND ftimer_mpi_launch_command "${TEST_MPIEXEC_NUMPROC_FLAG}" 2)
+  else()
+    list(APPEND ftimer_mpi_launch_command -n 2)
+  endif()
+  if(DEFINED TEST_MPIEXEC_PREFLAGS AND NOT TEST_MPIEXEC_PREFLAGS STREQUAL "")
+    list(APPEND ftimer_mpi_launch_command ${TEST_MPIEXEC_PREFLAGS})
+  endif()
+  list(APPEND ftimer_mpi_launch_command "${mpi_consumer_executable}")
+  if(DEFINED TEST_MPIEXEC_POSTFLAGS AND NOT TEST_MPIEXEC_POSTFLAGS STREQUAL "")
+    list(APPEND ftimer_mpi_launch_command ${TEST_MPIEXEC_POSTFLAGS})
+  endif()
+
   execute_process(
-    COMMAND "${ftimer_mpiexec}" -n 2 "${mpi_consumer_executable}"
+    COMMAND ${ftimer_mpi_launch_command}
     WORKING_DIRECTORY "${consumer_build_dir}"
     RESULT_VARIABLE mpi_consumer_run_result
   )

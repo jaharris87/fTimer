@@ -3,8 +3,11 @@ submodule(ftimer_core) ftimer_core_summary_bindings
    use ftimer_clock, only: ftimer_date_string
    use ftimer_mpi, only: build_mpi_summary, check_mpi_summary_prereqs, get_mpi_summary_comm_info
    use ftimer_summary, only: build_summary, format_mpi_summary, format_summary
-   use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, ftimer_mpi_summary_t, &
-                           ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_UNKNOWN, &
+                           ftimer_mpi_summary_t, ftimer_summary_t, wp
+#ifdef FTIMER_USE_MPI
+   use mpi, only: MPI_Bcast, MPI_CHARACTER, MPI_INTEGER, MPI_SUCCESS
+#endif
    implicit none
 
 contains
@@ -201,10 +204,13 @@ contains
    module procedure write_mpi_summary
    type(ftimer_mpi_summary_t) :: summary
    character(len=:), allocatable :: text
+   character(len=256) :: collective_message
    character(len=256) :: iomsg
    integer :: active_comm
+   integer :: collective_status
    integer :: file_unit
    integer :: io
+   integer :: mpierr
    integer :: nprocs
    integer :: rank
    integer :: status
@@ -236,35 +242,53 @@ contains
       return
    end if
 
-   if (rank /= 0) then
-      if (present(ierr)) ierr = FTIMER_SUCCESS
-      return
-   end if
-
    append_mode = .false.
    if (present(append)) append_mode = append
 
-   if (append_mode) then
-      open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', iostat=io, iomsg=iomsg)
-   else
-      open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+   collective_status = FTIMER_SUCCESS
+   collective_message = ''
+   if (rank == 0) then
+      if (append_mode) then
+         open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', iostat=io, iomsg=iomsg)
+      else
+         open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+      end if
+
+      if (io /= 0) then
+         collective_status = FTIMER_ERR_IO
+         collective_message = "ftimer write_mpi_summary open failed: "//trim(iomsg)
+      else
+         call write_text_block(file_unit, text, io, iomsg)
+         if (io /= 0) then
+            close (file_unit)
+            collective_status = FTIMER_ERR_IO
+            collective_message = "ftimer write_mpi_summary write failed: "//trim(iomsg)
+         else
+            close (file_unit, iostat=io, iomsg=iomsg)
+            if (io /= 0) then
+               collective_status = FTIMER_ERR_IO
+               collective_message = "ftimer write_mpi_summary close failed: "//trim(iomsg)
+            end if
+         end if
+      end if
    end if
 
-   if (io /= 0) then
-      call report_summary_status(ierr, FTIMER_ERR_IO, "ftimer write_mpi_summary open failed: "//trim(iomsg))
+#ifdef FTIMER_USE_MPI
+   call MPI_Bcast(collective_status, 1, MPI_INTEGER, 0, active_comm, mpierr)
+   if (mpierr /= MPI_SUCCESS) then
+      call report_summary_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer write_mpi_summary status sync failed")
       return
    end if
 
-   call write_text_block(file_unit, text, io, iomsg)
-   if (io /= 0) then
-      close (file_unit)
-      call report_summary_status(ierr, FTIMER_ERR_IO, "ftimer write_mpi_summary write failed: "//trim(iomsg))
+   call MPI_Bcast(collective_message, len(collective_message), MPI_CHARACTER, 0, active_comm, mpierr)
+   if (mpierr /= MPI_SUCCESS) then
+      call report_summary_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer write_mpi_summary message sync failed")
       return
    end if
+#endif
 
-   close (file_unit, iostat=io, iomsg=iomsg)
-   if (io /= 0) then
-      call report_summary_status(ierr, FTIMER_ERR_IO, "ftimer write_mpi_summary close failed: "//trim(iomsg))
+   if (collective_status /= FTIMER_SUCCESS) then
+      call report_summary_status(ierr, collective_status, trim(collective_message))
       return
    end if
 

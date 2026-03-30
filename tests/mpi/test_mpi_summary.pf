@@ -4,7 +4,8 @@ module test_mpi_summary
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
                      ftimer_print_mpi_summary, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_SUCCESS, ftimer_metadata_t, ftimer_mpi_summary_t, wp
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_SUCCESS, ftimer_metadata_t, &
+                           ftimer_mpi_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time, read_file_text, summary_node_ids_unique, summary_parent_index
    implicit none
 
@@ -49,12 +50,14 @@ contains
       call assert_real_close(summary%entries(1)%min_inclusive_time, 10.0_wp)
       call assert_real_close(summary%entries(1)%avg_inclusive_time, 12.0_wp)
       call assert_real_close(summary%entries(1)%max_inclusive_time, 14.0_wp)
+      call assert_real_close(summary%entries(1)%inclusive_imbalance, 14.0_wp/12.0_wp)
       call assert_real_close(summary%entries(1)%avg_self_time, 7.0_wp)
       call assert_real_close(summary%entries(1)%avg_call_count, 1.0_wp)
       call assert_real_close(summary%entries(1)%avg_pct_time, 100.0_wp)
       call assert_real_close(summary%entries(2)%min_inclusive_time, 4.0_wp)
       call assert_real_close(summary%entries(2)%avg_inclusive_time, 5.0_wp)
       call assert_real_close(summary%entries(2)%max_inclusive_time, 6.0_wp)
+      call assert_real_close(summary%entries(2)%inclusive_imbalance, 6.0_wp/5.0_wp)
       call assert_real_close(summary%entries(2)%avg_self_time, 5.0_wp)
       call assert_real_close(summary%entries(2)%avg_call_count, 1.0_wp)
 
@@ -92,6 +95,41 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_summary_preserves_large_time_precision
+
+   @test
+   subroutine test_mpi_summary_reduces_call_extrema(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_summary_t) :: summary
+      integer :: ierr
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_repeated_timer(timer, this%getProcessRank(), ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(1, summary%num_entries)
+      @assertEqual('repeat', trim(summary%entries(1)%name))
+      call assert_real_close(summary%min_total_time, 2.0_wp)
+      call assert_real_close(summary%avg_total_time, 4.0_wp)
+      call assert_real_close(summary%max_total_time, 6.0_wp)
+      call assert_real_close(summary%entries(1)%min_inclusive_time, 2.0_wp)
+      call assert_real_close(summary%entries(1)%avg_inclusive_time, 4.0_wp)
+      call assert_real_close(summary%entries(1)%max_inclusive_time, 6.0_wp)
+      call assert_real_close(summary%entries(1)%inclusive_imbalance, 1.5_wp)
+      @assertEqual(1, summary%entries(1)%min_call_count)
+      @assertEqual(3, summary%entries(1)%max_call_count)
+      call assert_real_close(summary%entries(1)%avg_call_count, 2.0_wp)
+      call assert_real_close(summary%entries(1)%avg_pct_time, 100.0_wp)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_summary_reduces_call_extrema
 
    @test
    subroutine test_mpi_summary_uses_canonical_order_for_consistent_timer_sets(this)
@@ -234,12 +272,9 @@ contains
       type(ftimer_metadata_t) :: metadata(1)
       character(len=:), allocatable :: printed
       character(len=*), parameter :: print_path = 'test_mpi_print_summary.txt'
+      integer :: flags(4)
       integer :: ierr
       integer :: rank
-      logical :: has_avg_column
-      logical :: has_job_metadata
-      logical :: has_pct_column
-      logical :: has_rank_header
       integer :: unit
 
       rank = this%getProcessRank()
@@ -267,19 +302,56 @@ contains
       call MPI_Barrier(MPI_COMM_WORLD, ierr)
       @assertEqual(MPI_SUCCESS, ierr)
 
-      printed = read_file_text(print_path)
-      has_rank_header = index(printed, 'MPI ranks') > 0
-      has_avg_column = index(printed, 'Avg Incl (s)') > 0
-      has_job_metadata = index(printed, 'mpi-report') > 0
-      has_pct_column = index(printed, 'Avg %') > 0
-      @assertTrue(has_rank_header)
-      @assertTrue(has_avg_column)
-      @assertTrue(has_job_metadata)
-      @assertTrue(has_pct_column)
+      flags = 0
+      if (rank == 0) then
+         printed = read_file_text(print_path)
+         if (index(printed, 'MPI ranks') > 0) flags(1) = 1
+         if (index(printed, 'Avg Incl (s)') > 0) flags(2) = 1
+         if (index(printed, 'mpi-report') > 0) flags(3) = 1
+         if (index(printed, 'Avg %') > 0) flags(4) = 1
+      end if
+      call MPI_Bcast(flags, size(flags), MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+      @assertEqual(MPI_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_print_summary_emits_global_report
+
+   @test
+   subroutine test_mpi_write_summary_syncs_io_error(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      integer :: ierr
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_nested_timers(timer, this%getProcessRank(), ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_mpi_summary('/no_such_dir/test_mpi_summary.txt', ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+
+      call MPI_Allreduce(ierr, min_err, 1, MPI_INTEGER, MPI_MIN, MPI_COMM_WORLD, mpierr)
+      @assertEqual(MPI_SUCCESS, mpierr)
+      call MPI_Allreduce(ierr, max_err, 1, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, mpierr)
+      @assertEqual(MPI_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_IO, min_err)
+      @assertEqual(FTIMER_ERR_IO, max_err)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_write_summary_syncs_io_error
 
    subroutine build_nested_timers(timer, rank, ierr)
       class(ftimer_t), intent(inout) :: timer
@@ -301,6 +373,26 @@ contains
       fake_time = 10.0_wp + 4.0_wp*real(rank, wp)
       call timer%stop("outer", ierr=ierr)
    end subroutine build_nested_timers
+
+   subroutine build_repeated_timer(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+      integer :: i
+      integer :: repeat_count
+
+      fake_time = 0.0_wp
+      repeat_count = 1
+      if (rank /= 0) repeat_count = 3
+
+      do i = 1, repeat_count
+         call timer%start("repeat", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+         fake_time = fake_time + 2.0_wp
+         call timer%stop("repeat", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+      end do
+   end subroutine build_repeated_timer
 
    subroutine build_large_timestamp_nested_timers(timer, rank, ierr)
       class(ftimer_t), intent(inout) :: timer
