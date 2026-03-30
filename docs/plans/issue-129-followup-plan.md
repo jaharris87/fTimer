@@ -39,7 +39,8 @@ Tasks 3-8 must stay serial because they all change the same core runtime contrac
 ## Workflow Rules
 
 - Use one issue-linked feature branch and one ready-for-review PR per task.
-- Update umbrella issue #129 after each merge with `fixed`, `deferred`, or `superseded`.
+- Maintainer follow-up: update umbrella issue #129 after each merge with `fixed`, `deferred`, or `superseded`.
+- If the task owner does not have issue-write access, record the intended umbrella/issue disposition in the PR closeout and hand the GitHub mutation step to a maintainer.
 - Do not close #115, #116, #117, #118, or #127 until the Task 1 PR merges.
 - Let automatic review labels land first.
 - Add `codex-adoptability-review` on Tasks 1-2.
@@ -60,7 +61,7 @@ Tasks 3-8 must stay serial because they all change the same core runtime contrac
 - Initial thread prompt:
 
 ```text
-Read AGENTS.md and issue #129 plus #115-#118 and #127. Create /Users/hrh/claude_projects/fTimer/docs/plans/issue-129-followup-plan.md and record these decisions exactly: primary audience = disciplined serial + pure-MPI users; data-first summary = explicit tree with per-summary node ids and parent ids; external-profiler integration = deferred; MPI reporting = distinct global result. Update the strategic issues and umbrella issue to reflect the decision record and execution order. Keep this PR to plan/docs/issue hygiene only.
+Read AGENTS.md and issue #129 plus #115-#118 and #127. Create `docs/plans/issue-129-followup-plan.md` and record these decisions exactly: primary audience = disciplined serial + pure-MPI users; data-first summary = explicit tree with per-summary node ids and parent ids; external-profiler integration = deferred; MPI reporting = distinct global result. Update the strategic issues and umbrella issue to reflect the decision record and execution order. Keep this PR to plan/docs/issue hygiene only.
 ```
 
 ### Task 2: Product-Position Narrowing
@@ -72,7 +73,7 @@ Read AGENTS.md and issue #129 plus #115-#118 and #127. Create /Users/hrh/claude_
 - Initial thread prompt:
 
 ```text
-Read /Users/hrh/claude_projects/fTimer/docs/plans/issue-129-followup-plan.md first, then implement issue #120. Narrow the product position to serial and pure-MPI first, make the OpenMP carve-out impossible to miss, and soften callback claims so they are clearly lightweight intra-run hooks rather than a serious profiler integration contract. Keep behavior unchanged in this PR; this is a docs/examples/contract-alignment pass, and it should also update issue #121's near-term disposition.
+Read `docs/plans/issue-129-followup-plan.md` first, then implement issue #120. Narrow the product position to serial and pure-MPI first, make the OpenMP carve-out impossible to miss, and soften callback claims so they are clearly lightweight intra-run hooks rather than a serious profiler integration contract. Keep behavior unchanged in this PR; this is a docs/examples/contract-alignment pass, and it should also update issue #121's near-term disposition.
 ```
 
 ### Task 3: Local Summary Tree Contract
