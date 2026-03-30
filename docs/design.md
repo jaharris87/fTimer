@@ -10,7 +10,9 @@ When current-state sources disagree, use this repository-wide precedence order: 
 
 ## Current Scope
 
-Current `main` ships a small, correctness-first wall-clock timing library for modern Fortran with these implemented capabilities:
+Current `main` ships a small, correctness-first wall-clock timing library for modern Fortran. The strongest supported stories today are disciplined serial timing and pure-MPI timing; the OpenMP path is a deliberately narrow carve-out for bracketing a parallel region as a whole.
+
+Implemented capabilities include:
 
 - stack-based start/stop timing with context-sensitive accounting
 - configurable mismatch handling (`strict`, `warn`, `repair`) with `strict` as the default
@@ -20,7 +22,7 @@ Current `main` ships a small, correctness-first wall-clock timing library for mo
 - limited OpenMP master-thread-only timer guards
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
-fTimer does not currently provide built-in hardware counter backends, JSON/CSV export utilities, or general thread-safe timing across OpenMP worker threads.
+fTimer does not currently provide built-in hardware counter backends, JSON/CSV export utilities, a serious profiler-backend callback contract, or general thread-safe timing across OpenMP worker threads.
 
 ## Repository Map
 
@@ -99,11 +101,11 @@ The CMake source order reflects the real dependency order:
 
 ### Module Roles
 
-`ftimer_types.F90` is the shared foundation. It defines kind parameters, error codes, mismatch-mode constants, MPI summary-state constants, summary types, call-stack/context helpers, and the abstract interfaces for clocks and callbacks.
+`ftimer_types.F90` is the shared foundation. It defines kind parameters, error codes, mismatch-mode constants, MPI summary-state constants, summary types, call-stack/context helpers, and the abstract interfaces for clocks and lightweight callback hooks.
 
 `ftimer_clock.F90` centralizes time acquisition. Serial builds use `system_clock`; MPI-enabled builds can use the MPI wall clock path. Tests rely on the injectable clock interface so behavior is deterministic without sleeps.
 
-`ftimer_core.F90` owns the mutable timer state in `ftimer_t`: timer definitions, active stack state, mismatch policy, communicator capture, callback registration, and the guarded timer entry points.
+`ftimer_core.F90` owns the mutable timer state in `ftimer_t`: timer definitions, active stack state, mismatch policy, communicator capture, lightweight callback registration, and the guarded timer entry points.
 
 `ftimer_core_summary_bindings.F90` is the submodule-backed binding layer that connects `ftimer_t` to local summary generation, formatted reporting, and file-output entry points without collapsing all summary logic into the core module body.
 
@@ -121,9 +123,9 @@ The current implementation is organized around a few design choices that show up
 - Context-sensitive accounting means the same timer name under different parent stacks is tracked independently.
 - Timing data is structured data first and formatted text second.
 - The clock is injectable, which keeps tests deterministic and benchmarking controlled.
-- Callback hooks fire for normal start/stop events only; internal mismatch repair transitions must stay invisible to callback consumers.
+- Callback hooks are lightweight intra-run hooks for normal start/stop events only; internal mismatch repair transitions must stay invisible to callback consumers, and current `main` does not define a stronger profiler-backend identity contract.
 - MPI summary reduction is descriptor-validated before collectives, and reduced cross-rank fields are valid only in the documented result shape.
-- OpenMP support is intentionally narrow: guarded timer operations run only on the master thread when `FTIMER_USE_OPENMP=ON`.
+- OpenMP support is intentionally narrow: guarded timer operations run only on the master thread when `FTIMER_USE_OPENMP=ON`, so this path should not be read as general hybrid-thread timing support.
 
 Those runtime semantics are specified in detail in [`docs/semantics.md`](semantics.md); this document focuses on how the repository realizes them.
 
@@ -157,6 +159,7 @@ Important current-state API notes:
 - `get_summary()` is the local structured summary path.
 - `print_summary()` and `write_summary()` format local report text.
 - `mpi_summary()` adds reduced MPI entry fields only in the documented root/non-root result states.
+- `on_event` remains a lightweight intra-run hook; the current public surface does not promise stable semantic timer identity for external-profiler integrations.
 - `ftimer_types` owns `ftimer_summary_t`, `ftimer_metadata_t`, mismatch constants, and MPI summary-state constants.
 
 ## Build, Test, and CI Reality
@@ -194,7 +197,7 @@ The current test inventory is:
 - smoke tests in `tests/test_phase0_smoke.F90`, runtime execution of `basic_usage`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
 - serial pFUnit tests for core behavior, summaries, callbacks, reset behavior, call-stack behavior, and procedural parity
 - MPI pFUnit tests under `tests/mpi/`
-- OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`
+- OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`, covering the master-thread-only carve-out rather than general threaded timing support
 
 The default repository baseline is still the smoke/build-contract path. The full behavioral suite is enabled explicitly with `FTIMER_BUILD_TESTS=ON`.
 
@@ -254,6 +257,7 @@ Future-facing ideas should stay clearly separated from the current architecture 
 - built-in hardware counter or power-measurement backends
 - richer export formats such as CSV or JSON
 - broader OpenMP support beyond the documented master-thread-only guard model
+- stable semantic callback identity or a stronger external-profiler integration contract
 - hash-based timer lookup or other hot-path performance redesigns, if profiling ever justifies them
 
 If deferred work needs a maintained roadmap, record it in [`docs/implementation-history.md`](implementation-history.md) or in the relevant issue or PR discussion rather than mixing it into the current-state architecture narrative above.

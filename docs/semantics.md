@@ -6,6 +6,8 @@ This document describes the current runtime contract on `main`.
 
 Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `mpi_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, root-side MPI min/max/avg/imbalance fields, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with a local-only summary.
 
+This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
+
 Current architecture, validation, and workflow notes belong in `docs/design.md`. Historical phase-roadmap notes belong in `docs/implementation-history.md`. When current-state sources disagree, use this repository-wide precedence order: current code under `src/`, then current behavioral tests, then `docs/semantics.md`, then `README.md`, then `docs/design.md`.
 
 ## Timing Model
@@ -95,16 +97,17 @@ OpenMP master thread only. When built with `FTIMER_USE_OPENMP=ON`, calls from no
 threads are suppressed before validation reaches `normalize_name` or `report_status` — they
 produce no stderr diagnostic, return 0 (for `lookup`), and leave any caller-provided `ierr`
 unchanged. This is a consequence of the master-thread-only guard model documented in
-"OpenMP Limitations" below.
+"OpenMP Carve-Out And Limitations" below.
 
 This is the deliberate policy rather than a stronger failure (e.g. `error stop`),
 chosen for consistency with the library's error contract and because callers that
 omit `ierr` have opted into the permissive path. Callers that require hard
 enforcement should pass `ierr` and check it.
 
-## OpenMP Limitations
+## OpenMP Carve-Out And Limitations
 
 - OpenMP guard behavior is enabled only when the library is built with `FTIMER_USE_OPENMP=ON`
+- This is a narrow master-thread-only carve-out for bracketing a parallel region as a whole; it is not general hybrid MPI+OpenMP timing support
 - The implemented model is master-thread-only timing; this phase does not make `fTimer` generally thread-safe
 - Inside OpenMP parallel regions, the guarded `ftimer_core` timer operations run only on the master thread
 - Non-master calls to those guarded core timer operations become no-ops instead of mutating shared timer state
@@ -124,6 +127,7 @@ The silent worker-thread no-op model has specific, observable consequences that 
 
 ## Callback Contract
 
-- `on_event` fires on normal start/stop only
+- `on_event` is an optional lightweight intra-run hook for normal start/stop events on one timer instance
+- The current callback contract exposes numeric runtime identifiers only; it does not define a stable semantic mapping back to timer names or full context paths for external-profiler backends
 - Repair transitions do NOT fire callbacks
 - `user_data` c_ptr for opaque state
