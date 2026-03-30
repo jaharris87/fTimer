@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `mpi_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, root-side MPI min/max/avg/imbalance fields, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with a local-only summary.
+Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `mpi_summary()`, `print_mpi_summary()`, `write_mpi_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with an empty MPI summary result.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -62,8 +62,7 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 - All ranks in that communicator must enter `mpi_summary()` with fully stopped timers
 - Integer comm handle compatibility (`mpif.h` and `mpi_f08`)
 - Hash-based timer-descriptor preflight before the reduction phase
-- Extra timers, missing timers, renamed timers, and hierarchy/context mismatches fall back to the local-only summary with `FTIMER_ERR_MPI_INCON`
-- Min/max/avg/imbalance fields are valid only on communicator root when `has_mpi_data=.true.`
+- Extra timers, missing timers, renamed timers, and hierarchy/context mismatches fail the MPI summary with `FTIMER_ERR_MPI_INCON`; they do not fall back to a local summary object through the MPI API
 - MPI descriptor matching is based on the local summary tree shape and names, not on raw local `node_id` values
 - Mismatched communicator choices across would-be participants are unsupported; this API has no safe cross-communicator rendezvous to detect that misuse without risking the same MPI deadlock it is trying to avoid
 
@@ -77,16 +76,20 @@ The supported pattern is simple: capture one communicator consistently at `init`
 
 ## MPI Summary Contract
 
-`mpi_summary()` does not return a fully reduced cross-rank copy of every summary field.
+`mpi_summary()` returns a distinct `ftimer_mpi_summary_t` instead of reusing the local `ftimer_summary_t` shape.
 
-- `start_date`, `end_date`, `total_time`, and each entry's `inclusive_time`, `self_time`, `call_count`, `avg_time`, and `pct_time` always describe the calling rank's local summary data, even after a successful `mpi_summary()`.
-- `min_time`, `max_time`, `avg_across_ranks`, and `imbalance` are the only cross-rank reduced entry fields.
-- Those reduced MPI entry fields are valid only when `summary%has_mpi_data` is `.true.`.
-- `summary%has_mpi_data` means only that the reduced MPI entry fields are valid on this rank. It does not mean every field in the summary is globally meaningful, and it does not mean non-root ranks receive reduced entry fields.
-- `summary%mpi_summary_state` makes the result shape explicit:
-- `FTIMER_MPI_SUMMARY_LOCAL_ONLY`: plain local summary. This is what `get_summary()` returns, and it is also what `mpi_summary()` leaves behind when MPI support is disabled, timers are still active, descriptor hashes disagree across ranks, or another MPI-side failure forces fallback.
-- `FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED`: successful `mpi_summary()` result on rank 0. Local summary fields remain root-local; reduced MPI entry fields are populated and `has_mpi_data` is `.true.`.
-- `FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE`: successful `mpi_summary()` result on non-root ranks. Local summary fields still describe that non-root rank only; reduced MPI entry fields remain unset and `has_mpi_data` is `.false.`.
+- `ftimer_mpi_summary_t` contains communicator-wide totals (`min_total_time`, `avg_total_time`, `max_total_time`, `total_time_imbalance`) plus per-entry communicator-wide statistics (`min_*`, `avg_*`, `max_*`) for inclusive time, self time, call count, and `% Total`.
+- Successful `mpi_summary()` calls populate the same global MPI result on every participating rank.
+- `ftimer_mpi_summary_t` entries retain `name`, `depth`, `node_id`, and `parent_id`, so MPI summaries keep the explicit-tree data model instead of collapsing to flat rows.
+- The MPI summary tree order is canonical across ranks. It does not depend on the local timer creation order on one chosen rank.
+- `mpi_summary()` does not return local fallback data on errors. If the caller needs local data after an MPI-disabled or MPI-error path, it must call `get_summary()` separately.
+
+## MPI Reporting Contract
+
+- `print_mpi_summary()` and `write_mpi_summary()` are the first-class reporting paths for `ftimer_mpi_summary_t`
+- They are collective over the communicator captured by `init`, just like `mpi_summary()`
+- They build the same global MPI summary object that `mpi_summary()` returns
+- They emit one communicator-level report from rank 0; non-root participants take part in the collective build and then return success without duplicating output
 
 ## Name Validation Error Contract
 

@@ -5,8 +5,8 @@ module ftimer_core
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
                            FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, &
-                           FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_metadata_t, &
-                           ftimer_segment_t, ftimer_summary_t, wp
+                           FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, &
+                           ftimer_metadata_t, ftimer_mpi_summary_t, ftimer_segment_t, ftimer_summary_t, wp
    implicit none
    private
 
@@ -63,6 +63,8 @@ module ftimer_core
       procedure :: mpi_summary
       procedure :: print_summary
       procedure :: write_summary
+      procedure :: print_mpi_summary
+      procedure :: write_mpi_summary
       procedure, private :: wtime
       procedure, private :: find_or_create_segment
       procedure, private :: repair_mismatch
@@ -77,7 +79,7 @@ module ftimer_core
 
       module subroutine mpi_summary(self, summary, ierr)
          class(ftimer_t), intent(in) :: self
-         type(ftimer_summary_t), intent(out) :: summary
+         type(ftimer_mpi_summary_t), intent(out) :: summary
          integer, intent(out), optional :: ierr
       end subroutine mpi_summary
 
@@ -95,6 +97,21 @@ module ftimer_core
          type(ftimer_metadata_t), intent(in), optional :: metadata(:)
          integer, intent(out), optional :: ierr
       end subroutine write_summary
+
+      module subroutine print_mpi_summary(self, unit, metadata, ierr)
+         class(ftimer_t), intent(in) :: self
+         integer, intent(in), optional :: unit
+         type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+         integer, intent(out), optional :: ierr
+      end subroutine print_mpi_summary
+
+      module subroutine write_mpi_summary(self, filename, append, metadata, ierr)
+         class(ftimer_t), intent(in) :: self
+         character(len=*), intent(in) :: filename
+         logical, intent(in), optional :: append
+         type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+         integer, intent(out), optional :: ierr
+      end subroutine write_mpi_summary
    end interface
 
 contains

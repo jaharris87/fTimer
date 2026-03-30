@@ -1,6 +1,6 @@
 module ftimer
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: ftimer_metadata_t, ftimer_summary_t
+   use ftimer_types, only: ftimer_metadata_t, ftimer_mpi_summary_t, ftimer_summary_t
    implicit none
    private
 
@@ -16,6 +16,8 @@ module ftimer
    public :: ftimer_mpi_summary
    public :: ftimer_print_summary
    public :: ftimer_write_summary
+   public :: ftimer_print_mpi_summary
+   public :: ftimer_write_mpi_summary
    public :: ftimer_default_instance
 
    type(ftimer_t), save, target :: ftimer_default_instance
@@ -88,7 +90,7 @@ contains
    end subroutine ftimer_get_summary
 
    subroutine ftimer_mpi_summary(summary, ierr)
-      type(ftimer_summary_t), intent(out) :: summary
+      type(ftimer_mpi_summary_t), intent(out) :: summary
       integer, intent(out), optional :: ierr
 
       call ftimer_default_instance%mpi_summary(summary, ierr=ierr)
@@ -110,5 +112,22 @@ contains
 
       call ftimer_default_instance%write_summary(filename, append=append, metadata=metadata, ierr=ierr)
    end subroutine ftimer_write_summary
+
+   subroutine ftimer_print_mpi_summary(unit, metadata, ierr)
+      integer, intent(in), optional :: unit
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      integer, intent(out), optional :: ierr
+
+      call ftimer_default_instance%print_mpi_summary(unit=unit, metadata=metadata, ierr=ierr)
+   end subroutine ftimer_print_mpi_summary
+
+   subroutine ftimer_write_mpi_summary(filename, append, metadata, ierr)
+      character(len=*), intent(in) :: filename
+      logical, intent(in), optional :: append
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      integer, intent(out), optional :: ierr
+
+      call ftimer_default_instance%write_mpi_summary(filename, append=append, metadata=metadata, ierr=ierr)
+   end subroutine ftimer_write_mpi_summary
 
 end module ftimer

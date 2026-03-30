@@ -1,7 +1,7 @@
 program mpi_example
-   use ftimer, only: ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
+   use ftimer, only: ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_print_mpi_summary, &
                      ftimer_start, ftimer_stop
-   use ftimer_types, only: FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED, ftimer_summary_t
+   use ftimer_types, only: ftimer_mpi_summary_t
    use mpi
    implicit none
    integer :: ierr
@@ -9,7 +9,7 @@ program mpi_example
    integer :: nprocs
    integer :: rank
    real :: accumulator
-   type(ftimer_summary_t) :: summary
+   type(ftimer_mpi_summary_t) :: summary
 
    call MPI_Init(ierr)
    call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
@@ -28,11 +28,10 @@ program mpi_example
 
    if (rank == 0 .and. summary%num_entries > 0) then
       print '(a,i0)', "MPI ranks: ", nprocs
-      print '(a,f12.6)', "Root local inclusive time (s): ", summary%entries(1)%inclusive_time
-      if (summary%mpi_summary_state == FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED) then
-         print '(a,f12.6)', "Cross-rank max time (s): ", summary%entries(1)%max_time
-      end if
+      print '(a,f12.6)', "Average inclusive time (s): ", summary%entries(1)%avg_inclusive_time
+      print '(a,f12.6)', "Cross-rank max time (s): ", summary%entries(1)%max_inclusive_time
    end if
+   call ftimer_print_mpi_summary(ierr=ierr)
 
    call ftimer_finalize(ierr=ierr)
    call MPI_Finalize(ierr)

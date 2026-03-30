@@ -3,7 +3,7 @@ module test_mpi_summary_4pe
    use mpi
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_SUCCESS, ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_SUCCESS, ftimer_mpi_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time
    implicit none
 
@@ -17,33 +17,19 @@ contains
    subroutine test_mpi_summary_supports_consistent_split_communicators(this)
       class(mpi_summary_4pe_case), intent(inout) :: this
       type(ftimer_t) :: timer
-      type(ftimer_summary_t) :: summary
+      type(ftimer_mpi_summary_t) :: summary
       integer :: color
       integer :: ierr
-      integer :: nprocs
       integer :: rank
       integer :: subcomm
       integer :: subrank
-      integer :: subsize
-      logical :: has_mpi_data
-      logical :: name_matches
-      real(wp) :: expected_avg
-      real(wp) :: expected_local
-      real(wp) :: expected_max
-      real(wp) :: expected_min
 
       rank = this%getProcessRank()
-      nprocs = this%getNumProcesses()
-      @assertEqual(4, nprocs)
-
       color = rank/2
       call MPI_Comm_split(MPI_COMM_WORLD, color, rank, subcomm, ierr)
       @assertEqual(MPI_SUCCESS, ierr)
       call MPI_Comm_rank(subcomm, subrank, ierr)
       @assertEqual(MPI_SUCCESS, ierr)
-      call MPI_Comm_size(subcomm, subsize, ierr)
-      @assertEqual(MPI_SUCCESS, ierr)
-      @assertEqual(2, subsize)
 
       call timer%init(comm=subcomm, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -55,32 +41,12 @@ contains
       call timer%mpi_summary(summary, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
-      expected_min = 4.0_wp + real(color, wp)
-      expected_max = expected_min + 2.0_wp
-      expected_avg = expected_min + 1.0_wp
-      expected_local = expected_min + 2.0_wp*real(subrank, wp)
-      has_mpi_data = summary%has_mpi_data
-      name_matches = trim(summary%entries(1)%name) == 'work'
-
+      @assertEqual(2, summary%num_ranks)
       @assertEqual(1, summary%num_entries)
-      @assertTrue(name_matches)
-      call assert_real_close(summary%entries(1)%inclusive_time, expected_local)
-      call assert_real_close(summary%entries(1)%self_time, expected_local)
-      @assertEqual(1, summary%entries(1)%call_count)
-
-      if (subrank == 0) then
-         @assertTrue(has_mpi_data)
-         call assert_real_close(summary%entries(1)%min_time, expected_min)
-         call assert_real_close(summary%entries(1)%max_time, expected_max)
-         call assert_real_close(summary%entries(1)%avg_across_ranks, expected_avg)
-         call assert_real_close(summary%entries(1)%imbalance, expected_max/expected_avg)
-      else
-         @assertFalse(has_mpi_data)
-         @assertEqual(-1.0_wp, summary%entries(1)%min_time)
-         @assertEqual(-1.0_wp, summary%entries(1)%max_time)
-         @assertEqual(-1.0_wp, summary%entries(1)%avg_across_ranks)
-         @assertEqual(-1.0_wp, summary%entries(1)%imbalance)
-      end if
+      @assertEqual('work', trim(summary%entries(1)%name))
+      call assert_real_close(summary%min_total_time, 4.0_wp + real(color, wp))
+      call assert_real_close(summary%avg_total_time, 5.0_wp + real(color, wp))
+      call assert_real_close(summary%max_total_time, 6.0_wp + real(color, wp))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -92,47 +58,28 @@ contains
    subroutine test_mpi_summary_defaults_to_world_when_comm_omitted(this)
       class(mpi_summary_4pe_case), intent(inout) :: this
       type(ftimer_t) :: timer
-      type(ftimer_summary_t) :: summary
+      type(ftimer_mpi_summary_t) :: summary
       integer :: ierr
-      integer :: nprocs
-      integer :: rank
-      logical :: has_mpi_data
-      logical :: name_matches
-      real(wp) :: expected_local
-
-      rank = this%getProcessRank()
-      nprocs = this%getNumProcesses()
-      @assertEqual(4, nprocs)
 
       call timer%init(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call attach_mock_clock(timer)
 
-      call build_world_timer(timer, rank, ierr)
+      call build_world_timer(timer, this%getProcessRank(), ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       call timer%mpi_summary(summary, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
-      expected_local = 4.0_wp + real(rank, wp)
-      has_mpi_data = summary%has_mpi_data
-      name_matches = trim(summary%entries(1)%name) == 'world'
-
+      @assertEqual(4, summary%num_ranks)
       @assertEqual(1, summary%num_entries)
-      @assertTrue(name_matches)
-      call assert_real_close(summary%entries(1)%inclusive_time, expected_local)
-      call assert_real_close(summary%entries(1)%self_time, expected_local)
-
-      if (rank == 0) then
-         @assertTrue(has_mpi_data)
-         call assert_real_close(summary%entries(1)%min_time, 4.0_wp)
-         call assert_real_close(summary%entries(1)%max_time, 7.0_wp)
-         call assert_real_close(summary%entries(1)%avg_across_ranks, 5.5_wp)
-         call assert_real_close(summary%entries(1)%imbalance, 7.0_wp/5.5_wp)
-      else
-         @assertFalse(has_mpi_data)
-         call assert_entry_has_no_mpi_data(summary, 1)
-      end if
+      @assertEqual('world', trim(summary%entries(1)%name))
+      call assert_real_close(summary%min_total_time, 4.0_wp)
+      call assert_real_close(summary%avg_total_time, 5.5_wp)
+      call assert_real_close(summary%max_total_time, 7.0_wp)
+      call assert_real_close(summary%entries(1)%min_inclusive_time, 4.0_wp)
+      call assert_real_close(summary%entries(1)%avg_inclusive_time, 5.5_wp)
+      call assert_real_close(summary%entries(1)%max_inclusive_time, 7.0_wp)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -141,33 +88,19 @@ contains
    @test
    subroutine test_procedural_mpi_summary_supports_split_communicators(this)
       class(mpi_summary_4pe_case), intent(inout) :: this
-      type(ftimer_summary_t) :: summary
+      type(ftimer_mpi_summary_t) :: summary
       integer :: color
       integer :: ierr
-      integer :: nprocs
       integer :: rank
       integer :: subcomm
       integer :: subrank
-      integer :: subsize
-      logical :: has_mpi_data
-      logical :: name_matches
-      real(wp) :: expected_avg
-      real(wp) :: expected_local
-      real(wp) :: expected_max
-      real(wp) :: expected_min
 
       rank = this%getProcessRank()
-      nprocs = this%getNumProcesses()
-      @assertEqual(4, nprocs)
-
       color = rank/2
       call MPI_Comm_split(MPI_COMM_WORLD, color, rank, subcomm, ierr)
       @assertEqual(MPI_SUCCESS, ierr)
       call MPI_Comm_rank(subcomm, subrank, ierr)
       @assertEqual(MPI_SUCCESS, ierr)
-      call MPI_Comm_size(subcomm, subsize, ierr)
-      @assertEqual(MPI_SUCCESS, ierr)
-      @assertEqual(2, subsize)
 
       call ftimer_init(comm=subcomm, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -179,29 +112,11 @@ contains
       call ftimer_mpi_summary(summary, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
-      expected_min = 4.0_wp + real(color, wp)
-      expected_max = expected_min + 2.0_wp
-      expected_avg = expected_min + 1.0_wp
-      expected_local = expected_min + 2.0_wp*real(subrank, wp)
-      has_mpi_data = summary%has_mpi_data
-      name_matches = trim(summary%entries(1)%name) == 'work'
-
+      @assertEqual(2, summary%num_ranks)
       @assertEqual(1, summary%num_entries)
-      @assertTrue(name_matches)
-      call assert_real_close(summary%entries(1)%inclusive_time, expected_local)
-      call assert_real_close(summary%entries(1)%self_time, expected_local)
-      @assertEqual(1, summary%entries(1)%call_count)
-
-      if (subrank == 0) then
-         @assertTrue(has_mpi_data)
-         call assert_real_close(summary%entries(1)%min_time, expected_min)
-         call assert_real_close(summary%entries(1)%max_time, expected_max)
-         call assert_real_close(summary%entries(1)%avg_across_ranks, expected_avg)
-         call assert_real_close(summary%entries(1)%imbalance, expected_max/expected_avg)
-      else
-         @assertFalse(has_mpi_data)
-         call assert_entry_has_no_mpi_data(summary, 1)
-      end if
+      call assert_real_close(summary%entries(1)%min_inclusive_time, 4.0_wp + real(color, wp))
+      call assert_real_close(summary%entries(1)%avg_inclusive_time, 5.0_wp + real(color, wp))
+      call assert_real_close(summary%entries(1)%max_inclusive_time, 6.0_wp + real(color, wp))
 
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -248,16 +163,6 @@ contains
       fake_time = 4.0_wp + real(color, wp) + 2.0_wp*real(subrank, wp)
       call ftimer_stop("work", ierr=ierr)
    end subroutine build_split_comm_timer_procedural
-
-   subroutine assert_entry_has_no_mpi_data(summary, index)
-      type(ftimer_summary_t), intent(in) :: summary
-      integer, intent(in) :: index
-
-      @assertEqual(-1.0_wp, summary%entries(index)%min_time)
-      @assertEqual(-1.0_wp, summary%entries(index)%max_time)
-      @assertEqual(-1.0_wp, summary%entries(index)%avg_across_ranks)
-      @assertEqual(-1.0_wp, summary%entries(index)%imbalance)
-   end subroutine assert_entry_has_no_mpi_data
 
    subroutine assert_real_close(actual, expected)
       real(wp), intent(in) :: actual

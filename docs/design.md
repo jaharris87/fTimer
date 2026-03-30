@@ -152,6 +152,8 @@ The currently exported procedural entry points are:
 - `ftimer_mpi_summary`
 - `ftimer_print_summary`
 - `ftimer_write_summary`
+- `ftimer_print_mpi_summary`
+- `ftimer_write_mpi_summary`
 - `ftimer_default_instance`
 
 Important current-state API notes:
@@ -160,9 +162,10 @@ Important current-state API notes:
 - `get_summary()` is the local structured summary path.
 - `ftimer_summary_t` entries now retain `name`/`depth` and also expose `node_id`/`parent_id` links that are stable only within one produced summary object.
 - `print_summary()` and `write_summary()` format local report text.
-- `mpi_summary()` adds reduced MPI entry fields only in the documented root/non-root result states.
+- `mpi_summary()` returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
+- `print_mpi_summary()` and `write_mpi_summary()` are the first-class communicator-level MPI reporting paths.
 - `on_event` remains a lightweight intra-run hook; the current public surface does not promise stable semantic timer identity for external-profiler integrations.
-- `ftimer_types` owns `ftimer_summary_t`, `ftimer_metadata_t`, mismatch constants, and MPI summary-state constants.
+- `ftimer_types` owns `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_metadata_t`, and mismatch constants.
 
 ## Build, Test, and CI Reality
 
