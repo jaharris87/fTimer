@@ -109,9 +109,9 @@ The CMake source order reflects the real dependency order:
 
 `ftimer_core_summary_bindings.F90` is the submodule-backed binding layer that connects `ftimer_t` to local summary generation, formatted reporting, and file-output entry points without collapsing all summary logic into the core module body.
 
-`ftimer_summary.F90` turns timer state into structured local summaries and formatted report text. This is where entry ordering, depth attribution, percentages, and self-time computation are assembled for local reporting.
+`ftimer_summary.F90` turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, and self-time computation are assembled for local reporting.
 
-`ftimer_mpi.F90` adds cross-rank behavior on top of local summaries. It verifies that all ranks agree on the timer descriptor set before any collective reduction, then populates reduced MPI fields only where that contract allows.
+`ftimer_mpi.F90` adds cross-rank behavior on top of local summaries. It verifies that all ranks agree on the timer descriptor set before any collective reduction, using the local summary tree shape plus names rather than raw local node ids, then populates reduced MPI fields only where that contract allows.
 
 `ftimer.F90` exposes the procedural API by forwarding to the default saved `ftimer_t` instance. Shared types and constants still come from `ftimer_types`; they are not re-exported from `ftimer`.
 
@@ -122,6 +122,7 @@ The current implementation is organized around a few design choices that show up
 - Strict stack-based nesting is the baseline model. Timer overlap is not supported.
 - Context-sensitive accounting means the same timer name under different parent stacks is tracked independently.
 - Timing data is structured data first and formatted text second.
+- Local summary entries keep preorder compatibility for formatting, but they also carry explicit parent-linked tree data within each produced summary object.
 - The clock is injectable, which keeps tests deterministic and benchmarking controlled.
 - Callback hooks are lightweight intra-run hooks for normal start/stop events only; internal mismatch repair transitions must stay invisible to callback consumers, and current `main` does not define a stronger profiler-backend identity contract.
 - MPI summary reduction is descriptor-validated before collectives, and reduced cross-rank fields are valid only in the documented result shape.
@@ -157,6 +158,7 @@ Important current-state API notes:
 
 - `ierr` is now the last optional argument in the `init` signatures. Keywords are recommended for readability.
 - `get_summary()` is the local structured summary path.
+- `ftimer_summary_t` entries now retain `name`/`depth` and also expose `node_id`/`parent_id` links that are stable only within one produced summary object.
 - `print_summary()` and `write_summary()` format local report text.
 - `mpi_summary()` adds reduced MPI entry fields only in the documented root/non-root result states.
 - `on_event` remains a lightweight intra-run hook; the current public surface does not promise stable semantic timer identity for external-profiler integrations.

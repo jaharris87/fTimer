@@ -59,11 +59,15 @@ contains
       if (rank == 0) then
          @assertEqual(0, summary%entries(1)%depth)
          @assertEqual(1, summary%entries(2)%depth)
+         @assertEqual(0, summary%entries(1)%parent_id)
+         @assertEqual(summary%entries(1)%node_id, summary%entries(2)%parent_id)
          @assertEqual(7.0_wp, summary%entries(1)%inclusive_time)
          @assertEqual(3.0_wp, summary%entries(2)%inclusive_time)
       else
          @assertEqual(0, summary%entries(1)%depth)
          @assertEqual(0, summary%entries(2)%depth)
+         @assertEqual(0, summary%entries(1)%parent_id)
+         @assertEqual(0, summary%entries(2)%parent_id)
          @assertEqual(2.0_wp, summary%entries(1)%inclusive_time)
          @assertEqual(3.0_wp, summary%entries(2)%inclusive_time)
       end if

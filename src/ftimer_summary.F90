@@ -207,6 +207,7 @@ contains
          position = position + 1
          entries(position)%name = segments(node_segment(node))%name
          entries(position)%depth = node_depth(node)
+         entries(position)%node_id = position
          entries(position)%inclusive_time = node_inclusive(node)
          entries(position)%call_count = node_call_count(node)
          if (entries(position)%call_count > 0) then
@@ -222,7 +223,10 @@ contains
          end if
 
          if (stack_size > 0) then
+            entries(position)%parent_id = child_sum_entry(stack_size)
             child_sum(stack_size) = child_sum(stack_size) + entries(position)%inclusive_time
+         else
+            entries(position)%parent_id = 0
          end if
          stack_size = stack_size + 1
          child_sum_entry(stack_size) = position

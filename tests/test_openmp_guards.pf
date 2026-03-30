@@ -626,6 +626,8 @@ contains
          names_match = trim(lhs%entries(i)%name) == trim(rhs%entries(i)%name)
          @assertTrue(names_match)
          @assertEqual(rhs%entries(i)%depth, lhs%entries(i)%depth)
+         @assertEqual(rhs%entries(i)%node_id, lhs%entries(i)%node_id)
+         @assertEqual(rhs%entries(i)%parent_id, lhs%entries(i)%parent_id)
          @assertEqual(rhs%entries(i)%inclusive_time, lhs%entries(i)%inclusive_time)
          @assertEqual(rhs%entries(i)%self_time, lhs%entries(i)%self_time)
          @assertEqual(rhs%entries(i)%call_count, lhs%entries(i)%call_count)
