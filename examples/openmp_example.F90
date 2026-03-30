@@ -33,6 +33,9 @@ program openmp_example
    call ftimer_stop("parallel_region")
 
    call ftimer_get_summary(summary)
+   print '(a)', "fTimer OpenMP support is limited to master-thread-only region bracketing."
+   print '(a)', "This example measures one parallel region wall-clock interval,"
+   print '(a)', "not per-thread timings."
    print '(a,i0)', "OpenMP threads observed: ", nthreads
    print '(a,i0)', "Recorded timers: ", summary%num_entries
    call ftimer_print_summary()

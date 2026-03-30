@@ -1,6 +1,8 @@
 # fTimer
 
-fTimer is a lightweight, correctness-first wall-clock timing library for modern Fortran. It is built for codes that need hierarchical timers, predictable accounting, and summaries you can inspect programmatically instead of scraping from ad hoc text output.
+fTimer is a lightweight, correctness-first wall-clock timing library for modern Fortran. Current `main` is positioned first for disciplined serial and pure-MPI codes that need hierarchical timers, predictable accounting, and summaries you can inspect programmatically instead of scraping from ad hoc text output.
+
+> Current product position: fTimer's core supported stories are serial timing and pure-MPI timing. `FTIMER_USE_OPENMP=ON` is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid MPI+OpenMP timing model. The callback hook is a lightweight intra-run event hook, not a stable external-profiler integration contract.
 
 For a first release, the focus is a small, dependable core:
 
@@ -19,20 +21,20 @@ fTimer fits best when you want timing behavior you can trust:
 - mismatch handling is explicit and configurable (`strict`, `warn`, `repair`)
 - summaries are available as data first (`get_summary()`), with text formatting layered on top
 - an injectable clock supports deterministic tests and controlled benchmarking
-- callback hooks let external tools react to timer start/stop events
+- optional callback hooks let in-process code observe normal timer start/stop events during a run
 
-If you need a tiny serial timing helper, you can use fTimer that way. If you need structured local summaries, optional MPI reductions, and a clear error contract, that is where the library is strongest.
+If you need a tiny serial timing helper, you can use fTimer that way. If you need structured local summaries, opt-in pure-MPI reductions, and a clear error contract, that is where the library is strongest.
 
 ## Supported Workflows
 
 fTimer currently supports these usage paths:
 
 - Serial timing with local summaries and formatted reports
-- MPI builds that use `MPI_Wtime()` and can populate root-side reduced timing fields
-- OpenMP builds with master-thread-only timer guards for timing a parallel region as a whole
+- Pure-MPI builds that use `MPI_Wtime()` and can populate root-side reduced timing fields
+- A narrow OpenMP carve-out: master-thread-only timer guards for timing a parallel region as a whole
 - Downstream consumption through `find_package(fTimer CONFIG REQUIRED)`
 
-Important limitations are documented later in this README. The short version is that MPI support is real but opt-in, and OpenMP support is intentionally limited to the documented master-thread-only model.
+Important limitations are documented later in this README. The short version is that serial and pure-MPI are the core supported stories on current `main`; OpenMP support is intentionally limited to the documented master-thread-only model.
 
 ## Quick Start
 
@@ -138,14 +140,15 @@ Operational notes:
 - `get_summary()`, `print_summary()`, and `write_summary()` are local-only summary/reporting paths.
 - `mpi_summary()` and `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init`.
 - On a successful MPI reduction, reduced `min_time`, `max_time`, `avg_across_ranks`, and `imbalance` fields are populated only on communicator root.
+- `on_event` on `type(ftimer_t)` is a lightweight intra-run hook. It reports normal start/stop events with runtime-local numeric ids; current `main` does not promise a stable semantic id-to-name/path mapping for profiler backends or durable cross-run tooling.
 - Import shared types and constants from `ftimer_types`; `use ftimer` does not re-export them.
 
 ## Examples
 
 - `examples/basic_usage.F90`: serial start/stop plus summary retrieval and formatted output
 - `examples/nested_timers.F90`: nested timers and metadata headers
-- `examples/mpi_example.F90`: MPI timing with root-side reduced summary fields
-- `examples/openmp_example.F90`: the supported OpenMP pattern, where timers bracket the parallel region instead of running inside worker threads
+- `examples/mpi_example.F90`: pure-MPI timing with root-side reduced summary fields
+- `examples/openmp_example.F90`: the narrow OpenMP carve-out, where timers bracket the parallel region instead of running inside worker threads
 
 ## Build And Test
 
@@ -190,7 +193,7 @@ Supported toolchain matrix:
 - Serial smoke/library build: GNU Fortran and LLVM Flang are validated in automation
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
 - MPI: an MPI wrapper compiler such as `mpifort`
-- OpenMP: GNU Fortran only for the documented supported path
+- OpenMP: GNU Fortran only for the documented master-thread-only carve-out
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 
@@ -202,8 +205,9 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`. Configure now fails early if the active compiler cannot compile a minimal `use mpi` probe against the discovered MPI installation.
 - `mpi_summary()` does not produce a fully global summary object on every rank. After a successful collective, local summary fields still describe the calling rank's local data; only communicator root also receives reduced cross-rank fields.
 - All ranks that participate in `mpi_summary()` must agree on the communicator captured by `init`. If would-be participants diverge onto different communicators, the library cannot safely discover that mistake after the split; the practical failure mode is a hang, not a clean local fallback.
-- `FTIMER_USE_OPENMP=ON` enables limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
-- OpenMP support does not make fTimer thread-safe and does not provide thread-local timer instances.
+- `FTIMER_USE_OPENMP=ON` enables only limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
+- The OpenMP path does not make fTimer thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.
+- `on_event` remains a lightweight intra-run hook, not a serious profiler-backend integration contract with stable semantic timer identity.
 - If `FTIMER_USE_MPI=OFF`, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the result local-only.
 - Formatted summary/report output is local-only.
 
