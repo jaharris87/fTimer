@@ -5,7 +5,7 @@ module test_openmp_guards
                      ftimer_lookup, ftimer_start, ftimer_start_id, ftimer_stop, ftimer_stop_id
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_INVALID_NAME, FTIMER_SUCCESS, ftimer_summary_t, wp
-   use test_support, only: attach_mock_clock, fake_time, snapshot_timer
+   use test_support, only: attach_mock_clock, fake_time, snapshot_timer, summary_node_ids_unique, summary_parent_index
    implicit none
 
    integer, parameter :: NOOP_IERR_SENTINEL = -100
@@ -615,17 +615,26 @@ contains
       type(ftimer_summary_t), intent(in) :: lhs
       type(ftimer_summary_t), intent(in) :: rhs
       integer :: i
+      integer :: lhs_parent_idx
+      integer :: rhs_parent_idx
       logical :: names_match
       real(wp) :: pct_diff
 
       @assertEqual(rhs%num_entries, lhs%num_entries)
       @assertEqual(rhs%total_time, lhs%total_time)
       @assertEqual(rhs%has_mpi_data, lhs%has_mpi_data)
+      @assertTrue(summary_node_ids_unique(lhs))
+      @assertTrue(summary_node_ids_unique(rhs))
 
       do i = 1, lhs%num_entries
          names_match = trim(lhs%entries(i)%name) == trim(rhs%entries(i)%name)
          @assertTrue(names_match)
          @assertEqual(rhs%entries(i)%depth, lhs%entries(i)%depth)
+         lhs_parent_idx = summary_parent_index(lhs, i)
+         rhs_parent_idx = summary_parent_index(rhs, i)
+         @assertTrue(lhs_parent_idx >= 0)
+         @assertTrue(rhs_parent_idx >= 0)
+         @assertEqual(rhs_parent_idx, lhs_parent_idx)
          @assertEqual(rhs%entries(i)%inclusive_time, lhs%entries(i)%inclusive_time)
          @assertEqual(rhs%entries(i)%self_time, lhs%entries(i)%self_time)
          @assertEqual(rhs%entries(i)%call_count, lhs%entries(i)%call_count)

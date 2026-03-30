@@ -1,6 +1,6 @@
 module test_support
    use ftimer_core, only: ftimer_t, ftimer_test_get_state, ftimer_test_state_t
-   use ftimer_types, only: ftimer_call_stack_t, wp
+   use ftimer_types, only: ftimer_call_stack_t, ftimer_summary_t, wp
    use, intrinsic :: iso_c_binding, only: c_associated, c_char, c_int, c_null_char, c_null_ptr, c_ptr
    use, intrinsic :: iso_fortran_env, only: error_unit, iostat_end, iostat_eor
    implicit none
@@ -18,6 +18,8 @@ module test_support
    public :: read_file_text
    public :: reset_mock_clock_state
    public :: read_unit_text
+   public :: summary_node_ids_unique
+   public :: summary_parent_index
    public :: snapshot_timer
 
    real(wp), save :: fake_time = 0.0_wp
@@ -233,6 +235,45 @@ contains
 
       call ftimer_test_get_state(timer, state)
    end subroutine snapshot_timer
+
+   logical function summary_node_ids_unique(summary) result(is_unique)
+      type(ftimer_summary_t), intent(in) :: summary
+      integer :: i
+      integer :: j
+
+      is_unique = .false.
+      do i = 1, summary%num_entries
+         if (summary%entries(i)%node_id <= 0) return
+         do j = i + 1, summary%num_entries
+            if (summary%entries(i)%node_id == summary%entries(j)%node_id) return
+         end do
+      end do
+
+      is_unique = .true.
+   end function summary_node_ids_unique
+
+   integer function summary_parent_index(summary, entry_idx) result(parent_idx)
+      type(ftimer_summary_t), intent(in) :: summary
+      integer, intent(in) :: entry_idx
+      integer :: i
+      integer :: parent_id
+
+      parent_idx = -1
+      if ((entry_idx < 1) .or. (entry_idx > summary%num_entries)) return
+
+      parent_id = summary%entries(entry_idx)%parent_id
+      if (parent_id <= 0) then
+         parent_idx = 0
+         return
+      end if
+
+      do i = 1, summary%num_entries
+         if (summary%entries(i)%node_id == parent_id) then
+            parent_idx = i
+            return
+         end if
+      end do
+   end function summary_parent_index
 
    function read_file_text(path) result(text)
       character(len=*), intent(in) :: path

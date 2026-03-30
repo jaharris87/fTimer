@@ -8,7 +8,7 @@ For a first release, the focus is a small, dependable core:
 
 - strict, stack-based start/stop timing by default
 - context-sensitive accounting for the same timer name under different parents
-- inclusive and self time in structured summaries
+- inclusive and self time in structured summaries with explicit tree linkage
 - procedural wrappers and an OOP core API
 - optional MPI summary reduction for cross-rank min/max/avg/imbalance data
 - an installable CMake package for downstream projects
@@ -20,6 +20,7 @@ fTimer fits best when you want timing behavior you can trust:
 - nested timers are treated as a real hierarchy, not a flat label list
 - mismatch handling is explicit and configurable (`strict`, `warn`, `repair`)
 - summaries are available as data first (`get_summary()`), with text formatting layered on top
+- local summary entries retain formatter-friendly preorder `name`/`depth` data and also expose explicit `node_id`/`parent_id` tree links
 - an injectable clock supports deterministic tests and controlled benchmarking
 - optional callback hooks let in-process code observe normal timer start/stop events during a run
 
@@ -138,6 +139,7 @@ Operational notes:
 
 - `ierr` is now the last optional argument in both `init` signatures (`comm`, `mismatch_mode`, `ierr`), so a single positional integer binds to `comm`, not `ierr`. Keywords are recommended for readability.
 - `get_summary()`, `print_summary()`, and `write_summary()` are local-only summary/reporting paths.
+- Local summary entries retain preorder formatting compatibility and now expose explicit tree structure through `node_id` and `parent_id`. `node_id` values are stable only within one produced summary object, and roots use `parent_id = 0`.
 - `mpi_summary()` and `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init`.
 - On a successful MPI reduction, reduced `min_time`, `max_time`, `avg_across_ranks`, and `imbalance` fields are populated only on communicator root.
 - `on_event` on `type(ftimer_t)` is a lightweight intra-run hook. It reports normal start/stop events with runtime-local numeric ids; current `main` does not promise a stable semantic id-to-name/path mapping for profiler backends or durable cross-run tooling.
@@ -204,6 +206,7 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - CMake is the supported build and package path. FPM support is intentionally deferred.
 - `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`. Configure now fails early if the active compiler cannot compile a minimal `use mpi` probe against the discovered MPI installation.
 - `mpi_summary()` does not produce a fully global summary object on every rank. After a successful collective, local summary fields still describe the calling rank's local data; only communicator root also receives reduced cross-rank fields.
+- Local summary `node_id` values are not a cross-run identity contract. Treat them as explicit links inside one produced summary object, not as durable ids across separate runs or independently produced summaries.
 - All ranks that participate in `mpi_summary()` must agree on the communicator captured by `init`. If would-be participants diverge onto different communicators, the library cannot safely discover that mistake after the split; the practical failure mode is a hang, not a clean local fallback.
 - `FTIMER_USE_OPENMP=ON` enables only limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
 - The OpenMP path does not make fTimer thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.

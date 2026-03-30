@@ -46,6 +46,15 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 - Restarts the local monitoring window used for `summary%total_time` and `% Total`
 - Error if timers are active
 
+## Local Summary Contract
+
+- `get_summary()` returns a local-only `ftimer_summary_t`
+- `summary%entries` remain in preorder so current formatted-report traversal and existing depth-oriented consumers keep working
+- Each entry retains `name` and `depth`, and now also exposes explicit tree linkage through `node_id` and `parent_id`
+- `node_id` is unique and stable only within one produced summary object
+- `parent_id` refers to another entry's `node_id`; roots use `parent_id = 0`
+- Current `main` does not promise that local summary node ids remain stable across separate runs or across independently produced summary objects
+
 ## MPI Guarantees
 
 - `mpi_summary()` is collective over the communicator captured by `init`
@@ -55,6 +64,7 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 - Hash-based timer-descriptor preflight before the reduction phase
 - Extra timers, missing timers, renamed timers, and hierarchy/context mismatches fall back to the local-only summary with `FTIMER_ERR_MPI_INCON`
 - Min/max/avg/imbalance fields are valid only on communicator root when `has_mpi_data=.true.`
+- MPI descriptor matching is based on the local summary tree shape and names, not on raw local `node_id` values
 - Mismatched communicator choices across would-be participants are unsupported; this API has no safe cross-communicator rendezvous to detect that misuse without risking the same MPI deadlock it is trying to avoid
 
 ### Unsupported communicator mismatch example

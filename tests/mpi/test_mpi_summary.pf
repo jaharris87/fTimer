@@ -7,7 +7,7 @@ module test_mpi_summary
                            FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE, &
                            FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED, FTIMER_SUCCESS, &
                            ftimer_summary_t, wp
-   use test_support, only: attach_mock_clock, fake_time
+   use test_support, only: attach_mock_clock, fake_time, summary_node_ids_unique, summary_parent_index
    implicit none
 
    @testcase(npes=[2])
@@ -55,6 +55,9 @@ contains
       @assertEqual(2, summary%num_entries)
       @assertTrue(first_name_matches)
       @assertTrue(second_name_matches)
+      @assertTrue(summary%entries(1)%node_id > 0)
+      @assertEqual(summary%entries(1)%node_id, summary%entries(2)%parent_id)
+      @assertEqual(0, summary%entries(1)%parent_id)
       @assertEqual(expected_outer, summary%entries(1)%inclusive_time)
       @assertEqual(expected_outer_self, summary%entries(1)%self_time)
       @assertEqual(1, summary%entries(1)%call_count)
@@ -252,6 +255,10 @@ contains
          @assertEqual(1, summary%entries(2)%depth)
          @assertEqual(1, summary%entries(3)%depth)
          @assertEqual(2, summary%entries(4)%depth)
+         @assertEqual(0, summary%entries(1)%parent_id)
+         @assertEqual(summary%entries(1)%node_id, summary%entries(2)%parent_id)
+         @assertEqual(summary%entries(1)%node_id, summary%entries(3)%parent_id)
+         @assertEqual(summary%entries(3)%node_id, summary%entries(4)%parent_id)
          call assert_real_close(summary%entries(1)%inclusive_time, 10.0_wp)
          call assert_real_close(summary%entries(1)%min_time, 10.0_wp)
          call assert_real_close(summary%entries(1)%max_time, 13.0_wp)
@@ -536,16 +543,25 @@ contains
       type(ftimer_summary_t), intent(in) :: rhs
       integer :: i
       logical :: names_match
+      integer :: lhs_parent_idx
+      integer :: rhs_parent_idx
 
       @assertEqual(rhs%num_entries, lhs%num_entries)
       @assertEqual(rhs%has_mpi_data, lhs%has_mpi_data)
       @assertEqual(rhs%mpi_summary_state, lhs%mpi_summary_state)
       call assert_real_close(lhs%total_time, rhs%total_time)
+      @assertTrue(summary_node_ids_unique(lhs))
+      @assertTrue(summary_node_ids_unique(rhs))
 
       do i = 1, lhs%num_entries
          names_match = trim(lhs%entries(i)%name) == trim(rhs%entries(i)%name)
          @assertTrue(names_match)
          @assertEqual(rhs%entries(i)%depth, lhs%entries(i)%depth)
+         lhs_parent_idx = summary_parent_index(lhs, i)
+         rhs_parent_idx = summary_parent_index(rhs, i)
+         @assertTrue(lhs_parent_idx >= 0)
+         @assertTrue(rhs_parent_idx >= 0)
+         @assertEqual(rhs_parent_idx, lhs_parent_idx)
          call assert_real_close(lhs%entries(i)%inclusive_time, rhs%entries(i)%inclusive_time)
          call assert_real_close(lhs%entries(i)%self_time, rhs%entries(i)%self_time)
          @assertEqual(rhs%entries(i)%call_count, lhs%entries(i)%call_count)

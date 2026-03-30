@@ -74,6 +74,9 @@ module ftimer_types
       real(wp) :: max_time = -1.0_wp
       real(wp) :: avg_across_ranks = -1.0_wp
       real(wp) :: imbalance = -1.0_wp
+      ! Stable only within one produced summary object. Root nodes use parent_id = 0.
+      integer :: node_id = 0
+      integer :: parent_id = 0
    end type ftimer_summary_entry_t
 
    type :: ftimer_summary_t

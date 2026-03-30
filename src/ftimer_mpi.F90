@@ -215,12 +215,14 @@ contains
       integer, allocatable, intent(out) :: permutation(:)
       character(len=:), allocatable :: path_strings(:)
       character(len=FTIMER_NAME_LEN + 5) :: component
-      integer, allocatable :: prefix_lengths(:)
       integer :: component_len
-      integer :: depth
       integer :: i
-      integer :: max_depth
       integer :: max_len
+      integer :: max_node_id
+      integer, allocatable :: node_to_entry(:)
+      integer :: parent_entry
+      integer :: parent_id
+      integer, allocatable :: prefix_lengths(:)
 
       if (summary%num_entries <= 0) then
          allocate (character(len=1) :: descriptors(0))
@@ -228,42 +230,62 @@ contains
          return
       end if
 
-      max_depth = 0
+      max_node_id = 0
       do i = 1, summary%num_entries
-         max_depth = max(max_depth, summary%entries(i)%depth)
+         max_node_id = max(max_node_id, summary%entries(i)%node_id)
       end do
 
-      allocate (prefix_lengths(max_depth + 1))
+      allocate (prefix_lengths(summary%num_entries))
+      allocate (node_to_entry(max(max_node_id, 1)))
       prefix_lengths = 0
+      node_to_entry = 0
       max_len = 1
 
       do i = 1, summary%num_entries
-         depth = summary%entries(i)%depth
-         component_len = descriptor_component_length(summary%entries(i)%name)
-         if (depth == 0) then
-            prefix_lengths(1) = component_len
-         else
-            prefix_lengths(depth + 1) = prefix_lengths(depth) + component_len
+         if (summary%entries(i)%node_id > 0) then
+            node_to_entry(summary%entries(i)%node_id) = i
          end if
-         max_len = max(max_len, prefix_lengths(depth + 1))
+      end do
+
+      do i = 1, summary%num_entries
+         parent_id = summary%entries(i)%parent_id
+         component_len = descriptor_component_length(summary%entries(i)%name)
+         if (parent_id <= 0) then
+            prefix_lengths(i) = component_len
+         else
+            parent_entry = 0
+            if (parent_id <= size(node_to_entry)) parent_entry = node_to_entry(parent_id)
+            if (parent_entry > 0) then
+               prefix_lengths(i) = prefix_lengths(parent_entry) + component_len
+            else
+               prefix_lengths(i) = component_len
+            end if
+         end if
+         max_len = max(max_len, prefix_lengths(i))
       end do
 
       allocate (character(len=max_len) :: descriptors(summary%num_entries))
-      allocate (character(len=max_len) :: path_strings(max_depth + 1))
+      allocate (character(len=max_len) :: path_strings(summary%num_entries))
       allocate (permutation(summary%num_entries))
 
       descriptors = ''
       path_strings = ''
 
       do i = 1, summary%num_entries
-         depth = summary%entries(i)%depth
+         parent_id = summary%entries(i)%parent_id
          call encode_descriptor_component(summary%entries(i)%name, component, component_len)
-         if (depth == 0) then
-            path_strings(1) = component(1:component_len)
+         if (parent_id <= 0) then
+            path_strings(i) = component(1:component_len)
          else
-            path_strings(depth + 1) = trim(path_strings(depth))//component(1:component_len)
+            parent_entry = 0
+            if (parent_id <= size(node_to_entry)) parent_entry = node_to_entry(parent_id)
+            if (parent_entry > 0) then
+               path_strings(i) = trim(path_strings(parent_entry))//component(1:component_len)
+            else
+               path_strings(i) = component(1:component_len)
+            end if
          end if
-         descriptors(i) = path_strings(depth + 1)
+         descriptors(i) = path_strings(i)
          permutation(i) = i
       end do
 
