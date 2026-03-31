@@ -12,6 +12,7 @@ on:
 
 permissions:
   actions: write
+  contents: read
   issues: read
   pull-requests: read
 
@@ -20,8 +21,54 @@ env:
   CODEX_COVERAGE_WORKFLOW_FILE: codex-review-coverage.yml
 
 jobs:
-  rerun-pr-coverage:
+  classify-comment:
     if: github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    outputs:
+      should_refresh: ${{ steps.classify.outputs.should_refresh }}
+    steps:
+      - name: Classify whether this PR comment event should refresh coverage
+        id: classify
+        env:
+          COMMENT_ACTION: ${{ github.event.action }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          should_refresh=false
+
+          if [[ "${COMMENT_BODY}" == *"codex-review-coverage role="* ]]; then
+            should_refresh=true
+          elif [ "$COMMENT_ACTION" = "edited" ] || [ "$COMMENT_ACTION" = "deleted" ]; then
+            permission="none"
+
+            if [ "$COMMENT_AUTHOR" = "github-actions[bot]" ] || \
+               [ "$COMMENT_AUTHOR" = "chatgpt-codex-connector" ] || \
+               [ "$COMMENT_AUTHOR" = "chatgpt-codex-connector[bot]" ]; then
+              permission="allowed-bot"
+            else
+              if permission_json="$(
+                gh api "repos/${{ github.repository }}/collaborators/${COMMENT_AUTHOR}/permission" 2>/dev/null
+              )"; then
+                permission="$(jq -r '.permission // "none"' <<<"$permission_json")"
+              fi
+            fi
+
+            if [ "$permission" = "allowed-bot" ] || \
+               [ "$permission" = "admin" ] || \
+               [ "$permission" = "maintain" ] || \
+               [ "$permission" = "write" ]; then
+              should_refresh=true
+            fi
+          fi
+
+          echo "should_refresh=${should_refresh}" >>"$GITHUB_OUTPUT"
+
+  rerun-pr-coverage:
+    needs: classify-comment
+    if: needs.classify-comment.outputs.should_refresh == 'true'
     concurrency:
       group: codex-review-coverage-refresh-${{ github.event.issue.number }}
       cancel-in-progress: true
@@ -29,15 +76,9 @@ jobs:
     steps:
       - name: Rerun the latest PR-attached coverage check after coverage-marker comment changes
         env:
-          COMMENT_BODY: ${{ github.event.comment.body }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          if [[ "${COMMENT_BODY}" != *"codex-review-coverage role="* ]]; then
-            echo "Comment is not a coverage marker change; no PR-attached coverage rerun is needed."
-            exit 0
-          fi
 
           pr_number="${{ github.event.issue.number }}"
 
