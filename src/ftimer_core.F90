@@ -1,6 +1,6 @@
 module ftimer_core
    use, intrinsic :: iso_c_binding, only: c_null_ptr, c_ptr
-   use, intrinsic :: iso_fortran_env, only: error_unit
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64
    use ftimer_clock, only: ftimer_date_string, ftimer_default_clock, ftimer_mpi_clock
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
@@ -15,6 +15,15 @@ module ftimer_core
    public :: ftimer_test_get_state
    public :: ftimer_test_state_t
 #endif
+
+   integer, parameter :: FTIMER_SEGMENT_INITIAL_CAPACITY = 16
+   integer, parameter :: FTIMER_CONTEXT_STORAGE_INITIAL_CAPACITY = 4
+   integer, parameter :: FTIMER_NAME_INDEX_INITIAL_CAPACITY = 32
+   integer, parameter :: FTIMER_NAME_INDEX_LOAD_NUMERATOR = 7
+   integer, parameter :: FTIMER_NAME_INDEX_LOAD_DENOMINATOR = 10
+   integer(int64), parameter :: FTIMER_NAME_HASH_MODULUS = 2147483629_int64
+   integer(int64), parameter :: FTIMER_NAME_HASH_MULTIPLIER = 131_int64
+   integer(int64), parameter :: FTIMER_NAME_HASH_MIX_MULTIPLIER = 1597334677_int64
 
 #ifdef FTIMER_BUILD_TESTS
    type :: ftimer_test_state_t
@@ -37,6 +46,7 @@ module ftimer_core
       private
       type(ftimer_call_stack_t) :: call_stack
       type(ftimer_segment_t), allocatable :: segments(:)
+      integer, allocatable :: segment_name_slots(:)
       integer :: num_segments = 0
       real(wp) :: init_wtime = 0.0_wp
       character(len=40) :: init_date = ''
@@ -620,20 +630,19 @@ contains
    integer function find_or_create_segment(self, name) result(idx)
       class(ftimer_t), intent(inout) :: self
       character(len=*), intent(in) :: name
-      type(ftimer_segment_t), allocatable :: new_segments(:)
+      integer :: new_idx
 
       idx = find_segment_index(self, name)
       if (idx > 0) return
 
-      allocate (new_segments(self%num_segments + 1))
-      if (self%num_segments > 0) then
-         new_segments(1:self%num_segments) = self%segments(1:self%num_segments)
-      end if
-      new_segments(self%num_segments + 1)%name = name
-      call move_alloc(new_segments, self%segments)
+      new_idx = self%num_segments + 1
+      call ensure_segment_capacity(self, new_idx)
+      self%segments(new_idx)%name = name
+      call ensure_segment_name_index(self, new_idx)
 
-      self%num_segments = self%num_segments + 1
-      idx = self%num_segments
+      self%num_segments = new_idx
+      call insert_segment_name_slot(self%segment_name_slots, name, new_idx)
+      idx = new_idx
    end function find_or_create_segment
 
 #ifdef FTIMER_BUILD_TESTS
@@ -654,9 +663,9 @@ contains
 #endif
 
       if (allocated(state%segments)) deallocate (state%segments)
-      if (allocated(self%segments)) then
-         allocate (state%segments(size(self%segments)))
-         state%segments = self%segments
+      if (self%num_segments > 0) then
+         allocate (state%segments(self%num_segments))
+         state%segments = self%segments(1:self%num_segments)
       end if
    end subroutine ftimer_test_get_state
 
@@ -667,6 +676,7 @@ contains
       logical, intent(in) :: keep_hooks
 
       if (allocated(self%segments)) deallocate (self%segments)
+      if (allocated(self%segment_name_slots)) deallocate (self%segment_name_slots)
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       self%call_stack%depth = 0
       self%num_segments = 0
@@ -705,6 +715,7 @@ contains
    subroutine ensure_context_storage(segment, required_size)
       type(ftimer_segment_t), intent(inout) :: segment
       integer, intent(in) :: required_size
+      integer :: new_size
       integer :: old_size
       integer, allocatable :: new_counts(:)
       logical, allocatable :: new_running(:)
@@ -715,10 +726,18 @@ contains
       if (allocated(segment%time)) old_size = size(segment%time)
       if (old_size >= required_size) return
 
-      allocate (new_times(required_size))
-      allocate (new_start_times(required_size))
-      allocate (new_running(required_size))
-      allocate (new_counts(required_size))
+      new_size = max(required_size, FTIMER_CONTEXT_STORAGE_INITIAL_CAPACITY)
+      if (old_size > 0) then
+         do while (new_size < required_size)
+            new_size = 2*new_size
+         end do
+         new_size = max(new_size, 2*old_size)
+      end if
+
+      allocate (new_times(new_size))
+      allocate (new_start_times(new_size))
+      allocate (new_running(new_size))
+      allocate (new_counts(new_size))
 
       new_times = 0.0_wp
       new_start_times = 0.0_wp
@@ -738,12 +757,124 @@ contains
       call move_alloc(new_counts, segment%call_count)
    end subroutine ensure_context_storage
 
+   subroutine ensure_segment_capacity(self, required_size)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: required_size
+      type(ftimer_segment_t), allocatable :: new_segments(:)
+      integer :: new_capacity
+      integer :: old_capacity
+
+      old_capacity = 0
+      if (allocated(self%segments)) old_capacity = size(self%segments)
+      if (old_capacity >= required_size) return
+
+      new_capacity = max(required_size, FTIMER_SEGMENT_INITIAL_CAPACITY)
+      if (old_capacity > 0) then
+         do while (new_capacity < required_size)
+            new_capacity = 2*new_capacity
+         end do
+         new_capacity = max(new_capacity, 2*old_capacity)
+      end if
+
+      allocate (new_segments(new_capacity))
+      if (self%num_segments > 0) then
+         new_segments(1:self%num_segments) = self%segments(1:self%num_segments)
+      end if
+      call move_alloc(new_segments, self%segments)
+   end subroutine ensure_segment_capacity
+
+   subroutine ensure_segment_name_index(self, required_count)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: required_count
+      integer, allocatable :: new_slots(:)
+      integer :: current_capacity
+      integer :: i
+      integer :: new_capacity
+
+      if (required_count <= 0) return
+
+      current_capacity = 0
+      if (allocated(self%segment_name_slots)) current_capacity = size(self%segment_name_slots)
+
+      if (current_capacity > 0) then
+         if (required_count*FTIMER_NAME_INDEX_LOAD_DENOMINATOR <= &
+             FTIMER_NAME_INDEX_LOAD_NUMERATOR*current_capacity) then
+            return
+         end if
+         new_capacity = current_capacity
+      else
+         new_capacity = FTIMER_NAME_INDEX_INITIAL_CAPACITY
+      end if
+
+      do while (required_count*FTIMER_NAME_INDEX_LOAD_DENOMINATOR > &
+                FTIMER_NAME_INDEX_LOAD_NUMERATOR*new_capacity)
+         new_capacity = 2*new_capacity
+      end do
+
+      allocate (new_slots(new_capacity))
+      new_slots = 0
+      do i = 1, self%num_segments
+         call insert_segment_name_slot(new_slots, self%segments(i)%name, i)
+      end do
+
+      call move_alloc(new_slots, self%segment_name_slots)
+   end subroutine ensure_segment_name_index
+
+   subroutine insert_segment_name_slot(slots, name, id)
+      integer, intent(inout) :: slots(:)
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: id
+      integer :: slot
+      integer :: start_slot
+
+      if (size(slots) <= 0) error stop "ftimer internal name index has zero capacity"
+
+      slot = hash_name_slot(name, size(slots))
+      start_slot = slot
+      do
+         if (slots(slot) == 0) then
+            slots(slot) = id
+            return
+         end if
+
+         slot = slot + 1
+         if (slot > size(slots)) slot = 1
+         if (slot == start_slot) exit
+      end do
+
+      error stop "ftimer internal name index overflow"
+   end subroutine insert_segment_name_slot
+
    integer function find_segment_index(self, name) result(idx)
       class(ftimer_t), intent(in) :: self
       character(len=*), intent(in) :: name
+      integer :: candidate_id
       integer :: i
+      integer :: slot
+      integer :: start_slot
 
       idx = 0
+      if (self%num_segments <= 0) return
+
+      if (allocated(self%segment_name_slots)) then
+         slot = hash_name_slot(name, size(self%segment_name_slots))
+         start_slot = slot
+         do
+            candidate_id = self%segment_name_slots(slot)
+            if (candidate_id == 0) return
+            if ((candidate_id >= 1) .and. (candidate_id <= self%num_segments)) then
+               if (self%segments(candidate_id)%name == name) then
+                  idx = candidate_id
+                  return
+               end if
+            end if
+
+            slot = slot + 1
+            if (slot > size(self%segment_name_slots)) slot = 1
+            if (slot == start_slot) return
+         end do
+      end if
+
       do i = 1, self%num_segments
          if (self%segments(i)%name == name) then
             idx = i
@@ -751,6 +882,31 @@ contains
          end if
       end do
    end function find_segment_index
+
+   integer function hash_name_slot(name, table_size) result(slot)
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: table_size
+      integer(int64) :: hash
+      integer :: i
+      integer :: trimmed_len
+
+      if (table_size <= 0) error stop "ftimer internal hash_name_slot called with empty table"
+
+      hash = 0_int64
+      trimmed_len = len_trim(name)
+      do i = 1, trimmed_len
+         hash = modulo(FTIMER_NAME_HASH_MULTIPLIER*hash + int(iachar(name(i:i)), int64), &
+                       FTIMER_NAME_HASH_MODULUS)
+      end do
+
+      ! Mix the polynomial hash before taking the table modulus so that
+      ! sequential timer names do not create long low-bit probe clusters.
+      hash = ieor(hash, shiftr(hash, 15))
+      hash = modulo(FTIMER_NAME_HASH_MIX_MULTIPLIER*hash, FTIMER_NAME_HASH_MODULUS)
+      hash = ieor(hash, shiftr(hash, 15))
+
+      slot = 1 + int(modulo(hash, int(table_size, int64)))
+   end function hash_name_slot
 
    logical function has_active_timers(self) result(has_active)
       class(ftimer_t), intent(in) :: self

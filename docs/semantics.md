@@ -38,6 +38,9 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 ## Timer Name / Summary Text Policy
 
 - Public timer creation/lookup paths right-trim trailing blanks, reject empty names, reject names longer than `FTIMER_NAME_LEN`, reject names that begin with a blank, and reject ASCII control characters
+- Name-based `start`/`stop` remains the default supported timing path; the runtime uses an internal mapped lookup plus capacity-based growth so that this ergonomic path avoids repeated resident-timer linear scans and one-slot-at-a-time whole-array growth as the timer set grows
+- Per-timer context selection remains context-sensitive accounting over the currently known parent stacks for that timer, so repeated reuse of one timer name under many distinct parent stacks can still scale with context count
+- `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization for tight loops that repeatedly time the same known regions
 - Formatted summary output does not emit unsafe raw summary-entry names literally
 - Escaped formatted-summary forms are stable: leading blanks render as `\x20`, backslashes render as `\\`, tab/newline/carriage return render as `\t`/`\n`/`\r`, other ASCII control characters render as `\xNN`, and blank/empty raw names render as `<blank>`
 

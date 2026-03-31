@@ -51,6 +51,7 @@ module ftimer_types
    integer, parameter :: FTIMER_EVENT_STOP = 2
 
    integer, parameter :: FTIMER_CALL_STACK_INITIAL_CAPACITY = 32
+   integer, parameter :: FTIMER_CONTEXT_LIST_INITIAL_CAPACITY = 4
 
    type :: ftimer_metadata_t
       character(len=FTIMER_NAME_LEN) :: key = ''
@@ -252,6 +253,7 @@ contains
       type(ftimer_call_stack_t), intent(in) :: stack
       type(ftimer_call_stack_t), allocatable :: new_stacks(:)
       integer :: existing
+      integer :: new_capacity
 
       existing = self%find(stack)
       if (existing > 0) then
@@ -259,14 +261,19 @@ contains
          return
       end if
 
-      allocate (new_stacks(self%count + 1))
-      if (self%count > 0) then
-         new_stacks(1:self%count) = self%stacks(1:self%count)
+      if (.not. allocated(self%stacks)) then
+         allocate (self%stacks(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY))
+      else if (self%count >= size(self%stacks)) then
+         new_capacity = max(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY, 2*size(self%stacks))
+         allocate (new_stacks(new_capacity))
+         if (self%count > 0) then
+            new_stacks(1:self%count) = self%stacks(1:self%count)
+         end if
+         call move_alloc(new_stacks, self%stacks)
       end if
-      call new_stacks(self%count + 1)%copy(stack)
 
-      call move_alloc(new_stacks, self%stacks)
       self%count = self%count + 1
+      call self%stacks(self%count)%copy(stack)
       idx = self%count
    end function ftimer_context_list_add
 

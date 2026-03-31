@@ -92,9 +92,17 @@ contains
    @test
    subroutine test_lookup_reuses_existing_segment_id()
       type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: bulk_ids(40)
       integer :: ierr
       integer :: id_a
       integer :: id_b
+      integer :: id_first_again
+      integer :: i
+      integer :: last_id
+      integer :: lookup_id
+      character(len=18) :: bulk_names(40)
+      character(len=18) :: name
 
       call timer%init(ierr=ierr)
 
@@ -104,6 +112,29 @@ contains
       id_b = timer%lookup("alpha", ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       @assertEqual(id_a, id_b)
+
+      do i = 1, 40
+         write (name, '("bulk_timer_",i2.2)') i
+         bulk_names(i) = trim(name)
+         bulk_ids(i) = timer%lookup(trim(name), ierr=ierr)
+         last_id = bulk_ids(i)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end do
+
+      id_first_again = timer%lookup("alpha", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(id_a, id_first_again)
+
+      do i = 1, 40
+         lookup_id = timer%lookup(trim(bulk_names(i)), ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         @assertEqual(bulk_ids(i), lookup_id)
+      end do
+
+      @assertEqual(41, last_id)
+
+      call snapshot_timer(timer, state)
+      @assertEqual(41, state%num_segments)
    end subroutine test_lookup_reuses_existing_segment_id
 
    @test

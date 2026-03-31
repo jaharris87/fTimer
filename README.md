@@ -141,6 +141,8 @@ Operational notes:
 - `ierr` is now the last optional argument in both `init` signatures (`comm`, `mismatch_mode`, `ierr`), so a single positional integer binds to `comm`, not `ierr`. Keywords are recommended for readability.
 - `init`, `reset`, and `finalize` are correctness-first on active timers: with `ierr` they return `FTIMER_ERR_ACTIVE`; without `ierr` they warn and leave state unchanged. In `FTIMER_USE_OPENMP=ON` builds, that diagnostic contract applies on the master thread; worker-thread lifecycle calls remain silent no-ops. These paths do not force-stop active timers or synthesize summary data.
 - Stop-mismatch repair remains an explicit `mismatch_mode` choice (`FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR`); omitted-`ierr` alone does not opt a caller into recovery.
+- Name-based `start`/`stop` remains the default ergonomic path. The runtime now uses an internal mapped lookup plus capacity-based growth so that this default path avoids repeated resident-timer linear scans and one-slot-at-a-time whole-array growth as the timer set grows.
+- `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization when one call site times the same known region in a very tight loop.
 - Configure custom clocks through `set_clock()` and restore the build-default wall clock through `clear_clock()`. Direct mutation of raw runtime clock internals is not part of the supported API.
 - Clock changes are allowed before `init()` or before a run records timing data. After timing has started, `set_clock()` and `clear_clock()` return `FTIMER_ERR_ACTIVE` (or warn to stderr when `ierr` is omitted) and leave state unchanged. Use `reset()`, `init()`, or `finalize()` to begin a fresh run on a different clock.
 - Configure callbacks through `set_callback()` and `clear_callback()`. Callback configuration is rejected while timers are active, `clear_callback()` also clears callback `user_data`, and `finalize()` clears callback configuration.
@@ -234,7 +236,7 @@ cmake --build build-bench --target ftimer_bench
 ./build-bench/bench/ftimer_bench
 ```
 
-This is useful for before/after regression checks when changing hot-path timing behavior.
+This is useful for before/after regression checks when changing hot-path timing behavior. Compare the name-based lookup-scaling rows across resident timer counts to confirm the mapped default path stays much flatter than the old linear-scan baseline, and compare the flat name-based/id-based rows if you want to judge whether the optional cached-id path is worth it for one especially hot loop.
 
 ## More Detail
 
