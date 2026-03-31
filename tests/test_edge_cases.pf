@@ -1,7 +1,7 @@
 module test_edge_cases
    use, intrinsic :: iso_c_binding, only: c_ptr
    use pfunit
-   use ftimer_clock, only: ftimer_default_clock
+   use ftimer_clock, only: ftimer_default_clock, ftimer_mpi_clock
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, &
                            FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, FTIMER_SUCCESS, &
@@ -138,9 +138,9 @@ contains
       original_init_wtime = before_state%init_wtime
       @assertEqual(7.0_wp, original_init_wtime)
 
-      default_before = ftimer_default_clock()
+      default_before = runtime_default_clock()
       call timer%clear_clock(ierr=ierr)
-      default_after = ftimer_default_clock()
+      default_after = runtime_default_clock()
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       call snapshot_timer(timer, after_state)
@@ -898,5 +898,15 @@ contains
    subroutine reset_replacement_callback_count()
       replacement_callback_count = 0
    end subroutine reset_replacement_callback_count
+
+   function runtime_default_clock() result(t)
+      real(wp) :: t
+
+#ifdef FTIMER_USE_MPI
+      t = ftimer_mpi_clock()
+#else
+      t = ftimer_default_clock()
+#endif
+   end function runtime_default_clock
 
 end module test_edge_cases
