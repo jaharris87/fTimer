@@ -29,6 +29,8 @@ contains
       @assertEqual(0.0_wp, summary%min_total_time)
       @assertEqual(0.0_wp, summary%max_total_time)
       @assertEqual(0.0_wp, summary%avg_total_time)
+      @assertEqual(-1, summary%min_total_time_rank)
+      @assertEqual(-1, summary%max_total_time_rank)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -99,6 +101,8 @@ contains
       @assertEqual(rhs%min_total_time, lhs%min_total_time)
       @assertEqual(rhs%max_total_time, lhs%max_total_time)
       @assertEqual(rhs%avg_total_time, lhs%avg_total_time)
+      @assertEqual(rhs%min_total_time_rank, lhs%min_total_time_rank)
+      @assertEqual(rhs%max_total_time_rank, lhs%max_total_time_rank)
       @assertEqual(rhs%total_time_imbalance, lhs%total_time_imbalance)
    end subroutine assert_summary_equal
 

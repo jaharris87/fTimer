@@ -86,8 +86,8 @@ contains
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
       character(len=*), parameter :: mpi_header_suffix = &
-         '  Min Incl (s)     Avg Incl (s)     Max Incl (s)   Imb.  Avg Self (s)    Avg Calls    Avg %'
-      character(len=96) :: fmt
+         '  Min Incl (s)  Min Rank  Avg Incl (s)  Max Incl (s)  Max Rank   Imb.  Avg Self (s)    Avg Calls    Avg %'
+      character(len=128) :: fmt
       character(len=64) :: value_line
       character(len=:), allocatable :: line
       character(len=:), allocatable :: padded
@@ -102,6 +102,8 @@ contains
       key_width = max(key_width, len('Min total time (s)'))
       key_width = max(key_width, len('Avg total time (s)'))
       key_width = max(key_width, len('Max total time (s)'))
+      key_width = max(key_width, len('Min total rank'))
+      key_width = max(key_width, len('Max total rank'))
       key_width = max(key_width, len('Total imbalance'))
 
       call set_padded_text(padded, 'MPI ranks', key_width)
@@ -118,6 +120,14 @@ contains
 
       write (value_line, '(f0.6)') summary%max_total_time
       call set_padded_text(padded, 'Max total time (s)', key_width)
+      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+
+      write (value_line, '(i0)') summary%min_total_time_rank
+      call set_padded_text(padded, 'Min total rank', key_width)
+      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+
+      write (value_line, '(i0)') summary%max_total_time_rank
+      call set_padded_text(padded, 'Max total rank', key_width)
       call append_line(text, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(f0.6)') summary%total_time_imbalance
@@ -143,11 +153,13 @@ contains
       call append_line(text, trim(line))
       call append_line(text, repeat('-', len_trim(line)))
 
-      write (fmt, '("(a",i0,",2x,f12.6,2x,f12.6,2x,f12.6,2x,f6.3,2x,f12.6,2x,f10.3,2x,f8.2)")') name_width
+      write (fmt, '("(a",i0,",2x,f12.6,2x,i8,2x,f12.6,2x,f12.6,2x,i8,2x,f6.3,2x,f12.6,2x,f10.3,2x,f8.2)")') &
+         name_width
       do i = 1, summary%num_entries
          call set_padded_text(padded, display_mpi_name(summary%entries(i)), name_width)
          write (line, fmt) padded(1:name_width), summary%entries(i)%min_inclusive_time, &
-            summary%entries(i)%avg_inclusive_time, summary%entries(i)%max_inclusive_time, &
+            summary%entries(i)%min_inclusive_time_rank, summary%entries(i)%avg_inclusive_time, &
+            summary%entries(i)%max_inclusive_time, summary%entries(i)%max_inclusive_time_rank, &
             summary%entries(i)%inclusive_imbalance, summary%entries(i)%avg_self_time, &
             summary%entries(i)%avg_call_count, summary%entries(i)%avg_pct_time
          call append_line(text, trim(line))
@@ -591,7 +603,7 @@ contains
    integer function mpi_summary_line_width(name_width) result(width)
       integer, intent(in) :: name_width
 
-      width = name_width + 93
+      width = name_width + 117
    end function mpi_summary_line_width
 
    integer function summary_name_width(summary) result(width)

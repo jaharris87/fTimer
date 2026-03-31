@@ -46,10 +46,14 @@ contains
       call assert_real_close(summary%min_total_time, 10.0_wp)
       call assert_real_close(summary%avg_total_time, 12.0_wp)
       call assert_real_close(summary%max_total_time, 14.0_wp)
+      @assertEqual(0, summary%min_total_time_rank)
+      @assertEqual(1, summary%max_total_time_rank)
       call assert_real_close(summary%total_time_imbalance, 14.0_wp/12.0_wp)
       call assert_real_close(summary%entries(1)%min_inclusive_time, 10.0_wp)
       call assert_real_close(summary%entries(1)%avg_inclusive_time, 12.0_wp)
       call assert_real_close(summary%entries(1)%max_inclusive_time, 14.0_wp)
+      @assertEqual(0, summary%entries(1)%min_inclusive_time_rank)
+      @assertEqual(1, summary%entries(1)%max_inclusive_time_rank)
       call assert_real_close(summary%entries(1)%inclusive_imbalance, 14.0_wp/12.0_wp)
       call assert_real_close(summary%entries(1)%avg_self_time, 7.0_wp)
       call assert_real_close(summary%entries(1)%avg_call_count, 1.0_wp)
@@ -57,6 +61,8 @@ contains
       call assert_real_close(summary%entries(2)%min_inclusive_time, 4.0_wp)
       call assert_real_close(summary%entries(2)%avg_inclusive_time, 5.0_wp)
       call assert_real_close(summary%entries(2)%max_inclusive_time, 6.0_wp)
+      @assertEqual(0, summary%entries(2)%min_inclusive_time_rank)
+      @assertEqual(1, summary%entries(2)%max_inclusive_time_rank)
       call assert_real_close(summary%entries(2)%inclusive_imbalance, 6.0_wp/5.0_wp)
       call assert_real_close(summary%entries(2)%avg_self_time, 5.0_wp)
       call assert_real_close(summary%entries(2)%avg_call_count, 1.0_wp)
@@ -272,7 +278,7 @@ contains
       type(ftimer_metadata_t) :: metadata(1)
       character(len=:), allocatable :: printed
       character(len=*), parameter :: print_path = 'test_mpi_print_summary.txt'
-      integer :: flags(4)
+      integer :: flags(7)
       integer :: ierr
       integer :: rank
       integer :: unit
@@ -309,6 +315,9 @@ contains
          if (index(printed, 'Avg Incl (s)') > 0) flags(2) = 1
          if (index(printed, 'mpi-report') > 0) flags(3) = 1
          if (index(printed, 'Avg %') > 0) flags(4) = 1
+         if (index(printed, 'Min total rank') > 0) flags(5) = 1
+         if (index(printed, 'Max total rank') > 0) flags(6) = 1
+         if (index(printed, 'Min Rank') > 0) flags(7) = 1
       end if
       call MPI_Bcast(flags, size(flags), MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       @assertEqual(MPI_SUCCESS, ierr)
@@ -317,6 +326,9 @@ contains
       @assertEqual(1, flags(2))
       @assertEqual(1, flags(3))
       @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
+      @assertEqual(1, flags(7))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -556,6 +568,8 @@ contains
       call assert_real_close(lhs%min_total_time, rhs%min_total_time)
       call assert_real_close(lhs%avg_total_time, rhs%avg_total_time)
       call assert_real_close(lhs%max_total_time, rhs%max_total_time)
+      @assertEqual(rhs%min_total_time_rank, lhs%min_total_time_rank)
+      @assertEqual(rhs%max_total_time_rank, lhs%max_total_time_rank)
       call assert_real_close(lhs%total_time_imbalance, rhs%total_time_imbalance)
       @assertTrue(summary_node_ids_unique(lhs))
       @assertTrue(summary_node_ids_unique(rhs))
@@ -569,6 +583,8 @@ contains
          call assert_real_close(lhs%entries(i)%min_inclusive_time, rhs%entries(i)%min_inclusive_time)
          call assert_real_close(lhs%entries(i)%avg_inclusive_time, rhs%entries(i)%avg_inclusive_time)
          call assert_real_close(lhs%entries(i)%max_inclusive_time, rhs%entries(i)%max_inclusive_time)
+         @assertEqual(rhs%entries(i)%min_inclusive_time_rank, lhs%entries(i)%min_inclusive_time_rank)
+         @assertEqual(rhs%entries(i)%max_inclusive_time_rank, lhs%entries(i)%max_inclusive_time_rank)
          call assert_real_close(lhs%entries(i)%inclusive_imbalance, rhs%entries(i)%inclusive_imbalance)
          call assert_real_close(lhs%entries(i)%avg_self_time, rhs%entries(i)%avg_self_time)
          @assertEqual(rhs%entries(i)%min_call_count, lhs%entries(i)%min_call_count)

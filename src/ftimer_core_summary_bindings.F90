@@ -24,10 +24,8 @@ contains
    end procedure get_summary
 
    module procedure mpi_summary
-   type(ftimer_summary_t) :: local_summary
-   integer :: comm
+   character(len=256) :: diagnostic
    integer :: status
-   logical :: local_has_active_timers
 
    if (.not. self%initialized) then
       call reset_mpi_summary(summary)
@@ -35,39 +33,9 @@ contains
       return
    end if
 
-   comm = -1
-   local_has_active_timers = self%call_stack%depth > 0
-   call build_current_summary(self, local_summary)
-#ifdef FTIMER_USE_MPI
-   ! mpi_summary() is collective over the communicator captured during init.
-   comm = self%mpi_comm
-#endif
-   call check_mpi_summary_prereqs(local_has_active_timers, comm, status)
+   call build_current_mpi_summary(self, summary, status, diagnostic)
    if (status /= FTIMER_SUCCESS) then
-      call reset_mpi_summary(summary)
-      select case (status)
-      case (FTIMER_ERR_NOT_IMPLEMENTED)
-         call report_summary_status(ierr, status, "ftimer mpi_summary requires FTIMER_USE_MPI=ON")
-      case (FTIMER_ERR_ACTIVE)
-         call report_summary_status(ierr, status, &
-                                    "ftimer mpi_summary requires all timers stopped before reduction on "// &
-                                    "the init communicator")
-      case default
-         call report_summary_status(ierr, status, "ftimer mpi_summary communicator precheck failed")
-      end select
-      return
-   end if
-
-   call build_mpi_summary(local_summary, comm, summary, status)
-   if (status /= FTIMER_SUCCESS) then
-      call reset_mpi_summary(summary)
-      if (status == FTIMER_ERR_MPI_INCON) then
-         call report_summary_status(ierr, status, &
-                                    "ftimer mpi_summary detected inconsistent timer descriptors across "// &
-                                    "ranks in the init communicator")
-      else
-         call report_summary_status(ierr, status, "ftimer mpi_summary MPI reduction failed")
-      end if
+      call report_mpi_summary_error(ierr, status, diagnostic)
       return
    end if
 
@@ -150,6 +118,7 @@ contains
    module procedure print_mpi_summary
    type(ftimer_mpi_summary_t) :: summary
    character(len=:), allocatable :: text
+   character(len=256) :: diagnostic
    character(len=256) :: iomsg
    integer :: active_comm
    integer :: io
@@ -163,9 +132,9 @@ contains
       return
    end if
 
-   call build_current_mpi_summary(self, summary, status)
+   call build_current_mpi_summary(self, summary, status, diagnostic)
    if (status /= FTIMER_SUCCESS) then
-      call report_mpi_summary_error(ierr, status)
+      call report_mpi_summary_error(ierr, status, diagnostic)
       return
    end if
 
@@ -204,6 +173,7 @@ contains
    module procedure write_mpi_summary
    type(ftimer_mpi_summary_t) :: summary
    character(len=:), allocatable :: text
+   character(len=256) :: diagnostic
    character(len=256) :: collective_message
    character(len=256) :: iomsg
    integer :: active_comm
@@ -221,9 +191,9 @@ contains
       return
    end if
 
-   call build_current_mpi_summary(self, summary, status)
+   call build_current_mpi_summary(self, summary, status, diagnostic)
    if (status /= FTIMER_SUCCESS) then
-      call report_mpi_summary_error(ierr, status)
+      call report_mpi_summary_error(ierr, status, diagnostic)
       return
    end if
 
@@ -313,14 +283,16 @@ contains
       end if
    end subroutine build_current_summary
 
-   subroutine build_current_mpi_summary(self, summary, status)
+   subroutine build_current_mpi_summary(self, summary, status, diagnostic)
       class(ftimer_t), intent(in) :: self
       type(ftimer_mpi_summary_t), intent(out) :: summary
       integer, intent(out) :: status
+      character(len=*), intent(out) :: diagnostic
       type(ftimer_summary_t) :: local_summary
       integer :: comm
       logical :: local_has_active_timers
 
+      diagnostic = ''
       comm = -1
       local_has_active_timers = self%call_stack%depth > 0
       call build_current_summary(self, local_summary)
@@ -334,7 +306,7 @@ contains
          return
       end if
 
-      call build_mpi_summary(local_summary, comm, summary, status)
+      call build_mpi_summary(local_summary, comm, summary, status, diagnostic)
       if (status /= FTIMER_SUCCESS) call reset_mpi_summary(summary)
    end subroutine build_current_mpi_summary
 
@@ -357,6 +329,8 @@ contains
       summary%min_total_time = 0.0_wp
       summary%max_total_time = 0.0_wp
       summary%avg_total_time = 0.0_wp
+      summary%min_total_time_rank = -1
+      summary%max_total_time_rank = -1
       summary%total_time_imbalance = 1.0_wp
    end subroutine reset_mpi_summary
 
@@ -372,9 +346,10 @@ contains
       end if
    end subroutine report_summary_status
 
-   subroutine report_mpi_summary_error(ierr, status)
+   subroutine report_mpi_summary_error(ierr, status, diagnostic)
       integer, intent(out), optional :: ierr
       integer, intent(in) :: status
+      character(len=*), intent(in) :: diagnostic
 
       select case (status)
       case (FTIMER_ERR_NOT_IMPLEMENTED)
@@ -384,9 +359,13 @@ contains
                                     "ftimer mpi_summary requires all timers stopped before reduction on "// &
                                     "the init communicator")
       case (FTIMER_ERR_MPI_INCON)
-         call report_summary_status(ierr, status, &
-                                    "ftimer mpi_summary detected inconsistent timer descriptors across "// &
-                                    "ranks in the init communicator")
+         if (len_trim(diagnostic) > 0) then
+            call report_summary_status(ierr, status, trim(diagnostic))
+         else
+            call report_summary_status(ierr, status, &
+                                       "ftimer mpi_summary detected inconsistent timer descriptors across "// &
+                                       "ranks in the init communicator")
+         end if
       case default
          call report_summary_status(ierr, status, "ftimer mpi_summary MPI reduction failed")
       end select
