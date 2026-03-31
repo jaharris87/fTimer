@@ -41,6 +41,8 @@ Codex review coverage: red-team waived for <HEAD_SHA> because native review was 
 Use `status=covered` when the role was actually satisfied, whether by native review or manual fallback. Use `status=waived` only for an explicit maintainer override with a written reason.
 Only trusted repo commenters count for coverage markers: accounts with repo `write`, `maintain`, or `admin` permission, plus any explicitly allowed bot account.
 
+After a coverage-marker comment is created, edited, or deleted on a PR, the repo now runs a small helper workflow that reruns the latest PR-attached `Codex Review Coverage` check for the current head. In normal operation, that means the visible required `coverage` check should refresh automatically after marker comments land. Manual rerun is still the fallback if that helper fails or lags.
+
 ## Fallback When Native Codex Review Is Unavailable
 
 Use this fallback only when the label-triggered review path is unavailable or insufficient, for example:

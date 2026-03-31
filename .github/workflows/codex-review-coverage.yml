@@ -13,6 +13,10 @@ name: Codex Review Coverage
 # or
 #   <!-- codex-review-coverage role=<role-id> sha=<head-sha> status=waived source=maintainer-override -->
 #
+# Coverage-marker comment changes are handled by the separate
+# codex-review-coverage-refresh workflow, which reruns this PR-attached check
+# so the visible required status updates on the current head.
+#
 # The workflow also keeps the automatic-review labels honest for the current
 # diff, even after later pushes: if the active automatic labels no longer match
 # the current PR files, this check fails until a maintainer reconciles them.
@@ -20,8 +24,6 @@ name: Codex Review Coverage
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, labeled, unlabeled]
-  issue_comment:
-    types: [created, edited, deleted]
 
 permissions:
   contents: read
@@ -35,9 +37,7 @@ env:
 
 jobs:
   coverage:
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request)
+    if: github.event.pull_request.state == 'open'
     runs-on: ubuntu-latest
     steps:
       - name: Evaluate review coverage for the current PR head
@@ -46,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          pr_number="${{ github.event.pull_request.number || github.event.issue.number }}"
+          pr_number="${{ github.event.pull_request.number }}"
           pr_json="$(
             gh api "repos/${{ github.repository }}/pulls/${pr_number}"
           )"
@@ -166,23 +166,21 @@ jobs:
 
           build_coverage_state
 
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            case "${{ github.event.action }}" in
-              opened|reopened|ready_for_review)
-                label_wait_deadline="$(( $(date -u +%s) + CODEX_REVIEW_INITIAL_LABEL_WAIT_SECONDS ))"
+          case "${{ github.event.action }}" in
+            opened|reopened|ready_for_review)
+              label_wait_deadline="$(( $(date -u +%s) + CODEX_REVIEW_INITIAL_LABEL_WAIT_SECONDS ))"
 
-                while [ "$(jq '.missing_auto | length' /tmp/codex-coverage-state.json)" -gt 0 ] || \
-                      [ "$(jq '.stale_auto | length' /tmp/codex-coverage-state.json)" -gt 0 ]; do
-                  if [ "$(date -u +%s)" -ge "$label_wait_deadline" ]; then
-                    break
-                  fi
+              while [ "$(jq '.missing_auto | length' /tmp/codex-coverage-state.json)" -gt 0 ] || \
+                    [ "$(jq '.stale_auto | length' /tmp/codex-coverage-state.json)" -gt 0 ]; do
+                if [ "$(date -u +%s)" -ge "$label_wait_deadline" ]; then
+                  break
+                fi
 
-                  sleep "$CODEX_REVIEW_INITIAL_LABEL_POLL_SECONDS"
-                  build_coverage_state
-                done
-                ;;
-            esac
-          fi
+                sleep "$CODEX_REVIEW_INITIAL_LABEL_POLL_SECONDS"
+                build_coverage_state
+              done
+              ;;
+          esac
 
           mapfile -t active_role_rows < <(jq -r '.active_roles[] | @base64' /tmp/codex-coverage-state.json)
           missing_coverage=()
