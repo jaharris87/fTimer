@@ -135,7 +135,6 @@ contains
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
       integer, intent(out), optional :: ierr
-      real(wp) :: now
 
       if (present(mismatch_mode)) then
          select case (mismatch_mode)
@@ -147,14 +146,8 @@ contains
       end if
 
       if (self%initialized .and. has_active_timers(self)) then
-         if (present(ierr)) then
-            ierr = FTIMER_ERR_ACTIVE
-            return
-         end if
-
-         write (error_unit, '(a)') "ftimer init with active timers; force-stopping active timers"
-         now = self%wtime()
-         call force_stop_all(self, now, fire_callback=.true.)
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer init with active timers; state unchanged")
+         return
       end if
 
       call clear_runtime_state(self, keep_hooks=.true.)
@@ -196,7 +189,6 @@ contains
    subroutine finalize_impl(self, ierr)
       class(ftimer_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
-      real(wp) :: now
 
       if (.not. self%initialized) then
          if (present(ierr)) ierr = FTIMER_SUCCESS
@@ -204,14 +196,8 @@ contains
       end if
 
       if (has_active_timers(self)) then
-         if (present(ierr)) then
-            ierr = FTIMER_ERR_ACTIVE
-            return
-         end if
-
-         write (error_unit, '(a)') "ftimer finalize with active timers; force-stopping active timers"
-         now = self%wtime()
-         call force_stop_all(self, now, fire_callback=.true.)
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer finalize with active timers; state unchanged")
+         return
       end if
 
       call clear_runtime_state(self, keep_hooks=.false.)
@@ -453,7 +439,6 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
       integer :: i
-      real(wp) :: now
 
       if (.not. self%initialized) then
          call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer reset before init")
@@ -461,14 +446,8 @@ contains
       end if
 
       if (has_active_timers(self)) then
-         if (present(ierr)) then
-            ierr = FTIMER_ERR_ACTIVE
-            return
-         end if
-
-         write (error_unit, '(a)') "ftimer reset with active timers; force-stopping active timers"
-         now = self%wtime()
-         call force_stop_all(self, now, fire_callback=.true.)
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer reset with active timers; state unchanged")
+         return
       end if
 
       do i = 1, self%num_segments
@@ -652,18 +631,6 @@ contains
          end if
       end do
    end function find_segment_index
-
-   subroutine force_stop_all(self, now, fire_callback)
-      class(ftimer_t), intent(inout) :: self
-      real(wp), intent(in) :: now
-      logical, intent(in) :: fire_callback
-      integer :: id
-
-      do while (self%call_stack%depth > 0)
-         id = self%call_stack%top()
-         call stop_segment_with_now(self, id, now, fire_callback)
-      end do
-   end subroutine force_stop_all
 
    logical function has_active_timers(self) result(has_active)
       class(ftimer_t), intent(in) :: self
