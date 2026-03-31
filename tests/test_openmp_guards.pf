@@ -1,14 +1,18 @@
 module test_openmp_guards
+   use, intrinsic :: iso_c_binding, only: c_ptr
    use omp_lib, only: omp_get_thread_num, omp_set_dynamic
    use pfunit
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_get_summary, ftimer_init, &
                      ftimer_lookup, ftimer_start, ftimer_start_id, ftimer_stop, ftimer_stop_id
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_INVALID_NAME, FTIMER_SUCCESS, ftimer_summary_t, wp
-   use test_support, only: attach_mock_clock, fake_time, snapshot_timer, summary_node_ids_unique, summary_parent_index
+   use test_support, only: attach_mock_clock, fake_time, scaled_mock_clock, snapshot_timer, &
+                           summary_node_ids_unique, summary_parent_index
    implicit none
 
    integer, parameter :: NOOP_IERR_SENTINEL = -100
+   integer, save :: openmp_callback_count = 0
+   integer, save :: openmp_replacement_callback_count = 0
 
 contains
 
@@ -91,6 +95,81 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_non_master_start_stop_are_noops
+
+   @test
+   subroutine test_non_master_config_calls_are_noops()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: local_ierr
+      integer :: thread_num
+      integer :: worker_clear_callback_ierr
+      integer :: worker_clear_clock_ierr
+      integer :: worker_set_callback_ierr
+      integer :: worker_set_clock_ierr
+      logical :: thread_seen(2)
+      real(wp) :: elapsed
+
+      call omp_set_dynamic(.false.)
+
+      worker_set_clock_ierr = -1
+      worker_clear_clock_ierr = -1
+      worker_set_callback_ierr = -1
+      worker_clear_callback_ierr = -1
+      thread_seen = .false.
+
+      call reset_openmp_config_callback_counts()
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+      call timer%set_callback(openmp_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+!$omp parallel num_threads(2) default(shared) private(local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num /= 0) then
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%set_clock(scaled_mock_clock, ierr=local_ierr)
+         worker_set_clock_ierr = local_ierr
+
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%clear_clock(ierr=local_ierr)
+         worker_clear_clock_ierr = local_ierr
+
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%set_callback(openmp_replacement_callback, ierr=local_ierr)
+         worker_set_callback_ierr = local_ierr
+
+         local_ierr = NOOP_IERR_SENTINEL
+         call timer%clear_callback(ierr=local_ierr)
+         worker_clear_callback_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call timer%start("keep", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 3.0_wp
+      call timer%stop("keep", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      elapsed = state%segments(1)%time(1)
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(NOOP_IERR_SENTINEL, worker_set_clock_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_clear_clock_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_set_callback_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_clear_callback_ierr)
+      @assertEqual(3.0_wp, elapsed)
+      @assertEqual(2, openmp_callback_count)
+      @assertEqual(0, openmp_replacement_callback_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_non_master_config_calls_are_noops
 
    @test
    subroutine test_non_master_init_is_noop()
@@ -642,5 +721,30 @@ contains
          @assertTrue(pct_diff < 1.0e-12_wp)
       end do
    end subroutine assert_summary_equal
+
+   subroutine openmp_callback(timer_id, context_idx, event, timestamp, user_data)
+      integer, intent(in) :: timer_id
+      integer, intent(in) :: context_idx
+      integer, intent(in) :: event
+      real(wp), intent(in) :: timestamp
+      type(c_ptr), intent(in) :: user_data
+
+      openmp_callback_count = openmp_callback_count + 1
+   end subroutine openmp_callback
+
+   subroutine openmp_replacement_callback(timer_id, context_idx, event, timestamp, user_data)
+      integer, intent(in) :: timer_id
+      integer, intent(in) :: context_idx
+      integer, intent(in) :: event
+      real(wp), intent(in) :: timestamp
+      type(c_ptr), intent(in) :: user_data
+
+      openmp_replacement_callback_count = openmp_replacement_callback_count + 1
+   end subroutine openmp_replacement_callback
+
+   subroutine reset_openmp_config_callback_counts()
+      openmp_callback_count = 0
+      openmp_replacement_callback_count = 0
+   end subroutine reset_openmp_config_callback_counts
 
 end module test_openmp_guards
