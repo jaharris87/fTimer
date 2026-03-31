@@ -1,16 +1,18 @@
 module test_edge_cases
    use, intrinsic :: iso_c_binding, only: c_ptr
    use pfunit
+   use ftimer_clock, only: ftimer_default_clock
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, &
                            FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, FTIMER_SUCCESS, &
                            ftimer_call_stack_t, ftimer_summary_t, wp
    use, intrinsic :: iso_fortran_env, only: error_unit
    use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time, &
-                           find_context_idx, read_unit_text, snapshot_timer
+                           find_context_idx, mock_clock, read_unit_text, scaled_mock_clock, snapshot_timer
    implicit none
 
    integer, save :: lifecycle_callback_count = 0
+   integer, save :: replacement_callback_count = 0
 
 contains
 
@@ -115,6 +117,45 @@ contains
    end subroutine test_stop_unknown_timer_returns_unknown
 
    @test
+   subroutine test_clear_clock_rebases_init_wtime_before_timing()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: after_state
+      type(ftimer_test_state_t) :: before_state
+      real(wp) :: default_after
+      real(wp) :: default_before
+      real(wp) :: original_init_wtime
+      real(wp) :: rebased_init_wtime
+      integer :: ierr
+      logical :: rebased_between_defaults
+
+      fake_time = 7.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, before_state)
+      original_init_wtime = before_state%init_wtime
+      @assertEqual(7.0_wp, original_init_wtime)
+
+      default_before = ftimer_default_clock()
+      call timer%clear_clock(ierr=ierr)
+      default_after = ftimer_default_clock()
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, after_state)
+      rebased_init_wtime = after_state%init_wtime
+      rebased_between_defaults = (rebased_init_wtime >= default_before) .and. &
+                                 (rebased_init_wtime <= default_after)
+
+      @assertTrue(rebased_between_defaults)
+      @assertTrue(rebased_init_wtime /= original_init_wtime)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_clear_clock_rebases_init_wtime_before_timing
+
+   @test
    subroutine test_finalize_with_active_timer_returns_active()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state
@@ -150,6 +191,9 @@ contains
       call timer%stop("A", ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
+      call timer%set_clock(scaled_mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+
       call timer%clear_clock(ierr=ierr)
       @assertEqual(FTIMER_ERR_ACTIVE, ierr)
 
@@ -164,6 +208,32 @@ contains
 
       @assertEqual(1.5_wp, elapsed)
    end subroutine test_clear_clock_after_timing_data_preserves_clock
+
+   @test
+   subroutine test_finalize_clears_preinit_callback_state()
+      type(ftimer_t) :: timer
+      integer :: ierr
+
+      call reset_lifecycle_callback_count()
+      call timer%set_callback(count_lifecycle_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(0, lifecycle_callback_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_finalize_clears_preinit_callback_state
 
    @test
    subroutine test_finalize_without_ierr_warns_and_leaves_state_unchanged()
@@ -319,6 +389,30 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
       @assertEqual(before_clear + 1, lifecycle_callback_count)
    end subroutine test_clear_callback_with_active_timer_preserves_callback
+
+   @test
+   subroutine test_set_callback_with_active_timer_preserves_callback()
+      type(ftimer_t) :: timer
+      integer :: before_replace
+      integer :: ierr
+
+      call reset_replacement_callback_count()
+      call prepare_active_callback_timer(timer, ierr)
+      before_replace = lifecycle_callback_count
+
+      call timer%set_callback(replacement_callback, ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+      @assertEqual(before_replace, lifecycle_callback_count)
+      @assertEqual(0, replacement_callback_count)
+
+      fake_time = 2.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(before_replace + 1, lifecycle_callback_count)
+      @assertEqual(0, replacement_callback_count)
+   end subroutine test_set_callback_with_active_timer_preserves_callback
 
    @test
    subroutine test_init_with_active_timer_reports_active_and_preserves_state()
@@ -787,8 +881,22 @@ contains
       lifecycle_callback_count = lifecycle_callback_count + 1
    end subroutine count_lifecycle_callback
 
+   subroutine replacement_callback(timer_id, context_idx, event, timestamp, user_data)
+      integer, intent(in) :: timer_id
+      integer, intent(in) :: context_idx
+      integer, intent(in) :: event
+      real(wp), intent(in) :: timestamp
+      type(c_ptr), intent(in) :: user_data
+
+      replacement_callback_count = replacement_callback_count + 1
+   end subroutine replacement_callback
+
    subroutine reset_lifecycle_callback_count()
       lifecycle_callback_count = 0
    end subroutine reset_lifecycle_callback_count
+
+   subroutine reset_replacement_callback_count()
+      replacement_callback_count = 0
+   end subroutine reset_replacement_callback_count
 
 end module test_edge_cases

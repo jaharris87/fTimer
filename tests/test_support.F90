@@ -18,6 +18,7 @@ module test_support
    public :: read_file_text
    public :: reset_mock_clock_state
    public :: read_unit_text
+   public :: scaled_mock_clock
    public :: summary_node_ids_unique
    public :: summary_parent_index
    public :: snapshot_timer
@@ -230,6 +231,12 @@ contains
 
       t = fake_time
    end function mock_clock
+
+   function scaled_mock_clock() result(t)
+      real(wp) :: t
+
+      t = 2.0_wp*mock_clock()
+   end function scaled_mock_clock
 
    integer function get_mock_clock_call_count() result(count)
       count = mock_clock_call_count

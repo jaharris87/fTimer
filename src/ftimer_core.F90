@@ -193,6 +193,7 @@ contains
       integer, intent(out), optional :: ierr
 
       if (.not. self%initialized) then
+         call clear_callback_state(self)
          if (present(ierr)) ierr = FTIMER_SUCCESS
          return
       end if
@@ -249,6 +250,7 @@ contains
       end if
 
       call restore_default_clock(self)
+      if (self%initialized) self%init_wtime = self%wtime()
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine clear_clock_impl
 
@@ -302,8 +304,7 @@ contains
          return
       end if
 
-      nullify (self%on_event)
-      self%user_data = c_null_ptr
+      call clear_callback_state(self)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine clear_callback_impl
 
@@ -680,8 +681,7 @@ contains
 #endif
       if (.not. keep_hooks) then
          nullify (self%clock)
-         nullify (self%on_event)
-         self%user_data = c_null_ptr
+         call clear_callback_state(self)
       end if
    end subroutine clear_runtime_state
 
@@ -694,6 +694,13 @@ contains
       self%clock => ftimer_default_clock
 #endif
    end subroutine restore_default_clock
+
+   subroutine clear_callback_state(self)
+      class(ftimer_t), intent(inout) :: self
+
+      nullify (self%on_event)
+      self%user_data = c_null_ptr
+   end subroutine clear_callback_state
 
    subroutine ensure_context_storage(segment, required_size)
       type(ftimer_segment_t), intent(inout) :: segment
