@@ -107,6 +107,7 @@
       "selectors": {
         "path_regex_any": [
           "^src/ftimer\\.F90$",
+          "^src/ftimer_core\\.F90$",
           "^src/ftimer_types\\.F90$",
           "^tests/install-consumer/"
         ]
