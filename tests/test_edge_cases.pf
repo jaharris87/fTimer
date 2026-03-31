@@ -1,12 +1,16 @@
 module test_edge_cases
+   use, intrinsic :: iso_c_binding, only: c_ptr
    use pfunit
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, &
-                           FTIMER_NAME_LEN, FTIMER_SUCCESS, ftimer_call_stack_t, wp
+                           FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, FTIMER_SUCCESS, &
+                           ftimer_call_stack_t, ftimer_summary_t, wp
    use, intrinsic :: iso_fortran_env, only: error_unit
    use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time, &
                            find_context_idx, read_unit_text, snapshot_timer
    implicit none
+
+   integer, save :: lifecycle_callback_count = 0
 
 contains
 
@@ -130,23 +134,216 @@ contains
    end subroutine test_finalize_with_active_timer_returns_active
 
    @test
-   subroutine test_finalize_without_ierr_force_stops_and_continues()
+   subroutine test_finalize_without_ierr_warns_and_leaves_state_unchanged()
       type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      type(ftimer_call_stack_t) :: root_stack
       type(ftimer_test_state_t) :: state
-      logical :: initialized
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: ctx
+      integer :: ierr
+      integer :: idx_a
+      integer :: idx_b
+      integer :: idx_c
+      integer :: idx_outer
+      integer :: saved_fd
+      logical :: has_warning
 
-      call timer%init()
+      call timer%init(ierr=ierr)
       call attach_mock_clock(timer)
 
-      call timer%start("A")
+      call timer%start("A", ierr=ierr)
+      call begin_stderr_capture('test_finalize_without_ierr_warns_and_leaves_state_unchanged.err', saved_fd, &
+                                capture_ierr)
+      @assertEqual(0, capture_ierr)
+
       fake_time = 1.0_wp
       call timer%finalize()
 
+      call end_stderr_capture('test_finalize_without_ierr_warns_and_leaves_state_unchanged.err', saved_fd, &
+                              stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
       call snapshot_timer(timer, state)
-      initialized = state%initialized
-      @assertFalse(initialized)
-      @assertEqual(0, state%call_stack%depth)
-   end subroutine test_finalize_without_ierr_force_stops_and_continues
+      ctx = find_context_idx(state, 1, root_stack)
+      has_warning = index(stderr_text, 'ftimer finalize with active timers; state unchanged') > 0
+
+      @assertTrue(has_warning)
+      @assertTrue(state%initialized)
+      @assertEqual(1, state%num_segments)
+      @assertEqual(1, state%call_stack%depth)
+      @assertTrue(state%segments(1)%is_running(ctx))
+      @assertEqual(0.0_wp, state%segments(1)%time(ctx))
+      @assertEqual(1, state%segments(1)%call_count(ctx))
+
+      fake_time = 3.0_wp
+      call timer%stop("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 4.0_wp
+      call timer%start("outer", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 5.0_wp
+      call timer%start("B", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 7.0_wp
+      call timer%stop("B", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 8.0_wp
+      call timer%start("C", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 11.0_wp
+      call timer%stop("C", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 13.0_wp
+      call timer%stop("outer", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(13.0_wp, summary%total_time)
+
+      idx_a = find_summary_entry(summary, "A", 0)
+      idx_outer = find_summary_entry(summary, "outer", 0)
+      idx_b = find_summary_entry(summary, "B", 1)
+      idx_c = find_summary_entry(summary, "C", 1)
+
+      @assertTrue(idx_a > 0)
+      @assertTrue(idx_outer > 0)
+      @assertTrue(idx_b > 0)
+      @assertTrue(idx_c > 0)
+      @assertEqual(3.0_wp, summary%entries(idx_a)%inclusive_time)
+      @assertEqual(3.0_wp, summary%entries(idx_a)%self_time)
+      @assertEqual(9.0_wp, summary%entries(idx_outer)%inclusive_time)
+      @assertEqual(4.0_wp, summary%entries(idx_outer)%self_time)
+      @assertEqual(2.0_wp, summary%entries(idx_b)%inclusive_time)
+      @assertEqual(2.0_wp, summary%entries(idx_b)%self_time)
+      @assertEqual(3.0_wp, summary%entries(idx_c)%inclusive_time)
+      @assertEqual(3.0_wp, summary%entries(idx_c)%self_time)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_finalize_without_ierr_warns_and_leaves_state_unchanged
+
+   @test
+   subroutine test_active_lifecycle_warning_paths_do_not_fire_callbacks()
+      type(ftimer_t) :: finalize_timer
+      type(ftimer_t) :: init_timer
+      type(ftimer_t) :: reset_timer
+      integer :: before_warn
+      integer :: ierr
+
+      call prepare_active_callback_timer(finalize_timer, ierr)
+      before_warn = lifecycle_callback_count
+      call finalize_timer%finalize()
+      @assertEqual(before_warn, lifecycle_callback_count)
+      fake_time = 3.0_wp
+      call finalize_timer%stop("A", ierr=ierr)
+      @assertEqual(before_warn + 1, lifecycle_callback_count)
+      call finalize_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call prepare_active_callback_timer(reset_timer, ierr)
+      before_warn = lifecycle_callback_count
+      fake_time = 2.0_wp
+      call reset_timer%reset()
+      @assertEqual(before_warn, lifecycle_callback_count)
+      fake_time = 4.0_wp
+      call reset_timer%stop("A", ierr=ierr)
+      @assertEqual(before_warn + 1, lifecycle_callback_count)
+      call reset_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call prepare_active_callback_timer(init_timer, ierr)
+      before_warn = lifecycle_callback_count
+      fake_time = 1.0_wp
+      call init_timer%init(mismatch_mode=FTIMER_MISMATCH_WARN)
+      @assertEqual(before_warn, lifecycle_callback_count)
+      fake_time = 4.0_wp
+      call init_timer%stop("A", ierr=ierr)
+      @assertEqual(before_warn + 1, lifecycle_callback_count)
+      call init_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_active_lifecycle_warning_paths_do_not_fire_callbacks
+
+   @test
+   subroutine test_init_with_active_timer_reports_active_and_preserves_state()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      type(ftimer_call_stack_t) :: root_stack
+      type(ftimer_test_state_t) :: after_ierr_state
+      type(ftimer_test_state_t) :: after_warn_state
+      type(ftimer_test_state_t) :: before_state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: ctx
+      integer :: ierr
+      integer :: saved_fd
+      logical :: has_warning
+      logical :: is_silent
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      call snapshot_timer(timer, before_state)
+
+      call begin_stderr_capture('test_init_with_active_timer_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      fake_time = 1.0_wp
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_WARN, ierr=ierr)
+      call end_stderr_capture('test_init_with_active_timer_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
+
+      call snapshot_timer(timer, after_ierr_state)
+      ctx = find_context_idx(after_ierr_state, 1, root_stack)
+      @assertTrue(after_ierr_state%initialized)
+      @assertEqual(before_state%num_segments, after_ierr_state%num_segments)
+      @assertEqual(before_state%call_stack%depth, after_ierr_state%call_stack%depth)
+      @assertEqual(before_state%init_wtime, after_ierr_state%init_wtime)
+      @assertEqual(before_state%init_date, after_ierr_state%init_date)
+      @assertEqual(FTIMER_MISMATCH_STRICT, after_ierr_state%mismatch_mode)
+      @assertTrue(after_ierr_state%segments(1)%is_running(ctx))
+      @assertEqual(0.0_wp, after_ierr_state%segments(1)%time(ctx))
+      @assertEqual(1, after_ierr_state%segments(1)%call_count(ctx))
+
+      call begin_stderr_capture('test_init_with_active_timer_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_WARN)
+      call end_stderr_capture('test_init_with_active_timer_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_warning = index(stderr_text, 'ftimer init with active timers; state unchanged') > 0
+      @assertTrue(has_warning)
+
+      call snapshot_timer(timer, after_warn_state)
+      ctx = find_context_idx(after_warn_state, 1, root_stack)
+      @assertTrue(after_warn_state%initialized)
+      @assertEqual(before_state%num_segments, after_warn_state%num_segments)
+      @assertEqual(before_state%call_stack%depth, after_warn_state%call_stack%depth)
+      @assertEqual(before_state%init_wtime, after_warn_state%init_wtime)
+      @assertEqual(before_state%init_date, after_warn_state%init_date)
+      @assertEqual(FTIMER_MISMATCH_STRICT, after_warn_state%mismatch_mode)
+      @assertTrue(after_warn_state%segments(1)%is_running(ctx))
+      @assertEqual(0.0_wp, after_warn_state%segments(1)%time(ctx))
+      @assertEqual(1, after_warn_state%segments(1)%call_count(ctx))
+
+      fake_time = 4.0_wp
+      call timer%stop("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(4.0_wp, summary%total_time)
+      @assertEqual(4.0_wp, summary%entries(1)%inclusive_time)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_init_with_active_timer_reports_active_and_preserves_state
 
    @test
    subroutine test_init_rejects_invalid_mismatch_mode()
@@ -164,32 +361,78 @@ contains
    end subroutine test_init_rejects_invalid_mismatch_mode
 
    @test
-   subroutine test_reset_without_ierr_force_stops_and_zeros()
+   subroutine test_reset_without_ierr_warns_and_leaves_state_unchanged()
       type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
       type(ftimer_test_state_t) :: state
       type(ftimer_call_stack_t) :: root_stack
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
       integer :: ierr
+      integer :: idx_a
+      integer :: idx_done
       integer :: ctx
-      real(wp) :: elapsed
-      integer :: count
+      integer :: done_ctx
+      integer :: saved_fd
+      logical :: has_warning
 
       call timer%init(ierr=ierr)
       call attach_mock_clock(timer)
 
+      call timer%start("done", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop("done", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
       call timer%start("A", ierr=ierr)
+      call begin_stderr_capture('test_reset_without_ierr_warns_and_leaves_state_unchanged.err', saved_fd, &
+                                capture_ierr)
+      @assertEqual(0, capture_ierr)
+
       fake_time = 2.0_wp
       call timer%reset()
 
-      call snapshot_timer(timer, state)
-      ctx = find_context_idx(state, 1, root_stack)
-      elapsed = state%segments(1)%time(ctx)
-      count = state%segments(1)%call_count(ctx)
+      call end_stderr_capture('test_reset_without_ierr_warns_and_leaves_state_unchanged.err', saved_fd, &
+                              stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
 
+      call snapshot_timer(timer, state)
+      done_ctx = find_context_idx(state, 1, root_stack)
+      ctx = find_context_idx(state, 2, root_stack)
+      has_warning = index(stderr_text, 'ftimer reset with active timers; state unchanged') > 0
+
+      @assertTrue(has_warning)
       @assertTrue(state%initialized)
-      @assertEqual(0, state%call_stack%depth)
-      @assertEqual(0.0_wp, elapsed)
-      @assertEqual(0, count)
-   end subroutine test_reset_without_ierr_force_stops_and_zeros
+      @assertEqual(2, state%num_segments)
+      @assertEqual(1, state%call_stack%depth)
+      @assertEqual(1.0_wp, state%segments(1)%time(done_ctx))
+      @assertFalse(state%segments(1)%is_running(done_ctx))
+      @assertEqual(1, state%segments(1)%call_count(done_ctx))
+      @assertTrue(state%segments(2)%is_running(ctx))
+      @assertEqual(0.0_wp, state%segments(2)%time(ctx))
+      @assertEqual(1, state%segments(2)%call_count(ctx))
+
+      fake_time = 4.0_wp
+      call timer%stop("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      idx_done = find_summary_entry(summary, "done", 0)
+      idx_a = find_summary_entry(summary, "A", 0)
+
+      @assertTrue(idx_done > 0)
+      @assertTrue(idx_a > 0)
+      @assertEqual(4.0_wp, summary%total_time)
+      @assertEqual(1.0_wp, summary%entries(idx_done)%inclusive_time)
+      @assertEqual(1, summary%entries(idx_done)%call_count)
+      @assertEqual(3.0_wp, summary%entries(idx_a)%inclusive_time)
+      @assertEqual(1, summary%entries(idx_a)%call_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_reset_without_ierr_warns_and_leaves_state_unchanged
 
    @test
    subroutine test_name_length_limit_accepts_exact_and_rejects_longer()
@@ -450,5 +693,48 @@ contains
       call snapshot_timer(timer, state)
       @assertEqual(20, state%num_segments)
    end subroutine test_dynamic_growth_creates_many_segments
+
+   integer function find_summary_entry(summary, name, depth) result(idx)
+      type(ftimer_summary_t), intent(in) :: summary
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: depth
+      integer :: i
+
+      idx = 0
+      do i = 1, summary%num_entries
+         if ((trim(summary%entries(i)%name) == trim(name)) .and. (summary%entries(i)%depth == depth)) then
+            idx = i
+            return
+         end if
+      end do
+   end function find_summary_entry
+
+   subroutine prepare_active_callback_timer(timer, ierr)
+      type(ftimer_t), intent(out) :: timer
+      integer, intent(out) :: ierr
+
+      call reset_lifecycle_callback_count()
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+      timer%on_event => count_lifecycle_callback
+
+      call timer%start("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, lifecycle_callback_count)
+   end subroutine prepare_active_callback_timer
+
+   subroutine count_lifecycle_callback(timer_id, context_idx, event, timestamp, user_data)
+      integer, intent(in) :: timer_id
+      integer, intent(in) :: context_idx
+      integer, intent(in) :: event
+      real(wp), intent(in) :: timestamp
+      type(c_ptr), intent(in) :: user_data
+
+      lifecycle_callback_count = lifecycle_callback_count + 1
+   end subroutine count_lifecycle_callback
+
+   subroutine reset_lifecycle_callback_count()
+      lifecycle_callback_count = 0
+   end subroutine reset_lifecycle_callback_count
 
 end module test_edge_cases

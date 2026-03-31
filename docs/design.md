@@ -159,6 +159,8 @@ The currently exported procedural entry points are:
 Important current-state API notes:
 
 - `ierr` is now the last optional argument in the `init` signatures. Keywords are recommended for readability.
+- `init`, `reset`, and `finalize` treat active timers as an error in both API styles. With `ierr` they return `FTIMER_ERR_ACTIVE`; without `ierr` they warn and leave state untouched rather than force-stopping or cleaning up implicitly. In `FTIMER_USE_OPENMP=ON` builds, that lifecycle-diagnostic contract applies on the master thread; non-master lifecycle calls remain suppressed no-ops.
+- Repairing stop mismatches remains an explicit `mismatch_mode` decision; omitted `ierr` alone is not a recovery mode.
 - `get_summary()` is the local structured summary path.
 - `ftimer_summary_t` entries now retain `name`/`depth` and also expose `node_id`/`parent_id` links that are stable only within one produced summary object.
 - `print_summary()` and `write_summary()` format local report text.

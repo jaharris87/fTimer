@@ -31,7 +31,8 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 ## Error Contract
 
 - `ierr` present: set code, no stderr
-- `ierr` absent: warn to stderr, continue
+- `ierr` absent: emit a diagnostic to stderr
+- Validation and lifecycle errors follow a warn-and-return contract: they leave timer state unchanged unless the caller explicitly selected a repair-capable mismatch mode
 - Error codes and their meanings
 
 ## Timer Name / Summary Text Policy
@@ -44,7 +45,16 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 
 - Zeros times and counts, preserves timer definitions
 - Restarts the local monitoring window used for `summary%total_time` and `% Total`
-- Error if timers are active
+- Error if timers are active; `reset()` does not auto-stop or clean up active timers
+
+## Lifecycle Errors With Active Timers
+
+- `init`, `reset`, and `finalize` require a fully stopped timer set
+- With `ierr` present, these lifecycle calls return `FTIMER_ERR_ACTIVE` and do not write to stderr
+- With `ierr` absent, they warn to stderr and return immediately with the timer state unchanged
+- They do not force-stop timers, synthesize elapsed time, zero accumulated data, restart the summary window, or perform hidden cleanup
+- In `FTIMER_USE_OPENMP=ON` builds, these lifecycle bullets apply only to serial code and OpenMP master-thread calls; non-master calls are suppressed before validation, emit no warning, and leave any caller-provided `ierr` unchanged
+- Repairing stop mismatches is a separate explicit opt-in through `mismatch_mode = FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR`
 
 ## Local Summary Contract
 
