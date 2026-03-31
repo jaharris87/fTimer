@@ -646,6 +646,42 @@ contains
    end subroutine test_lookup_rejects_control_chars_and_edge_whitespace
 
    @test
+   subroutine test_non_ascii_name_round_trips_without_crashing()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      character(len=8) :: accented_name
+      integer :: ctx
+      integer :: first_id
+      integer :: ierr
+      integer :: second_id
+      real(wp) :: elapsed
+
+      accented_name = 'caf'//achar(233)
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      first_id = timer%lookup(accented_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%start(accented_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop(accented_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      second_id = timer%lookup(accented_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(first_id, second_id)
+
+      call snapshot_timer(timer, state)
+      ctx = 1
+      elapsed = state%segments(first_id)%time(ctx)
+      @assertEqual(1.0_wp, elapsed)
+      @assertEqual(1, state%segments(first_id)%call_count(ctx))
+   end subroutine test_non_ascii_name_round_trips_without_crashing
+
+   @test
    subroutine test_start_stop_validation_preserves_state_and_right_trims()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state

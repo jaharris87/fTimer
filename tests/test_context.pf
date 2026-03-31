@@ -68,11 +68,12 @@ contains
       integer :: parent_ids(12)
       real(wp) :: elapsed
       character(len=18) :: parent_name
+      character(len=*), parameter :: work_name = 'work'
 
       call timer%init(ierr=ierr)
       call attach_mock_clock(timer)
 
-      id_work = timer%lookup("work", ierr=ierr)
+      id_work = timer%lookup(work_name, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       do i = 1, size(parent_ids)
@@ -81,19 +82,19 @@ contains
          @assertEqual(FTIMER_SUCCESS, ierr)
 
          fake_time = real(10*i, wp)
-         call timer%start_id(parent_ids(i), ierr=ierr)
+         call timer%start(trim(parent_name), ierr=ierr)
          @assertEqual(FTIMER_SUCCESS, ierr)
 
          fake_time = real(10*i + 1, wp)
-         call timer%start_id(id_work, ierr=ierr)
+         call timer%start(work_name, ierr=ierr)
          @assertEqual(FTIMER_SUCCESS, ierr)
 
          fake_time = real(10*i + 2, wp)
-         call timer%stop_id(id_work, ierr=ierr)
+         call timer%stop(work_name, ierr=ierr)
          @assertEqual(FTIMER_SUCCESS, ierr)
 
          fake_time = real(10*i + 3, wp)
-         call timer%stop_id(parent_ids(i), ierr=ierr)
+         call timer%stop(trim(parent_name), ierr=ierr)
          @assertEqual(FTIMER_SUCCESS, ierr)
       end do
 

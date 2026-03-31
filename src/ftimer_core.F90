@@ -895,16 +895,17 @@ contains
       hash = 0_int64
       trimmed_len = len_trim(name)
       do i = 1, trimmed_len
-         hash = mod(FTIMER_NAME_HASH_MULTIPLIER*hash + int(iachar(name(i:i)), int64), FTIMER_NAME_HASH_MODULUS)
+         hash = modulo(FTIMER_NAME_HASH_MULTIPLIER*hash + int(iachar(name(i:i)), int64), &
+                       FTIMER_NAME_HASH_MODULUS)
       end do
 
       ! Mix the polynomial hash before taking the table modulus so that
       ! sequential timer names do not create long low-bit probe clusters.
       hash = ieor(hash, shiftr(hash, 15))
-      hash = mod(FTIMER_NAME_HASH_MIX_MULTIPLIER*hash, FTIMER_NAME_HASH_MODULUS)
+      hash = modulo(FTIMER_NAME_HASH_MIX_MULTIPLIER*hash, FTIMER_NAME_HASH_MODULUS)
       hash = ieor(hash, shiftr(hash, 15))
 
-      slot = 1 + int(mod(hash, int(table_size, int64)))
+      slot = 1 + int(modulo(hash, int(table_size, int64)))
    end function hash_name_slot
 
    logical function has_active_timers(self) result(has_active)
