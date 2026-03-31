@@ -32,7 +32,7 @@ If you need a tiny serial timing helper, you can use fTimer that way. If you nee
 fTimer currently supports these usage paths:
 
 - Serial timing with local summaries and formatted reports
-- Pure-MPI builds that use `MPI_Wtime()`, produce global MPI summaries on every participating rank, and can emit communicator-level MPI reports
+- Pure-MPI builds on the validated `use mpi` path that use `MPI_Wtime()`, produce global MPI summaries on every participating rank, and can emit communicator-level MPI reports
 - A narrow OpenMP carve-out: master-thread-only timer guards for timing a parallel region as a whole
 - Downstream consumption through `find_package(fTimer CONFIG REQUIRED)`
 
@@ -143,6 +143,7 @@ Operational notes:
 - Local summary entries retain preorder formatting compatibility and now expose explicit tree structure through `node_id` and `parent_id`. `node_id` values are stable only within one produced summary object, and roots use `parent_id = 0`.
 - `mpi_summary()` and `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init`.
 - A successful MPI reduction returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
+- The MPI result includes communicator-local rank attribution for total-time extrema and per-entry inclusive-time extrema. Ties resolve to the lowest rank that attains the extremum.
 - `print_mpi_summary()` and `write_mpi_summary()` are the first-class MPI reporting paths. They perform the collective MPI summary build and emit one report from communicator root.
 - `on_event` on `type(ftimer_t)` is a lightweight intra-run hook. It reports normal start/stop events with runtime-local numeric ids; current `main` does not promise a stable semantic id-to-name/path mapping for profiler backends or durable cross-run tooling.
 - Import shared types and constants from `ftimer_types`; `use ftimer` does not re-export them.
@@ -207,7 +208,9 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 
 - CMake is the supported build and package path. FPM support is intentionally deferred.
 - `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`. Configure now fails early if the active compiler cannot compile a minimal `use mpi` probe against the discovered MPI installation.
+- The current validated MPI interface contract is the `use mpi` path with integer communicator handles captured at `init`. Broader `mpif.h` or `mpi_f08` compatibility is not yet part of the documented release contract.
 - `mpi_summary()` now returns a distinct `ftimer_mpi_summary_t`; it does not fall back to a local `ftimer_summary_t` on MPI-disabled or MPI-error paths. Call `get_summary()` separately if you need local data in those cases.
+- Descriptor-preflight failures inside one communicator now report the disagreeing communicator-local ranks in the omitted-`ierr` diagnostic path when possible.
 - Local summary `node_id` values are not a cross-run identity contract. Treat them as explicit links inside one produced summary object, not as durable ids across separate runs or independently produced summaries.
 - All ranks that participate in `mpi_summary()` must agree on the communicator captured by `init`. If would-be participants diverge onto different communicators, the library cannot safely discover that mistake after the split; the practical failure mode is a hang, not a clean local fallback.
 - `FTIMER_USE_OPENMP=ON` enables only limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.

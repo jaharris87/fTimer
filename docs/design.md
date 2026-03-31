@@ -18,7 +18,7 @@ Implemented capabilities include:
 - configurable mismatch handling (`strict`, `warn`, `repair`) with `strict` as the default
 - structured local summaries plus formatted local report output
 - procedural wrappers over an OOP core
-- MPI-reduced summary fields on communicator root after a descriptor-hash preflight
+- MPI-reduced global summary fields on every participating rank after a descriptor-hash preflight
 - limited OpenMP master-thread-only timer guards
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 

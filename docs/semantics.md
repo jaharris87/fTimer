@@ -60,9 +60,10 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 - `mpi_summary()` is collective over the communicator captured by `init`
 - Omitting `comm` at `init` means `mpi_summary()` uses `MPI_COMM_WORLD`
 - All ranks in that communicator must enter `mpi_summary()` with fully stopped timers
-- Integer comm handle compatibility (`mpif.h` and `mpi_f08`)
+- The current validated MPI interface path is `use mpi` with integer communicator handles captured at `init`
 - Hash-based timer-descriptor preflight before the reduction phase
 - Extra timers, missing timers, renamed timers, and hierarchy/context mismatches fail the MPI summary with `FTIMER_ERR_MPI_INCON`; they do not fall back to a local summary object through the MPI API
+- When that descriptor preflight fails inside one communicator, the omitted-`ierr` diagnostic reports the disagreeing communicator-local ranks when possible
 - MPI descriptor matching is based on the local summary tree shape and names, not on raw local `node_id` values
 - Mismatched communicator choices across would-be participants are unsupported; this API has no safe cross-communicator rendezvous to detect that misuse without risking the same MPI deadlock it is trying to avoid
 
@@ -78,7 +79,8 @@ The supported pattern is simple: capture one communicator consistently at `init`
 
 `mpi_summary()` returns a distinct `ftimer_mpi_summary_t` instead of reusing the local `ftimer_summary_t` shape.
 
-- `ftimer_mpi_summary_t` contains communicator-wide totals (`min_total_time`, `avg_total_time`, `max_total_time`, `total_time_imbalance`) plus per-entry communicator-wide statistics (`min_*`, `avg_*`, `max_*`) for inclusive time, self time, call count, and `% Total`.
+- `ftimer_mpi_summary_t` contains communicator-wide totals (`min_total_time`, `avg_total_time`, `max_total_time`, `min_total_time_rank`, `max_total_time_rank`, `total_time_imbalance`) plus per-entry communicator-wide statistics (`min_*`, `avg_*`, `max_*`) for inclusive time, self time, call count, and `% Total`.
+- MPI summary entries also expose `min_inclusive_time_rank` and `max_inclusive_time_rank` as communicator-local ranks for the inclusive-time extrema; ties resolve to the lowest rank that attains the extremum.
 - Successful `mpi_summary()` calls populate the same global MPI result on every participating rank.
 - `ftimer_mpi_summary_t` entries retain `name`, `depth`, `node_id`, and `parent_id`, so MPI summaries keep the explicit-tree data model instead of collapsing to flat rows.
 - The MPI summary tree order is canonical across ranks. It does not depend on the local timer creation order on one chosen rank.
