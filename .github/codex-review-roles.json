@@ -22,7 +22,6 @@
       "selectors": {
         "path_regex_any": [
           "^src/ftimer_(core|summary|mpi|clock|types)\\.F90$",
-          "^docs/semantics\\.md$",
           "^tests/test_(summary|self_time|callbacks|openmp_guards)\\.pf$",
           "^tests/mpi/"
         ]
@@ -38,7 +37,6 @@
       "selectors": {
         "path_regex_any": [
           "^src/ftimer_(core|summary|mpi)\\.F90$",
-          "^docs/semantics\\.md$",
           "^tests/test_(summary|self_time|callbacks|openmp_guards)\\.pf$",
           "^tests/mpi/"
         ]
@@ -109,9 +107,8 @@
       "selectors": {
         "path_regex_any": [
           "^src/ftimer\\.F90$",
-          "^src/ftimer_(core|types)\\.F90$",
-          "^tests/install-consumer/",
-          "^examples/"
+          "^src/ftimer_types\\.F90$",
+          "^tests/install-consumer/"
         ]
       }
     },
@@ -126,7 +123,6 @@
         "path_regex_any": [
           "^src/ftimer_mpi\\.F90$",
           "^tests/mpi/",
-          "^docs/semantics\\.md$",
           "^CMakeLists\\.txt$"
         ]
       }
