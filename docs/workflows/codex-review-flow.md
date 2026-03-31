@@ -45,12 +45,13 @@ flowchart TD
     F -->|"No"| G["Post nothing: later reviews are manual"]
     F -->|"Yes"| H{"Newer plain manual @codex review comment exists?"}
     H -->|"Yes"| I["Manual mode: post nothing"]
-    H -->|"No"| J{"PR body still has Codex eyes?"}
-    J -->|"Yes"| K["Queue locked: post nothing"]
-    J -->|"No"| L["Walk active roles in manifest order"]
+    H -->|"No"| L["Walk active roles in manifest order"]
     L --> M{"Already requested for current head SHA?"}
     M -->|"Yes"| L
-    M -->|"No"| N["Post one new @codex review trigger comment"]
+    M -->|"No"| J{"PR body still has Codex eyes?"}
+    J -->|"Yes"| K["Wait until unlocked or timeout"]
+    K --> J
+    J -->|"No"| N["Post one new @codex review trigger comment"]
     N --> O{"More roles remain?"}
     O -->|"No"| P["Stop"]
     O -->|"Yes"| Q["Wait for Codex eyes to clear, then continue"]
@@ -164,11 +165,11 @@ Before posting anything new, the workflow checks whether the PR contains a newer
 
 If such a newer comment exists, the workflow assumes the PR is being driven manually and posts nothing further automatically.
 
-Only if there is no plain manual request does it continue to the PR-body `eyes` lock check.
+Only if there is no plain manual request does it continue toward queued posting.
 
-Before posting anything new, the workflow then checks reactions on the PR body itself.
+Immediately before posting a queued review request, the workflow checks reactions on the PR body itself.
 
-If the PR body still has the `eyes` reaction from Codex, the queue is treated as globally locked.
+If the PR body still has the `eyes` reaction from Codex, the queue is treated as globally locked for posting. The workflow does not post while that lock is present; instead it waits and re-checks until the lock clears or one of the stop conditions fires. If there are no eligible roles left to post, it does not enter that wait.
 
 ```mermaid
 flowchart TD
@@ -176,8 +177,9 @@ flowchart TD
     B -->|"Yes"| C["Automation stands down"]
     B -->|"No"| D["Load reactions on the PR body"]
     D --> E{"PR body still has Codex eyes?"}
-    E -->|"Yes"| F["Global queue locked"]
-    F --> G["Post nothing"]
+    E -->|"Yes"| F["Global queue locked for posting"]
+    F --> G["Wait and retry until unlocked or timeout"]
+    G --> D
     E -->|"No"| H["Queue is free"]
     H --> I["Try to post exactly one new review request"]
 ```
@@ -330,7 +332,7 @@ The trigger workflow is best understood as:
 2. maintain a single global review queue
 3. stop automated posting once the PR moves past the first automated-review SHA
 4. stand down if a maintainer posts a newer manual `@codex review` request
-5. never post a new trigger while the PR body is still marked in-progress
+5. never post a new trigger while the PR body is still marked in-progress, and wait or retry before posting if that lock is still present for an eligible queued role
 6. walk the initial automated wave sequentially inside one run
 
 That is only half of the review control.

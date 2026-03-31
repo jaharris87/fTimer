@@ -253,6 +253,54 @@ jobs:
             done
           }
 
+          wait_until_queue_unlocked_for_post() {
+            clear_deadline="$(( $(date -u +%s) + CODEX_REVIEW_LOCK_CLEAR_TIMEOUT_SECONDS ))"
+
+            while true; do
+              pr_json="$(
+                gh api "repos/${{ github.repository }}/pulls/${pr_number}"
+              )"
+              current_head_sha="$(jq -r '.head.sha' <<<"$pr_json")"
+              current_draft="$(jq -r '.draft' <<<"$pr_json")"
+              gh api --paginate "repos/${{ github.repository }}/issues/${pr_number}/comments?per_page=100" \
+                | jq -s 'add // []' > /tmp/codex-comments.json
+
+              if manual_takeover_requested /tmp/codex-comments.json; then
+                echo "Detected a newer plain manual @codex review comment on this PR, so automatic queue posting is disabled."
+                exit 0
+              fi
+
+              if [ "$current_draft" = "true" ]; then
+                echo "The PR is draft again, so automated review requests stop."
+                exit 0
+              fi
+
+              if [ "$current_head_sha" != "$head_sha" ]; then
+                echo "The PR head moved from ${head_sha} to ${current_head_sha}, so automatic review requests stop after the initial wave."
+                exit 0
+              fi
+
+              pr_reactions="$(
+                gh api --paginate -H 'Accept: application/vnd.github+json' \
+                  "repos/${{ github.repository }}/issues/${pr_number}/reactions?per_page=100" \
+                  | jq -s 'add // []'
+              )"
+
+              if ! jq -e 'any(.[]; .content == "eyes" and .user.login == "chatgpt-codex-connector[bot]")' \
+                <<<"$pr_reactions" >/dev/null; then
+                break
+              fi
+
+              if [ "$(date -u +%s)" -ge "$clear_deadline" ]; then
+                echo "Timed out waiting for Codex's PR-body eyes reaction to clear before posting the next queued review."
+                exit 0
+              fi
+
+              echo "The PR body still has Codex's in-progress eyes reaction, so waiting before posting the next queued review."
+              sleep "$CODEX_REVIEW_LOCK_POLL_SECONDS"
+            done
+          }
+
           gh api --paginate "repos/${{ github.repository }}/issues/${pr_number}/comments?per_page=100" \
             | jq -s 'add // []' > /tmp/codex-comments.json
 
@@ -278,18 +326,6 @@ jobs:
 
           if manual_takeover_requested /tmp/codex-comments.json; then
             echo "Detected a newer plain manual @codex review comment on this PR, so automatic queue posting is disabled."
-            exit 0
-          fi
-
-          pr_reactions="$(
-            gh api --paginate -H 'Accept: application/vnd.github+json' \
-              "repos/${{ github.repository }}/issues/${pr_number}/reactions?per_page=100" \
-              | jq -s 'add // []'
-          )"
-
-          if jq -e 'any(.[]; .content == "eyes" and .user.login == "chatgpt-codex-connector[bot]")' \
-            <<<"$pr_reactions" >/dev/null; then
-            echo "The PR body still has Codex's in-progress eyes reaction, so the global review queue is locked."
             exit 0
           fi
 
@@ -337,6 +373,25 @@ jobs:
             if [ "$last_trigger_epoch" -gt 0 ] && [ "$remaining" -gt 0 ]; then
               echo "Sleeping ${remaining}s to keep @codex review comments at least ${CODEX_REVIEW_COMMENT_SPACING_SECONDS}s apart."
               sleep "$remaining"
+            fi
+
+            wait_until_queue_unlocked_for_post
+
+            if jq -e --arg token "$token" 'any(.[]; (.body // "") | contains($token))' \
+              /tmp/codex-comments.json >/dev/null; then
+              last_trigger_created_at="$(
+                jq -r '[.[] | select((.body // "") | startswith("@codex review ")) | .created_at] | sort | last // empty' \
+                  /tmp/codex-comments.json
+              )"
+
+              if [ -n "$last_trigger_created_at" ]; then
+                last_trigger_epoch="$(date -u -d "$last_trigger_created_at" +%s)"
+              else
+                last_trigger_epoch="$(date -u +%s)"
+              fi
+
+              echo "Review for ${label} was triggered while waiting, so skipping the duplicate post."
+              continue
             fi
 
             prompt_text="$(tr '\n' ' ' < "$prompt_file" | tr -s ' ')"
