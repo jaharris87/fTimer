@@ -11,20 +11,23 @@
 !                                       lookup + stack push/pop + clock call
 !  2. Flat start/stop (id-based)     -- same path minus name normalization and
 !                                       mapped lookup; isolates stack cost
-!  3-5. Lookup scaling N=1/100/1000  -- name-based, shows whether steady-state
-!                                       mapped lookup stays near-flat as the
-!                                       resident timer set grows
-!  6-9. Nesting depth 1/5/10/20      -- id-based; each cycle does D pushes +
+!  3-7. Lookup scaling N=1/10/50/100/1000
+!                                     -- name-based; keeps the historical
+!                                       comparison points while also showing
+!                                       whether steady-state mapped lookup
+!                                       stays near-flat as the resident timer
+!                                       set grows into the larger regimes
+!  8-11. Nesting depth 1/5/10/20     -- id-based; each cycle does D pushes +
 !                                       D pops; shows stack bookkeeping cost
 !                                       scaling with nesting depth
-! 10-12. get_summary N=10/50/100     -- summary build scaling with timer count
-! 13-15. build_summary N=10/50/100   -- direct local summary construction on
+! 12-14. get_summary N=10/50/100     -- summary build scaling with timer count
+! 15-17. build_summary N=10/50/100   -- direct local summary construction on
 !                                       prebuilt flat segments; isolates the
 !                                       tree build/allocation work from the
 !                                       wrapper's timestamp capture
-! 16. raw date string formatting     -- date_and_time + string formatting,
+! 18. raw date string formatting     -- date_and_time + string formatting,
 !                                       matching the original per-call wrapper
-! 17. ftimer_date_string steady-state -- cached second-resolution date stamp
+! 19. ftimer_date_string steady-state -- cached second-resolution date stamp
 !                                        path used by get_summary/print/write
 !
 ! METRICS
@@ -88,6 +91,8 @@ program ftimer_bench
 
    ! --- Lookup scaling scenarios ---
    call bench_lookup_scaling(REPS_HOT, 1, count_rate)
+   call bench_lookup_scaling(REPS_HOT/10, 10, count_rate)
+   call bench_lookup_scaling(REPS_HOT/50, 50, count_rate)
    call bench_lookup_scaling(REPS_HOT/100, 100, count_rate)
    call bench_lookup_scaling(REPS_HOT/1000, 1000, count_rate)
 
@@ -174,11 +179,13 @@ contains
       call print_result('flat start/stop (id-based)', reps, t0, t1, count_rate)
    end subroutine bench_flat_id
 
-   ! Scenarios 3-5: name-based lookup with N unique timers.
+   ! Scenarios 3-7: name-based lookup with N unique timers.
    ! Cycles through all N timers each outer rep. Each inner start/stop uses
    ! the same public name-based path as production code, but with a large
-   ! resident timer set already registered. Comparing N=1, 100, 1000 shows
-   ! whether the internal name map keeps steady-state lookup near-flat.
+   ! resident timer set already registered. The 1/10/50 points preserve the
+   ! original benchmark comparison set, while 100/1000 extend the view into
+   ! larger timer populations. Together they show whether the internal name
+   ! map keeps steady-state lookup near-flat as N grows.
    !
    ! Timer names are built into an array before timing begins so that
    ! formatted write overhead does not contaminate the hot-loop measurement.
@@ -212,7 +219,7 @@ contains
       call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_lookup_scaling
 
-   ! Scenarios 6-9: id-based nesting at increasing depths.
+   ! Scenarios 8-11: id-based nesting at increasing depths.
    ! Each cycle does D id-based starts then D id-based stops.
    ! Using id-based ops isolates call-stack bookkeeping cost from
    ! name-lookup cost.  After the warm-up cycle has grown the stack to the
@@ -260,7 +267,7 @@ contains
       call print_result(trim(label), reps, t0, t1, count_rate)
    end subroutine bench_nesting
 
-   ! Scenarios 10-12: get_summary overhead with N flat timers.
+   ! Scenarios 12-14: get_summary overhead with N flat timers.
    ! Creates N timers each called once, then measures the cost of repeatedly
    ! calling get_summary().  The summary build walks the visible timer tree,
    ! computes self-times from direct children, and allocates the entries array.
