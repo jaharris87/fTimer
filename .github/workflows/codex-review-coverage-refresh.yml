@@ -1,0 +1,96 @@
+name: Codex Review Coverage Refresh
+
+# Coverage markers are posted as top-level PR comments. GitHub records the
+# issue_comment-triggered coverage evaluation separately from the visible
+# pull_request-attached required check, so this helper reruns the latest
+# PR-attached coverage run for the current head when coverage-marker comments
+# change.
+
+on:
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  actions: write
+  issues: read
+  pull-requests: read
+
+env:
+  CODEX_COVERAGE_HELPER_DEBOUNCE_SECONDS: 15
+  CODEX_COVERAGE_WORKFLOW_FILE: codex-review-coverage.yml
+
+jobs:
+  rerun-pr-coverage:
+    if: github.event.issue.pull_request
+    concurrency:
+      group: codex-review-coverage-refresh-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rerun the latest PR-attached coverage check after coverage-marker comment changes
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${COMMENT_BODY}" != *"codex-review-coverage role="* ]]; then
+            echo "Comment is not a coverage marker change; no PR-attached coverage rerun is needed."
+            exit 0
+          fi
+
+          pr_number="${{ github.event.issue.number }}"
+
+          sleep "$CODEX_COVERAGE_HELPER_DEBOUNCE_SECONDS"
+
+          pr_json="$(
+            gh api "repos/${{ github.repository }}/pulls/${pr_number}"
+          )"
+          pr_state="$(jq -r '.state' <<<"$pr_json")"
+          draft="$(jq -r '.draft' <<<"$pr_json")"
+          head_sha="$(jq -r '.head.sha' <<<"$pr_json")"
+
+          if [ "$pr_state" != "open" ]; then
+            echo "PR #${pr_number} is no longer open; skipping coverage refresh."
+            exit 0
+          fi
+
+          if [ "$draft" = "true" ]; then
+            echo "PR #${pr_number} is draft, so coverage refresh is not required."
+            exit 0
+          fi
+
+          runs_json="$(
+            gh api "repos/${{ github.repository }}/actions/workflows/${CODEX_COVERAGE_WORKFLOW_FILE}/runs?event=pull_request&per_page=100"
+          )"
+
+          run_json="$(
+            jq -c \
+              --arg head_sha "$head_sha" \
+              --argjson pr_number "$pr_number" '
+              [
+                .workflow_runs[]
+                | select(.head_sha == $head_sha)
+                | select(any(.pull_requests[]?; .number == $pr_number))
+              ]
+              | sort_by(.created_at)
+              | last // empty
+            ' <<<"$runs_json"
+          )"
+
+          if [ -z "$run_json" ]; then
+            echo "No pull_request-triggered coverage run found for PR #${pr_number} at ${head_sha}; nothing to rerun."
+            exit 0
+          fi
+
+          run_id="$(jq -r '.id' <<<"$run_json")"
+          run_status="$(jq -r '.status' <<<"$run_json")"
+          run_conclusion="$(jq -r '.conclusion // ""' <<<"$run_json")"
+
+          if [ "$run_status" = "queued" ] || [ "$run_status" = "in_progress" ]; then
+            echo "Coverage run ${run_id} is already ${run_status}; skipping redundant rerun."
+            exit 0
+          fi
+
+          echo "Rerunning PR-attached coverage run ${run_id} for PR #${pr_number} at ${head_sha} (previous conclusion: ${run_conclusion:-none})."
+          gh api -X POST "repos/${{ github.repository }}/actions/runs/${run_id}/rerun" >/dev/null
