@@ -172,6 +172,16 @@ Context budget:
 - Prefer diff-based validation late in the task over broad repo sweeps.
 - Batch progress updates by phase, not by file or micro-step.
 
+### GitHub Tooling Policy
+
+For GitHub interactions in Codex threads, use a connector-first workflow.
+
+- Prefer the GitHub connector / Codex Apps MCP tools for repository, issue, pull request, comment, label, reaction, and PR metadata or patch workflows.
+- Do not default to `gh` for routine GitHub reads or writes when the connector already covers the task well.
+- Use local `gh` only when the connector does not cover the task well or loses required structure. Common allowed cases: current-branch PR discovery, `gh auth status`, branch or push operations, GitHub Actions checks or logs, and GraphQL-only review-thread state.
+- If you switch to `gh`, state the reason briefly so the tool choice is explicit in the thread.
+- Keep connector state and local checkout context aligned when a request refers to "this branch", "the current PR", or the local worktree.
+
 ### Test Categories
 
 - **Unit tests** (`tests/test_*.pf`): Isolated module tests — init/finalize, single start/stop, timer creation, ID lookup, time accumulation, call counts, reset behavior, edge cases, error contract verification. All use mock clock.
