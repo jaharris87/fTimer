@@ -47,6 +47,14 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 - Restarts the local monitoring window used for `summary%total_time` and `% Total`
 - Error if timers are active; `reset()` does not auto-stop or clean up active timers
 
+## Clock Configuration Contract
+
+- Configure custom clocks through `set_clock()` and restore the build-default wall clock through `clear_clock()`
+- Direct mutation of raw runtime clock internals is not part of the supported API contract
+- Clock configuration is allowed before `init()` or before a run records timing data
+- Once a run has recorded timing data, `set_clock()` and `clear_clock()` return `FTIMER_ERR_ACTIVE` (or warn to stderr when `ierr` is omitted) and leave state unchanged
+- `reset()`, `init()`, and `finalize()` all provide clean lifecycle boundaries after which a different clock may be configured
+
 ## Lifecycle Errors With Active Timers
 
 - `init`, `reset`, and `finalize` require a fully stopped timer set
@@ -152,7 +160,11 @@ The silent worker-thread no-op model has specific, observable consequences that 
 
 ## Callback Contract
 
+- Configure callbacks through `set_callback()` and `clear_callback()`, not by mutating runtime internals directly
+- `set_callback()` may be called before or after `init()`, but callback configuration changes are rejected while timers are active
+- `set_callback()` accepts optional opaque `user_data`; omitting it stores `c_null_ptr`
+- `clear_callback()` and `finalize()` clear both the callback registration and its stored `user_data`
 - `on_event` is an optional lightweight intra-run hook for normal start/stop events on one timer instance
 - The current callback contract exposes numeric runtime identifiers only; it does not define a stable semantic mapping back to timer names or full context paths for external-profiler backends
 - Repair transitions do NOT fire callbacks
-- `user_data` c_ptr for opaque state
+- `user_data` remains opaque callback state, not a separate user-facing mutable runtime field

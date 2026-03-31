@@ -6,6 +6,8 @@ module test_basic
    use test_support, only: attach_mock_clock, fake_time, find_context_idx, snapshot_timer
    implicit none
 
+   integer, save :: finalize_callback_count = 0
+
 contains
 
    @test
@@ -136,25 +138,26 @@ contains
       type(ftimer_t) :: timer
       integer, target :: user_token
       integer :: ierr
-      logical :: hook_associated
-      logical :: hook_cleared
-      logical :: data_cleared
 
+      call reset_finalize_callback_count()
       call timer%init(ierr=ierr)
       user_token = 7
-      timer%on_event => test_hook
-      timer%user_data = c_loc(user_token)
-
-      hook_associated = associated(timer%on_event)
-      @assertTrue(hook_associated)
+      call timer%set_callback(test_hook, c_loc(user_token), ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
 
       call timer%finalize(ierr=ierr)
 
       @assertEqual(FTIMER_SUCCESS, ierr)
-      hook_cleared = .not. associated(timer%on_event)
-      data_cleared = .not. c_associated(timer%user_data)
-      @assertTrue(hook_cleared)
-      @assertTrue(data_cleared)
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("after_finalize", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%stop("after_finalize", ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(0, finalize_callback_count)
    end subroutine test_finalize_clears_hook_state
 
    subroutine test_hook(timer_id, context_idx, event, timestamp, user_data)
@@ -164,9 +167,14 @@ contains
       real(wp), intent(in) :: timestamp
       type(c_ptr), intent(in) :: user_data
 
+      finalize_callback_count = finalize_callback_count + 1
       if ((timer_id + context_idx + event) < 0) error stop 1
       if (timestamp < 0.0_wp) error stop 2
       if (.not. c_associated(user_data)) error stop 3
    end subroutine test_hook
+
+   subroutine reset_finalize_callback_count()
+      finalize_callback_count = 0
+   end subroutine reset_finalize_callback_count
 
 end module test_basic

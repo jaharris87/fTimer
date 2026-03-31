@@ -30,8 +30,8 @@ contains
       call attach_mock_clock(timer)
 
       token = 7
-      timer%on_event => record_callback
-      timer%user_data = c_loc(token)
+      call timer%set_callback(record_callback, c_loc(token), ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
 
       call timer%start("A", ierr=ierr)
       fake_time = 4.0_wp
@@ -70,8 +70,8 @@ contains
       call attach_mock_clock(timer)
 
       token = 11
-      timer%on_event => record_callback
-      timer%user_data = c_loc(token)
+      call timer%set_callback(record_callback, c_loc(token), ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
 
       call timer%start("A", ierr=ierr)
       fake_time = 1.0_wp
@@ -105,8 +105,8 @@ contains
       call attach_mock_clock(timer)
 
       token = 13
-      timer%on_event => record_callback
-      timer%user_data = c_loc(token)
+      call timer%set_callback(record_callback, c_loc(token), ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
 
       call timer%start("A", ierr=ierr)
       fake_time = 1.0_wp

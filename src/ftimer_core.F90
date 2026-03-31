@@ -47,12 +47,16 @@ module ftimer_core
       integer :: mpi_rank = -1
       integer :: mpi_nprocs = 1
 #endif
-      procedure(ftimer_clock_func), pointer, nopass, public :: clock => null()
-      procedure(ftimer_hook_proc), pointer, nopass, public :: on_event => null()
-      type(c_ptr), public :: user_data = c_null_ptr
+      procedure(ftimer_clock_func), pointer, nopass :: clock => null()
+      procedure(ftimer_hook_proc), pointer, nopass :: on_event => null()
+      type(c_ptr) :: user_data = c_null_ptr
    contains
       procedure :: init
       procedure :: finalize
+      procedure :: set_clock
+      procedure :: clear_clock
+      procedure :: set_callback
+      procedure :: clear_callback
       procedure :: start
       procedure :: stop
       procedure :: start_id
@@ -167,10 +171,8 @@ contains
       end if
       self%mpi_rank = -1
       self%mpi_nprocs = 1
-      self%clock => ftimer_mpi_clock
-#else
-      self%clock => ftimer_default_clock
 #endif
+      if (.not. associated(self%clock)) call restore_default_clock(self)
       self%init_wtime = self%wtime()
       self%init_date = ftimer_date_string()
 
@@ -203,6 +205,107 @@ contains
       call clear_runtime_state(self, keep_hooks=.false.)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine finalize_impl
+
+   subroutine set_clock(self, clock, ierr)
+      class(ftimer_t), intent(inout) :: self
+      procedure(ftimer_clock_func) :: clock
+      integer, intent(out), optional :: ierr
+
+!$omp master
+      call set_clock_impl(self, clock, ierr=ierr)
+!$omp end master
+   end subroutine set_clock
+
+   subroutine set_clock_impl(self, clock, ierr)
+      class(ftimer_t), intent(inout) :: self
+      procedure(ftimer_clock_func) :: clock
+      integer, intent(out), optional :: ierr
+
+      if (.not. can_configure_clock(self)) then
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer set_clock after timing has started; state unchanged")
+         return
+      end if
+
+      self%clock => clock
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine set_clock_impl
+
+   subroutine clear_clock(self, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+
+!$omp master
+      call clear_clock_impl(self, ierr=ierr)
+!$omp end master
+   end subroutine clear_clock
+
+   subroutine clear_clock_impl(self, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+
+      if (.not. can_configure_clock(self)) then
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer clear_clock after timing has started; state unchanged")
+         return
+      end if
+
+      call restore_default_clock(self)
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine clear_clock_impl
+
+   subroutine set_callback(self, on_event, user_data, ierr)
+      class(ftimer_t), intent(inout) :: self
+      procedure(ftimer_hook_proc) :: on_event
+      type(c_ptr), intent(in), optional :: user_data
+      integer, intent(out), optional :: ierr
+
+!$omp master
+      call set_callback_impl(self, on_event, user_data=user_data, ierr=ierr)
+!$omp end master
+   end subroutine set_callback
+
+   subroutine set_callback_impl(self, on_event, user_data, ierr)
+      class(ftimer_t), intent(inout) :: self
+      procedure(ftimer_hook_proc) :: on_event
+      type(c_ptr), intent(in), optional :: user_data
+      integer, intent(out), optional :: ierr
+
+      if (has_active_timers(self)) then
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer set_callback with active timers; state unchanged")
+         return
+      end if
+
+      self%on_event => on_event
+      if (present(user_data)) then
+         self%user_data = user_data
+      else
+         self%user_data = c_null_ptr
+      end if
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine set_callback_impl
+
+   subroutine clear_callback(self, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+
+!$omp master
+      call clear_callback_impl(self, ierr=ierr)
+!$omp end master
+   end subroutine clear_callback
+
+   subroutine clear_callback_impl(self, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+
+      if (has_active_timers(self)) then
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer clear_callback with active timers; state unchanged")
+         return
+      end if
+
+      nullify (self%on_event)
+      self%user_data = c_null_ptr
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine clear_callback_impl
 
    subroutine start(self, name, ierr)
       class(ftimer_t), intent(inout) :: self
@@ -582,6 +685,16 @@ contains
       end if
    end subroutine clear_runtime_state
 
+   subroutine restore_default_clock(self)
+      class(ftimer_t), intent(inout) :: self
+
+#ifdef FTIMER_USE_MPI
+      self%clock => ftimer_mpi_clock
+#else
+      self%clock => ftimer_default_clock
+#endif
+   end subroutine restore_default_clock
+
    subroutine ensure_context_storage(segment, required_size)
       type(ftimer_segment_t), intent(inout) :: segment
       integer, intent(in) :: required_size
@@ -755,6 +868,15 @@ contains
          end if
       end do
    end function has_recorded_timing
+
+   logical function can_configure_clock(self) result(can_configure)
+      class(ftimer_t), intent(in) :: self
+
+      can_configure = .false.
+      if (has_active_timers(self)) return
+      if (self%initialized .and. has_recorded_timing(self)) return
+      can_configure = .true.
+   end function can_configure_clock
 
    logical function needs_init_wtime_rebase(self) result(needs_rebase)
       class(ftimer_t), intent(in) :: self

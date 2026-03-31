@@ -125,29 +125,32 @@ The supported downstream contract is the installed package export. New adopters 
 
 The downstream example under [`tests/install-consumer/`](tests/install-consumer/) is also part of the smoke path. It shows the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer_types`, timer start/stop calls, and summary retrieval from an installed prefix.
 
-The installed public module surface is intentionally curated to these modules: `ftimer`, `ftimer_clock`, `ftimer_core`, `ftimer_mpi`, `ftimer_summary`, and `ftimer_types`. The current validated toolchain matrix does not require any extra compiler-specific companion artifacts in the installed include tree. If a future compiler proves that such artifacts are truly required for downstream consumption, they should be added deliberately and documented as an explicit exception rather than leaked accidentally.
+The supported source-level module surface is intentionally narrow: `ftimer`, `ftimer_core`, and `ftimer_types`. Some install trees may still contain compiler module artifacts for implementation modules such as `ftimer_clock`, `ftimer_summary`, and `ftimer_mpi`, but those are internal implementation details, not stable user-facing API. The current validated toolchain matrix does not require any extra compiler-specific companion artifacts in the installed include tree. If a future compiler proves that such artifacts are truly required for downstream consumption, they should be added deliberately and documented as an explicit exception rather than leaked accidentally.
 
 ## API Surface
 
 The public API supports two styles:
 
 - Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, and `ftimer_default_instance`
-- OOP API through `type(ftimer_t)` in `ftimer_core`
+- OOP API through `type(ftimer_t)` in `ftimer_core`, including the explicit configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`
 
-New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock injection and lifecycle on a specific timer object.
+New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock or callback configuration on a specific timer object. Procedural callers that need those advanced controls can use `ftimer_default_instance%...` explicitly.
 
 Operational notes:
 
 - `ierr` is now the last optional argument in both `init` signatures (`comm`, `mismatch_mode`, `ierr`), so a single positional integer binds to `comm`, not `ierr`. Keywords are recommended for readability.
 - `init`, `reset`, and `finalize` are correctness-first on active timers: with `ierr` they return `FTIMER_ERR_ACTIVE`; without `ierr` they warn and leave state unchanged. In `FTIMER_USE_OPENMP=ON` builds, that diagnostic contract applies on the master thread; worker-thread lifecycle calls remain silent no-ops. These paths do not force-stop active timers or synthesize summary data.
 - Stop-mismatch repair remains an explicit `mismatch_mode` choice (`FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR`); omitted-`ierr` alone does not opt a caller into recovery.
+- Configure custom clocks through `set_clock()` and restore the build-default wall clock through `clear_clock()`. Direct mutation of raw runtime clock internals is not part of the supported API.
+- Clock changes are allowed before `init()` or before a run records timing data. After timing has started, `set_clock()` and `clear_clock()` return `FTIMER_ERR_ACTIVE` (or warn to stderr when `ierr` is omitted) and leave state unchanged. Use `reset()`, `init()`, or `finalize()` to begin a fresh run on a different clock.
+- Configure callbacks through `set_callback()` and `clear_callback()`. Callback configuration is rejected while timers are active, `clear_callback()` also clears callback `user_data`, and `finalize()` clears callback configuration.
 - `get_summary()`, `print_summary()`, and `write_summary()` are local-only summary/reporting paths.
 - Local summary entries retain preorder formatting compatibility and now expose explicit tree structure through `node_id` and `parent_id`. `node_id` values are stable only within one produced summary object, and roots use `parent_id = 0`.
 - `mpi_summary()` and `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init`.
 - A successful MPI reduction returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
 - The MPI result includes communicator-local rank attribution for total-time extrema and per-entry inclusive-time extrema. Ties resolve to the lowest rank that attains the extremum.
 - `print_mpi_summary()` and `write_mpi_summary()` are the first-class MPI reporting paths. They perform the collective MPI summary build and emit one report from communicator root.
-- `on_event` on `type(ftimer_t)` is a lightweight intra-run hook. It reports normal start/stop events with runtime-local numeric ids; current `main` does not promise a stable semantic id-to-name/path mapping for profiler backends or durable cross-run tooling.
+- Callbacks configured on `type(ftimer_t)` are lightweight intra-run hooks. They report normal start/stop events with runtime-local numeric ids; current `main` does not promise a stable semantic id-to-name/path mapping for profiler backends or durable cross-run tooling.
 - Import shared types and constants from `ftimer_types`; `use ftimer` does not re-export them.
 
 ## Examples

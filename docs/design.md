@@ -103,15 +103,15 @@ The CMake source order reflects the real dependency order:
 
 `ftimer_types.F90` is the shared foundation. It defines kind parameters, error codes, mismatch-mode constants, MPI summary-state constants, summary types, call-stack/context helpers, and the abstract interfaces for clocks and lightweight callback hooks.
 
-`ftimer_clock.F90` centralizes time acquisition. Serial builds use `system_clock`; MPI-enabled builds can use the MPI wall clock path. Tests rely on the injectable clock interface so behavior is deterministic without sleeps.
+`ftimer_clock.F90` is an internal time-acquisition helper module. Serial builds use `system_clock`; MPI-enabled builds can use the MPI wall clock path. Tests rely on the injectable clock interface so behavior is deterministic without sleeps.
 
 `ftimer_core.F90` owns the mutable timer state in `ftimer_t`: timer definitions, active stack state, mismatch policy, communicator capture, lightweight callback registration, and the guarded timer entry points.
 
 `ftimer_core_summary_bindings.F90` is the submodule-backed binding layer that connects `ftimer_t` to local summary generation, formatted reporting, and file-output entry points without collapsing all summary logic into the core module body.
 
-`ftimer_summary.F90` turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, and self-time computation are assembled for local reporting.
+`ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, and self-time computation are assembled for local reporting.
 
-`ftimer_mpi.F90` adds cross-rank behavior on top of local summaries. It verifies that all ranks agree on the timer descriptor set before any collective reduction, using the local summary tree shape plus names rather than raw local node ids, then populates reduced MPI fields only where that contract allows.
+`ftimer_mpi.F90` is an internal MPI summary helper module. It adds cross-rank behavior on top of local summaries, verifies that all ranks agree on the timer descriptor set before any collective reduction, and then populates reduced MPI fields only where that contract allows.
 
 `ftimer.F90` exposes the procedural API by forwarding to the default saved `ftimer_t` instance. Shared types and constants still come from `ftimer_types`; they are not re-exported from `ftimer`.
 
@@ -137,6 +137,8 @@ The public surface on current `main` is split between:
 - the procedural API in `use ftimer`
 - the OOP API through `type(ftimer_t)` from `use ftimer_core`
 - shared types and constants from `use ftimer_types`
+
+The supported source-level module surface is intentionally limited to those three modules. Install trees may still contain compiler module artifacts for implementation modules such as `ftimer_clock`, `ftimer_summary`, and `ftimer_mpi`, but those are internal implementation details rather than stable external integration points.
 
 The currently exported procedural entry points are:
 
@@ -166,6 +168,7 @@ Important current-state API notes:
 - `print_summary()` and `write_summary()` format local report text.
 - `mpi_summary()` returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
 - `print_mpi_summary()` and `write_mpi_summary()` are the first-class communicator-level MPI reporting paths.
+- `set_clock()` / `clear_clock()` and `set_callback()` / `clear_callback()` are the supported configuration entry points; direct mutation of raw runtime internals is no longer part of the public contract.
 - `on_event` remains a lightweight intra-run hook; the current public surface does not promise stable semantic timer identity for external-profiler integrations.
 - `ftimer_types` owns `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_metadata_t`, and mismatch constants.
 

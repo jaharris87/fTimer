@@ -1,6 +1,6 @@
 module test_support
    use ftimer_core, only: ftimer_t, ftimer_test_get_state, ftimer_test_state_t
-   use ftimer_types, only: ftimer_call_stack_t, ftimer_mpi_summary_t, ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_mpi_summary_t, ftimer_summary_t, wp
    use, intrinsic :: iso_c_binding, only: c_associated, c_char, c_int, c_null_char, c_null_ptr, c_ptr
    use, intrinsic :: iso_fortran_env, only: error_unit, iostat_end, iostat_eor
    implicit none
@@ -83,16 +83,20 @@ contains
 
    subroutine attach_mock_clock(timer)
       class(ftimer_t), intent(inout) :: timer
+      integer :: ierr
 
-      timer%clock => mock_clock
+      call timer%set_clock(mock_clock, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 1
       call reset_mock_clock_state()
    end subroutine attach_mock_clock
 
    subroutine attach_scripted_mock_clock(timer, values)
       class(ftimer_t), intent(inout) :: timer
       real(wp), intent(in) :: values(:)
+      integer :: ierr
 
-      timer%clock => mock_clock
+      call timer%set_clock(mock_clock, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 1
       call reset_mock_clock_state()
       use_scripted_times = .true.
       allocate (scripted_times(size(values)))
