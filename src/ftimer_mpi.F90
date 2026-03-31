@@ -121,7 +121,7 @@ contains
       integer, intent(in) :: comm
       type(ftimer_mpi_summary_t), intent(out) :: summary
       integer, intent(out) :: status
-      character(len=*), intent(out) :: diagnostic
+      character(len=*), intent(out), optional :: diagnostic
 #ifdef FTIMER_USE_MPI
       integer :: active_comm
       integer :: entry_count
@@ -144,10 +144,14 @@ contains
       integer(int64) :: local_hashes(2)
       integer(int64), allocatable :: gathered_hashes(:, :)
       real(wp) :: avg_total_time
-      real(wp), allocatable :: gathered_inclusive(:, :)
-      real(wp), allocatable :: gathered_total_times(:)
+      real(wp) :: local_total_pair(2)
+      real(wp) :: max_total_pair(2)
       real(wp) :: max_total_time
+      real(wp), allocatable :: local_inclusive_pair(:, :)
+      real(wp), allocatable :: max_inclusive_pair(:, :)
+      real(wp) :: min_total_pair(2)
       real(wp) :: min_total_time
+      real(wp), allocatable :: min_inclusive_pair(:, :)
       real(wp) :: sum_total_time
       real(wp), allocatable :: local_inclusive(:)
       real(wp), allocatable :: local_pct(:)
@@ -165,7 +169,7 @@ contains
       logical :: hashes_match
 
       call clear_mpi_summary(summary)
-      diagnostic = ''
+      if (present(diagnostic)) diagnostic = ''
 
       call get_mpi_summary_comm_info(comm, active_comm, rank, nprocs, status)
       if (status /= FTIMER_SUCCESS) return
@@ -192,18 +196,21 @@ contains
          ! Descriptor consistency is only meaningful after ranks have already
          ! agreed to enter the same communicator collective. Communicator
          ! disagreement across would-be participants is documented as unsupported.
-         call format_descriptor_mismatch_diagnostic(gathered_hashes, diagnostic)
+         if (present(diagnostic)) call format_descriptor_mismatch_diagnostic(gathered_hashes, diagnostic)
          status = FTIMER_ERR_MPI_INCON
          return
       end if
 
-      call MPI_Allreduce(local_summary%total_time, min_total_time, 1, MPI_DOUBLE_PRECISION, MPI_MIN, active_comm, mpierr)
+      local_total_pair(1) = local_summary%total_time
+      local_total_pair(2) = real(rank, wp)
+
+      call MPI_Allreduce(local_total_pair, min_total_pair, 1, MPI_2DOUBLE_PRECISION, MPI_MINLOC, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_summary%total_time, max_total_time, 1, MPI_DOUBLE_PRECISION, MPI_MAX, active_comm, mpierr)
+      call MPI_Allreduce(local_total_pair, max_total_pair, 1, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
@@ -217,21 +224,16 @@ contains
 
       avg_total_time = sum_total_time/real(nprocs, wp)
       entry_count = local_summary%num_entries
-
-      allocate (gathered_total_times(nprocs))
-      call MPI_Allgather(local_summary%total_time, 1, MPI_DOUBLE_PRECISION, gathered_total_times, 1, MPI_DOUBLE_PRECISION, &
-                         active_comm, mpierr)
-      if (mpierr /= MPI_SUCCESS) then
-         status = FTIMER_ERR_UNKNOWN
-         return
-      end if
+      min_total_time = min_total_pair(1)
+      max_total_time = max_total_pair(1)
 
       summary%num_ranks = nprocs
       summary%num_entries = entry_count
       summary%min_total_time = min_total_time
       summary%max_total_time = max_total_time
       summary%avg_total_time = avg_total_time
-      call find_extrema_ranks(gathered_total_times, summary%min_total_time_rank, summary%max_total_time_rank)
+      summary%min_total_time_rank = int(nint(min_total_pair(2)))
+      summary%max_total_time_rank = int(nint(max_total_pair(2)))
       summary%total_time_imbalance = compute_imbalance(max_total_time, avg_total_time)
 
       if (entry_count <= 0) then
@@ -257,38 +259,39 @@ contains
       allocate (min_calls(entry_count))
       allocate (max_calls(entry_count))
       allocate (sum_calls(entry_count))
-      allocate (gathered_inclusive(entry_count, nprocs))
+      allocate (local_inclusive_pair(2, entry_count))
+      allocate (min_inclusive_pair(2, entry_count))
+      allocate (max_inclusive_pair(2, entry_count))
 
       do i = 1, entry_count
          local_idx = permutation(i)
          local_inclusive(i) = local_summary%entries(local_idx)%inclusive_time
+         local_inclusive_pair(1, i) = local_inclusive(i)
+         local_inclusive_pair(2, i) = real(rank, wp)
          local_self(i) = local_summary%entries(local_idx)%self_time
          local_calls(i) = local_summary%entries(local_idx)%call_count
          local_sum_calls(i) = int(local_calls(i), int64)
          local_pct(i) = local_summary%entries(local_idx)%pct_time
       end do
 
-      call MPI_Allgather(local_inclusive, entry_count, MPI_DOUBLE_PRECISION, gathered_inclusive, entry_count, &
-                         MPI_DOUBLE_PRECISION, active_comm, mpierr)
+      call MPI_Allreduce(local_inclusive_pair, min_inclusive_pair, entry_count, MPI_2DOUBLE_PRECISION, MPI_MINLOC, &
+                         active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_inclusive, min_inclusive, entry_count, MPI_DOUBLE_PRECISION, MPI_MIN, active_comm, mpierr)
+      call MPI_Allreduce(local_inclusive_pair, max_inclusive_pair, entry_count, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, &
+                         active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_inclusive, max_inclusive, entry_count, MPI_DOUBLE_PRECISION, MPI_MAX, active_comm, mpierr)
-      if (mpierr /= MPI_SUCCESS) then
-         call clear_mpi_summary(summary)
-         status = FTIMER_ERR_UNKNOWN
-         return
-      end if
+      min_inclusive = min_inclusive_pair(1, :)
+      max_inclusive = max_inclusive_pair(1, :)
 
       call MPI_Allreduce(local_inclusive, sum_inclusive, entry_count, MPI_DOUBLE_PRECISION, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
@@ -398,8 +401,8 @@ contains
          summary%entries(i)%min_inclusive_time = min_inclusive(i)
          summary%entries(i)%max_inclusive_time = max_inclusive(i)
          summary%entries(i)%avg_inclusive_time = sum_inclusive(i)/real(nprocs, wp)
-         call find_extrema_ranks(gathered_inclusive(i, :), summary%entries(i)%min_inclusive_time_rank, &
-                                 summary%entries(i)%max_inclusive_time_rank)
+         summary%entries(i)%min_inclusive_time_rank = int(nint(min_inclusive_pair(2, i)))
+         summary%entries(i)%max_inclusive_time_rank = int(nint(max_inclusive_pair(2, i)))
          summary%entries(i)%inclusive_imbalance = compute_imbalance(max_inclusive(i), summary%entries(i)%avg_inclusive_time)
          summary%entries(i)%min_self_time = min_self(i)
          summary%entries(i)%max_self_time = max_self(i)
@@ -416,7 +419,7 @@ contains
       status = FTIMER_SUCCESS
 #else
       call clear_mpi_summary(summary)
-      diagnostic = ''
+      if (present(diagnostic)) diagnostic = ''
       status = FTIMER_ERR_NOT_IMPLEMENTED
 #endif
    end subroutine build_mpi_summary
@@ -626,24 +629,6 @@ contains
       end if
    end subroutine format_descriptor_mismatch_diagnostic
 #endif
-
-   subroutine find_extrema_ranks(values, min_rank, max_rank)
-      real(wp), intent(in) :: values(:)
-      integer, intent(out) :: min_rank
-      integer, intent(out) :: max_rank
-      integer :: i
-
-      min_rank = -1
-      max_rank = -1
-      if (size(values) <= 0) return
-
-      min_rank = 0
-      max_rank = 0
-      do i = 2, size(values)
-         if (values(i) < values(min_rank + 1)) min_rank = i - 1
-         if (values(i) > values(max_rank + 1)) max_rank = i - 1
-      end do
-   end subroutine find_extrema_ranks
 
    real(wp) function compute_imbalance(max_time, avg_time) result(imbalance)
       real(wp), intent(in) :: max_time

@@ -84,8 +84,6 @@ module ftimer_types
       real(wp) :: min_inclusive_time = 0.0_wp
       real(wp) :: max_inclusive_time = 0.0_wp
       real(wp) :: avg_inclusive_time = 0.0_wp
-      integer :: min_inclusive_time_rank = -1
-      integer :: max_inclusive_time_rank = -1
       real(wp) :: inclusive_imbalance = 1.0_wp
       real(wp) :: min_self_time = 0.0_wp
       real(wp) :: max_self_time = 0.0_wp
@@ -100,6 +98,8 @@ module ftimer_types
       ! Stable only within one produced summary object. Root nodes use parent_id = 0.
       integer :: node_id = 0
       integer :: parent_id = 0
+      integer :: min_inclusive_time_rank = -1
+      integer :: max_inclusive_time_rank = -1
    end type ftimer_mpi_summary_entry_t
 
    type :: ftimer_mpi_summary_t
@@ -108,9 +108,9 @@ module ftimer_types
       real(wp) :: min_total_time = 0.0_wp
       real(wp) :: max_total_time = 0.0_wp
       real(wp) :: avg_total_time = 0.0_wp
+      real(wp) :: total_time_imbalance = 1.0_wp
       integer :: min_total_time_rank = -1
       integer :: max_total_time_rank = -1
-      real(wp) :: total_time_imbalance = 1.0_wp
       type(ftimer_mpi_summary_entry_t), allocatable :: entries(:)
    end type ftimer_mpi_summary_t
 

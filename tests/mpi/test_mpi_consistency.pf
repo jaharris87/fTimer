@@ -15,19 +15,33 @@ contains
    @test
    subroutine test_mpi_summary_returns_no_global_result_when_contexts_differ(this)
       class(mpi_consistency_case), intent(inout) :: this
+      character(len=:), allocatable :: captured
+      character(len=64) :: capture_path
       type(ftimer_t) :: timer
       type(ftimer_mpi_summary_t) :: summary
+      integer :: capture_ierr
+      integer :: rank
+      integer :: saved_fd
       integer :: ierr
+
+      rank = this%getProcessRank()
+      saved_fd = -1
 
       call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
       call attach_mock_clock(timer)
 
-      call build_inconsistent_contexts(timer, this%getProcessRank(), ierr)
+      call build_inconsistent_contexts(timer, rank, ierr)
       @assertEqual(0, ierr)
 
+      write (capture_path, '(a,i0,a)') 'test_mpi_descriptor_mismatch_ierr_rank', rank, '.txt'
+      call begin_stderr_capture(trim(capture_path), saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
       call timer%mpi_summary(summary, ierr=ierr)
+      call end_stderr_capture(trim(capture_path), saved_fd, captured, capture_ierr)
+      @assertEqual(0, capture_ierr)
 
       @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
+      @assertEqual('', captured)
       @assertEqual(0, summary%num_ranks)
       @assertEqual(0, summary%num_entries)
 
@@ -84,6 +98,37 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(0, ierr)
    end subroutine test_mpi_summary_without_ierr_reports_disagreeing_ranks
+
+   @test
+   subroutine test_mpi_summary_prefers_lowest_rank_for_extrema_ties(this)
+      class(mpi_consistency_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_summary_t) :: summary
+      integer :: ierr
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_tied_timer_set(timer, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(1, summary%num_entries)
+      call assert_real_close(summary%min_total_time, 6.0_wp)
+      call assert_real_close(summary%max_total_time, 6.0_wp)
+      @assertEqual(0, summary%min_total_time_rank)
+      @assertEqual(0, summary%max_total_time_rank)
+      call assert_real_close(summary%entries(1)%min_inclusive_time, 6.0_wp)
+      call assert_real_close(summary%entries(1)%max_inclusive_time, 6.0_wp)
+      @assertEqual(0, summary%entries(1)%min_inclusive_time_rank)
+      @assertEqual(0, summary%entries(1)%max_inclusive_time_rank)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_summary_prefers_lowest_rank_for_extrema_ties
 
    @test
    subroutine test_mpi_summary_rejects_mpi_comm_null_before_collectives(this)
@@ -158,5 +203,26 @@ contains
       fake_time = 4.0_wp + real(rank, wp)
       call timer%stop("work", ierr=ierr)
    end subroutine build_single_local_timer
+
+   subroutine build_tied_timer_set(timer, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      call timer%start("tie", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 6.0_wp
+      call timer%stop("tie", ierr=ierr)
+   end subroutine build_tied_timer_set
+
+   subroutine assert_real_close(actual, expected)
+      real(wp), intent(in) :: actual
+      real(wp), intent(in) :: expected
+      real(wp) :: diff
+
+      diff = abs(actual - expected)
+      @assertTrue(diff < 1.0e-12_wp)
+   end subroutine assert_real_close
 
 end module test_mpi_consistency
