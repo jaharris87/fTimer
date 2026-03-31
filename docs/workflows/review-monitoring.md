@@ -65,16 +65,22 @@ This fallback does not replace required CI, required PR checks, or the normal Co
 
 ## How To Inspect What Actually Happened
 
-Useful commands:
+Use a connector-first inspection path for routine review reads, and switch to local `gh` only when the connector loses required structure or when you need an explicitly allowed CLI-only workflow such as GraphQL thread state or Actions checks.
+
+Preferred connector-backed reads:
 
 - Trigger comments and general PR comments:
-  - `gh pr view <PR_NUMBER> --comments`
-  - `gh api repos/jaharris87/fTimer/issues/<PR_NUMBER>/comments`
-- Review objects:
-  - `gh api repos/jaharris87/fTimer/pulls/<PR_NUMBER>/reviews`
-- Inline review findings:
-  - `gh api repos/jaharris87/fTimer/pulls/<PR_NUMBER>/comments`
-- Review thread state:
+  - GitHub connector / Codex Apps MCP reads such as `github_fetch_issue_comments`, `github_fetch_pr`, and `github_get_pr_info`
+- Review objects and inline review findings:
+  - GitHub connector / Codex Apps MCP reads such as `github_fetch_pr_comments`, `github_fetch_pr_patch`, `github_fetch_pr_file_patch`, and `github_list_pr_changed_filenames`
+- Flat PR metadata or changed-file inspection:
+  - GitHub connector / Codex Apps MCP reads such as `github_fetch_pr` and `github_list_pr_changed_filenames`
+
+Use local `gh` only for explicit connector gaps or allowed CLI workflows, and state the reason briefly in the thread when you do:
+
+- Current-branch PR discovery:
+  - `gh pr view --json number,url,headRefName,headRepositoryOwner,headRepository`
+- GraphQL-only review-thread state or resolution state:
   - `gh api graphql -f query='query { repository(owner:"jaharris87", name:"fTimer") { pullRequest(number: <PR_NUMBER>) { reviewThreads(first: 50) { nodes { id isResolved path } } } } }'`
 - Checks and trigger workflow status:
   - `gh pr checks <PR_NUMBER>`
