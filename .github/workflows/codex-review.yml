@@ -329,8 +329,6 @@ jobs:
             exit 0
           fi
 
-          wait_until_queue_unlocked_for_post
-
           last_trigger_created_at="$(
             jq -r '[.[] | select((.body // "") | startswith("@codex review ")) | .created_at] | sort | last // empty' \
               /tmp/codex-comments.json
@@ -381,6 +379,17 @@ jobs:
 
             if jq -e --arg token "$token" 'any(.[]; (.body // "") | contains($token))' \
               /tmp/codex-comments.json >/dev/null; then
+              last_trigger_created_at="$(
+                jq -r '[.[] | select((.body // "") | startswith("@codex review ")) | .created_at] | sort | last // empty' \
+                  /tmp/codex-comments.json
+              )"
+
+              if [ -n "$last_trigger_created_at" ]; then
+                last_trigger_epoch="$(date -u -d "$last_trigger_created_at" +%s)"
+              else
+                last_trigger_epoch="$(date -u +%s)"
+              fi
+
               echo "Review for ${label} was triggered while waiting, so skipping the duplicate post."
               continue
             fi
