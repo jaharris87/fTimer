@@ -124,6 +124,7 @@ The current implementation is organized around a few design choices that show up
 - Timing data is structured data first and formatted text second.
 - Local summary entries keep preorder compatibility for formatting, but they also carry explicit parent-linked tree data within each produced summary object.
 - The clock is injectable, which keeps tests deterministic and benchmarking controlled.
+- Name-based timing remains the primary ergonomic story, backed internally by mapped timer lookup and capacity-based growth so the hot path does not depend on repeated linear scans or one-slot-at-a-time array growth.
 - Callback hooks are lightweight intra-run hooks for normal start/stop events only; internal mismatch repair transitions must stay invisible to callback consumers, and current `main` does not define a stronger profiler-backend identity contract.
 - MPI summary reduction is descriptor-validated before collectives, and reduced cross-rank fields are valid only in the documented result shape.
 - OpenMP support is intentionally narrow: guarded timer operations run only on the master thread when `FTIMER_USE_OPENMP=ON`, so this path should not be read as general hybrid-thread timing support.
@@ -163,6 +164,7 @@ Important current-state API notes:
 - `ierr` is now the last optional argument in the `init` signatures. Keywords are recommended for readability.
 - `init`, `reset`, and `finalize` treat active timers as an error in both API styles. With `ierr` they return `FTIMER_ERR_ACTIVE`; without `ierr` they warn and leave state untouched rather than force-stopping or cleaning up implicitly. In `FTIMER_USE_OPENMP=ON` builds, that lifecycle-diagnostic contract applies on the master thread; non-master lifecycle calls remain suppressed no-ops.
 - Repairing stop mismatches remains an explicit `mismatch_mode` decision; omitted `ierr` alone is not a recovery mode.
+- Name-based `start`/`stop` remains the default user path. `lookup()` plus `start_id()`/`stop_id()` is documented as an optional cached-id hot path rather than a separate primary workflow.
 - `get_summary()` is the local structured summary path.
 - `ftimer_summary_t` entries now retain `name`/`depth` and also expose `node_id`/`parent_id` links that are stable only within one produced summary object.
 - `print_summary()` and `write_summary()` format local report text.
@@ -268,6 +270,6 @@ Future-facing ideas should stay clearly separated from the current architecture 
 - richer export formats such as CSV or JSON
 - broader OpenMP support beyond the documented master-thread-only guard model
 - stable semantic callback identity or a stronger external-profiler integration contract
-- hash-based timer lookup or other hot-path performance redesigns, if profiling ever justifies them
+- explicit reservation/preallocation APIs for known timer sets, if profiling shows the new internal capacity strategy is still not enough for an adopter workload
 
 If deferred work needs a maintained roadmap, record it in [`docs/implementation-history.md`](implementation-history.md) or in the relevant issue or PR discussion rather than mixing it into the current-state architecture narrative above.

@@ -7,12 +7,13 @@
 !
 ! SCENARIOS COVERED
 ! -----------------
-!  1. Flat start/stop (name-based)   -- measures name normalization + segment
+!  1. Flat start/stop (name-based)   -- measures name normalization + mapped
 !                                       lookup + stack push/pop + clock call
 !  2. Flat start/stop (id-based)     -- same path minus name normalization and
-!                                       segment lookup; isolates stack cost
-!  3-5. Lookup scaling N=1/10/50     -- name-based, measures how the linear
-!                                       find_segment_index scan scales with N
+!                                       mapped lookup; isolates stack cost
+!  3-5. Lookup scaling N=1/100/1000  -- name-based, shows whether steady-state
+!                                       mapped lookup stays near-flat as the
+!                                       resident timer set grows
 !  6-9. Nesting depth 1/5/10/20      -- id-based; each cycle does D pushes +
 !                                       D pops; shows stack bookkeeping cost
 !                                       scaling with nesting depth
@@ -38,9 +39,13 @@
 !   ./build-bench/bench/ftimer_bench
 !
 ! INTERPRETATION
-!   Compare "flat name-based" vs "flat id-based" to isolate name-lookup cost.
+!   Compare "flat name-based" vs "flat id-based" to isolate the remaining
+!   difference between ergonomic name-based timing and the optional cached-id
+!   hot path.
 !   Compare nesting depths to measure stack push/pop scaling after context
 !   warm-up has removed first-growth effects.
+!   Compare lookup-scaling rows to confirm the mapped name path stays much
+!   flatter than the old linear-scan baseline as timer count grows.
 !   Compare get_summary timer counts to see summary-generation scaling.
 
 program ftimer_bench
@@ -83,8 +88,8 @@ program ftimer_bench
 
    ! --- Lookup scaling scenarios ---
    call bench_lookup_scaling(REPS_HOT, 1, count_rate)
-   call bench_lookup_scaling(REPS_HOT/10, 10, count_rate)
-   call bench_lookup_scaling(REPS_HOT/50, 50, count_rate)
+   call bench_lookup_scaling(REPS_HOT/100, 100, count_rate)
+   call bench_lookup_scaling(REPS_HOT/1000, 1000, count_rate)
 
    write (*, '(a)') ''
 
@@ -121,6 +126,7 @@ program ftimer_bench
    write (*, '(a)') '  - build_summary (direct) uses prebuilt flat segments and fixed dates.'
    write (*, '(a)') '  - raw date string = uncached date_and_time + formatting.'
    write (*, '(a)') '  - ftimer_date_string steady-state = cached path after warm-up.'
+   write (*, '(a)') '  - name-based start/stop remains the default path; lookup/start_id/stop_id is the optional hot path.'
    write (*, '(a)') '  - All scenarios use the real wall-clock (no mock clock).'
    write (*, '(a)') '  - Timings include clock-call overhead inside start/stop.'
 
@@ -149,7 +155,7 @@ contains
 
    ! Scenario 2: id-based start/stop, pre-registered timer.
    ! No name normalization, no segment lookup. Isolates pure stack push/pop
-   ! and clock-call cost from the name-lookup cost in scenario 1.
+   ! and clock-call cost from the mapped-lookup cost in scenario 1.
    subroutine bench_flat_id(reps, count_rate)
       integer, intent(in) :: reps
       integer(int64), intent(in) :: count_rate
@@ -169,9 +175,10 @@ contains
    end subroutine bench_flat_id
 
    ! Scenarios 3-5: name-based lookup with N unique timers.
-   ! Cycles through all N timers each outer rep.  Each inner start/stop
-   ! exercises find_segment_index which does a linear scan over all segments.
-   ! Comparing N=1, 10, 50 shows how scan cost scales with timer count.
+   ! Cycles through all N timers each outer rep. Each inner start/stop uses
+   ! the same public name-based path as production code, but with a large
+   ! resident timer set already registered. Comparing N=1, 100, 1000 shows
+   ! whether the internal name map keeps steady-state lookup near-flat.
    !
    ! Timer names are built into an array before timing begins so that
    ! formatted write overhead does not contaminate the hot-loop measurement.
@@ -201,7 +208,7 @@ contains
       call system_clock(t1)
       call ftimer_finalize()
       deallocate (tnames)
-      write (label, '("lookup scaling N=",i2," timers (name-based)")') num_timers
+      write (label, '("lookup scaling N=",i0," timers (name-based)")') num_timers
       call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_lookup_scaling
 

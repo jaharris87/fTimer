@@ -274,8 +274,9 @@ contains
       end_time = self%wtime()
       end_date = ftimer_date_string()
 
-      if (allocated(self%segments)) then
-         call build_summary(summary=summary, segments=self%segments, init_wtime=self%init_wtime, init_date=self%init_date, &
+      if (self%num_segments > 0) then
+         call build_summary(summary=summary, segments=self%segments(1:self%num_segments), &
+                            init_wtime=self%init_wtime, init_date=self%init_date, &
                             end_time=end_time, end_date=end_date)
       else
          call build_summary(summary=summary, init_wtime=self%init_wtime, init_date=self%init_date, end_time=end_time, &
