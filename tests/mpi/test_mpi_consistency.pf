@@ -2,8 +2,7 @@ module test_mpi_consistency
    use pfunit
    use mpi
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_UNKNOWN, FTIMER_MPI_SUMMARY_LOCAL_ONLY, &
-                           FTIMER_SUCCESS, ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, ftimer_mpi_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time
    implicit none
 
@@ -14,106 +13,47 @@ module test_mpi_consistency
 contains
 
    @test
-   subroutine test_mpi_summary_falls_back_to_local_only_when_contexts_differ(this)
+   subroutine test_mpi_summary_returns_no_global_result_when_contexts_differ(this)
       class(mpi_consistency_case), intent(inout) :: this
       type(ftimer_t) :: timer
-      type(ftimer_summary_t) :: summary
+      type(ftimer_mpi_summary_t) :: summary
       integer :: ierr
-      integer :: nprocs
-      integer :: rank
-      logical :: first_name_matches
-      logical :: has_mpi_data
-      logical :: second_name_matches
-
-      rank = this%getProcessRank()
-      nprocs = this%getNumProcesses()
-      @assertEqual(2, nprocs)
 
       call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
       call attach_mock_clock(timer)
 
-      call build_inconsistent_contexts(timer, rank, ierr)
+      call build_inconsistent_contexts(timer, this%getProcessRank(), ierr)
       @assertEqual(0, ierr)
 
       call timer%mpi_summary(summary, ierr=ierr)
 
-      has_mpi_data = summary%has_mpi_data
       @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
-      @assertFalse(has_mpi_data)
-      @assertEqual(FTIMER_MPI_SUMMARY_LOCAL_ONLY, summary%mpi_summary_state)
-      @assertEqual(2, summary%num_entries)
-
-      first_name_matches = trim(summary%entries(1)%name) == 'outer'
-      second_name_matches = trim(summary%entries(2)%name) == 'work'
-      @assertTrue(first_name_matches)
-      @assertTrue(second_name_matches)
-      @assertEqual(-1.0_wp, summary%entries(1)%min_time)
-      @assertEqual(-1.0_wp, summary%entries(1)%max_time)
-      @assertEqual(-1.0_wp, summary%entries(1)%avg_across_ranks)
-      @assertEqual(-1.0_wp, summary%entries(1)%imbalance)
-      @assertEqual(-1.0_wp, summary%entries(2)%min_time)
-      @assertEqual(-1.0_wp, summary%entries(2)%max_time)
-      @assertEqual(-1.0_wp, summary%entries(2)%avg_across_ranks)
-      @assertEqual(-1.0_wp, summary%entries(2)%imbalance)
-      @assertTrue(summary%entries(1)%node_id > 0)
-      @assertTrue(summary%entries(2)%node_id > 0)
-
-      if (rank == 0) then
-         @assertEqual(0, summary%entries(1)%depth)
-         @assertEqual(1, summary%entries(2)%depth)
-         @assertEqual(0, summary%entries(1)%parent_id)
-         @assertEqual(summary%entries(1)%node_id, summary%entries(2)%parent_id)
-         @assertEqual(7.0_wp, summary%entries(1)%inclusive_time)
-         @assertEqual(3.0_wp, summary%entries(2)%inclusive_time)
-      else
-         @assertEqual(0, summary%entries(1)%depth)
-         @assertEqual(0, summary%entries(2)%depth)
-         @assertEqual(0, summary%entries(1)%parent_id)
-         @assertEqual(0, summary%entries(2)%parent_id)
-         @assertEqual(2.0_wp, summary%entries(1)%inclusive_time)
-         @assertEqual(3.0_wp, summary%entries(2)%inclusive_time)
-      end if
+      @assertEqual(0, summary%num_ranks)
+      @assertEqual(0, summary%num_entries)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(0, ierr)
-   end subroutine test_mpi_summary_falls_back_to_local_only_when_contexts_differ
+   end subroutine test_mpi_summary_returns_no_global_result_when_contexts_differ
 
    @test
    subroutine test_mpi_summary_rejects_mpi_comm_null_before_collectives(this)
       class(mpi_consistency_case), intent(inout) :: this
       type(ftimer_t) :: timer
-      type(ftimer_summary_t) :: summary
+      type(ftimer_mpi_summary_t) :: summary
       integer :: ierr
-      integer :: nprocs
-      integer :: rank
-      logical :: has_mpi_data
-      real(wp) :: expected_time
-
-      rank = this%getProcessRank()
-      nprocs = this%getNumProcesses()
-      @assertEqual(2, nprocs)
 
       call timer%init(comm=MPI_COMM_NULL, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call attach_mock_clock(timer)
 
-      call build_single_local_timer(timer, rank, ierr)
+      call build_single_local_timer(timer, this%getProcessRank(), ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       call timer%mpi_summary(summary, ierr=ierr)
-      has_mpi_data = summary%has_mpi_data
-      expected_time = 4.0_wp + real(rank, wp)
 
       @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
-      @assertFalse(has_mpi_data)
-      @assertEqual(FTIMER_MPI_SUMMARY_LOCAL_ONLY, summary%mpi_summary_state)
-      @assertEqual(1, summary%num_entries)
-      @assertEqual(expected_time, summary%entries(1)%inclusive_time)
-      @assertEqual(expected_time, summary%entries(1)%self_time)
-      @assertEqual(-1.0_wp, summary%entries(1)%min_time)
-      @assertEqual(-1.0_wp, summary%entries(1)%max_time)
-      @assertEqual(-1.0_wp, summary%entries(1)%avg_across_ranks)
-      @assertEqual(-1.0_wp, summary%entries(1)%imbalance)
+      @assertEqual(0, summary%num_ranks)
+      @assertEqual(0, summary%num_entries)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)

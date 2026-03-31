@@ -18,13 +18,12 @@ module ftimer_types
    public :: FTIMER_MISMATCH_REPAIR
    public :: FTIMER_EVENT_START
    public :: FTIMER_EVENT_STOP
-   public :: FTIMER_MPI_SUMMARY_LOCAL_ONLY
-   public :: FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED
-   public :: FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE
    public :: wp
    public :: ftimer_metadata_t
    public :: ftimer_summary_entry_t
    public :: ftimer_summary_t
+   public :: ftimer_mpi_summary_entry_t
+   public :: ftimer_mpi_summary_t
    public :: ftimer_call_stack_t
    public :: ftimer_context_list_t
    public :: ftimer_segment_t
@@ -51,9 +50,6 @@ module ftimer_types
    integer, parameter :: FTIMER_EVENT_START = 1
    integer, parameter :: FTIMER_EVENT_STOP = 2
 
-   integer, parameter :: FTIMER_MPI_SUMMARY_LOCAL_ONLY = 0
-   integer, parameter :: FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED = 1
-   integer, parameter :: FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE = 2
    integer, parameter :: FTIMER_CALL_STACK_INITIAL_CAPACITY = 32
 
    type :: ftimer_metadata_t
@@ -69,11 +65,6 @@ module ftimer_types
       integer :: call_count = 0
       real(wp) :: avg_time = 0.0_wp
       real(wp) :: pct_time = 0.0_wp
-      ! MPI-reduced fields are valid only when summary%has_mpi_data is .true.
-      real(wp) :: min_time = -1.0_wp
-      real(wp) :: max_time = -1.0_wp
-      real(wp) :: avg_across_ranks = -1.0_wp
-      real(wp) :: imbalance = -1.0_wp
       ! Stable only within one produced summary object. Root nodes use parent_id = 0.
       integer :: node_id = 0
       integer :: parent_id = 0
@@ -83,14 +74,41 @@ module ftimer_types
       character(len=40) :: start_date = ''
       character(len=40) :: end_date = ''
       real(wp) :: total_time = 0.0_wp
-      ! .true. only when the MPI-reduced entry fields are valid on this rank.
-      logical :: has_mpi_data = .false.
       integer :: num_entries = 0
-      ! Describes whether this summary is local-only, root-local plus reduced MPI
-      ! fields, or a non-root local view returned after a successful reduction.
-      integer :: mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
       type(ftimer_summary_entry_t), allocatable :: entries(:)
    end type ftimer_summary_t
+
+   type :: ftimer_mpi_summary_entry_t
+      character(len=FTIMER_NAME_LEN) :: name = ''
+      integer :: depth = 0
+      real(wp) :: min_inclusive_time = 0.0_wp
+      real(wp) :: max_inclusive_time = 0.0_wp
+      real(wp) :: avg_inclusive_time = 0.0_wp
+      real(wp) :: inclusive_imbalance = 1.0_wp
+      real(wp) :: min_self_time = 0.0_wp
+      real(wp) :: max_self_time = 0.0_wp
+      real(wp) :: avg_self_time = 0.0_wp
+      real(wp) :: self_imbalance = 1.0_wp
+      integer :: min_call_count = 0
+      integer :: max_call_count = 0
+      real(wp) :: avg_call_count = 0.0_wp
+      real(wp) :: min_pct_time = 0.0_wp
+      real(wp) :: max_pct_time = 0.0_wp
+      real(wp) :: avg_pct_time = 0.0_wp
+      ! Stable only within one produced summary object. Root nodes use parent_id = 0.
+      integer :: node_id = 0
+      integer :: parent_id = 0
+   end type ftimer_mpi_summary_entry_t
+
+   type :: ftimer_mpi_summary_t
+      integer :: num_ranks = 0
+      integer :: num_entries = 0
+      real(wp) :: min_total_time = 0.0_wp
+      real(wp) :: max_total_time = 0.0_wp
+      real(wp) :: avg_total_time = 0.0_wp
+      real(wp) :: total_time_imbalance = 1.0_wp
+      type(ftimer_mpi_summary_entry_t), allocatable :: entries(:)
+   end type ftimer_mpi_summary_t
 
    type :: ftimer_call_stack_t
       integer :: depth = 0

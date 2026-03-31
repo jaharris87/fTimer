@@ -622,7 +622,6 @@ contains
 
       @assertEqual(rhs%num_entries, lhs%num_entries)
       @assertEqual(rhs%total_time, lhs%total_time)
-      @assertEqual(rhs%has_mpi_data, lhs%has_mpi_data)
       @assertTrue(summary_node_ids_unique(lhs))
       @assertTrue(summary_node_ids_unique(rhs))
 

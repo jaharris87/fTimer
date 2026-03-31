@@ -17,7 +17,6 @@ contains
       integer :: entry_count
       integer :: trimmed_start
       integer :: trimmed_end
-      logical :: has_mpi_data
       logical :: first_name_matches
       logical :: second_name_matches
       logical :: third_name_matches
@@ -50,7 +49,6 @@ contains
       total_time = summary%total_time
       trimmed_start = len_trim(summary%start_date)
       trimmed_end = len_trim(summary%end_date)
-      has_mpi_data = summary%has_mpi_data
       first_name_matches = trim(summary%entries(1)%name) == 'A'
       second_name_matches = trim(summary%entries(2)%name) == 'B'
       third_name_matches = trim(summary%entries(3)%name) == 'C'
@@ -62,7 +60,6 @@ contains
       @assertEqual(15.0_wp, total_time)
       @assertTrue(trimmed_start > 0)
       @assertTrue(trimmed_end > 0)
-      @assertFalse(has_mpi_data)
       @assertTrue(first_name_matches)
       @assertTrue(second_name_matches)
       @assertTrue(third_name_matches)

@@ -2,19 +2,17 @@ module test_mpi_disabled
    use pfunit
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_MPI_SUMMARY_LOCAL_ONLY, &
-                           FTIMER_SUCCESS, ftimer_summary_t, wp
-   use test_support, only: attach_mock_clock, fake_time, summary_node_ids_unique, summary_parent_index
+   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_SUCCESS, ftimer_mpi_summary_t, wp
+   use test_support, only: attach_mock_clock, fake_time
    implicit none
 
 contains
 
    @test
-   subroutine test_oop_mpi_summary_not_implemented_returns_local()
+   subroutine test_oop_mpi_summary_not_implemented_returns_empty_mpi_result()
       type(ftimer_t) :: timer
-      type(ftimer_summary_t) :: summary
+      type(ftimer_mpi_summary_t) :: summary
       integer :: ierr
-      logical :: has_mpi_data
 
       call timer%init(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -24,31 +22,23 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       call timer%mpi_summary(summary, ierr=ierr)
-      has_mpi_data = summary%has_mpi_data
 
       @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
-      @assertFalse(has_mpi_data)
-      @assertEqual(FTIMER_MPI_SUMMARY_LOCAL_ONLY, summary%mpi_summary_state)
-      @assertEqual(1, summary%num_entries)
-      @assertTrue(summary%entries(1)%node_id > 0)
-      @assertEqual(0, summary%entries(1)%parent_id)
-      @assertEqual(4.0_wp, summary%entries(1)%inclusive_time)
-      @assertEqual(4.0_wp, summary%entries(1)%self_time)
-      @assertEqual(1, summary%entries(1)%call_count)
-      @assertEqual(-1.0_wp, summary%entries(1)%min_time)
-      @assertEqual(-1.0_wp, summary%entries(1)%max_time)
-      @assertEqual(-1.0_wp, summary%entries(1)%avg_across_ranks)
-      @assertEqual(-1.0_wp, summary%entries(1)%imbalance)
+      @assertEqual(0, summary%num_ranks)
+      @assertEqual(0, summary%num_entries)
+      @assertEqual(0.0_wp, summary%min_total_time)
+      @assertEqual(0.0_wp, summary%max_total_time)
+      @assertEqual(0.0_wp, summary%avg_total_time)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
-   end subroutine test_oop_mpi_summary_not_implemented_returns_local
+   end subroutine test_oop_mpi_summary_not_implemented_returns_empty_mpi_result
 
    @test
    subroutine test_procedural_mpi_summary_matches_oop_when_disabled()
       type(ftimer_t) :: oop_timer
-      type(ftimer_summary_t) :: oop_summary
-      type(ftimer_summary_t) :: procedural_summary
+      type(ftimer_mpi_summary_t) :: oop_summary
+      type(ftimer_mpi_summary_t) :: procedural_summary
       integer :: ierr
 
       call oop_timer%init(ierr=ierr)
@@ -101,36 +91,15 @@ contains
    end subroutine build_single_timer_procedural
 
    subroutine assert_summary_equal(lhs, rhs)
-      type(ftimer_summary_t), intent(in) :: lhs
-      type(ftimer_summary_t), intent(in) :: rhs
-      logical :: names_match
-      integer :: lhs_parent_idx
-      integer :: rhs_parent_idx
+      type(ftimer_mpi_summary_t), intent(in) :: lhs
+      type(ftimer_mpi_summary_t), intent(in) :: rhs
 
+      @assertEqual(rhs%num_ranks, lhs%num_ranks)
       @assertEqual(rhs%num_entries, lhs%num_entries)
-      @assertEqual(rhs%has_mpi_data, lhs%has_mpi_data)
-      @assertEqual(rhs%mpi_summary_state, lhs%mpi_summary_state)
-      @assertEqual(rhs%total_time, lhs%total_time)
-      @assertTrue(summary_node_ids_unique(lhs))
-      @assertTrue(summary_node_ids_unique(rhs))
-
-      names_match = trim(lhs%entries(1)%name) == trim(rhs%entries(1)%name)
-      @assertTrue(names_match)
-      @assertEqual(rhs%entries(1)%depth, lhs%entries(1)%depth)
-      lhs_parent_idx = summary_parent_index(lhs, 1)
-      rhs_parent_idx = summary_parent_index(rhs, 1)
-      @assertTrue(lhs_parent_idx >= 0)
-      @assertTrue(rhs_parent_idx >= 0)
-      @assertEqual(rhs_parent_idx, lhs_parent_idx)
-      @assertEqual(rhs%entries(1)%inclusive_time, lhs%entries(1)%inclusive_time)
-      @assertEqual(rhs%entries(1)%self_time, lhs%entries(1)%self_time)
-      @assertEqual(rhs%entries(1)%call_count, lhs%entries(1)%call_count)
-      @assertEqual(rhs%entries(1)%avg_time, lhs%entries(1)%avg_time)
-      @assertEqual(rhs%entries(1)%pct_time, lhs%entries(1)%pct_time)
-      @assertEqual(rhs%entries(1)%min_time, lhs%entries(1)%min_time)
-      @assertEqual(rhs%entries(1)%max_time, lhs%entries(1)%max_time)
-      @assertEqual(rhs%entries(1)%avg_across_ranks, lhs%entries(1)%avg_across_ranks)
-      @assertEqual(rhs%entries(1)%imbalance, lhs%entries(1)%imbalance)
+      @assertEqual(rhs%min_total_time, lhs%min_total_time)
+      @assertEqual(rhs%max_total_time, lhs%max_total_time)
+      @assertEqual(rhs%avg_total_time, lhs%avg_total_time)
+      @assertEqual(rhs%total_time_imbalance, lhs%total_time_imbalance)
    end subroutine assert_summary_equal
 
 end module test_mpi_disabled

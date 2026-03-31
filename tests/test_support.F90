@@ -1,6 +1,6 @@
 module test_support
    use ftimer_core, only: ftimer_t, ftimer_test_get_state, ftimer_test_state_t
-   use ftimer_types, only: ftimer_call_stack_t, ftimer_summary_t, wp
+   use ftimer_types, only: ftimer_call_stack_t, ftimer_mpi_summary_t, ftimer_summary_t, wp
    use, intrinsic :: iso_c_binding, only: c_associated, c_char, c_int, c_null_char, c_null_ptr, c_ptr
    use, intrinsic :: iso_fortran_env, only: error_unit, iostat_end, iostat_eor
    implicit none
@@ -21,6 +21,16 @@ module test_support
    public :: summary_node_ids_unique
    public :: summary_parent_index
    public :: snapshot_timer
+
+   interface summary_node_ids_unique
+      module procedure summary_node_ids_unique_local
+      module procedure summary_node_ids_unique_mpi
+   end interface summary_node_ids_unique
+
+   interface summary_parent_index
+      module procedure summary_parent_index_local
+      module procedure summary_parent_index_mpi
+   end interface summary_parent_index
 
    real(wp), save :: fake_time = 0.0_wp
    real(wp), allocatable, save :: scripted_times(:)
@@ -236,7 +246,7 @@ contains
       call ftimer_test_get_state(timer, state)
    end subroutine snapshot_timer
 
-   logical function summary_node_ids_unique(summary) result(is_unique)
+   logical function summary_node_ids_unique_local(summary) result(is_unique)
       type(ftimer_summary_t), intent(in) :: summary
       integer :: i
       integer :: j
@@ -250,9 +260,25 @@ contains
       end do
 
       is_unique = .true.
-   end function summary_node_ids_unique
+   end function summary_node_ids_unique_local
 
-   integer function summary_parent_index(summary, entry_idx) result(parent_idx)
+   logical function summary_node_ids_unique_mpi(summary) result(is_unique)
+      type(ftimer_mpi_summary_t), intent(in) :: summary
+      integer :: i
+      integer :: j
+
+      is_unique = .false.
+      do i = 1, summary%num_entries
+         if (summary%entries(i)%node_id <= 0) return
+         do j = i + 1, summary%num_entries
+            if (summary%entries(i)%node_id == summary%entries(j)%node_id) return
+         end do
+      end do
+
+      is_unique = .true.
+   end function summary_node_ids_unique_mpi
+
+   integer function summary_parent_index_local(summary, entry_idx) result(parent_idx)
       type(ftimer_summary_t), intent(in) :: summary
       integer, intent(in) :: entry_idx
       integer :: i
@@ -273,7 +299,30 @@ contains
             return
          end if
       end do
-   end function summary_parent_index
+   end function summary_parent_index_local
+
+   integer function summary_parent_index_mpi(summary, entry_idx) result(parent_idx)
+      type(ftimer_mpi_summary_t), intent(in) :: summary
+      integer, intent(in) :: entry_idx
+      integer :: i
+      integer :: parent_id
+
+      parent_idx = -1
+      if ((entry_idx < 1) .or. (entry_idx > summary%num_entries)) return
+
+      parent_id = summary%entries(entry_idx)%parent_id
+      if (parent_id <= 0) then
+         parent_idx = 0
+         return
+      end if
+
+      do i = 1, summary%num_entries
+         if (summary%entries(i)%node_id == parent_id) then
+            parent_idx = i
+            return
+         end if
+      end do
+   end function summary_parent_index_mpi
 
    function read_file_text(path) result(text)
       character(len=*), intent(in) :: path

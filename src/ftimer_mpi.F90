@@ -1,9 +1,7 @@
 module ftimer_mpi
    use, intrinsic :: iso_fortran_env, only: int64
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, &
-                           FTIMER_ERR_UNKNOWN, FTIMER_MPI_SUMMARY_LOCAL_ONLY, &
-                           FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE, &
-                           FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED, FTIMER_NAME_LEN, FTIMER_SUCCESS, &
+                           FTIMER_ERR_UNKNOWN, FTIMER_NAME_LEN, FTIMER_SUCCESS, ftimer_mpi_summary_t, &
                            ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi
@@ -11,9 +9,10 @@ module ftimer_mpi
    implicit none
    private
 
-   public :: augment_summary_with_mpi
+   public :: build_mpi_summary
    public :: check_mpi_summary_prereqs
    public :: ftimer_mpi_enabled
+   public :: get_mpi_summary_comm_info
 
 contains
 
@@ -48,6 +47,45 @@ contains
 #endif
    end function ftimer_mpi_enabled
 
+   subroutine get_mpi_summary_comm_info(comm, active_comm, rank, nprocs, status)
+      integer, intent(in) :: comm
+      integer, intent(out) :: active_comm
+      integer, intent(out) :: rank
+      integer, intent(out) :: nprocs
+      integer, intent(out) :: status
+#ifdef FTIMER_USE_MPI
+      integer :: mpierr
+
+      call resolve_mpi_summary_comm(comm, active_comm, status)
+      if (status /= FTIMER_SUCCESS) then
+         rank = -1
+         nprocs = 0
+         return
+      end if
+
+      call MPI_Comm_rank(active_comm, rank, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         rank = -1
+         nprocs = 0
+         return
+      end if
+
+      call MPI_Comm_size(active_comm, nprocs, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         rank = -1
+         nprocs = 0
+         return
+      end if
+#else
+      active_comm = -1
+      rank = -1
+      nprocs = 0
+      status = FTIMER_ERR_NOT_IMPLEMENTED
+#endif
+   end subroutine get_mpi_summary_comm_info
+
    subroutine check_mpi_summary_prereqs(local_has_active_timers, comm, status)
       logical, intent(in) :: local_has_active_timers
       integer, intent(in) :: comm
@@ -57,11 +95,11 @@ contains
       integer :: any_active
       integer :: local_active
       integer :: mpierr
+      integer :: nprocs
+      integer :: rank
 
-      call resolve_mpi_summary_comm(comm, active_comm, status)
-      if (status /= FTIMER_SUCCESS) then
-         return
-      end if
+      call get_mpi_summary_comm_info(comm, active_comm, rank, nprocs, status)
+      if (status /= FTIMER_SUCCESS) return
 
       local_active = 0
       if (local_has_active_timers) local_active = 1
@@ -78,49 +116,57 @@ contains
 #endif
    end subroutine check_mpi_summary_prereqs
 
-   subroutine augment_summary_with_mpi(summary, comm, status)
-      type(ftimer_summary_t), intent(inout) :: summary
+   subroutine build_mpi_summary(local_summary, comm, summary, status)
+      type(ftimer_summary_t), intent(in) :: local_summary
       integer, intent(in) :: comm
+      type(ftimer_mpi_summary_t), intent(out) :: summary
       integer, intent(out) :: status
 #ifdef FTIMER_USE_MPI
       integer :: active_comm
       integer :: entry_count
       integer :: i
-      integer :: idx
+      integer :: local_idx
+      integer :: max_node_id
       integer :: mpierr
       integer :: nprocs
+      integer :: parent_entry
+      integer :: parent_id
       integer :: rank
+      integer, allocatable :: local_calls(:)
+      integer, allocatable :: local_entry_to_canonical(:)
+      integer, allocatable :: local_node_to_entry(:)
+      integer, allocatable :: max_calls(:)
+      integer, allocatable :: min_calls(:)
       integer, allocatable :: permutation(:)
+      integer(int64), allocatable :: local_sum_calls(:)
+      integer(int64), allocatable :: sum_calls(:)
       integer(int64) :: local_hashes(2)
       integer(int64), allocatable :: gathered_hashes(:, :)
-      real(wp), allocatable :: send_values(:)
-      real(wp), allocatable :: min_values(:)
-      real(wp), allocatable :: max_values(:)
-      real(wp), allocatable :: sum_values(:)
+      real(wp) :: avg_total_time
+      real(wp) :: max_total_time
+      real(wp) :: min_total_time
+      real(wp) :: sum_total_time
+      real(wp), allocatable :: local_inclusive(:)
+      real(wp), allocatable :: local_pct(:)
+      real(wp), allocatable :: local_self(:)
+      real(wp), allocatable :: max_inclusive(:)
+      real(wp), allocatable :: max_pct(:)
+      real(wp), allocatable :: max_self(:)
+      real(wp), allocatable :: min_inclusive(:)
+      real(wp), allocatable :: min_pct(:)
+      real(wp), allocatable :: min_self(:)
+      real(wp), allocatable :: sum_inclusive(:)
+      real(wp), allocatable :: sum_pct(:)
+      real(wp), allocatable :: sum_self(:)
       character(len=:), allocatable :: descriptors(:)
       logical :: hashes_match
 
-      summary%has_mpi_data = .false.
-      summary%mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
+      call clear_mpi_summary(summary)
 
-      call resolve_mpi_summary_comm(comm, active_comm, status)
-      if (status /= FTIMER_SUCCESS) then
-         return
-      end if
+      call get_mpi_summary_comm_info(comm, active_comm, rank, nprocs, status)
+      if (status /= FTIMER_SUCCESS) return
 
-      call MPI_Comm_rank(active_comm, rank, mpierr)
-      if (mpierr /= MPI_SUCCESS) then
-         status = FTIMER_ERR_UNKNOWN
-         return
-      end if
-
-      call MPI_Comm_size(active_comm, nprocs, mpierr)
-      if (mpierr /= MPI_SUCCESS) then
-         status = FTIMER_ERR_UNKNOWN
-         return
-      end if
-
-      call build_descriptor_order(summary, descriptors, permutation)
+      call build_descriptor_order(local_summary, descriptors, permutation)
       call hash_descriptor_list(descriptors, permutation, local_hashes)
 
       allocate (gathered_hashes(2, nprocs))
@@ -146,67 +192,220 @@ contains
          return
       end if
 
-      entry_count = summary%num_entries
+      call MPI_Allreduce(local_summary%total_time, min_total_time, 1, MPI_DOUBLE_PRECISION, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_summary%total_time, max_total_time, 1, MPI_DOUBLE_PRECISION, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_summary%total_time, sum_total_time, 1, MPI_DOUBLE_PRECISION, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      avg_total_time = sum_total_time/real(nprocs, wp)
+      entry_count = local_summary%num_entries
+
+      summary%num_ranks = nprocs
+      summary%num_entries = entry_count
+      summary%min_total_time = min_total_time
+      summary%max_total_time = max_total_time
+      summary%avg_total_time = avg_total_time
+      summary%total_time_imbalance = compute_imbalance(max_total_time, avg_total_time)
+
       if (entry_count <= 0) then
-         call set_success_summary_state(summary, rank)
+         allocate (summary%entries(0))
+         status = FTIMER_SUCCESS
          return
       end if
 
-      allocate (send_values(entry_count))
-      allocate (min_values(entry_count))
-      allocate (max_values(entry_count))
-      allocate (sum_values(entry_count))
+      allocate (local_inclusive(entry_count))
+      allocate (min_inclusive(entry_count))
+      allocate (max_inclusive(entry_count))
+      allocate (sum_inclusive(entry_count))
+      allocate (local_self(entry_count))
+      allocate (min_self(entry_count))
+      allocate (max_self(entry_count))
+      allocate (sum_self(entry_count))
+      allocate (local_pct(entry_count))
+      allocate (min_pct(entry_count))
+      allocate (max_pct(entry_count))
+      allocate (sum_pct(entry_count))
+      allocate (local_calls(entry_count))
+      allocate (local_sum_calls(entry_count))
+      allocate (min_calls(entry_count))
+      allocate (max_calls(entry_count))
+      allocate (sum_calls(entry_count))
 
       do i = 1, entry_count
-         send_values(i) = summary%entries(permutation(i))%inclusive_time
+         local_idx = permutation(i)
+         local_inclusive(i) = local_summary%entries(local_idx)%inclusive_time
+         local_self(i) = local_summary%entries(local_idx)%self_time
+         local_calls(i) = local_summary%entries(local_idx)%call_count
+         local_sum_calls(i) = int(local_calls(i), int64)
+         local_pct(i) = local_summary%entries(local_idx)%pct_time
       end do
 
-      call MPI_Reduce(send_values, min_values, entry_count, MPI_DOUBLE_PRECISION, MPI_MIN, 0, active_comm, mpierr)
+      call MPI_Allreduce(local_inclusive, min_inclusive, entry_count, MPI_DOUBLE_PRECISION, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Reduce(send_values, max_values, entry_count, MPI_DOUBLE_PRECISION, MPI_MAX, 0, active_comm, mpierr)
+      call MPI_Allreduce(local_inclusive, max_inclusive, entry_count, MPI_DOUBLE_PRECISION, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Reduce(send_values, sum_values, entry_count, MPI_DOUBLE_PRECISION, MPI_SUM, 0, active_comm, mpierr)
+      call MPI_Allreduce(local_inclusive, sum_inclusive, entry_count, MPI_DOUBLE_PRECISION, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call set_success_summary_state(summary, rank)
-      if (rank /= 0) return
+      call MPI_Allreduce(local_self, min_self, entry_count, MPI_DOUBLE_PRECISION, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_self, max_self, entry_count, MPI_DOUBLE_PRECISION, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_self, sum_self, entry_count, MPI_DOUBLE_PRECISION, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_pct, min_pct, entry_count, MPI_DOUBLE_PRECISION, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_pct, max_pct, entry_count, MPI_DOUBLE_PRECISION, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_pct, sum_pct, entry_count, MPI_DOUBLE_PRECISION, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_calls, min_calls, entry_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_calls, max_calls, entry_count, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_sum_calls, sum_calls, entry_count, MPI_INTEGER8, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      max_node_id = 0
+      do i = 1, entry_count
+         max_node_id = max(max_node_id, local_summary%entries(i)%node_id)
+      end do
+
+      allocate (local_node_to_entry(max(max_node_id, 1)))
+      allocate (local_entry_to_canonical(entry_count))
+      local_node_to_entry = 0
+      local_entry_to_canonical = 0
 
       do i = 1, entry_count
-         idx = permutation(i)
-         summary%entries(idx)%min_time = min_values(i)
-         summary%entries(idx)%max_time = max_values(i)
-         summary%entries(idx)%avg_across_ranks = sum_values(i)/real(nprocs, wp)
-         summary%entries(idx)%imbalance = compute_imbalance(max_values(i), summary%entries(idx)%avg_across_ranks)
+         if (local_summary%entries(i)%node_id > 0) then
+            local_node_to_entry(local_summary%entries(i)%node_id) = i
+         end if
       end do
+
+      do i = 1, entry_count
+         local_entry_to_canonical(permutation(i)) = i
+      end do
+
+      allocate (summary%entries(entry_count))
+      do i = 1, entry_count
+         local_idx = permutation(i)
+         summary%entries(i)%name = local_summary%entries(local_idx)%name
+         summary%entries(i)%depth = local_summary%entries(local_idx)%depth
+         summary%entries(i)%node_id = i
+         summary%entries(i)%parent_id = 0
+
+         parent_id = local_summary%entries(local_idx)%parent_id
+         if (parent_id > 0) then
+            parent_entry = 0
+            if (parent_id <= size(local_node_to_entry)) parent_entry = local_node_to_entry(parent_id)
+            if (parent_entry > 0) summary%entries(i)%parent_id = local_entry_to_canonical(parent_entry)
+         end if
+
+         summary%entries(i)%min_inclusive_time = min_inclusive(i)
+         summary%entries(i)%max_inclusive_time = max_inclusive(i)
+         summary%entries(i)%avg_inclusive_time = sum_inclusive(i)/real(nprocs, wp)
+         summary%entries(i)%inclusive_imbalance = compute_imbalance(max_inclusive(i), summary%entries(i)%avg_inclusive_time)
+         summary%entries(i)%min_self_time = min_self(i)
+         summary%entries(i)%max_self_time = max_self(i)
+         summary%entries(i)%avg_self_time = sum_self(i)/real(nprocs, wp)
+         summary%entries(i)%self_imbalance = compute_imbalance(max_self(i), summary%entries(i)%avg_self_time)
+         summary%entries(i)%min_call_count = min_calls(i)
+         summary%entries(i)%max_call_count = max_calls(i)
+         summary%entries(i)%avg_call_count = real(sum_calls(i), wp)/real(nprocs, wp)
+         summary%entries(i)%min_pct_time = min_pct(i)
+         summary%entries(i)%max_pct_time = max_pct(i)
+         summary%entries(i)%avg_pct_time = sum_pct(i)/real(nprocs, wp)
+      end do
+
+      status = FTIMER_SUCCESS
 #else
+      call clear_mpi_summary(summary)
       status = FTIMER_ERR_NOT_IMPLEMENTED
-      summary%has_mpi_data = .false.
-      summary%mpi_summary_state = FTIMER_MPI_SUMMARY_LOCAL_ONLY
 #endif
-   end subroutine augment_summary_with_mpi
+   end subroutine build_mpi_summary
 
-   subroutine set_success_summary_state(summary, rank)
-      type(ftimer_summary_t), intent(inout) :: summary
-      integer, intent(in) :: rank
+   subroutine clear_mpi_summary(summary)
+      type(ftimer_mpi_summary_t), intent(out) :: summary
 
-      if (rank == 0) then
-         summary%has_mpi_data = .true.
-         summary%mpi_summary_state = FTIMER_MPI_SUMMARY_ROOT_LOCAL_PLUS_REDUCED
-      else
-         summary%mpi_summary_state = FTIMER_MPI_SUMMARY_NONROOT_LOCAL_AFTER_REDUCE
-      end if
-   end subroutine set_success_summary_state
+      if (allocated(summary%entries)) deallocate (summary%entries)
+      summary%num_ranks = 0
+      summary%num_entries = 0
+      summary%min_total_time = 0.0_wp
+      summary%max_total_time = 0.0_wp
+      summary%avg_total_time = 0.0_wp
+      summary%total_time_imbalance = 1.0_wp
+   end subroutine clear_mpi_summary
 
 #ifdef FTIMER_USE_MPI
    subroutine build_descriptor_order(summary, descriptors, permutation)
@@ -351,9 +550,9 @@ contains
       do i = 1, size(permutation)
          trimmed_len = len_trim(descriptors(permutation(i)))
          do j = 1, trimmed_len
-            high_hash = hash_step(high_hash, int(iachar(descriptors(permutation(i)) (j:j)), int64), &
+            high_hash = hash_step(high_hash, int(iachar(descriptors(permutation(i))(j:j)), int64), &
                                   16777619_int64, 4294967291_int64)
-            low_hash = hash_step(low_hash, int(iachar(descriptors(permutation(i)) (j:j)), int64), &
+            low_hash = hash_step(low_hash, int(iachar(descriptors(permutation(i))(j:j)), int64), &
                                  65599_int64, 4294967279_int64)
          end do
          high_hash = hash_step(high_hash, 10_int64, 16777619_int64, 4294967291_int64)
@@ -372,6 +571,7 @@ contains
 
       updated = modulo(current*base + value, modulus)
    end function hash_step
+#endif
 
    real(wp) function compute_imbalance(max_time, avg_time) result(imbalance)
       real(wp), intent(in) :: max_time
@@ -388,6 +588,5 @@ contains
 
       imbalance = max_time/avg_time
    end function compute_imbalance
-#endif
 
 end module ftimer_mpi

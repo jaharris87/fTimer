@@ -62,13 +62,15 @@ Default global instance + procedural wrappers. Thin layer over Phase 2-3.
 
 Cross-rank summary with hash preflight. Depends on Phases 2-3.
 
-- [x] `src/ftimer_mpi.F90` — Hash preflight: each rank hashes sorted canonical timer descriptor list, `MPI_Allgather` to compare. If mismatch, set `FTIMER_ERR_MPI_INCON`, fall back to local-only.
-- [x] MPI reduce: `MPI_Reduce` for min/max/sum of each entry's inclusive_time. Compute avg = sum/nprocs, imbalance = max/avg. Populate `ftimer_summary_entry_t` MPI fields on root.
-- [x] `ftimer_t%mpi_summary(...)` — Call hash preflight, then MPI reduce, then build summary. Set `has_mpi_data = .true.` on result.
+- [x] `src/ftimer_mpi.F90` — Hash preflight: each rank hashes sorted canonical timer descriptor list, `MPI_Allgather` to compare. If mismatch, return `FTIMER_ERR_MPI_INCON` without producing a global MPI result.
+- [x] MPI reduction now uses `MPI_Allreduce` to build a distinct `ftimer_mpi_summary_t` with globally meaningful totals and per-entry min/avg/max data on every participating rank.
+- [x] `ftimer_t%mpi_summary(...)` — Call hash preflight, then build the global MPI summary object. Successful calls return the same global result on every rank.
+- [x] `ftimer_t%print_mpi_summary(...)` / `write_mpi_summary(...)` — First-class communicator-level MPI report output from rank 0.
 - [x] `ftimer_mpi_summary` procedural wrapper in `ftimer.F90`.
+- [x] `ftimer_print_mpi_summary` / `ftimer_write_mpi_summary` procedural wrappers in `ftimer.F90`.
 - [x] **Tests** (`tests/mpi/`):
-  - [x] `test_mpi_summary.pf` — min/max/avg/imbalance correctness with mock clock per rank
-  - [x] `test_mpi_consistency.pf` — Consistent timers succeed; inconsistent detected, returns `FTIMER_ERR_MPI_INCON`
+  - [x] `test_mpi_summary.pf` — global MPI summary correctness, canonical ordering, and MPI report output with mock clocks per rank
+  - [x] `test_mpi_consistency.pf` — inconsistent descriptors detected, returns `FTIMER_ERR_MPI_INCON` with no global MPI result
 
 ## Phase 6: OpenMP Guards
 
@@ -83,7 +85,7 @@ Master-thread-only timing. Light touch — guards only, not thread-local instanc
 - [x] `docs/semantics.md` — Current semantics reference: inclusive/exclusive time definitions, nesting rules, mismatch modes and their behavior, reset behavior, error contract (ierr vs stderr), MPI guarantees, OpenMP limitations, callback contract
 - [x] `examples/basic_usage.F90` — Simple start/stop/get_summary/print_summary example
 - [x] `examples/nested_timers.F90` — Multi-level nesting example with metadata header fields
-- [x] `examples/mpi_example.F90` — MPI summary example showing the current root-local-plus-reduced contract
+- [x] `examples/mpi_example.F90` — MPI summary example showing the current distinct global MPI result and first-class MPI reporting path
 - [x] `README.md` — Current public contract, quick start, build instructions, and example descriptions
 
 ## Phase 8: Polish + CI Verification
