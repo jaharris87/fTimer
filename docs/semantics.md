@@ -53,6 +53,7 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 - With `ierr` present, these lifecycle calls return `FTIMER_ERR_ACTIVE` and do not write to stderr
 - With `ierr` absent, they warn to stderr and return immediately with the timer state unchanged
 - They do not force-stop timers, synthesize elapsed time, zero accumulated data, restart the summary window, or perform hidden cleanup
+- In `FTIMER_USE_OPENMP=ON` builds, these lifecycle bullets apply only to serial code and OpenMP master-thread calls; non-master calls are suppressed before validation, emit no warning, and leave any caller-provided `ierr` unchanged
 - Repairing stop mismatches is a separate explicit opt-in through `mismatch_mode = FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR`
 
 ## Local Summary Contract
