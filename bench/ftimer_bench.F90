@@ -17,23 +17,23 @@
 !                                       whether steady-state mapped lookup
 !                                       stays near-flat as the resident timer
 !                                       set grows into the larger regimes
-!  8-11. Context scaling C=1/10/50/100
+!  8-13. Context scaling C=1/10/50/100/500/1000
 !                                     -- one hot timer reused under many parent
 !                                        stacks; name-based rows measure the
 !                                        default path under growing context
 !                                        counts and id-based rows isolate the
-!                                        remaining per-segment context lookup
-! 12-15. Nesting depth 1/5/10/20     -- id-based; each cycle does D pushes +
+!                                        per-segment parent-stack lookup
+! 14-17. Nesting depth 1/5/10/20     -- id-based; each cycle does D pushes +
 !                                       D pops; shows stack bookkeeping cost
 !                                       scaling with nesting depth
-! 16-18. get_summary N=10/50/100     -- summary build scaling with timer count
-! 19-21. build_summary N=10/50/100   -- direct local summary construction on
+! 18-20. get_summary N=10/50/100     -- summary build scaling with timer count
+! 21-23. build_summary N=10/50/100   -- direct local summary construction on
 !                                       prebuilt flat segments; isolates the
 !                                       tree build/allocation work from the
 !                                       wrapper's timestamp capture
-! 22. raw date string formatting     -- date_and_time + string formatting,
+! 24. raw date string formatting     -- date_and_time + string formatting,
 !                                       matching the original per-call wrapper
-! 23. ftimer_date_string steady-state -- cached second-resolution date stamp
+! 25. ftimer_date_string steady-state -- cached second-resolution date stamp
 !                                        path used by get_summary/print/write
 !
 ! METRICS
@@ -55,8 +55,8 @@
 !   warm-up has removed first-growth effects.
 !   Compare lookup-scaling rows to confirm the mapped name path stays much
 !   flatter than the old linear-scan baseline as timer count grows.
-!   Compare context-scaling rows to quantify the remaining cost when one timer
-!   is reused under many distinct parent stacks.
+!   Compare context-scaling rows to quantify the per-segment parent-stack cost
+!   when one timer is reused under many distinct parent stacks.
 !   Compare get_summary timer counts to see summary-generation scaling.
 
 program ftimer_bench
@@ -111,10 +111,14 @@ program ftimer_bench
    call bench_context_scaling_name(REPS_HOT/10, 10, count_rate)
    call bench_context_scaling_name(REPS_HOT/50, 50, count_rate)
    call bench_context_scaling_name(REPS_HOT/100, 100, count_rate)
+   call bench_context_scaling_name(REPS_HOT/500, 500, count_rate)
+   call bench_context_scaling_name(REPS_HOT/1000, 1000, count_rate)
    call bench_context_scaling_id(REPS_HOT, 1, count_rate)
    call bench_context_scaling_id(REPS_HOT/10, 10, count_rate)
    call bench_context_scaling_id(REPS_HOT/50, 50, count_rate)
    call bench_context_scaling_id(REPS_HOT/100, 100, count_rate)
+   call bench_context_scaling_id(REPS_HOT/500, 500, count_rate)
+   call bench_context_scaling_id(REPS_HOT/1000, 1000, count_rate)
 
    write (*, '(a)') ''
 
@@ -240,11 +244,11 @@ contains
       call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_lookup_scaling
 
-   ! Scenarios 8-11: one timer reused under many parent stacks.
+   ! Scenarios 8-13: one timer reused under many parent stacks.
    ! Each cycle times the same "work" timer under a distinct parent, so the
    ! hot path sees growing context counts for one segment. The name-based rows
-   ! keep the default public API path; the id-based rows isolate the remaining
-   ! context lookup cost from name normalization and timer-name lookup.
+   ! keep the default public API path; the id-based rows isolate the
+   ! parent-stack lookup cost from name normalization and timer-name lookup.
    subroutine bench_context_scaling_name(reps_outer, num_contexts, count_rate)
       integer, intent(in) :: reps_outer
       integer, intent(in) :: num_contexts
@@ -328,7 +332,7 @@ contains
       call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_context_scaling_id
 
-   ! Scenarios 12-15: id-based nesting at increasing depths.
+   ! Scenarios 14-17: id-based nesting at increasing depths.
    ! Each cycle does D id-based starts then D id-based stops.
    ! Using id-based ops isolates call-stack bookkeeping cost from
    ! name-lookup cost.  After the warm-up cycle has grown the stack to the
@@ -376,7 +380,7 @@ contains
       call print_result(trim(label), reps, t0, t1, count_rate)
    end subroutine bench_nesting
 
-   ! Scenarios 16-18: get_summary overhead with N flat timers.
+   ! Scenarios 18-20: get_summary overhead with N flat timers.
    ! Creates N timers each called once, then measures the cost of repeatedly
    ! calling get_summary().  The summary build walks the visible timer tree,
    ! computes self-times from direct children, and allocates the entries array.

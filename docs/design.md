@@ -124,8 +124,8 @@ The current implementation is organized around a few design choices that show up
 - Timing data is structured data first and formatted text second.
 - Local summary entries keep preorder compatibility for formatting, but they also carry explicit parent-linked tree data within each produced summary object.
 - The clock is injectable, which keeps tests deterministic and benchmarking controlled.
-- Name-based timing remains the primary ergonomic story, backed internally by mapped resident-timer lookup and capacity-based growth so the default path no longer depends on repeated resident-timer linear scans or one-slot-at-a-time array growth.
-- Per-segment context selection is still context-sensitive and currently scans the known parent-stack variants for that timer, so the hot path still scales with context count when one timer is reused under many distinct parent stacks.
+- Name-based timing remains the primary ergonomic story, backed internally by mapped resident-timer lookup, mapped per-segment parent-stack lookup, and capacity-based growth so the default path no longer depends on repeated resident-timer linear scans, steady-state context-list scans, or one-slot-at-a-time array growth.
+- Per-segment context selection remains fully context-sensitive, but it now uses a per-segment parent-stack index in steady state instead of rescanning the known parent-stack variants for that timer on every hit.
 - Callback hooks are lightweight intra-run hooks for normal start/stop events only; internal mismatch repair transitions must stay invisible to callback consumers, and current `main` does not define a stronger profiler-backend identity contract.
 - MPI summary reduction is descriptor-validated before collectives, and reduced cross-rank fields are valid only in the documented result shape.
 - OpenMP support is intentionally narrow: guarded timer operations run only on the master thread when `FTIMER_USE_OPENMP=ON`, so this path should not be read as general hybrid-thread timing support.

@@ -18,6 +18,7 @@ module ftimer_core
 
    integer, parameter :: FTIMER_SEGMENT_INITIAL_CAPACITY = 16
    integer, parameter :: FTIMER_CONTEXT_STORAGE_INITIAL_CAPACITY = 4
+   integer, parameter :: FTIMER_CONTEXT_INDEX_INITIAL_CAPACITY = 8
    integer, parameter :: FTIMER_NAME_INDEX_INITIAL_CAPACITY = 32
    integer, parameter :: FTIMER_NAME_INDEX_LOAD_NUMERATOR = 7
    integer, parameter :: FTIMER_NAME_INDEX_LOAD_DENOMINATOR = 10
@@ -42,11 +43,16 @@ module ftimer_core
    end type ftimer_test_state_t
 #endif
 
+   type :: ftimer_context_index_t
+      integer, allocatable :: slots(:)
+   end type ftimer_context_index_t
+
    type :: ftimer_t
       private
       type(ftimer_call_stack_t) :: call_stack
       type(ftimer_segment_t), allocatable :: segments(:)
       integer, allocatable :: segment_name_slots(:)
+      type(ftimer_context_index_t), allocatable :: segment_context_indices(:)
       integer :: num_segments = 0
       real(wp) :: init_wtime = 0.0_wp
       character(len=40) :: init_date = ''
@@ -419,10 +425,7 @@ contains
          return
       end if
 
-      ctx = self%segments(id)%contexts%find(self%call_stack)
-      if (ctx <= 0) then
-         ctx = self%segments(id)%contexts%add(self%call_stack)
-      end if
+      ctx = find_or_create_segment_context(self, id, self%call_stack)
       call ensure_context_storage(self%segments(id), ctx)
 
       call self%call_stack%push(id)
@@ -606,10 +609,7 @@ contains
       end if
 
       do i = unwind_count, 1, -1
-         restart_ctx = self%segments(unwound_ids(i))%contexts%find(self%call_stack)
-         if (restart_ctx <= 0) then
-            restart_ctx = self%segments(unwound_ids(i))%contexts%add(self%call_stack)
-         end if
+         restart_ctx = find_or_create_segment_context(self, unwound_ids(i), self%call_stack)
          call ensure_context_storage(self%segments(unwound_ids(i)), restart_ctx)
          call self%call_stack%push(unwound_ids(i))
          self%segments(unwound_ids(i))%start_time(restart_ctx) = now
@@ -677,6 +677,7 @@ contains
 
       if (allocated(self%segments)) deallocate (self%segments)
       if (allocated(self%segment_name_slots)) deallocate (self%segment_name_slots)
+      if (allocated(self%segment_context_indices)) deallocate (self%segment_context_indices)
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       self%call_stack%depth = 0
       self%num_segments = 0
@@ -760,6 +761,7 @@ contains
    subroutine ensure_segment_capacity(self, required_size)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: required_size
+      type(ftimer_context_index_t), allocatable :: new_context_indices(:)
       type(ftimer_segment_t), allocatable :: new_segments(:)
       integer :: new_capacity
       integer :: old_capacity
@@ -777,10 +779,15 @@ contains
       end if
 
       allocate (new_segments(new_capacity))
+      allocate (new_context_indices(new_capacity))
       if (self%num_segments > 0) then
          new_segments(1:self%num_segments) = self%segments(1:self%num_segments)
+         if (allocated(self%segment_context_indices)) then
+            new_context_indices(1:self%num_segments) = self%segment_context_indices(1:self%num_segments)
+         end if
       end if
       call move_alloc(new_segments, self%segments)
+      call move_alloc(new_context_indices, self%segment_context_indices)
    end subroutine ensure_segment_capacity
 
    subroutine ensure_segment_name_index(self, required_count)
@@ -820,6 +827,49 @@ contains
       call move_alloc(new_slots, self%segment_name_slots)
    end subroutine ensure_segment_name_index
 
+   subroutine ensure_segment_context_index(self, segment_id, required_count)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: segment_id
+      integer, intent(in) :: required_count
+      integer, allocatable :: new_slots(:)
+      integer :: current_capacity
+      integer :: i
+      integer :: new_capacity
+
+      if (required_count <= 0) return
+      if (.not. allocated(self%segment_context_indices)) return
+      if ((segment_id < 1) .or. (segment_id > size(self%segment_context_indices))) return
+
+      current_capacity = 0
+      if (allocated(self%segment_context_indices(segment_id)%slots)) then
+         current_capacity = size(self%segment_context_indices(segment_id)%slots)
+      end if
+
+      if (current_capacity > 0) then
+         if (required_count*FTIMER_NAME_INDEX_LOAD_DENOMINATOR <= &
+             FTIMER_NAME_INDEX_LOAD_NUMERATOR*current_capacity) then
+            return
+         end if
+         new_capacity = current_capacity
+      else
+         new_capacity = FTIMER_CONTEXT_INDEX_INITIAL_CAPACITY
+      end if
+
+      do while (required_count*FTIMER_NAME_INDEX_LOAD_DENOMINATOR > &
+                FTIMER_NAME_INDEX_LOAD_NUMERATOR*new_capacity)
+         new_capacity = 2*new_capacity
+      end do
+
+      allocate (new_slots(new_capacity))
+      new_slots = 0
+      do i = 1, self%segments(segment_id)%contexts%count
+         call insert_segment_context_slot(self%segments(segment_id), new_slots, &
+                                          self%segments(segment_id)%contexts%stacks(i), i)
+      end do
+
+      call move_alloc(new_slots, self%segment_context_indices(segment_id)%slots)
+   end subroutine ensure_segment_context_index
+
    subroutine insert_segment_name_slot(slots, name, id)
       integer, intent(inout) :: slots(:)
       character(len=*), intent(in) :: name
@@ -844,6 +894,39 @@ contains
 
       error stop "ftimer internal name index overflow"
    end subroutine insert_segment_name_slot
+
+   subroutine insert_segment_context_slot(segment, slots, stack, ctx)
+      type(ftimer_segment_t), intent(in) :: segment
+      integer, intent(inout) :: slots(:)
+      type(ftimer_call_stack_t), intent(in) :: stack
+      integer, intent(in) :: ctx
+      integer :: candidate_ctx
+      integer :: slot
+      integer :: start_slot
+
+      if (size(slots) <= 0) error stop "ftimer internal context index has zero capacity"
+
+      slot = hash_context_slot(stack, size(slots))
+      start_slot = slot
+      do
+         candidate_ctx = slots(slot)
+         if (candidate_ctx == 0) then
+            slots(slot) = ctx
+            return
+         end if
+
+         if (candidate_ctx == ctx) return
+         if ((candidate_ctx >= 1) .and. (candidate_ctx <= segment%contexts%count)) then
+            if (segment%contexts%stacks(candidate_ctx)%equals(stack)) return
+         end if
+
+         slot = slot + 1
+         if (slot > size(slots)) slot = 1
+         if (slot == start_slot) exit
+      end do
+
+      error stop "ftimer internal context index overflow"
+   end subroutine insert_segment_context_slot
 
    integer function find_segment_index(self, name) result(idx)
       class(ftimer_t), intent(in) :: self
@@ -883,6 +966,65 @@ contains
       end do
    end function find_segment_index
 
+   integer function find_segment_context(self, segment_id, stack) result(ctx)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: segment_id
+      type(ftimer_call_stack_t), intent(in) :: stack
+      integer :: candidate_ctx
+      integer :: slot
+      integer :: start_slot
+
+      ctx = 0
+      if ((segment_id < 1) .or. (segment_id > self%num_segments)) return
+      if (self%segments(segment_id)%contexts%count <= 0) return
+
+      if (allocated(self%segment_context_indices)) then
+         if ((segment_id >= 1) .and. (segment_id <= size(self%segment_context_indices))) then
+            if (allocated(self%segment_context_indices(segment_id)%slots)) then
+               slot = hash_context_slot(stack, size(self%segment_context_indices(segment_id)%slots))
+               start_slot = slot
+               do
+                  candidate_ctx = self%segment_context_indices(segment_id)%slots(slot)
+                  if (candidate_ctx == 0) exit
+                  if ((candidate_ctx >= 1) .and. (candidate_ctx <= self%segments(segment_id)%contexts%count)) then
+                     if (self%segments(segment_id)%contexts%stacks(candidate_ctx)%equals(stack)) then
+                        ctx = candidate_ctx
+                        return
+                     end if
+                  end if
+
+                  slot = slot + 1
+                  if (slot > size(self%segment_context_indices(segment_id)%slots)) slot = 1
+                  if (slot == start_slot) exit
+               end do
+            end if
+         end if
+      end if
+
+      ctx = self%segments(segment_id)%contexts%find(stack)
+      if (ctx > 0) then
+         call ensure_segment_context_index(self, segment_id, self%segments(segment_id)%contexts%count)
+         if (allocated(self%segment_context_indices(segment_id)%slots)) then
+            call insert_segment_context_slot(self%segments(segment_id), &
+                                             self%segment_context_indices(segment_id)%slots, stack, ctx)
+         end if
+      end if
+   end function find_segment_context
+
+   integer function find_or_create_segment_context(self, segment_id, stack) result(ctx)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: segment_id
+      type(ftimer_call_stack_t), intent(in) :: stack
+
+      ctx = find_segment_context(self, segment_id, stack)
+      if (ctx > 0) return
+
+      call ensure_segment_context_index(self, segment_id, self%segments(segment_id)%contexts%count + 1)
+      ctx = self%segments(segment_id)%contexts%add(stack)
+      call insert_segment_context_slot(self%segments(segment_id), &
+                                       self%segment_context_indices(segment_id)%slots, stack, ctx)
+   end function find_or_create_segment_context
+
    integer function hash_name_slot(name, table_size) result(slot)
       character(len=*), intent(in) :: name
       integer, intent(in) :: table_size
@@ -907,6 +1049,27 @@ contains
 
       slot = 1 + int(modulo(hash, int(table_size, int64)))
    end function hash_name_slot
+
+   integer function hash_context_slot(stack, table_size) result(slot)
+      type(ftimer_call_stack_t), intent(in) :: stack
+      integer, intent(in) :: table_size
+      integer(int64) :: hash
+      integer :: i
+
+      if (table_size <= 0) error stop "ftimer internal hash_context_slot called with empty table"
+
+      hash = int(stack%depth, int64)
+      do i = 1, stack%depth
+         hash = modulo(FTIMER_NAME_HASH_MULTIPLIER*hash + int(stack%ids(i), int64), &
+                       FTIMER_NAME_HASH_MODULUS)
+      end do
+
+      hash = ieor(hash, shiftr(hash, 15))
+      hash = modulo(FTIMER_NAME_HASH_MIX_MULTIPLIER*hash, FTIMER_NAME_HASH_MODULUS)
+      hash = ieor(hash, shiftr(hash, 15))
+
+      slot = 1 + int(modulo(hash, int(table_size, int64)))
+   end function hash_context_slot
 
    logical function has_active_timers(self) result(has_active)
       class(ftimer_t), intent(in) :: self
@@ -992,7 +1155,7 @@ contains
          error stop "ftimer internal stop_segment_with_now stack corruption"
       end if
 
-      ctx = self%segments(id)%contexts%find(self%call_stack)
+      ctx = find_segment_context(self, id, self%call_stack)
       if (ctx <= 0) then
          error stop "ftimer internal stop_segment_with_now missing context"
       end if
