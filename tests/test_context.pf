@@ -112,4 +112,103 @@ contains
       end do
    end subroutine test_many_contexts_preserve_existing_work_times
 
+   @test
+   subroutine test_many_deep_contexts_reuse_existing_work_contexts()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: parent_stack
+      integer :: branch_id
+      integer :: ctx
+      integer :: i
+      integer :: id_work
+      integer :: ierr
+      integer :: parent_ids(18)
+      real(wp) :: elapsed
+      character(len=18) :: parent_name
+      character(len=*), parameter :: branch_name = 'branch'
+      character(len=*), parameter :: work_name = 'work'
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      id_work = timer%lookup(work_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      branch_id = timer%lookup(branch_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      do i = 1, size(parent_ids)
+         write (parent_name, '("parent_",i2.2)') i
+         parent_ids(i) = timer%lookup(trim(parent_name), ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end do
+
+      do i = 1, size(parent_ids)
+         write (parent_name, '("parent_",i2.2)') i
+
+         fake_time = real(20*i, wp)
+         call timer%start(trim(parent_name), ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         fake_time = real(20*i + 1, wp)
+         call timer%start(branch_name, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         fake_time = real(20*i + 2, wp)
+         call timer%start(work_name, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         fake_time = real(20*i + 3, wp)
+         call timer%stop(work_name, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         fake_time = real(20*i + 4, wp)
+         call timer%stop(branch_name, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         fake_time = real(20*i + 5, wp)
+         call timer%stop(trim(parent_name), ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end do
+
+      do i = size(parent_ids), 1, -1
+         write (parent_name, '("parent_",i2.2)') i
+
+         fake_time = real(500 + 20*i, wp)
+         call timer%start(trim(parent_name), ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         fake_time = real(500 + 20*i + 1, wp)
+         call timer%start(branch_name, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         fake_time = real(500 + 20*i + 2, wp)
+         call timer%start(work_name, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         fake_time = real(500 + 20*i + 4, wp)
+         call timer%stop(work_name, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         fake_time = real(500 + 20*i + 5, wp)
+         call timer%stop(branch_name, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         fake_time = real(500 + 20*i + 6, wp)
+         call timer%stop(trim(parent_name), ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end do
+
+      call snapshot_timer(timer, state)
+      @assertEqual(size(parent_ids), state%segments(id_work)%contexts%count)
+
+      do i = 1, size(parent_ids)
+         parent_stack = build_stack([parent_ids(i), branch_id])
+         ctx = find_context_idx(state, id_work, parent_stack)
+         elapsed = state%segments(id_work)%time(ctx)
+
+         @assertEqual(3.0_wp, elapsed)
+         @assertEqual(2, state%segments(id_work)%call_count(ctx))
+      end do
+   end subroutine test_many_deep_contexts_reuse_existing_work_contexts
+
 end module test_context
