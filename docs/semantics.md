@@ -116,6 +116,8 @@ The supported pattern is simple: capture one communicator consistently at `init`
 - They are collective over the communicator captured by `init`, just like `mpi_summary()`
 - They build the same global MPI summary object that `mpi_summary()` returns
 - They emit one communicator-level report from rank 0; non-root participants take part in the collective build and then return success without duplicating output
+- The default MPI text report is an abbreviated view of `ftimer_mpi_summary_t`, not a serialization of every structured field. It prints communicator totals plus per-entry min/avg/max inclusive time, inclusive-time extrema ranks, inclusive imbalance, average self time, average call count, and `Avg %`; use `mpi_summary()` directly for min/max self time, self imbalance, min/max call count, min/max rank-local `% Total`, and explicit `node_id`/`parent_id` tree links.
+- In the MPI text report, `Avg %` is `avg_pct_time`: the arithmetic mean of each rank's local `% Total` for that timer. It is not recomputed as `100*avg_inclusive_time/avg_total_time`, because rank-local denominator differences are part of the reported statistic.
 
 ## Name Validation Error Contract
 
