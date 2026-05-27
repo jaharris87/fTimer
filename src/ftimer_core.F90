@@ -4,9 +4,9 @@ module ftimer_core
    use ftimer_clock, only: ftimer_date_string, ftimer_default_clock, ftimer_mpi_clock
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
-                           FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, &
-                           FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, &
-                           ftimer_metadata_t, ftimer_mpi_summary_t, ftimer_segment_t, ftimer_summary_t, wp
+                           FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_SUCCESS, &
+                           ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_metadata_t, &
+                           ftimer_mpi_summary_t, ftimer_segment_t, ftimer_summary_t, wp
    implicit none
    private
 
@@ -340,21 +340,21 @@ contains
       integer, intent(out), optional :: ierr
       integer :: id
       integer :: status
-      character(len=FTIMER_NAME_LEN) :: normalized_name
-      character(len=160) :: message
+      integer :: trimmed_len
+      character(len=:), allocatable :: message
 
       if (.not. self%initialized) then
          call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer start before init")
          return
       end if
 
-      call normalize_name(name, normalized_name, status, message)
+      call normalize_name(name, trimmed_len, status, message)
       if (status /= FTIMER_SUCCESS) then
          call report_status(ierr, status, message)
          return
       end if
 
-      id = self%find_or_create_segment(normalized_name)
+      id = self%find_or_create_segment(name(1:trimmed_len))
       call start_id_impl(self, id, ierr=ierr)
    end subroutine start_impl
 
@@ -374,23 +374,23 @@ contains
       integer, intent(out), optional :: ierr
       integer :: id
       integer :: status
-      character(len=FTIMER_NAME_LEN) :: normalized_name
-      character(len=160) :: message
+      integer :: trimmed_len
+      character(len=:), allocatable :: message
 
       if (.not. self%initialized) then
          call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer stop before init")
          return
       end if
 
-      call normalize_name(name, normalized_name, status, message)
+      call normalize_name(name, trimmed_len, status, message)
       if (status /= FTIMER_SUCCESS) then
          call report_status(ierr, status, message)
          return
       end if
 
-      id = find_segment_index(self, normalized_name)
+      id = find_segment_index(self, name(1:trimmed_len))
       if (id <= 0) then
-         write (message, '(3a)') "ftimer stop on unknown timer: ", trim(normalized_name), ""
+         message = "ftimer stop on unknown timer: "//name(1:trimmed_len)
          call report_status(ierr, FTIMER_ERR_UNKNOWN, trim(message))
          return
       end if
@@ -456,7 +456,7 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
-      character(len=192) :: message
+      character(len=:), allocatable :: message
 
       if (.not. self%initialized) then
          call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer stop_id before init")
@@ -479,8 +479,8 @@ contains
          return
       end if
 
-      write (message, '(5a)') "ftimer stop mismatch: requested ", trim(self%segments(id)%name), &
-         " but top of stack is ", trim(self%segments(self%call_stack%top())%name), ""
+      message = "ftimer stop mismatch: requested "//trim(self%segments(id)%name)// &
+                " but top of stack is "//trim(self%segments(self%call_stack%top())%name)
 
       select case (self%mismatch_mode)
       case (FTIMER_MISMATCH_STRICT)
@@ -524,8 +524,8 @@ contains
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
       integer :: status
-      character(len=FTIMER_NAME_LEN) :: normalized_name
-      character(len=160) :: message
+      integer :: trimmed_len
+      character(len=:), allocatable :: message
 
       id = 0
       if (.not. self%initialized) then
@@ -533,13 +533,13 @@ contains
          return
       end if
 
-      call normalize_name(name, normalized_name, status, message)
+      call normalize_name(name, trimmed_len, status, message)
       if (status /= FTIMER_SUCCESS) then
          call report_status(ierr, status, message)
          return
       end if
 
-      id = self%find_or_create_segment(normalized_name)
+      id = self%find_or_create_segment(name(1:trimmed_len))
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end function lookup_impl
 
@@ -1077,28 +1077,20 @@ contains
       has_active = self%call_stack%depth > 0
    end function has_active_timers
 
-   subroutine normalize_name(name, normalized_name, status, message)
+   subroutine normalize_name(name, trimmed_len, status, message)
       character(len=*), intent(in) :: name
-      character(len=FTIMER_NAME_LEN), intent(out) :: normalized_name
+      integer, intent(out) :: trimmed_len
       integer, intent(out) :: status
-      character(len=*), intent(out) :: message
+      character(len=:), allocatable, intent(out) :: message
       integer :: i
       integer :: code
-      integer :: trimmed_len
+      character(len=32) :: position_text
 
-      normalized_name = ''
-      message = ''
       trimmed_len = len_trim(name)
 
       if (trimmed_len <= 0) then
          status = FTIMER_ERR_INVALID_NAME
          message = "ftimer timer name must not be empty"
-         return
-      end if
-
-      if (trimmed_len > FTIMER_NAME_LEN) then
-         status = FTIMER_ERR_INVALID_NAME
-         write (message, '(a,i0)') "ftimer timer name exceeds FTIMER_NAME_LEN=", FTIMER_NAME_LEN
          return
       end if
 
@@ -1112,12 +1104,12 @@ contains
          code = iachar(name(i:i))
          if ((code < 32) .or. (code == 127)) then
             status = FTIMER_ERR_INVALID_NAME
-            write (message, '(a,i0)') "ftimer timer name contains control character at position ", i
+            write (position_text, '(i0)') i
+            message = "ftimer timer name contains control character at position "//trim(position_text)
             return
          end if
       end do
 
-      normalized_name(1:trimmed_len) = name(1:trimmed_len)
       status = FTIMER_SUCCESS
    end subroutine normalize_name
 

@@ -41,6 +41,8 @@ module ftimer_types
    integer, parameter :: FTIMER_ERR_INVALID_NAME = 8
 
    integer, parameter :: wp = selected_real_kind(15, 307)
+   ! Retained as the pre-1.0 fixed-width compatibility threshold. Runtime timer
+   ! names and metadata are allocatable-length strings and are not capped here.
    integer, parameter :: FTIMER_NAME_LEN = 64
 
    integer, parameter :: FTIMER_MISMATCH_STRICT = 1
@@ -54,12 +56,12 @@ module ftimer_types
    integer, parameter :: FTIMER_CONTEXT_LIST_INITIAL_CAPACITY = 4
 
    type :: ftimer_metadata_t
-      character(len=FTIMER_NAME_LEN) :: key = ''
-      character(len=FTIMER_NAME_LEN) :: value = ''
+      character(len=:), allocatable :: key
+      character(len=:), allocatable :: value
    end type ftimer_metadata_t
 
    type :: ftimer_summary_entry_t
-      character(len=FTIMER_NAME_LEN) :: name = ''
+      character(len=:), allocatable :: name
       integer :: depth = 0
       real(wp) :: inclusive_time = 0.0_wp
       real(wp) :: self_time = 0.0_wp
@@ -82,7 +84,7 @@ module ftimer_types
    end type ftimer_summary_t
 
    type :: ftimer_mpi_summary_entry_t
-      character(len=FTIMER_NAME_LEN) :: name = ''
+      character(len=:), allocatable :: name
       integer :: depth = 0
       real(wp) :: min_inclusive_time = 0.0_wp
       real(wp) :: max_inclusive_time = 0.0_wp
@@ -137,7 +139,7 @@ module ftimer_types
    end type ftimer_context_list_t
 
    type :: ftimer_segment_t
-      character(len=FTIMER_NAME_LEN) :: name = ''
+      character(len=:), allocatable :: name
       real(wp), allocatable :: time(:)
       real(wp), allocatable :: start_time(:)
       logical, allocatable :: is_running(:)

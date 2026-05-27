@@ -4,7 +4,7 @@ module test_mpi_summary
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
                      ftimer_print_mpi_summary, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_SUCCESS, ftimer_metadata_t, &
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_NAME_LEN, FTIMER_SUCCESS, ftimer_metadata_t, &
                            ftimer_mpi_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time, read_file_text, summary_node_ids_unique, summary_parent_index
    implicit none
@@ -216,6 +216,84 @@ contains
    end subroutine test_mpi_summary_uses_canonical_order_for_consistent_timer_sets
 
    @test
+   subroutine test_mpi_summary_preserves_long_timer_names(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_summary_t) :: summary
+      character(len=:), allocatable :: printed
+      character(len=*), parameter :: print_path = 'test_mpi_long_name_print_summary.txt'
+      character(len=FTIMER_NAME_LEN + 32) :: root_name
+      character(len=FTIMER_NAME_LEN + 48) :: child_name
+      integer :: child_len
+      integer :: expected_child_len
+      integer :: expected_root_len
+      integer :: flags(2)
+      integer :: ierr
+      integer :: rank
+      integer :: root_len
+      integer :: unit
+      logical :: child_name_matches
+      logical :: root_name_matches
+
+      rank = this%getProcessRank()
+      root_name = repeat('r', len(root_name))
+      child_name = repeat('c', len(child_name))
+      expected_root_len = len(root_name)
+      expected_child_len = len(child_name)
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_long_named_timers(timer, this%getProcessRank(), root_name, child_name, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      root_len = len_trim(summary%entries(1)%name)
+      child_len = len_trim(summary%entries(2)%name)
+      root_name_matches = trim(summary%entries(1)%name) == root_name
+      child_name_matches = trim(summary%entries(2)%name) == child_name
+
+      @assertEqual(expected_root_len, root_len)
+      @assertEqual(expected_child_len, child_len)
+      @assertTrue(root_name_matches)
+      @assertTrue(child_name_matches)
+      @assertEqual(0, summary_parent_index(summary, 1))
+      @assertEqual(1, summary_parent_index(summary, 2))
+
+      flags = 0
+      if (rank == 0) then
+         call delete_if_exists(print_path)
+         open (newunit=unit, file=print_path, status='replace', action='write', iostat=ierr)
+         @assertEqual(0, ierr)
+         call timer%print_mpi_summary(unit=unit, ierr=ierr)
+         close (unit)
+      else
+         call timer%print_mpi_summary(ierr=ierr)
+      end if
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      @assertEqual(MPI_SUCCESS, ierr)
+
+      if (rank == 0) then
+         printed = read_file_text(print_path)
+         if (index(printed, root_name) > 0) flags(1) = 1
+         if (index(printed, child_name) > 0) flags(2) = 1
+      end if
+      call MPI_Bcast(flags, size(flags), MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+      @assertEqual(MPI_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_summary_preserves_long_timer_names
+
+   @test
    subroutine test_mpi_summary_handles_nested_reordered_sets(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
@@ -319,7 +397,7 @@ contains
    subroutine test_mpi_print_summary_emits_global_report(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
-      type(ftimer_metadata_t) :: metadata(1)
+      type(ftimer_metadata_t) :: metadata(3)
       character(len=:), allocatable :: printed
       character(len=*), parameter :: expected_header = &
                                      'Timer name  Min Incl (s)  Min Rank  Avg Incl (s)  Max Incl (s)  Max Rank'// &
@@ -331,7 +409,7 @@ contains
                                      '  inner         4.000000         0      5.000000      6.000000'// &
                                      '         1   1.200      5.000000       1.000     41.67'
       character(len=*), parameter :: print_path = 'test_mpi_print_summary.txt'
-      integer :: flags(13)
+      integer :: flags(15)
       integer :: ierr
       integer :: rank
       integer :: unit
@@ -344,6 +422,8 @@ contains
 
       metadata(1)%key = 'Job'
       metadata(1)%value = 'mpi-report'
+      metadata(2)%value = 'orphan-mpi'
+      metadata(3)%key = 'BlankValue'
 
       call build_nested_timers(timer, rank, ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -377,6 +457,8 @@ contains
          if (index(printed, expected_header) > 0) flags(11) = 1
          if (index(printed, expected_inner_row) > 0) flags(12) = 1
          if (index(printed, wrong_ratio_inner_row) == 0) flags(13) = 1
+         if (index(printed, 'BlankValue') > 0) flags(14) = 1
+         if (index(printed, 'orphan-mpi') == 0) flags(15) = 1
       end if
       call MPI_Bcast(flags, size(flags), MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       @assertEqual(MPI_SUCCESS, ierr)
@@ -394,6 +476,8 @@ contains
       @assertEqual(1, flags(11))
       @assertEqual(1, flags(12))
       @assertEqual(1, flags(13))
+      @assertEqual(1, flags(14))
+      @assertEqual(1, flags(15))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -512,6 +596,29 @@ contains
       fake_time = base_time + 2.5_wp + real(rank, wp)
       call timer%stop("outer", ierr=ierr)
    end subroutine build_large_timestamp_nested_timers
+
+   subroutine build_long_named_timers(timer, rank, root_name, child_name, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      character(len=*), intent(in) :: root_name
+      character(len=*), intent(in) :: child_name
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      call timer%start(root_name, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 1.0_wp + real(rank, wp)
+      call timer%start(child_name, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 3.0_wp + real(rank, wp)
+      call timer%stop(child_name, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 5.0_wp + real(rank, wp)
+      call timer%stop(root_name, ierr=ierr)
+   end subroutine build_long_named_timers
 
    subroutine build_nested_timers_procedural(rank, ierr)
       integer, intent(in) :: rank

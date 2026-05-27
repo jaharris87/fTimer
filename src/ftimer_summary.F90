@@ -1,5 +1,5 @@
 module ftimer_summary
-   use ftimer_types, only: FTIMER_NAME_LEN, ftimer_call_stack_t, ftimer_metadata_t, ftimer_mpi_summary_entry_t, &
+   use ftimer_types, only: ftimer_call_stack_t, ftimer_metadata_t, ftimer_mpi_summary_entry_t, &
                            ftimer_mpi_summary_t, ftimer_segment_t, ftimer_summary_entry_t, ftimer_summary_t, wp
    implicit none
    private
@@ -70,10 +70,10 @@ contains
 
       if (present(metadata)) then
          do i = 1, size(metadata)
-            if (len_trim(metadata(i)%key) <= 0) cycle
-            if (has_active_entries .and. metadata_key_is_reserved(metadata(i)%key)) cycle
-            call set_padded_text(padded, trim(metadata(i)%key), key_width)
-            call append_line(text, padded(1:key_width)//' : '//trim(metadata(i)%value))
+            if (metadata_key_len(metadata(i)) <= 0) cycle
+            if (has_active_entries .and. metadata_key_is_reserved(metadata_key_text(metadata(i)))) cycle
+            call set_padded_text(padded, metadata_key_text(metadata(i)), key_width)
+            call append_line(text, padded(1:key_width)//' : '//metadata_value_text(metadata(i)))
          end do
       end if
 
@@ -166,9 +166,9 @@ contains
 
       if (present(metadata)) then
          do i = 1, size(metadata)
-            if (len_trim(metadata(i)%key) <= 0) cycle
-            call set_padded_text(padded, trim(metadata(i)%key), key_width)
-            call append_line(text, padded(1:key_width)//' : '//trim(metadata(i)%value))
+            if (metadata_key_len(metadata(i)) <= 0) cycle
+            call set_padded_text(padded, metadata_key_text(metadata(i)), key_width)
+            call append_line(text, padded(1:key_width)//' : '//metadata_value_text(metadata(i)))
          end do
       end if
 
@@ -542,7 +542,7 @@ contains
       character(len=:), allocatable :: name
       character(len=:), allocatable :: escaped_name
 
-      escaped_name = escaped_summary_name(entry%name)
+      escaped_name = escaped_summary_name(summary_entry_name(entry))
       name = repeat(' ', 2*entry%depth)//escaped_name
    end function display_name
 
@@ -650,7 +650,7 @@ contains
       if (.not. present(metadata)) return
 
       do i = 1, size(metadata)
-         width = max(width, len_trim(metadata(i)%key))
+         width = max(width, metadata_key_len(metadata(i)))
       end do
    end function metadata_key_width
 
@@ -718,9 +718,60 @@ contains
       character(len=:), allocatable :: name
       character(len=:), allocatable :: escaped_name
 
-      escaped_name = escaped_summary_name(entry%name)
+      escaped_name = escaped_summary_name(mpi_summary_entry_name(entry))
       name = repeat(' ', 2*entry%depth)//escaped_name
    end function display_mpi_name
+
+   function summary_entry_name(entry) result(name)
+      type(ftimer_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: name
+
+      if (allocated(entry%name)) then
+         name = entry%name
+      else
+         name = ''
+      end if
+   end function summary_entry_name
+
+   function mpi_summary_entry_name(entry) result(name)
+      type(ftimer_mpi_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: name
+
+      if (allocated(entry%name)) then
+         name = entry%name
+      else
+         name = ''
+      end if
+   end function mpi_summary_entry_name
+
+   integer function metadata_key_len(item) result(width)
+      type(ftimer_metadata_t), intent(in) :: item
+
+      width = 0
+      if (allocated(item%key)) width = len_trim(item%key)
+   end function metadata_key_len
+
+   function metadata_key_text(item) result(text)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      if (allocated(item%key)) then
+         text = trim(item%key)
+      else
+         text = ''
+      end if
+   end function metadata_key_text
+
+   function metadata_value_text(item) result(text)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      if (allocated(item%value)) then
+         text = trim(item%value)
+      else
+         text = ''
+      end if
+   end function metadata_value_text
 
    function escaped_summary_name(name) result(escaped)
       character(len=*), intent(in) :: name

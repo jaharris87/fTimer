@@ -582,26 +582,122 @@ contains
    end subroutine test_reset_without_ierr_warns_and_leaves_state_unchanged
 
    @test
-   subroutine test_name_length_limit_accepts_exact_and_rejects_longer()
+   subroutine test_long_name_above_legacy_len_round_trips()
       type(ftimer_t) :: timer
-      character(len=FTIMER_NAME_LEN) :: exact_name
-      character(len=FTIMER_NAME_LEN + 1) :: long_name
+      type(ftimer_summary_t) :: summary
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: printed
+      character(len=FTIMER_NAME_LEN + 48) :: long_name
+      integer :: expected_len
       integer :: ierr
-      integer :: id_exact
-      integer :: id_long
+      integer :: id
+      integer :: state_name_len
+      integer :: summary_name_len
+      integer :: unit
+      logical :: printed_name_matches
+      logical :: state_name_matches
+      logical :: summary_name_matches
 
-      exact_name = repeat("x", FTIMER_NAME_LEN)
-      long_name = repeat("y", FTIMER_NAME_LEN + 1)
+      long_name = repeat("x", len(long_name))
+      expected_len = len(long_name)
 
       call timer%init(ierr=ierr)
-      id_exact = timer%lookup(exact_name, ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      @assertEqual(1, id_exact)
+      call attach_mock_clock(timer)
 
-      id_long = timer%lookup(long_name, ierr=ierr)
-      @assertEqual(FTIMER_ERR_INVALID_NAME, ierr)
-      @assertEqual(0, id_long)
-   end subroutine test_name_length_limit_accepts_exact_and_rejects_longer
+      id = timer%lookup(long_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, id)
+
+      call timer%start(long_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp
+      call timer%stop(long_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      state_name_len = len_trim(state%segments(id)%name)
+      summary_name_len = len_trim(summary%entries(1)%name)
+      state_name_matches = trim(state%segments(id)%name) == long_name
+      summary_name_matches = trim(summary%entries(1)%name) == long_name
+      open (newunit=unit, status='scratch', action='readwrite')
+      call timer%print_summary(unit=unit, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      printed = read_unit_text(unit)
+      close (unit)
+      printed_name_matches = index(printed, long_name) > 0
+
+      @assertEqual(expected_len, state_name_len)
+      @assertEqual(expected_len, summary_name_len)
+      @assertTrue(state_name_matches)
+      @assertTrue(summary_name_matches)
+      @assertTrue(printed_name_matches)
+      @assertEqual(2.0_wp, summary%entries(1)%inclusive_time)
+   end subroutine test_long_name_above_legacy_len_round_trips
+
+   @test
+   subroutine test_names_that_share_legacy_prefix_remain_distinct()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=FTIMER_NAME_LEN) :: legacy_prefix
+      character(len=FTIMER_NAME_LEN + 8) :: first_name
+      character(len=FTIMER_NAME_LEN + 8) :: second_name
+      integer :: first_id
+      integer :: first_idx
+      integer :: ierr
+      integer :: second_id
+      integer :: second_idx
+      logical :: first_name_matches
+      logical :: second_name_matches
+
+      legacy_prefix = repeat('p', len(legacy_prefix))
+      first_name = legacy_prefix//'suffixA1'
+      second_name = legacy_prefix//'suffixB2'
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      first_id = timer%lookup(first_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      second_id = timer%lookup(second_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertTrue(first_id /= second_id)
+
+      fake_time = 0.0_wp
+      call timer%start(first_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp
+      call timer%stop(first_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%start(second_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 5.0_wp
+      call timer%stop(second_name, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      first_idx = find_summary_entry(summary, first_name, 0)
+      second_idx = find_summary_entry(summary, second_name, 0)
+      @assertTrue(first_idx > 0)
+      @assertTrue(second_idx > 0)
+
+      first_name_matches = trim(summary%entries(first_idx)%name) == first_name
+      second_name_matches = trim(summary%entries(second_idx)%name) == second_name
+
+      @assertTrue(first_name_matches)
+      @assertTrue(second_name_matches)
+      @assertEqual(2.0_wp, summary%entries(first_idx)%inclusive_time)
+      @assertEqual(3.0_wp, summary%entries(second_idx)%inclusive_time)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_names_that_share_legacy_prefix_remain_distinct
 
    @test
    subroutine test_lookup_rejects_control_chars_and_edge_whitespace()
