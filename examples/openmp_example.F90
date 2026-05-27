@@ -15,7 +15,8 @@ program openmp_example
    call ftimer_init()
 
    ! Supported pattern: time the parallel region as a whole by starting and
-   ! stopping outside the !$omp parallel block.
+   ! stopping outside the !$omp parallel block. For asynchronous accelerator
+   ! work, callers must synchronize device completion before stopping a timer.
    call ftimer_start("parallel_region")
 !$omp parallel default(none) shared(accumulator, nthreads) private(i)
    do i = 1, 150000

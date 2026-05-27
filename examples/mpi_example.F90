@@ -16,6 +16,9 @@ program mpi_example
    call MPI_Comm_size(MPI_COMM_WORLD, nprocs, ierr)
 
    call ftimer_init(comm=MPI_COMM_WORLD, ierr=ierr)
+
+   ! This measures each rank's local wall-clock interval. Add explicit
+   ! MPI synchronization if the intended phase definition requires it.
    call ftimer_start("rank_work", ierr=ierr)
 
    accumulator = 0.0
