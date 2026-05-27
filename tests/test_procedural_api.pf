@@ -196,6 +196,58 @@ contains
    end subroutine test_procedural_start_stop_matches_oop
 
    @test
+   subroutine test_procedural_active_get_summary_matches_oop()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_summary_t) :: oop_summary
+      type(ftimer_summary_t) :: procedural_summary
+      integer :: ierr
+
+      call oop_timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(oop_timer)
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call oop_timer%start("phase4_active", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_start("phase4_active", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 2.25_wp
+      call oop_timer%get_summary(oop_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_get_summary(procedural_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call assert_summary_equal(procedural_summary, oop_summary)
+      @assertTrue(procedural_summary%has_active_timers)
+      @assertTrue(procedural_summary%entries(1)%is_active)
+
+      fake_time = 4.5_wp
+      call oop_timer%stop("phase4_active", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_stop("phase4_active", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call oop_timer%get_summary(oop_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_get_summary(procedural_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call assert_summary_equal(procedural_summary, oop_summary)
+      @assertFalse(procedural_summary%has_active_timers)
+      @assertFalse(procedural_summary%entries(1)%is_active)
+      @assertEqual(4.5_wp, procedural_summary%entries(1)%inclusive_time)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_active_get_summary_matches_oop
+
+   @test
    subroutine test_procedural_lookup_start_id_stop_id_matches_oop()
       type(ftimer_t) :: oop_timer
       type(ftimer_summary_t) :: oop_summary
@@ -591,6 +643,7 @@ contains
 
       @assertEqual(rhs%num_entries, lhs%num_entries)
       @assertEqual(rhs%total_time, lhs%total_time)
+      @assertEqual(rhs%has_active_timers, lhs%has_active_timers)
       @assertTrue(summary_node_ids_unique(lhs))
       @assertTrue(summary_node_ids_unique(rhs))
 
@@ -607,6 +660,7 @@ contains
          @assertEqual(rhs%entries(i)%self_time, lhs%entries(i)%self_time)
          @assertEqual(rhs%entries(i)%call_count, lhs%entries(i)%call_count)
          @assertEqual(rhs%entries(i)%avg_time, lhs%entries(i)%avg_time)
+         @assertEqual(rhs%entries(i)%is_active, lhs%entries(i)%is_active)
          pct_diff = abs(lhs%entries(i)%pct_time - rhs%entries(i)%pct_time)
          @assertTrue(pct_diff < 1.0e-12_wp)
       end do

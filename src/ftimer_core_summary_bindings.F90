@@ -319,6 +319,7 @@ contains
       summary%end_date = ''
       summary%total_time = 0.0_wp
       summary%num_entries = 0
+      summary%has_active_timers = .false.
    end subroutine reset_summary
 
    subroutine reset_mpi_summary(summary)

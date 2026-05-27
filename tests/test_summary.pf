@@ -1,11 +1,15 @@
 module test_summary
+   use, intrinsic :: iso_c_binding, only: c_ptr
    use pfunit
    use ftimer_core, only: ftimer_t
    use ftimer_summary, only: build_summary, format_summary
-   use ftimer_types, only: FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_metadata_t, ftimer_segment_t, &
-                           ftimer_summary_entry_t, ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_EVENT_START, FTIMER_EVENT_STOP, FTIMER_MISMATCH_REPAIR, FTIMER_SUCCESS, &
+                           ftimer_call_stack_t, ftimer_metadata_t, ftimer_segment_t, ftimer_summary_entry_t, &
+                           ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, build_stack, fake_time, read_unit_text
    implicit none
+
+   integer, save :: snapshot_callback_count = 0
 
 contains
 
@@ -58,6 +62,7 @@ contains
 
       @assertEqual(3, entry_count)
       @assertEqual(15.0_wp, total_time)
+      @assertFalse(summary%has_active_timers)
       @assertTrue(trimmed_start > 0)
       @assertTrue(trimmed_end > 0)
       @assertTrue(first_name_matches)
@@ -106,7 +111,26 @@ contains
       @assertEqual(40.0_wp, entry%pct_time)
       @assertEqual(0, entry%node_id)
       @assertEqual(0, entry%parent_id)
+      @assertFalse(entry%is_active)
    end subroutine test_summary_entry_positional_ctor_keeps_legacy_order
+
+   @test
+   subroutine test_summary_positional_ctor_keeps_legacy_order()
+      type(ftimer_summary_entry_t), allocatable :: entries(:)
+      type(ftimer_summary_t) :: summary
+
+      allocate (entries(1))
+      entries(1)%name = 'work'
+
+      summary = ftimer_summary_t('start', 'end', 3.0_wp, 1, entries)
+
+      @assertEqual('start', trim(summary%start_date))
+      @assertEqual('end', trim(summary%end_date))
+      @assertEqual(3.0_wp, summary%total_time)
+      @assertEqual(1, summary%num_entries)
+      @assertEqual('work', trim(summary%entries(1)%name))
+      @assertFalse(summary%has_active_timers)
+   end subroutine test_summary_positional_ctor_keeps_legacy_order
 
    @test
    subroutine test_print_summary_writes_expected_text_with_metadata()
@@ -150,6 +174,57 @@ contains
 
       @assertTrue(texts_match)
    end subroutine test_print_summary_writes_expected_text_with_metadata
+
+   @test
+   subroutine test_active_snapshot_does_not_mutate_runtime_or_fire_callbacks()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: active_summary
+      type(ftimer_summary_t) :: final_summary
+      character(len=:), allocatable :: text
+      integer :: ierr
+      integer :: unit
+      logical :: row_marked_active
+
+      call reset_snapshot_callback_count()
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+      call timer%set_callback(count_snapshot_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%start("A", ierr=ierr)
+      @assertEqual(1, snapshot_callback_count)
+
+      fake_time = 2.0_wp
+      call timer%get_summary(active_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, snapshot_callback_count)
+
+      open (newunit=unit, status='scratch', action='readwrite')
+      fake_time = 3.0_wp
+      call timer%print_summary(unit=unit, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, snapshot_callback_count)
+      close (unit)
+
+      call format_summary(active_summary, text)
+      row_marked_active = index(text, 'A               2.000000      2.000000         1    100.00  yes') > 0
+
+      @assertTrue(active_summary%has_active_timers)
+      @assertTrue(active_summary%entries(1)%is_active)
+      @assertTrue(row_marked_active)
+
+      fake_time = 5.0_wp
+      call timer%stop("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, snapshot_callback_count)
+
+      call timer%get_summary(final_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertFalse(final_summary%has_active_timers)
+      @assertFalse(final_summary%entries(1)%is_active)
+      @assertEqual(5.0_wp, final_summary%entries(1)%inclusive_time)
+      @assertEqual(5.0_wp, final_summary%entries(1)%self_time)
+   end subroutine test_active_snapshot_does_not_mutate_runtime_or_fire_callbacks
 
    @test
    subroutine test_print_summary_handles_deep_hierarchy()
@@ -210,6 +285,10 @@ contains
    subroutine test_get_summary_surfaces_backward_clock_deltas()
       type(ftimer_t) :: timer
       type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      logical :: active_line_present
+      logical :: active_note_present
+      logical :: active_row_present
       integer :: ierr
 
       call timer%init(ierr=ierr)
@@ -222,9 +301,226 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
       @assertEqual(-1.0_wp, summary%total_time)
       @assertEqual(1, summary%num_entries)
+      @assertTrue(summary%has_active_timers)
+      @assertTrue(summary%entries(1)%is_active)
       @assertEqual(-1.0_wp, summary%entries(1)%inclusive_time)
       @assertEqual(-1.0_wp, summary%entries(1)%self_time)
+
+      call format_summary(summary, text)
+      active_line_present = index(text, 'Active timers  : yes') > 0
+      active_note_present = index(text, 'Snapshot note : active timers are included through the snapshot timestamp.') > 0
+      active_row_present = index(text, 'yes') > 0
+
+      @assertTrue(active_line_present)
+      @assertTrue(active_note_present)
+      @assertTrue(active_row_present)
    end subroutine test_get_summary_surfaces_backward_clock_deltas
+
+   @test
+   subroutine test_active_nested_snapshot_preserves_tree_and_self_time()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("outer", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%start("inner", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%get_summary(summary, ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertTrue(summary%has_active_timers)
+      @assertEqual(2, summary%num_entries)
+      @assertEqual('outer', trim(summary%entries(1)%name))
+      @assertEqual('inner', trim(summary%entries(2)%name))
+      @assertTrue(summary%entries(1)%is_active)
+      @assertTrue(summary%entries(2)%is_active)
+      @assertEqual(5.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(3.0_wp, summary%entries(2)%inclusive_time)
+      @assertEqual(2.0_wp, summary%entries(1)%self_time)
+      @assertEqual(3.0_wp, summary%entries(2)%self_time)
+      call assert_entry_parent(summary, 1, 0)
+      call assert_entry_parent(summary, 2, 1)
+   end subroutine test_active_nested_snapshot_preserves_tree_and_self_time
+
+   @test
+   subroutine test_active_snapshot_marks_mixed_active_and_stopped_rows()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      logical :: active_row_present
+      logical :: stopped_row_present
+      integer :: ierr
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("stopped", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%stop("stopped", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%start("running", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%get_summary(summary, ierr=ierr)
+
+      call format_summary(summary, text)
+      stopped_row_present = index(text, 'stopped         1.000000      1.000000         1     20.00  no') > 0
+      active_row_present = index(text, 'running         3.000000      3.000000         1     60.00  yes') > 0
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertTrue(summary%has_active_timers)
+      @assertFalse(summary%entries(1)%is_active)
+      @assertTrue(summary%entries(2)%is_active)
+      @assertTrue(stopped_row_present)
+      @assertTrue(active_row_present)
+   end subroutine test_active_snapshot_marks_mixed_active_and_stopped_rows
+
+   @test
+   subroutine test_repair_snapshot_marks_zero_call_active_context()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      integer :: child_b_idx
+      integer :: ierr
+      integer :: root_b_idx
+      logical :: continuation_row_present
+
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_REPAIR, ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("B", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%stop("A", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%get_summary(summary, ierr=ierr)
+
+      child_b_idx = find_summary_entry(summary, "B", 1)
+      root_b_idx = find_summary_entry(summary, "B", 0)
+      call format_summary(summary, text)
+      continuation_row_present = index(text, 'B               3.000000      3.000000         0     60.00  yes') > 0
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertTrue(summary%has_active_timers)
+      @assertTrue(child_b_idx > 0)
+      @assertTrue(root_b_idx > 0)
+      @assertFalse(summary%entries(child_b_idx)%is_active)
+      @assertTrue(summary%entries(root_b_idx)%is_active)
+      @assertEqual(1, summary%entries(child_b_idx)%call_count)
+      @assertEqual(0, summary%entries(root_b_idx)%call_count)
+      @assertEqual(0.0_wp, summary%entries(root_b_idx)%avg_time)
+      @assertTrue(continuation_row_present)
+   end subroutine test_repair_snapshot_marks_zero_call_active_context
+
+   @test
+   subroutine test_format_summary_derives_active_header_from_entries()
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      logical :: active_header_present
+      logical :: active_row_present
+
+      summary%total_time = 2.0_wp
+      summary%num_entries = 1
+      summary%has_active_timers = .false.
+      allocate (summary%entries(1))
+      summary%entries(1)%name = 'manual'
+      summary%entries(1)%inclusive_time = 2.0_wp
+      summary%entries(1)%self_time = 2.0_wp
+      summary%entries(1)%call_count = 1
+      summary%entries(1)%pct_time = 100.0_wp
+      summary%entries(1)%is_active = .true.
+
+      call format_summary(summary, text)
+      active_header_present = index(text, 'Active timers  : yes') > 0
+      active_row_present = index(text, 'manual          2.000000      2.000000         1    100.00  yes') > 0
+
+      @assertTrue(active_header_present)
+      @assertTrue(active_row_present)
+   end subroutine test_format_summary_derives_active_header_from_entries
+
+   @test
+   subroutine test_format_summary_ignores_stale_top_level_active_flag()
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      logical :: active_header_present
+      logical :: active_column_present
+
+      summary%total_time = 2.0_wp
+      summary%num_entries = 1
+      summary%has_active_timers = .true.
+      allocate (summary%entries(1))
+      summary%entries(1)%name = 'manual'
+      summary%entries(1)%inclusive_time = 2.0_wp
+      summary%entries(1)%self_time = 2.0_wp
+      summary%entries(1)%call_count = 1
+      summary%entries(1)%pct_time = 100.0_wp
+      summary%entries(1)%is_active = .false.
+
+      call format_summary(summary, text)
+      active_header_present = index(text, 'Active timers') > 0
+      active_column_present = index(text, 'Active') > 0
+
+      @assertFalse(active_header_present)
+      @assertFalse(active_column_present)
+   end subroutine test_format_summary_ignores_stale_top_level_active_flag
+
+   @test
+   subroutine test_format_summary_ignores_empty_stale_top_level_active_flag()
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      logical :: active_header_present
+      logical :: active_column_present
+
+      summary%total_time = 2.0_wp
+      summary%num_entries = 0
+      summary%has_active_timers = .true.
+      allocate (summary%entries(0))
+
+      call format_summary(summary, text)
+      active_header_present = index(text, 'Active timers') > 0
+      active_column_present = index(text, 'Active') > 0
+
+      @assertFalse(active_header_present)
+      @assertFalse(active_column_present)
+   end subroutine test_format_summary_ignores_empty_stale_top_level_active_flag
+
+   @test
+   subroutine test_format_summary_skips_active_status_metadata_collision()
+      type(ftimer_metadata_t) :: metadata(2)
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      logical :: active_header_present
+      logical :: conflicting_header_present
+      logical :: user_metadata_present
+
+      summary%total_time = 2.0_wp
+      summary%num_entries = 1
+      summary%has_active_timers = .true.
+      allocate (summary%entries(1))
+      summary%entries(1)%name = 'manual'
+      summary%entries(1)%inclusive_time = 2.0_wp
+      summary%entries(1)%self_time = 2.0_wp
+      summary%entries(1)%call_count = 1
+      summary%entries(1)%pct_time = 100.0_wp
+      summary%entries(1)%is_active = .true.
+      metadata(1)%key = 'Active timers'
+      metadata(1)%value = 'no'
+      metadata(2)%key = 'Case'
+      metadata(2)%value = 'Unit'
+
+      call format_summary(summary, text, metadata)
+      active_header_present = index(text, 'Active timers  : yes') > 0
+      conflicting_header_present = index(text, 'Active timers  : no') > 0
+      user_metadata_present = index(text, 'Case           : Unit') > 0
+
+      @assertTrue(active_header_present)
+      @assertFalse(conflicting_header_present)
+      @assertTrue(user_metadata_present)
+   end subroutine test_format_summary_skips_active_status_metadata_collision
 
    @test
    subroutine test_get_summary_keeps_same_timer_distinct_across_parents()
@@ -465,6 +761,37 @@ contains
       text = text//'A              10.000000      3.000000         1    100.00'//new_line('a')
       text = text//'  B             7.000000      7.000000         1     70.00'//new_line('a')
    end function expected_summary_output
+
+   subroutine count_snapshot_callback(timer_id, context_idx, event, timestamp, user_data)
+      integer, intent(in) :: timer_id
+      integer, intent(in) :: context_idx
+      integer, intent(in) :: event
+      real(wp), intent(in) :: timestamp
+      type(c_ptr), intent(in) :: user_data
+
+      if ((event == FTIMER_EVENT_START) .or. (event == FTIMER_EVENT_STOP)) then
+         snapshot_callback_count = snapshot_callback_count + 1
+      end if
+   end subroutine count_snapshot_callback
+
+   subroutine reset_snapshot_callback_count()
+      snapshot_callback_count = 0
+   end subroutine reset_snapshot_callback_count
+
+   integer function find_summary_entry(summary, name, depth) result(idx)
+      type(ftimer_summary_t), intent(in) :: summary
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: depth
+      integer :: i
+
+      idx = 0
+      do i = 1, summary%num_entries
+         if ((trim(summary%entries(i)%name) == name) .and. (summary%entries(i)%depth == depth)) then
+            idx = i
+            return
+         end if
+      end do
+   end function find_summary_entry
 
    integer function count_lines(text) result(count)
       character(len=*), intent(in) :: text
