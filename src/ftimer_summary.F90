@@ -31,6 +31,7 @@ contains
          summary%num_entries = 0
          allocate (summary%entries(0))
       end if
+      summary%has_active_timers = summary_has_active_entries(summary)
       if (summary%num_entries <= 0) return
    end subroutine build_summary
 
@@ -41,24 +42,36 @@ contains
       character(len=64) :: fmt
       character(len=:), allocatable :: line
       character(len=:), allocatable :: padded
+      character(len=8) :: active_value
       integer :: i
       integer :: key_width
       integer :: line_width
       integer :: name_width
+      logical :: has_active_entries
 
       text = ''
+      has_active_entries = summary_has_active_entries(summary)
       key_width = metadata_key_width(metadata)
+      key_width = max(key_width, len('Active timers'))
       name_width = summary_name_width(summary)
-      line_width = summary_line_width(name_width)
+      line_width = summary_line_width(name_width, has_active_entries)
       allocate (character(len=line_width) :: line)
 
       write (line, '(f0.6)') summary%total_time
       call set_padded_text(padded, 'Total time (s)', key_width)
       call append_line(text, padded(1:key_width)//' : '//trim(line))
 
+      if (has_active_entries) then
+         active_value = 'yes'
+         call set_padded_text(padded, 'Active timers', key_width)
+         call append_line(text, padded(1:key_width)//' : '//trim(active_value))
+         call append_line(text, 'Snapshot note : active timers are included through the snapshot timestamp.')
+      end if
+
       if (present(metadata)) then
          do i = 1, size(metadata)
             if (len_trim(metadata(i)%key) <= 0) cycle
+            if (has_active_entries .and. metadata_key_is_reserved(metadata(i)%key)) cycle
             call set_padded_text(padded, trim(metadata(i)%key), key_width)
             call append_line(text, padded(1:key_width)//' : '//trim(metadata(i)%value))
          end do
@@ -67,18 +80,34 @@ contains
       call append_line(text, '')
       call set_padded_text(padded, 'Timer name', name_width)
       line = repeat(' ', len(line))
-      line(1:name_width + len('  Inclusive (s)     Self (s)    Calls   % Total')) = &
-         padded(1:name_width)//'  Inclusive (s)     Self (s)    Calls   % Total'
+      if (has_active_entries) then
+         line(1:name_width + len('  Inclusive (s)     Self (s)    Calls   % Total  Active')) = &
+            padded(1:name_width)//'  Inclusive (s)     Self (s)    Calls   % Total  Active'
+      else
+         line(1:name_width + len('  Inclusive (s)     Self (s)    Calls   % Total')) = &
+            padded(1:name_width)//'  Inclusive (s)     Self (s)    Calls   % Total'
+      end if
       call append_line(text, trim(line))
       call append_line(text, repeat('-', len_trim(line)))
 
-      write (fmt, '("(a",i0,",2x,f12.6,2x,f12.6,2x,i8,2x,f8.2)")') name_width
-      do i = 1, summary%num_entries
-         call set_padded_text(padded, display_name(summary%entries(i)), name_width)
-         write (line, fmt) padded(1:name_width), summary%entries(i)%inclusive_time, &
-            summary%entries(i)%self_time, summary%entries(i)%call_count, summary%entries(i)%pct_time
-         call append_line(text, trim(line))
-      end do
+      if (has_active_entries) then
+         write (fmt, '("(a",i0,",2x,f12.6,2x,f12.6,2x,i8,2x,f8.2,2x,a)")') name_width
+         do i = 1, summary%num_entries
+            call set_padded_text(padded, display_name(summary%entries(i)), name_width)
+            write (line, fmt) padded(1:name_width), summary%entries(i)%inclusive_time, &
+               summary%entries(i)%self_time, summary%entries(i)%call_count, summary%entries(i)%pct_time, &
+               active_text(summary%entries(i)%is_active)
+            call append_line(text, trim(line))
+         end do
+      else
+         write (fmt, '("(a",i0,",2x,f12.6,2x,f12.6,2x,i8,2x,f8.2)")') name_width
+         do i = 1, summary%num_entries
+            call set_padded_text(padded, display_name(summary%entries(i)), name_width)
+            write (line, fmt) padded(1:name_width), summary%entries(i)%inclusive_time, &
+               summary%entries(i)%self_time, summary%entries(i)%call_count, summary%entries(i)%pct_time
+            call append_line(text, trim(line))
+         end do
+      end if
    end subroutine format_summary
 
    subroutine format_mpi_summary(summary, text, metadata)
@@ -195,6 +224,7 @@ contains
       summary%end_date = ''
       summary%total_time = 0.0_wp
       summary%num_entries = 0
+      summary%has_active_timers = .false.
    end subroutine clear_summary
 
    subroutine populate_summary_entries(entries, num_entries, segments, total_time, end_time)
@@ -299,6 +329,7 @@ contains
          entries(position)%node_id = position
          entries(position)%inclusive_time = node_inclusive(node)
          entries(position)%call_count = node_call_count(node)
+         entries(position)%is_active = context_is_active(segments(node_segment(node)), node_ctx(node))
          if (entries(position)%call_count > 0) then
             entries(position)%avg_time = entries(position)%inclusive_time/ &
                                          real(entries(position)%call_count, wp)
@@ -535,6 +566,16 @@ contains
       count = segment%call_count(ctx)
    end function call_count_for_context
 
+   logical function context_is_active(segment, ctx) result(is_active)
+      type(ftimer_segment_t), intent(in) :: segment
+      integer, intent(in) :: ctx
+
+      is_active = .false.
+      if (.not. allocated(segment%is_running)) return
+      if (ctx > size(segment%is_running)) return
+      is_active = segment%is_running(ctx)
+   end function context_is_active
+
    real(wp) function inclusive_for_context(segment, ctx, end_time) result(total)
       type(ftimer_segment_t), intent(in) :: segment
       integer, intent(in) :: ctx
@@ -577,6 +618,30 @@ contains
       end if
    end function context_is_visible
 
+   logical function summary_has_active_entries(summary) result(has_active)
+      type(ftimer_summary_t), intent(in) :: summary
+      integer :: i
+
+      has_active = .false.
+      do i = 1, summary%num_entries
+         if (summary%entries(i)%is_active) then
+            has_active = .true.
+            return
+         end if
+      end do
+   end function summary_has_active_entries
+
+   function active_text(is_active) result(text)
+      logical, intent(in) :: is_active
+      character(len=3) :: text
+
+      if (is_active) then
+         text = 'yes'
+      else
+         text = 'no'
+      end if
+   end function active_text
+
    integer function metadata_key_width(metadata) result(width)
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
       integer :: i
@@ -588,6 +653,12 @@ contains
          width = max(width, len_trim(metadata(i)%key))
       end do
    end function metadata_key_width
+
+   logical function metadata_key_is_reserved(key) result(is_reserved)
+      character(len=*), intent(in) :: key
+
+      is_reserved = trim(key) == 'Active timers'
+   end function metadata_key_is_reserved
 
    subroutine set_padded_text(padded, text, width)
       character(len=:), allocatable, intent(out) :: padded
@@ -601,10 +672,15 @@ contains
       if (copy_len > 0) padded(1:copy_len) = text(1:copy_len)
    end subroutine set_padded_text
 
-   integer function summary_line_width(name_width) result(width)
+   integer function summary_line_width(name_width, show_active) result(width)
       integer, intent(in) :: name_width
+      logical, intent(in) :: show_active
 
-      width = name_width + 48
+      if (show_active) then
+         width = name_width + 56
+      else
+         width = name_width + 48
+      end if
    end function summary_line_width
 
    integer function mpi_summary_line_width(name_width) result(width)

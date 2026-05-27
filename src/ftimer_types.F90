@@ -69,6 +69,7 @@ module ftimer_types
       ! Stable only within one produced summary object. Root nodes use parent_id = 0.
       integer :: node_id = 0
       integer :: parent_id = 0
+      logical :: is_active = .false.
    end type ftimer_summary_entry_t
 
    type :: ftimer_summary_t
@@ -77,6 +78,7 @@ module ftimer_types
       real(wp) :: total_time = 0.0_wp
       integer :: num_entries = 0
       type(ftimer_summary_entry_t), allocatable :: entries(:)
+      logical :: has_active_timers = .false.
    end type ftimer_summary_t
 
    type :: ftimer_mpi_summary_entry_t

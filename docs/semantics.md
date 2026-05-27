@@ -70,17 +70,24 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 ## Local Summary Contract
 
 - `get_summary()` returns a local-only `ftimer_summary_t`
+- `get_summary()`, `print_summary()`, and `write_summary()` are live snapshot APIs, not stopped-run-only final-report APIs
+- If timers are active at the snapshot timestamp, local summaries include those active contexts with elapsed time computed through that timestamp; they do not synthesize hidden stops, fire callbacks, or mutate runtime state
+- `summary%has_active_timers` is true when at least one returned entry was active at the snapshot timestamp
 - `summary%entries` remain in preorder so current formatted-report traversal and existing depth-oriented consumers keep working
-- Each entry retains `name` and `depth`, and now also exposes explicit tree linkage through `node_id` and `parent_id`
+- Each entry retains `name` and `depth`, exposes explicit tree linkage through `node_id` and `parent_id`, and exposes `is_active` for that timer context at the snapshot timestamp
+- `call_count` remains the count of user-visible `start` calls for that exact timer context. Repair-mode internal continuations can therefore appear as active entries with `is_active = .true.` and `call_count = 0`; that is not a hidden user call.
 - `node_id` is unique and stable only within one produced summary object
 - `parent_id` refers to another entry's `node_id`; roots use `parent_id = 0`
 - Current `main` does not promise that local summary node ids remain stable across separate runs or across independently produced summary objects
+- `print_summary()` and `write_summary()` format the same local snapshot data. When any returned entry is active, formatted reports add active-state information and reserve the `Active timers` metadata key for the built-in snapshot status line. A formatted local report whose `Active timers` field is `yes` is an interim snapshot, not a final stopped-run report.
+- A caller that requires a final local report should stop all timers first and verify `summary%has_active_timers == .false.`
 
 ## MPI Guarantees
 
 - `mpi_summary()` is collective over the communicator captured by `init`
 - Omitting `comm` at `init` means `mpi_summary()` uses `MPI_COMM_WORLD`
 - All ranks in that communicator must enter `mpi_summary()` with fully stopped timers
+- Unlike local summaries, MPI summaries are final stopped-run summaries only; active timers return `FTIMER_ERR_ACTIVE`
 - The current validated MPI interface path is `use mpi` with integer communicator handles captured at `init`
 - `FTIMER_USE_MPI=ON` configure requires that the active `use mpi` path compile the `MPI_Type_match_size` and `MPI_ERRORS_RETURN` calls used for datatype validation
 - MPI summary reductions select MPI datatypes with `MPI_Type_match_size` for the actual `real(wp)` and `integer(int64)` storage sizes before reducing those buffers. If that validation API is present but the active MPI implementation cannot provide matching datatypes at runtime, `mpi_summary()` temporarily requests MPI error returns for the datatype lookup, fails with `FTIMER_ERR_UNKNOWN`, and leaves the MPI result empty instead of reducing through a mismatched fixed datatype.

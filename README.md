@@ -20,6 +20,7 @@ fTimer fits best when you want timing behavior you can trust:
 - nested timers are treated as a real hierarchy, not a flat label list
 - mismatch handling is explicit and configurable (`strict`, `warn`, `repair`)
 - summaries are available as data first (`get_summary()`), with text formatting layered on top
+- local summaries are live snapshots: active timers are included explicitly and marked in the data model/report output
 - local summary entries retain formatter-friendly preorder `name`/`depth` data and also expose explicit `node_id`/`parent_id` tree links
 - pure-MPI reductions return a distinct `ftimer_mpi_summary_t` with globally meaningful fields on every participating rank
 - an injectable clock supports deterministic tests and controlled benchmarking
@@ -147,6 +148,7 @@ Operational notes:
 - Clock changes are allowed before `init()` or before a run records timing data. After timing has started, `set_clock()` and `clear_clock()` return `FTIMER_ERR_ACTIVE` (or warn to stderr when `ierr` is omitted) and leave state unchanged. Use `reset()`, `init()`, or `finalize()` to begin a fresh run on a different clock.
 - Configure callbacks through `set_callback()` and `clear_callback()`. Callback configuration is rejected while timers are active, `clear_callback()` also clears callback `user_data`, and `finalize()` clears callback configuration.
 - `get_summary()`, `print_summary()`, and `write_summary()` are local-only summary/reporting paths.
+- `get_summary()`, `print_summary()`, and `write_summary()` are live snapshot APIs. They include active local timer contexts through the snapshot timestamp without stopping them, and mark that state with `summary%has_active_timers`, each entry's `is_active`, and, when active entries exist, the formatted report's `Active timers`/`Active` fields. For a final local report, stop all timers first and verify `summary%has_active_timers == .false.`.
 - Local summary entries retain preorder formatting compatibility and now expose explicit tree structure through `node_id` and `parent_id`. `node_id` values are stable only within one produced summary object, and roots use `parent_id = 0`.
 - `mpi_summary()` and `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init`.
 - A successful MPI reduction returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
