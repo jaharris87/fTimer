@@ -16,6 +16,23 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 - Wall-clock only (no CPU time, no hardware counters)
 - Injected clocks are expected to be monotonic within a timing run
 
+### Wall-clock interpretation responsibilities
+
+fTimer records the elapsed host wall-clock interval between the caller's
+`start` and `stop` calls. It does not synchronize accelerator/device queues,
+wait on asynchronous offload work, or insert MPI barriers around timer regions.
+
+- For asynchronous accelerator or device work, a timer around a launch may
+  measure only host enqueue/launch latency. If the intended quantity is device
+  completion time, the caller must perform the appropriate device synchronization
+  before `stop`.
+- For MPI phase timing, rank-local start/stop windows are exactly that:
+  rank-local wall-clock intervals. `mpi_summary()` reduces the recorded local
+  intervals, but it does not imply that all ranks entered or exited the phase
+  together. If the intended quantity is a synchronized global phase duration,
+  the caller must place any required MPI synchronization outside the measured
+  region or deliberately include it in the measured region.
+
 ## Nesting Rules
 
 - Strict stack-based nesting (no overlapping timers)

@@ -23,6 +23,9 @@ Implemented capabilities include:
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
 fTimer does not currently provide built-in hardware counter backends, JSON/CSV export utilities, a serious profiler-backend callback contract, or general thread-safe timing across OpenMP worker threads.
+It also does not provide accelerator/device synchronization hooks or implicit MPI
+barriers; callers own those synchronization decisions when interpreting
+wall-clock intervals.
 
 ## Repository Map
 
@@ -128,6 +131,9 @@ The current implementation is organized around a few design choices that show up
 - Per-segment context selection remains fully context-sensitive, but it now uses a per-segment parent-stack index in steady state instead of rescanning the known parent-stack variants for that timer on every hit.
 - Callback hooks are lightweight intra-run hooks for normal start/stop events only; internal mismatch repair transitions must stay invisible to callback consumers, and current `main` does not define a stronger profiler-backend identity contract.
 - MPI summary reduction is descriptor-validated before collectives, and reduced cross-rank fields are valid only in the documented result shape.
+- MPI timed regions are rank-local wall-clock intervals unless the caller adds
+  synchronization; `mpi_summary()` reduces the recorded intervals but does not
+  imply phase-entry or phase-exit barriers.
 - OpenMP support is intentionally narrow: guarded timer operations run only on the master thread when `FTIMER_USE_OPENMP=ON`, so this path should not be read as general hybrid-thread timing support.
 
 Those runtime semantics are specified in detail in [`docs/semantics.md`](semantics.md); this document focuses on how the repository realizes them.
