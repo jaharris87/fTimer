@@ -11,29 +11,34 @@
 !                                       lookup + stack push/pop + clock call
 !  2. Flat start/stop (id-based)     -- same path minus name normalization and
 !                                       mapped lookup; isolates stack cost
-!  3-7. Lookup scaling N=1/10/50/100/1000
+!  3-6. Long-name hot path L=64/256/1024
+!                                     -- one resident timer with long labels;
+!                                       name-based rows include full validation
+!                                       and hashing, id-based row shows cached
+!                                       lookup behavior for a long label
+!  7-11. Lookup scaling N=1/10/50/100/1000
 !                                     -- name-based; keeps the historical
 !                                       comparison points while also showing
 !                                       whether steady-state mapped lookup
 !                                       stays near-flat as the resident timer
 !                                       set grows into the larger regimes
-!  8-13. Context scaling C=1/10/50/100/500/1000
+! 12-17. Context scaling C=1/10/50/100/500/1000
 !                                     -- one hot timer reused under many parent
 !                                        stacks; name-based rows measure the
 !                                        default path under growing context
 !                                        counts and id-based rows isolate the
 !                                        per-segment parent-stack lookup
-! 14-17. Nesting depth 1/5/10/20     -- id-based; each cycle does D pushes +
+! 18-21. Nesting depth 1/5/10/20     -- id-based; each cycle does D pushes +
 !                                       D pops; shows stack bookkeeping cost
 !                                       scaling with nesting depth
-! 18-20. get_summary N=10/50/100     -- summary build scaling with timer count
-! 21-23. build_summary N=10/50/100   -- direct local summary construction on
+! 22-24. get_summary N=10/50/100     -- summary build scaling with timer count
+! 25-27. build_summary N=10/50/100   -- direct local summary construction on
 !                                       prebuilt flat segments; isolates the
 !                                       tree build/allocation work from the
 !                                       wrapper's timestamp capture
-! 24. raw date string formatting     -- date_and_time + string formatting,
+! 28. raw date string formatting     -- date_and_time + string formatting,
 !                                       matching the original per-call wrapper
-! 25. ftimer_date_string steady-state -- cached second-resolution date stamp
+! 29. ftimer_date_string steady-state -- cached second-resolution date stamp
 !                                        path used by get_summary/print/write
 !
 ! METRICS
@@ -70,6 +75,7 @@ program ftimer_bench
    implicit none
 
    integer, parameter :: REPS_HOT = 100000  ! flat and lookup scenarios
+   integer, parameter :: REPS_LONG_NAME = 50000
    integer, parameter :: REPS_NESTED = 10000   ! per nesting-depth scenario
    integer, parameter :: REPS_SUMMARY = 1000    ! per summary scenario (N=10, N=50)
    ! Reduced rep count for N=100: get_summary at 100 timers is ~40x slower than
@@ -94,6 +100,10 @@ program ftimer_bench
    ! --- Hot-path scenarios ---
    call bench_flat_name(REPS_HOT, count_rate)
    call bench_flat_id(REPS_HOT, count_rate)
+   call bench_long_name(REPS_LONG_NAME, 64, .false., count_rate)
+   call bench_long_name(REPS_LONG_NAME, 256, .false., count_rate)
+   call bench_long_name(REPS_LONG_NAME, 1024, .false., count_rate)
+   call bench_long_name(REPS_LONG_NAME, 1024, .true., count_rate)
 
    write (*, '(a)') ''
 
@@ -156,6 +166,7 @@ program ftimer_bench
    write (*, '(a)') '  - build_summary (direct) uses prebuilt flat segments and fixed dates.'
    write (*, '(a)') '  - raw date string = uncached date_and_time + formatting.'
    write (*, '(a)') '  - ftimer_date_string steady-state = cached path after warm-up.'
+   write (*, '(a)') '  - Long-name name-based rows include full per-call validation and hashing of the label.'
    write (*, '(a)') '  - name-based start/stop remains the default path; lookup/start_id/stop_id is the optional hot path.'
    write (*, '(a)') '  - All scenarios use the real wall-clock (no mock clock).'
    write (*, '(a)') '  - Timings include clock-call overhead inside start/stop.'
@@ -204,7 +215,47 @@ contains
       call print_result('flat start/stop (id-based)', reps, t0, t1, count_rate)
    end subroutine bench_flat_id
 
-   ! Scenarios 3-7: name-based lookup with N unique timers.
+   ! Scenarios 3-6: long-name start/stop with one steady-state resident timer.
+   ! The name-based rows include per-call validation and hashing across the full
+   ! label length. The id-based row shows the cached-id path after one lookup.
+   subroutine bench_long_name(reps, name_len, use_id, count_rate)
+      integer, intent(in) :: reps
+      integer, intent(in) :: name_len
+      logical, intent(in) :: use_id
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0, t1
+      character(len=:), allocatable :: tname
+      character(len=47) :: label
+      integer :: i, id
+
+      tname = repeat('l', name_len)
+
+      call ftimer_init()
+      id = ftimer_lookup(tname)
+      call system_clock(t0)
+      if (use_id) then
+         do i = 1, reps
+            call ftimer_start_id(id)
+            call ftimer_stop_id(id)
+         end do
+      else
+         do i = 1, reps
+            call ftimer_start(tname)
+            call ftimer_stop(tname)
+         end do
+      end if
+      call system_clock(t1)
+      call ftimer_finalize()
+
+      if (use_id) then
+         write (label, '("long name L=",i0," (id-based)")') name_len
+      else
+         write (label, '("long name L=",i0," (name-based)")') name_len
+      end if
+      call print_result(trim(label), reps, t0, t1, count_rate)
+   end subroutine bench_long_name
+
+   ! Scenarios 7-11: name-based lookup with N unique timers.
    ! Cycles through all N timers each outer rep. Each inner start/stop uses
    ! the same public name-based path as production code, but with a large
    ! resident timer set already registered. The 1/10/50 points preserve the

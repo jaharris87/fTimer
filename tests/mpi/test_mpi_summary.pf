@@ -220,16 +220,22 @@ contains
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
       type(ftimer_mpi_summary_t) :: summary
+      character(len=:), allocatable :: printed
+      character(len=*), parameter :: print_path = 'test_mpi_long_name_print_summary.txt'
       character(len=FTIMER_NAME_LEN + 32) :: root_name
       character(len=FTIMER_NAME_LEN + 48) :: child_name
       integer :: child_len
       integer :: expected_child_len
       integer :: expected_root_len
+      integer :: flags(2)
       integer :: ierr
+      integer :: rank
       integer :: root_len
+      integer :: unit
       logical :: child_name_matches
       logical :: root_name_matches
 
+      rank = this%getProcessRank()
       root_name = repeat('r', len(root_name))
       child_name = repeat('c', len(child_name))
       expected_root_len = len(root_name)
@@ -257,6 +263,31 @@ contains
       @assertTrue(child_name_matches)
       @assertEqual(0, summary_parent_index(summary, 1))
       @assertEqual(1, summary_parent_index(summary, 2))
+
+      flags = 0
+      if (rank == 0) then
+         call delete_if_exists(print_path)
+         open (newunit=unit, file=print_path, status='replace', action='write', iostat=ierr)
+         @assertEqual(0, ierr)
+         call timer%print_mpi_summary(unit=unit, ierr=ierr)
+         close (unit)
+      else
+         call timer%print_mpi_summary(ierr=ierr)
+      end if
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      @assertEqual(MPI_SUCCESS, ierr)
+
+      if (rank == 0) then
+         printed = read_file_text(print_path)
+         if (index(printed, root_name) > 0) flags(1) = 1
+         if (index(printed, child_name) > 0) flags(2) = 1
+      end if
+      call MPI_Bcast(flags, size(flags), MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+      @assertEqual(MPI_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)

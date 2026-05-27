@@ -1086,7 +1086,6 @@ contains
       integer :: code
       character(len=32) :: position_text
 
-      message = ''
       trimmed_len = len_trim(name)
 
       if (trimmed_len <= 0) then

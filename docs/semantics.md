@@ -55,11 +55,11 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 ## Timer Name / Summary Text Policy
 
 - Public timer creation/lookup paths right-trim trailing blanks, reject empty names, reject names that begin with a blank, and reject ASCII control characters. They do not silently truncate names and do not impose the legacy `FTIMER_NAME_LEN` value as a runtime name cap.
-- Timer names, runtime segment names, local summary entry names, MPI summary entry names, and metadata key/value fields use allocatable-length character storage. The exported `FTIMER_NAME_LEN = 64` constant is retained as a pre-1.0 compatibility threshold for early callers that imported it, not as the current storage or validation limit.
+- Timer names, runtime segment names, local summary entry names, MPI summary entry names, and metadata key/value fields use allocatable-length character storage. The exported `FTIMER_NAME_LEN = 64` constant is retained so code that imports it still compiles, but it is not the current storage or validation limit. Pre-1.0 code that treated those components as fixed writable buffers, such as internal writes directly into metadata `%value`, must allocate or assign through a temporary string first.
 - Metadata entries with an unallocated or blank key are skipped by formatted reports. An unallocated metadata value is formatted as blank; assigned metadata values are formatted at their full trimmed length.
 - Name-based `start`/`stop` remains the default supported timing path; the runtime uses internal mapped lookup for both resident timer names and per-segment parent-stack contexts, plus capacity-based growth, so that this ergonomic path avoids repeated resident-timer linear scans, steady-state context-list scans, and one-slot-at-a-time whole-array growth as the timer set grows
 - Per-timer context selection remains fully context-sensitive accounting over the current parent stack for that timer; repeated reuse of one timer name under many distinct parent stacks now uses a per-segment parent-stack index in steady state rather than rescanning the full known-context list each time
-- `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization for tight loops that repeatedly time the same known regions
+- `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization for tight loops that repeatedly time the same known regions, especially when long labels would otherwise be validated and hashed on every name-based call
 - Formatted summary output does not emit unsafe raw summary-entry names literally
 - Escaped formatted-summary forms are stable: leading blanks render as `\x20`, backslashes render as `\\`, tab/newline/carriage return render as `\t`/`\n`/`\r`, other ASCII control characters render as `\xNN`, and blank/empty raw names render as `<blank>`
 
@@ -114,6 +114,7 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 - Extra timers, missing timers, renamed timers, and hierarchy/context mismatches fail the MPI summary with `FTIMER_ERR_MPI_INCON`; they do not fall back to a local summary object through the MPI API
 - When that descriptor preflight fails inside one communicator, the omitted-`ierr` diagnostic reports the disagreeing communicator-local ranks when possible
 - MPI descriptor matching is based on the local summary tree shape and names, not on raw local `node_id` values
+- The MPI descriptor preflight materializes deterministic length-prefixed path strings at summary time so names that differ only after the legacy 64-character threshold remain distinguishable. This is outside the start/stop hot path, but its memory and sort cost scales with summary entry count and encoded path length for very large timer trees.
 - Mismatched communicator choices across would-be participants are unsupported; this API has no safe cross-communicator rendezvous to detect that misuse without risking the same MPI deadlock it is trying to avoid
 
 ### Unsupported communicator mismatch example
