@@ -82,6 +82,7 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 - Omitting `comm` at `init` means `mpi_summary()` uses `MPI_COMM_WORLD`
 - All ranks in that communicator must enter `mpi_summary()` with fully stopped timers
 - The current validated MPI interface path is `use mpi` with integer communicator handles captured at `init`
+- MPI summary reductions select MPI datatypes with `MPI_Type_match_size` for the actual `real(wp)` and `integer(int64)` storage sizes before reducing those buffers. If the active MPI implementation cannot provide matching datatypes, `mpi_summary()` fails with `FTIMER_ERR_UNKNOWN` and leaves the MPI result empty instead of reducing through a mismatched fixed datatype.
 - Hash-based timer-descriptor preflight before the reduction phase
 - Extra timers, missing timers, renamed timers, and hierarchy/context mismatches fail the MPI summary with `FTIMER_ERR_MPI_INCON`; they do not fall back to a local summary object through the MPI API
 - When that descriptor preflight fails inside one communicator, the omitted-`ierr` diagnostic reports the disagreeing communicator-local ranks when possible
@@ -106,6 +107,7 @@ The supported pattern is simple: capture one communicator consistently at `init`
 - `ftimer_mpi_summary_t` entries retain `name`, `depth`, `node_id`, and `parent_id`, so MPI summaries keep the explicit-tree data model instead of collapsing to flat rows.
 - The MPI summary tree order is canonical across ranks. It does not depend on the local timer creation order on one chosen rank.
 - `mpi_summary()` does not return local fallback data on errors. If the caller needs local data after an MPI-disabled or MPI-error path, it must call `get_summary()` separately.
+- This datatype selection is a targeted portability guard for the current `use mpi` implementation. The broader `mpi_f08` interface migration remains separate follow-up work tracked in GitHub issue #136.
 
 ## MPI Reporting Contract
 

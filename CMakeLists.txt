@@ -31,6 +31,38 @@ end program ftimer_mpi_probe
   set(${out_var} "${_ftimer_mpi_probe_ok}" PARENT_SCOPE)
 endfunction()
 
+function(ftimer_try_compile_mpi_datatype_probe out_var)
+  set(_ftimer_mpi_datatype_probe_src "${CMAKE_BINARY_DIR}/CMakeFiles/ftimer_mpi_datatype_probe.F90")
+  file(WRITE "${_ftimer_mpi_datatype_probe_src}" [=[
+program ftimer_mpi_datatype_probe
+  use, intrinsic :: iso_fortran_env, only: int64
+  use mpi
+  implicit none
+
+  integer, parameter :: wp = selected_real_kind(15, 307)
+  integer :: dtype
+  integer :: ierr
+  integer :: nbytes
+
+  nbytes = storage_size(1.0_wp)/8
+  call MPI_Type_match_size(MPI_TYPECLASS_REAL, nbytes, dtype, ierr)
+  call MPI_Type_size(dtype, nbytes, ierr)
+
+  nbytes = storage_size(0_int64)/8
+  call MPI_Type_match_size(MPI_TYPECLASS_INTEGER, nbytes, dtype, ierr)
+  call MPI_Type_size(dtype, nbytes, ierr)
+end program ftimer_mpi_datatype_probe
+]=])
+
+  try_compile(_ftimer_mpi_datatype_probe_ok
+    "${CMAKE_BINARY_DIR}/CMakeFiles/ftimer_mpi_datatype_probe_build"
+    SOURCES "${_ftimer_mpi_datatype_probe_src}"
+    LINK_LIBRARIES MPI::MPI_Fortran
+  )
+
+  set(${out_var} "${_ftimer_mpi_datatype_probe_ok}" PARENT_SCOPE)
+endfunction()
+
 # Options
 option(FTIMER_USE_MPI "Enable MPI support" OFF)
 option(FTIMER_USE_OPENMP "Enable OpenMP master-thread guards" OFF)
@@ -54,6 +86,14 @@ if(FTIMER_USE_MPI)
       "CMake found MPI, but the active Fortran compiler '${CMAKE_Fortran_COMPILER}' failed a configure-time MPI probe.\n"
       "Supported path: select an MPI wrapper compiler from the same toolchain, for example 'FC=mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON ...' or '-DCMAKE_Fortran_COMPILER=mpifort'.\n"
       "Plain compiler + find_package(MPI) is not treated as a documented supported path unless that probe succeeds."
+    )
+  endif()
+
+  ftimer_try_compile_mpi_datatype_probe(FTIMER_MPI_DATATYPES_PROBE_OK)
+  if(NOT FTIMER_MPI_DATATYPES_PROBE_OK)
+    message(FATAL_ERROR
+      "FTIMER_USE_MPI=ON requires an MPI 'use mpi' implementation that exposes MPI_Type_match_size for validating fTimer's real(wp) and integer(int64) reduction datatypes.\n"
+      "This configure-time probe is intentionally separate from the broader mpi_f08 migration tracked in #136."
     )
   endif()
 endif()

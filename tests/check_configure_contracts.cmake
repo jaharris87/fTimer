@@ -88,6 +88,20 @@ endfunction()
 file(REMOVE_RECURSE "${TEST_BINARY_DIR}")
 file(MAKE_DIRECTORY "${TEST_BINARY_DIR}")
 
+file(READ "${REPO_ROOT}/src/ftimer_mpi.F90" ftimer_mpi_source)
+if(ftimer_mpi_source MATCHES "MPI_(2DOUBLE_PRECISION|DOUBLE_PRECISION|INTEGER8)")
+  message(FATAL_ERROR
+    "MPI summary reductions must not hard-code MPI_DOUBLE_PRECISION, MPI_2DOUBLE_PRECISION, or MPI_INTEGER8; select datatypes from real(wp) and integer(int64) instead."
+  )
+endif()
+
+file(READ "${REPO_ROOT}/CMakeLists.txt" ftimer_root_cmake)
+if(NOT ftimer_root_cmake MATCHES "MPI_Type_match_size")
+  message(FATAL_ERROR
+    "FTIMER_USE_MPI=ON configure coverage must compile-check MPI_Type_match_size so MPI reduction datatype validation stays explicit."
+  )
+endif()
+
 find_program(ftimer_mpifort_compiler NAMES mpifort mpif90 mpif77)
 find_program(ftimer_gfortran_compiler NAMES gfortran)
 find_program(ftimer_unsupported_compiler NAMES flang-new-19 flang-19 flang-new-18 flang-18 flang-new flang)
