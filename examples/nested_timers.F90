@@ -11,7 +11,7 @@ program nested_timers
    metadata(1)%key = "case"
    metadata(1)%value = "nested_timers"
    metadata(2)%key = "steps"
-   write (metadata(2)%value, '(i0)') 3
+   metadata(2)%value = "3"
 
    call ftimer_init()
    call ftimer_start("advance")

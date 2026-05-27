@@ -1,7 +1,7 @@
 module ftimer_mpi
    use, intrinsic :: iso_fortran_env, only: int64
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, &
-                           FTIMER_ERR_UNKNOWN, FTIMER_NAME_LEN, FTIMER_SUCCESS, ftimer_mpi_summary_t, &
+                           FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, ftimer_mpi_summary_t, ftimer_summary_entry_t, &
                            ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi
@@ -621,8 +621,8 @@ contains
       type(ftimer_summary_t), intent(in) :: summary
       character(len=:), allocatable, intent(out) :: descriptors(:)
       integer, allocatable, intent(out) :: permutation(:)
+      character(len=:), allocatable :: component
       character(len=:), allocatable :: path_strings(:)
-      character(len=FTIMER_NAME_LEN + 5) :: component
       integer :: component_len
       integer :: i
       integer :: max_len
@@ -657,7 +657,7 @@ contains
 
       do i = 1, summary%num_entries
          parent_id = summary%entries(i)%parent_id
-         component_len = descriptor_component_length(summary%entries(i)%name)
+         component_len = descriptor_component_length(summary_entry_name(summary%entries(i)))
          if (parent_id <= 0) then
             prefix_lengths(i) = component_len
          else
@@ -681,7 +681,8 @@ contains
 
       do i = 1, summary%num_entries
          parent_id = summary%entries(i)%parent_id
-         call encode_descriptor_component(summary%entries(i)%name, component, component_len)
+         call encode_descriptor_component(summary_entry_name(summary%entries(i)), component)
+         component_len = len(component)
          if (parent_id <= 0) then
             path_strings(i) = component(1:component_len)
          else
@@ -703,23 +704,47 @@ contains
    integer function descriptor_component_length(name) result(component_len)
       character(len=*), intent(in) :: name
 
-      component_len = 5 + len_trim(name)
+      component_len = decimal_digit_count(len_trim(name)) + 1 + len_trim(name)
    end function descriptor_component_length
 
-   subroutine encode_descriptor_component(name, component, component_len)
+   subroutine encode_descriptor_component(name, component)
       character(len=*), intent(in) :: name
-      character(len=*), intent(out) :: component
-      integer, intent(out) :: component_len
-      character(len=4) :: len_text
+      character(len=:), allocatable, intent(out) :: component
+      character(len=32) :: len_text
       integer :: trimmed_len
 
-      component = ''
       trimmed_len = len_trim(name)
-      component_len = descriptor_component_length(name)
 
-      write (len_text, '(i4.4)') trimmed_len
-      component(1:component_len) = len_text//':'//name(1:trimmed_len)
+      write (len_text, '(i0)') trimmed_len
+      if (trimmed_len > 0) then
+         component = trim(len_text)//':'//name(1:trimmed_len)
+      else
+         component = trim(len_text)//':'
+      end if
    end subroutine encode_descriptor_component
+
+   integer function decimal_digit_count(value) result(count)
+      integer, intent(in) :: value
+      integer :: remaining
+
+      count = 1
+      remaining = value
+      do while (remaining >= 10)
+         remaining = remaining/10
+         count = count + 1
+      end do
+   end function decimal_digit_count
+
+   function summary_entry_name(entry) result(name)
+      type(ftimer_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: name
+
+      if (allocated(entry%name)) then
+         name = entry%name
+      else
+         name = ''
+      end if
+   end function summary_entry_name
 
    subroutine sort_permutation_by_descriptor(descriptors, permutation)
       character(len=*), intent(in) :: descriptors(:)
@@ -759,9 +784,9 @@ contains
       do i = 1, size(permutation)
          trimmed_len = len_trim(descriptors(permutation(i)))
          do j = 1, trimmed_len
-            high_hash = hash_step(high_hash, int(iachar(descriptors(permutation(i))(j:j)), int64), &
+            high_hash = hash_step(high_hash, int(iachar(descriptors(permutation(i)) (j:j)), int64), &
                                   16777619_int64, 4294967291_int64)
-            low_hash = hash_step(low_hash, int(iachar(descriptors(permutation(i))(j:j)), int64), &
+            low_hash = hash_step(low_hash, int(iachar(descriptors(permutation(i)) (j:j)), int64), &
                                  65599_int64, 4294967279_int64)
          end do
          high_hash = hash_step(high_hash, 10_int64, 16777619_int64, 4294967291_int64)

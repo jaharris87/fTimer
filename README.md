@@ -62,7 +62,7 @@ end program quick_start
 
 Use `ftimer` for the procedural API and `ftimer_types` for shared types and constants such as `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_metadata_t`, and `FTIMER_MISMATCH_*`.
 
-For metadata headers, construct `ftimer_metadata_t` values by assigning `%key` and `%value` directly. fTimer does not currently provide a helper constructor such as `ftimer_metadata(...)`.
+For metadata headers, construct `ftimer_metadata_t` values by assigning `%key` and `%value` directly. These fields use allocatable-length storage, so assigned strings are not silently capped at the legacy 64-character threshold. fTimer does not currently provide a helper constructor such as `ftimer_metadata(...)`; for formatted numeric metadata, write to a temporary character variable and then assign that string to `%value`.
 
 ## First Success
 
@@ -142,6 +142,7 @@ Operational notes:
 - `ierr` is now the last optional argument in both `init` signatures (`comm`, `mismatch_mode`, `ierr`), so a single positional integer binds to `comm`, not `ierr`. Keywords are recommended for readability.
 - `init`, `reset`, and `finalize` are correctness-first on active timers: with `ierr` they return `FTIMER_ERR_ACTIVE`; without `ierr` they warn and leave state unchanged. In `FTIMER_USE_OPENMP=ON` builds, that diagnostic contract applies on the master thread; worker-thread lifecycle calls remain silent no-ops. These paths do not force-stop active timers or synthesize summary data.
 - Stop-mismatch repair remains an explicit `mismatch_mode` choice (`FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR`); omitted-`ierr` alone does not opt a caller into recovery.
+- Timer names are right-trimmed and must be non-empty, must not begin with a blank, and must not contain ASCII control characters. fTimer does not silently truncate timer names and no longer rejects names solely for exceeding the legacy `FTIMER_NAME_LEN = 64` threshold.
 - Name-based `start`/`stop` remains the default ergonomic path. The runtime now uses internal mapped lookup for both resident timer names and per-segment parent-stack contexts, plus capacity-based growth, so that this default path avoids repeated resident-timer linear scans and context-list scans in steady state as the timer set and parent-stack variants grow.
 - `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization when one call site times the same known region in a very tight loop.
 - Configure custom clocks through `set_clock()` and restore the build-default wall clock through `clear_clock()`. Direct mutation of raw runtime clock internals is not part of the supported API.
@@ -157,6 +158,7 @@ Operational notes:
 - In MPI text reports, `Avg %` means the arithmetic mean of each rank's local `% Total` for that timer, not `100*Avg Incl/Avg total time`.
 - Callbacks configured on `type(ftimer_t)` are lightweight intra-run hooks. They report normal start/stop events with runtime-local numeric ids; current `main` does not promise a stable semantic id-to-name/path mapping for profiler backends or durable cross-run tooling.
 - Import shared types and constants from `ftimer_types`; `use ftimer` does not re-export them.
+- `FTIMER_NAME_LEN` remains exported for source compatibility with early pre-1.0 consumers, but timer names, summary names, MPI summary names, and metadata key/value fields now use allocatable-length storage rather than that fixed width.
 
 ## Examples
 

@@ -54,7 +54,9 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 
 ## Timer Name / Summary Text Policy
 
-- Public timer creation/lookup paths right-trim trailing blanks, reject empty names, reject names longer than `FTIMER_NAME_LEN`, reject names that begin with a blank, and reject ASCII control characters
+- Public timer creation/lookup paths right-trim trailing blanks, reject empty names, reject names that begin with a blank, and reject ASCII control characters. They do not silently truncate names and do not impose the legacy `FTIMER_NAME_LEN` value as a runtime name cap.
+- Timer names, runtime segment names, local summary entry names, MPI summary entry names, and metadata key/value fields use allocatable-length character storage. The exported `FTIMER_NAME_LEN = 64` constant is retained as a pre-1.0 compatibility threshold for early callers that imported it, not as the current storage or validation limit.
+- Metadata entries with an unallocated or blank key are skipped by formatted reports. An unallocated metadata value is formatted as blank; assigned metadata values are formatted at their full trimmed length.
 - Name-based `start`/`stop` remains the default supported timing path; the runtime uses internal mapped lookup for both resident timer names and per-segment parent-stack contexts, plus capacity-based growth, so that this ergonomic path avoids repeated resident-timer linear scans, steady-state context-list scans, and one-slot-at-a-time whole-array growth as the timer set grows
 - Per-timer context selection remains fully context-sensitive accounting over the current parent stack for that timer; repeated reuse of one timer name under many distinct parent stacks now uses a per-segment parent-stack index in steady state rather than rescanning the full known-context list each time
 - `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization for tight loops that repeatedly time the same known regions
