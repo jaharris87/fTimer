@@ -6,7 +6,7 @@ module ftimer_summary
 
    public :: build_summary
    public :: format_summary
-    public :: format_mpi_summary
+   public :: format_mpi_summary
    public :: ftimer_summary_status
 
 contains
@@ -86,7 +86,8 @@ contains
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
       character(len=*), parameter :: mpi_header_suffix = &
-         '  Min Incl (s)  Min Rank  Avg Incl (s)  Max Incl (s)  Max Rank   Imb.  Avg Self (s)    Avg Calls    Avg %'
+                                     '  Min Incl (s)  Min Rank  Avg Incl (s)  Max Incl (s)  Max Rank'// &
+                                     '   Imb.  Avg Self (s)    Avg Calls    Avg %'
       character(len=128) :: fmt
       character(len=64) :: value_line
       character(len=:), allocatable :: line
@@ -141,6 +142,12 @@ contains
             call append_line(text, padded(1:key_width)//' : '//trim(metadata(i)%value))
          end do
       end if
+
+      call append_line(text, '')
+      call append_line(text, 'Report note: per-entry table is an abbreviated view of ftimer_mpi_summary_t; '// &
+                       'use mpi_summary() for all min/max self, call, percent, and tree fields.')
+      call append_line(text, 'Avg % is the arithmetic mean of rank-local % Total values, '// &
+                       'not 100*Avg Incl/Avg total time.')
 
       call append_line(text, '')
       name_width = mpi_summary_name_width(summary)

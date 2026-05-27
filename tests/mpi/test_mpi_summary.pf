@@ -55,7 +55,10 @@ contains
       @assertEqual(0, summary%entries(1)%min_inclusive_time_rank)
       @assertEqual(1, summary%entries(1)%max_inclusive_time_rank)
       call assert_real_close(summary%entries(1)%inclusive_imbalance, 14.0_wp/12.0_wp)
+      call assert_real_close(summary%entries(1)%min_self_time, 6.0_wp)
+      call assert_real_close(summary%entries(1)%max_self_time, 8.0_wp)
       call assert_real_close(summary%entries(1)%avg_self_time, 7.0_wp)
+      call assert_real_close(summary%entries(1)%self_imbalance, 8.0_wp/7.0_wp)
       call assert_real_close(summary%entries(1)%avg_call_count, 1.0_wp)
       call assert_real_close(summary%entries(1)%avg_pct_time, 100.0_wp)
       call assert_real_close(summary%entries(2)%min_inclusive_time, 4.0_wp)
@@ -64,7 +67,13 @@ contains
       @assertEqual(0, summary%entries(2)%min_inclusive_time_rank)
       @assertEqual(1, summary%entries(2)%max_inclusive_time_rank)
       call assert_real_close(summary%entries(2)%inclusive_imbalance, 6.0_wp/5.0_wp)
+      call assert_real_close(summary%entries(2)%min_pct_time, 40.0_wp)
+      call assert_real_close(summary%entries(2)%max_pct_time, 100.0_wp*6.0_wp/14.0_wp)
+      call assert_real_close(summary%entries(2)%avg_pct_time, 0.5_wp*(40.0_wp + 100.0_wp*6.0_wp/14.0_wp))
+      call assert_real_close(summary%entries(2)%min_self_time, 4.0_wp)
+      call assert_real_close(summary%entries(2)%max_self_time, 6.0_wp)
       call assert_real_close(summary%entries(2)%avg_self_time, 5.0_wp)
+      call assert_real_close(summary%entries(2)%self_imbalance, 6.0_wp/5.0_wp)
       call assert_real_close(summary%entries(2)%avg_call_count, 1.0_wp)
 
       call timer%finalize(ierr=ierr)
@@ -312,8 +321,17 @@ contains
       type(ftimer_t) :: timer
       type(ftimer_metadata_t) :: metadata(1)
       character(len=:), allocatable :: printed
+      character(len=*), parameter :: expected_header = &
+                                     'Timer name  Min Incl (s)  Min Rank  Avg Incl (s)  Max Incl (s)  Max Rank'// &
+                                     '   Imb.  Avg Self (s)    Avg Calls    Avg %'
+      character(len=*), parameter :: expected_inner_row = &
+                                     '  inner         4.000000         0      5.000000      6.000000'// &
+                                     '         1   1.200      5.000000       1.000     41.43'
+      character(len=*), parameter :: wrong_ratio_inner_row = &
+                                     '  inner         4.000000         0      5.000000      6.000000'// &
+                                     '         1   1.200      5.000000       1.000     41.67'
       character(len=*), parameter :: print_path = 'test_mpi_print_summary.txt'
-      integer :: flags(7)
+      integer :: flags(13)
       integer :: ierr
       integer :: rank
       integer :: unit
@@ -353,6 +371,12 @@ contains
          if (index(printed, 'Min total rank') > 0) flags(5) = 1
          if (index(printed, 'Max total rank') > 0) flags(6) = 1
          if (index(printed, 'Min Rank') > 0) flags(7) = 1
+         if (index(printed, 'abbreviated view of ftimer_mpi_summary_t') > 0) flags(8) = 1
+         if (index(printed, 'Avg % is the arithmetic mean of rank-local % Total values') > 0) flags(9) = 1
+         if (index(printed, 'not 100*Avg Incl/Avg total time') > 0) flags(10) = 1
+         if (index(printed, expected_header) > 0) flags(11) = 1
+         if (index(printed, expected_inner_row) > 0) flags(12) = 1
+         if (index(printed, wrong_ratio_inner_row) == 0) flags(13) = 1
       end if
       call MPI_Bcast(flags, size(flags), MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       @assertEqual(MPI_SUCCESS, ierr)
@@ -364,6 +388,12 @@ contains
       @assertEqual(1, flags(5))
       @assertEqual(1, flags(6))
       @assertEqual(1, flags(7))
+      @assertEqual(1, flags(8))
+      @assertEqual(1, flags(9))
+      @assertEqual(1, flags(10))
+      @assertEqual(1, flags(11))
+      @assertEqual(1, flags(12))
+      @assertEqual(1, flags(13))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -641,10 +671,15 @@ contains
          @assertEqual(rhs%entries(i)%min_inclusive_time_rank, lhs%entries(i)%min_inclusive_time_rank)
          @assertEqual(rhs%entries(i)%max_inclusive_time_rank, lhs%entries(i)%max_inclusive_time_rank)
          call assert_real_close(lhs%entries(i)%inclusive_imbalance, rhs%entries(i)%inclusive_imbalance)
+         call assert_real_close(lhs%entries(i)%min_self_time, rhs%entries(i)%min_self_time)
+         call assert_real_close(lhs%entries(i)%max_self_time, rhs%entries(i)%max_self_time)
          call assert_real_close(lhs%entries(i)%avg_self_time, rhs%entries(i)%avg_self_time)
+         call assert_real_close(lhs%entries(i)%self_imbalance, rhs%entries(i)%self_imbalance)
          @assertEqual(rhs%entries(i)%min_call_count, lhs%entries(i)%min_call_count)
          @assertEqual(rhs%entries(i)%max_call_count, lhs%entries(i)%max_call_count)
          call assert_real_close(lhs%entries(i)%avg_call_count, rhs%entries(i)%avg_call_count)
+         call assert_real_close(lhs%entries(i)%min_pct_time, rhs%entries(i)%min_pct_time)
+         call assert_real_close(lhs%entries(i)%max_pct_time, rhs%entries(i)%max_pct_time)
          call assert_real_close(lhs%entries(i)%avg_pct_time, rhs%entries(i)%avg_pct_time)
       end do
    end subroutine assert_summary_equal
