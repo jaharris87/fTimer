@@ -41,8 +41,12 @@ program ftimer_mpi_datatype_probe
 
   integer, parameter :: wp = selected_real_kind(15, 307)
   integer :: dtype
+  integer :: errhandler
   integer :: ierr
   integer :: nbytes
+
+  call MPI_Comm_get_errhandler(MPI_COMM_SELF, errhandler, ierr)
+  call MPI_Comm_set_errhandler(MPI_COMM_SELF, MPI_ERRORS_RETURN, ierr)
 
   nbytes = storage_size(1.0_wp)/8
   call MPI_Type_match_size(MPI_TYPECLASS_REAL, nbytes, dtype, ierr)
@@ -51,6 +55,9 @@ program ftimer_mpi_datatype_probe
   nbytes = storage_size(0_int64)/8
   call MPI_Type_match_size(MPI_TYPECLASS_INTEGER, nbytes, dtype, ierr)
   call MPI_Type_size(dtype, nbytes, ierr)
+
+  call MPI_Comm_set_errhandler(MPI_COMM_SELF, errhandler, ierr)
+  call MPI_Errhandler_free(errhandler, ierr)
 end program ftimer_mpi_datatype_probe
 ]=])
 

@@ -101,6 +101,16 @@ if(NOT ftimer_root_cmake MATCHES "MPI_Type_match_size")
     "FTIMER_USE_MPI=ON configure coverage must compile-check MPI_Type_match_size so MPI reduction datatype validation stays explicit."
   )
 endif()
+if(NOT ftimer_root_cmake MATCHES "MPI_ERRORS_RETURN")
+  message(FATAL_ERROR
+    "FTIMER_USE_MPI=ON configure coverage must compile-check MPI_ERRORS_RETURN around datatype validation so unsupported datatype paths can report errors."
+  )
+endif()
+if(NOT ftimer_root_cmake MATCHES "MPI_Errhandler_free")
+  message(FATAL_ERROR
+    "FTIMER_USE_MPI=ON configure coverage must compile-check releasing saved MPI error handlers after datatype validation."
+  )
+endif()
 
 find_program(ftimer_mpifort_compiler NAMES mpifort mpif90 mpif77)
 find_program(ftimer_gfortran_compiler NAMES gfortran)

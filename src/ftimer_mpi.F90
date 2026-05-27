@@ -124,6 +124,8 @@ contains
       character(len=*), intent(out), optional :: diagnostic
 #ifdef FTIMER_USE_MPI
       integer :: active_comm
+      integer :: all_datatypes_ready
+      integer :: datatypes_ready
       integer :: entry_count
       integer :: i
       integer :: local_idx
@@ -179,7 +181,21 @@ contains
       if (status /= FTIMER_SUCCESS) return
 
       call resolve_mpi_summary_datatypes(mpi_wp_type, mpi_int64_type, status, diagnostic)
-      if (status /= FTIMER_SUCCESS) return
+      datatypes_ready = 0
+      if (status == FTIMER_SUCCESS) datatypes_ready = 1
+      call MPI_Allreduce(datatypes_ready, all_datatypes_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      if (all_datatypes_ready /= 1) then
+         if (status == FTIMER_SUCCESS) then
+            status = FTIMER_ERR_UNKNOWN
+            if (present(diagnostic)) diagnostic = &
+               "ftimer mpi_summary datatype validation failed on another rank"
+         end if
+         return
+      end if
 
       call build_descriptor_order(local_summary, descriptors, permutation)
       call hash_descriptor_list(descriptors, permutation, local_hashes)
@@ -477,14 +493,17 @@ contains
       integer, intent(out) :: mpi_int64_type
       integer, intent(out) :: status
       character(len=*), intent(out), optional :: diagnostic
+      logical :: cleanup_ok
       integer :: int64_size
       integer :: mpierr
       integer :: reported_size
+      integer :: saved_errhandler
       integer :: wp_size
 
       mpi_wp_type = MPI_DATATYPE_NULL
       mpi_int64_type = MPI_DATATYPE_NULL
       status = FTIMER_ERR_UNKNOWN
+      cleanup_ok = .true.
       if (present(diagnostic)) diagnostic = ''
 
       wp_size = storage_size(1.0_wp)/8
@@ -495,10 +514,26 @@ contains
          return
       end if
 
+      call MPI_Comm_get_errhandler(MPI_COMM_SELF, saved_errhandler, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         if (present(diagnostic)) diagnostic = &
+            "ftimer mpi_summary could not inspect MPI_COMM_SELF error handler before datatype validation"
+         return
+      end if
+
+      call MPI_Comm_set_errhandler(MPI_COMM_SELF, MPI_ERRORS_RETURN, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         if (present(diagnostic)) diagnostic = &
+            "ftimer mpi_summary could not enable MPI error returns before datatype validation"
+         call free_mpi_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+         return
+      end if
+
       call MPI_Type_match_size(MPI_TYPECLASS_REAL, wp_size, mpi_wp_type, mpierr)
       if ((mpierr /= MPI_SUCCESS) .or. (mpi_wp_type == MPI_DATATYPE_NULL)) then
          if (present(diagnostic)) diagnostic = &
             "ftimer mpi_summary could not find an MPI real datatype matching real(wp)"
+         call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
          return
       end if
 
@@ -506,6 +541,7 @@ contains
       if ((mpierr /= MPI_SUCCESS) .or. (reported_size /= wp_size)) then
          if (present(diagnostic)) diagnostic = &
             "ftimer mpi_summary MPI real datatype size does not match real(wp)"
+         call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
          return
       end if
 
@@ -513,6 +549,7 @@ contains
       if ((mpierr /= MPI_SUCCESS) .or. (mpi_int64_type == MPI_DATATYPE_NULL)) then
          if (present(diagnostic)) diagnostic = &
             "ftimer mpi_summary could not find an MPI integer datatype matching integer(int64)"
+         call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
          return
       end if
 
@@ -520,11 +557,65 @@ contains
       if ((mpierr /= MPI_SUCCESS) .or. (reported_size /= int64_size)) then
          if (present(diagnostic)) diagnostic = &
             "ftimer mpi_summary MPI integer datatype size does not match integer(int64)"
+         call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+         return
+      end if
+
+      call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+      if (.not. cleanup_ok) then
          return
       end if
 
       status = FTIMER_SUCCESS
    end subroutine resolve_mpi_summary_datatypes
+
+   subroutine restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+      integer, intent(inout) :: saved_errhandler
+      logical, intent(out) :: cleanup_ok
+      character(len=*), intent(inout), optional :: diagnostic
+      character(len=256) :: original_diagnostic
+      integer :: mpierr
+
+      cleanup_ok = .true.
+      original_diagnostic = ''
+      if (present(diagnostic)) original_diagnostic = diagnostic
+      call MPI_Comm_set_errhandler(MPI_COMM_SELF, saved_errhandler, mpierr)
+      if (mpierr /= MPI_SUCCESS) cleanup_ok = .false.
+      if ((mpierr /= MPI_SUCCESS) .and. present(diagnostic)) &
+         call append_mpi_datatype_diagnostic(original_diagnostic, &
+                                             "ftimer mpi_summary could not restore MPI_COMM_SELF error handler", &
+                                             diagnostic)
+      call free_mpi_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+   end subroutine restore_mpi_comm_self_errhandler
+
+   subroutine free_mpi_errhandler(errhandler, cleanup_ok, diagnostic)
+      integer, intent(inout) :: errhandler
+      logical, intent(inout) :: cleanup_ok
+      character(len=*), intent(inout), optional :: diagnostic
+      character(len=256) :: original_diagnostic
+      integer :: mpierr
+
+      original_diagnostic = ''
+      if (present(diagnostic)) original_diagnostic = diagnostic
+      call MPI_Errhandler_free(errhandler, mpierr)
+      if (mpierr /= MPI_SUCCESS) cleanup_ok = .false.
+      if ((mpierr /= MPI_SUCCESS) .and. present(diagnostic)) &
+         call append_mpi_datatype_diagnostic(original_diagnostic, &
+                                             "ftimer mpi_summary could not free saved MPI error handler", &
+                                             diagnostic)
+   end subroutine free_mpi_errhandler
+
+   subroutine append_mpi_datatype_diagnostic(original_diagnostic, cleanup_diagnostic, diagnostic)
+      character(len=*), intent(in) :: original_diagnostic
+      character(len=*), intent(in) :: cleanup_diagnostic
+      character(len=*), intent(inout) :: diagnostic
+
+      if (len_trim(original_diagnostic) > 0) then
+         diagnostic = trim(original_diagnostic)//"; also "//trim(cleanup_diagnostic)
+      else
+         diagnostic = cleanup_diagnostic
+      end if
+   end subroutine append_mpi_datatype_diagnostic
 
    subroutine build_descriptor_order(summary, descriptors, permutation)
       type(ftimer_summary_t), intent(in) :: summary
