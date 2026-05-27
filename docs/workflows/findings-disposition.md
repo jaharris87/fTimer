@@ -23,8 +23,12 @@ After replying:
 
 - resolve the review thread
 - once a review role is actually satisfied for the current head SHA, post a coverage marker comment so `Codex Review Coverage` can pass
+- for manual fallback coverage, confirm the role was satisfied by fresh-context subagent review rather than same-session self-review, and summarize any follow-up subagent review after fixes
 - verify whether any unresolved review threads remain
 - post coverage markers only from a trusted repo commenter account with repo `write`, `maintain`, or `admin` permission, or from an explicitly allowed bot account; untrusted PR-author comments do not satisfy the coverage gate
+- post one coverage marker per PR comment; do not place multiple hidden coverage tokens in one comment
+
+The coverage marker workflow does not currently verify subagent provenance. For manual fallback coverage, the subagent-backed review trail is enforced by maintainer audit of the PR comments and disposition notes.
 
 Coverage marker examples:
 
