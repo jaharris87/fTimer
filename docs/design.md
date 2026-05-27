@@ -201,6 +201,7 @@ The top-level CMake options that shape those paths are:
 The MPI and OpenMP enablement paths are guarded at configure time:
 
 - `FTIMER_USE_MPI=ON` requires a compiler/toolchain pair that can compile a minimal `use mpi` probe against the discovered MPI installation.
+- MPI builds also require the same `use mpi` path to compile the `MPI_Type_match_size`/`MPI_ERRORS_RETURN` validation calls used to select reduction datatypes for `real(wp)` and `integer(int64)` without completing the broader `mpi_f08` migration tracked in #136.
 - `FTIMER_USE_OPENMP=ON` is currently supported only with GNU Fortran and requires `OpenMP::OpenMP_Fortran` to resolve successfully.
 
 ### Test Categories

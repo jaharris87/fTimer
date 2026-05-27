@@ -124,19 +124,31 @@ contains
       character(len=*), intent(out), optional :: diagnostic
 #ifdef FTIMER_USE_MPI
       integer :: active_comm
+      integer :: all_datatypes_ready
+      integer :: datatypes_ready
       integer :: entry_count
       integer :: i
       integer :: local_idx
+      integer :: local_max_total_rank
+      integer :: local_min_total_rank
       integer :: max_node_id
+      integer :: max_total_time_rank
+      integer :: min_total_time_rank
+      integer :: mpi_int64_type
       integer :: mpierr
+      integer :: mpi_wp_type
       integer :: nprocs
       integer :: parent_entry
       integer :: parent_id
       integer :: rank
       integer, allocatable :: local_calls(:)
       integer, allocatable :: local_entry_to_canonical(:)
+      integer, allocatable :: local_max_inclusive_ranks(:)
+      integer, allocatable :: local_min_inclusive_ranks(:)
       integer, allocatable :: local_node_to_entry(:)
+      integer, allocatable :: max_inclusive_ranks(:)
       integer, allocatable :: max_calls(:)
+      integer, allocatable :: min_inclusive_ranks(:)
       integer, allocatable :: min_calls(:)
       integer, allocatable :: permutation(:)
       integer(int64), allocatable :: local_sum_calls(:)
@@ -144,14 +156,8 @@ contains
       integer(int64) :: local_hashes(2)
       integer(int64), allocatable :: gathered_hashes(:, :)
       real(wp) :: avg_total_time
-      real(wp) :: local_total_pair(2)
-      real(wp) :: max_total_pair(2)
       real(wp) :: max_total_time
-      real(wp), allocatable :: local_inclusive_pair(:, :)
-      real(wp), allocatable :: max_inclusive_pair(:, :)
-      real(wp) :: min_total_pair(2)
       real(wp) :: min_total_time
-      real(wp), allocatable :: min_inclusive_pair(:, :)
       real(wp) :: sum_total_time
       real(wp), allocatable :: local_inclusive(:)
       real(wp), allocatable :: local_pct(:)
@@ -174,11 +180,28 @@ contains
       call get_mpi_summary_comm_info(comm, active_comm, rank, nprocs, status)
       if (status /= FTIMER_SUCCESS) return
 
+      call resolve_mpi_summary_datatypes(mpi_wp_type, mpi_int64_type, status, diagnostic)
+      datatypes_ready = 0
+      if (status == FTIMER_SUCCESS) datatypes_ready = 1
+      call MPI_Allreduce(datatypes_ready, all_datatypes_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      if (all_datatypes_ready /= 1) then
+         if (status == FTIMER_SUCCESS) then
+            status = FTIMER_ERR_UNKNOWN
+            if (present(diagnostic)) diagnostic = &
+               "ftimer mpi_summary datatype validation failed on another rank"
+         end if
+         return
+      end if
+
       call build_descriptor_order(local_summary, descriptors, permutation)
       call hash_descriptor_list(descriptors, permutation, local_hashes)
 
       allocate (gathered_hashes(2, nprocs))
-      call MPI_Allgather(local_hashes, 2, MPI_INTEGER8, gathered_hashes, 2, MPI_INTEGER8, active_comm, mpierr)
+      call MPI_Allgather(local_hashes, 2, mpi_int64_type, gathered_hashes, 2, mpi_int64_type, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
@@ -201,22 +224,35 @@ contains
          return
       end if
 
-      local_total_pair(1) = local_summary%total_time
-      local_total_pair(2) = real(rank, wp)
-
-      call MPI_Allreduce(local_total_pair, min_total_pair, 1, MPI_2DOUBLE_PRECISION, MPI_MINLOC, active_comm, mpierr)
+      call MPI_Allreduce(local_summary%total_time, min_total_time, 1, mpi_wp_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_total_pair, max_total_pair, 1, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, active_comm, mpierr)
+      call MPI_Allreduce(local_summary%total_time, max_total_time, 1, mpi_wp_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_summary%total_time, sum_total_time, 1, MPI_DOUBLE_PRECISION, MPI_SUM, active_comm, mpierr)
+      call MPI_Allreduce(local_summary%total_time, sum_total_time, 1, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      local_min_total_rank = huge(local_min_total_rank)
+      if (local_summary%total_time == min_total_time) local_min_total_rank = rank
+      call MPI_Allreduce(local_min_total_rank, min_total_time_rank, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      local_max_total_rank = huge(local_max_total_rank)
+      if (local_summary%total_time == max_total_time) local_max_total_rank = rank
+      call MPI_Allreduce(local_max_total_rank, max_total_time_rank, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
@@ -224,16 +260,14 @@ contains
 
       avg_total_time = sum_total_time/real(nprocs, wp)
       entry_count = local_summary%num_entries
-      min_total_time = min_total_pair(1)
-      max_total_time = max_total_pair(1)
 
       summary%num_ranks = nprocs
       summary%num_entries = entry_count
       summary%min_total_time = min_total_time
       summary%max_total_time = max_total_time
       summary%avg_total_time = avg_total_time
-      summary%min_total_time_rank = int(nint(min_total_pair(2)))
-      summary%max_total_time_rank = int(nint(max_total_pair(2)))
+      summary%min_total_time_rank = min_total_time_rank
+      summary%max_total_time_rank = max_total_time_rank
       summary%total_time_imbalance = compute_imbalance(max_total_time, avg_total_time)
 
       if (entry_count <= 0) then
@@ -259,83 +293,98 @@ contains
       allocate (min_calls(entry_count))
       allocate (max_calls(entry_count))
       allocate (sum_calls(entry_count))
-      allocate (local_inclusive_pair(2, entry_count))
-      allocate (min_inclusive_pair(2, entry_count))
-      allocate (max_inclusive_pair(2, entry_count))
+      allocate (local_min_inclusive_ranks(entry_count))
+      allocate (local_max_inclusive_ranks(entry_count))
+      allocate (min_inclusive_ranks(entry_count))
+      allocate (max_inclusive_ranks(entry_count))
 
       do i = 1, entry_count
          local_idx = permutation(i)
          local_inclusive(i) = local_summary%entries(local_idx)%inclusive_time
-         local_inclusive_pair(1, i) = local_inclusive(i)
-         local_inclusive_pair(2, i) = real(rank, wp)
          local_self(i) = local_summary%entries(local_idx)%self_time
          local_calls(i) = local_summary%entries(local_idx)%call_count
          local_sum_calls(i) = int(local_calls(i), int64)
          local_pct(i) = local_summary%entries(local_idx)%pct_time
       end do
 
-      call MPI_Allreduce(local_inclusive_pair, min_inclusive_pair, entry_count, MPI_2DOUBLE_PRECISION, MPI_MINLOC, &
-                         active_comm, mpierr)
+      call MPI_Allreduce(local_inclusive, min_inclusive, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_inclusive_pair, max_inclusive_pair, entry_count, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, &
-                         active_comm, mpierr)
+      call MPI_Allreduce(local_inclusive, max_inclusive, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      min_inclusive = min_inclusive_pair(1, :)
-      max_inclusive = max_inclusive_pair(1, :)
+      local_min_inclusive_ranks = huge(0)
+      local_max_inclusive_ranks = huge(0)
+      do i = 1, entry_count
+         if (local_inclusive(i) == min_inclusive(i)) local_min_inclusive_ranks(i) = rank
+         if (local_inclusive(i) == max_inclusive(i)) local_max_inclusive_ranks(i) = rank
+      end do
 
-      call MPI_Allreduce(local_inclusive, sum_inclusive, entry_count, MPI_DOUBLE_PRECISION, MPI_SUM, active_comm, mpierr)
+      call MPI_Allreduce(local_min_inclusive_ranks, min_inclusive_ranks, entry_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_self, min_self, entry_count, MPI_DOUBLE_PRECISION, MPI_MIN, active_comm, mpierr)
+      call MPI_Allreduce(local_max_inclusive_ranks, max_inclusive_ranks, entry_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_self, max_self, entry_count, MPI_DOUBLE_PRECISION, MPI_MAX, active_comm, mpierr)
+      call MPI_Allreduce(local_inclusive, sum_inclusive, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_self, sum_self, entry_count, MPI_DOUBLE_PRECISION, MPI_SUM, active_comm, mpierr)
+      call MPI_Allreduce(local_self, min_self, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_pct, min_pct, entry_count, MPI_DOUBLE_PRECISION, MPI_MIN, active_comm, mpierr)
+      call MPI_Allreduce(local_self, max_self, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_pct, max_pct, entry_count, MPI_DOUBLE_PRECISION, MPI_MAX, active_comm, mpierr)
+      call MPI_Allreduce(local_self, sum_self, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_pct, sum_pct, entry_count, MPI_DOUBLE_PRECISION, MPI_SUM, active_comm, mpierr)
+      call MPI_Allreduce(local_pct, min_pct, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_pct, max_pct, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call MPI_Allreduce(local_pct, sum_pct, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
@@ -356,7 +405,7 @@ contains
          return
       end if
 
-      call MPI_Allreduce(local_sum_calls, sum_calls, entry_count, MPI_INTEGER8, MPI_SUM, active_comm, mpierr)
+      call MPI_Allreduce(local_sum_calls, sum_calls, entry_count, mpi_int64_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
@@ -401,8 +450,8 @@ contains
          summary%entries(i)%min_inclusive_time = min_inclusive(i)
          summary%entries(i)%max_inclusive_time = max_inclusive(i)
          summary%entries(i)%avg_inclusive_time = sum_inclusive(i)/real(nprocs, wp)
-         summary%entries(i)%min_inclusive_time_rank = int(nint(min_inclusive_pair(2, i)))
-         summary%entries(i)%max_inclusive_time_rank = int(nint(max_inclusive_pair(2, i)))
+         summary%entries(i)%min_inclusive_time_rank = min_inclusive_ranks(i)
+         summary%entries(i)%max_inclusive_time_rank = max_inclusive_ranks(i)
          summary%entries(i)%inclusive_imbalance = compute_imbalance(max_inclusive(i), summary%entries(i)%avg_inclusive_time)
          summary%entries(i)%min_self_time = min_self(i)
          summary%entries(i)%max_self_time = max_self(i)
@@ -439,6 +488,135 @@ contains
    end subroutine clear_mpi_summary
 
 #ifdef FTIMER_USE_MPI
+   subroutine resolve_mpi_summary_datatypes(mpi_wp_type, mpi_int64_type, status, diagnostic)
+      integer, intent(out) :: mpi_wp_type
+      integer, intent(out) :: mpi_int64_type
+      integer, intent(out) :: status
+      character(len=*), intent(out), optional :: diagnostic
+      logical :: cleanup_ok
+      integer :: int64_size
+      integer :: mpierr
+      integer :: reported_size
+      integer :: saved_errhandler
+      integer :: wp_size
+
+      mpi_wp_type = MPI_DATATYPE_NULL
+      mpi_int64_type = MPI_DATATYPE_NULL
+      status = FTIMER_ERR_UNKNOWN
+      cleanup_ok = .true.
+      if (present(diagnostic)) diagnostic = ''
+
+      wp_size = storage_size(1.0_wp)/8
+      int64_size = storage_size(0_int64)/8
+      if ((8*wp_size /= storage_size(1.0_wp)) .or. (8*int64_size /= storage_size(0_int64))) then
+         if (present(diagnostic)) diagnostic = &
+            "ftimer mpi_summary could not map real(wp) or integer(int64) storage to whole MPI datatype bytes"
+         return
+      end if
+
+      call MPI_Comm_get_errhandler(MPI_COMM_SELF, saved_errhandler, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         if (present(diagnostic)) diagnostic = &
+            "ftimer mpi_summary could not inspect MPI_COMM_SELF error handler before datatype validation"
+         return
+      end if
+
+      call MPI_Comm_set_errhandler(MPI_COMM_SELF, MPI_ERRORS_RETURN, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         if (present(diagnostic)) diagnostic = &
+            "ftimer mpi_summary could not enable MPI error returns before datatype validation"
+         call free_mpi_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+         return
+      end if
+
+      call MPI_Type_match_size(MPI_TYPECLASS_REAL, wp_size, mpi_wp_type, mpierr)
+      if ((mpierr /= MPI_SUCCESS) .or. (mpi_wp_type == MPI_DATATYPE_NULL)) then
+         if (present(diagnostic)) diagnostic = &
+            "ftimer mpi_summary could not find an MPI real datatype matching real(wp)"
+         call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+         return
+      end if
+
+      call MPI_Type_size(mpi_wp_type, reported_size, mpierr)
+      if ((mpierr /= MPI_SUCCESS) .or. (reported_size /= wp_size)) then
+         if (present(diagnostic)) diagnostic = &
+            "ftimer mpi_summary MPI real datatype size does not match real(wp)"
+         call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+         return
+      end if
+
+      call MPI_Type_match_size(MPI_TYPECLASS_INTEGER, int64_size, mpi_int64_type, mpierr)
+      if ((mpierr /= MPI_SUCCESS) .or. (mpi_int64_type == MPI_DATATYPE_NULL)) then
+         if (present(diagnostic)) diagnostic = &
+            "ftimer mpi_summary could not find an MPI integer datatype matching integer(int64)"
+         call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+         return
+      end if
+
+      call MPI_Type_size(mpi_int64_type, reported_size, mpierr)
+      if ((mpierr /= MPI_SUCCESS) .or. (reported_size /= int64_size)) then
+         if (present(diagnostic)) diagnostic = &
+            "ftimer mpi_summary MPI integer datatype size does not match integer(int64)"
+         call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+         return
+      end if
+
+      call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+      if (.not. cleanup_ok) then
+         return
+      end if
+
+      status = FTIMER_SUCCESS
+   end subroutine resolve_mpi_summary_datatypes
+
+   subroutine restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+      integer, intent(inout) :: saved_errhandler
+      logical, intent(out) :: cleanup_ok
+      character(len=*), intent(inout), optional :: diagnostic
+      character(len=256) :: original_diagnostic
+      integer :: mpierr
+
+      cleanup_ok = .true.
+      original_diagnostic = ''
+      if (present(diagnostic)) original_diagnostic = diagnostic
+      call MPI_Comm_set_errhandler(MPI_COMM_SELF, saved_errhandler, mpierr)
+      if (mpierr /= MPI_SUCCESS) cleanup_ok = .false.
+      if ((mpierr /= MPI_SUCCESS) .and. present(diagnostic)) &
+         call append_mpi_datatype_diagnostic(original_diagnostic, &
+                                             "ftimer mpi_summary could not restore MPI_COMM_SELF error handler", &
+                                             diagnostic)
+      call free_mpi_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+   end subroutine restore_mpi_comm_self_errhandler
+
+   subroutine free_mpi_errhandler(errhandler, cleanup_ok, diagnostic)
+      integer, intent(inout) :: errhandler
+      logical, intent(inout) :: cleanup_ok
+      character(len=*), intent(inout), optional :: diagnostic
+      character(len=256) :: original_diagnostic
+      integer :: mpierr
+
+      original_diagnostic = ''
+      if (present(diagnostic)) original_diagnostic = diagnostic
+      call MPI_Errhandler_free(errhandler, mpierr)
+      if (mpierr /= MPI_SUCCESS) cleanup_ok = .false.
+      if ((mpierr /= MPI_SUCCESS) .and. present(diagnostic)) &
+         call append_mpi_datatype_diagnostic(original_diagnostic, &
+                                             "ftimer mpi_summary could not free saved MPI error handler", &
+                                             diagnostic)
+   end subroutine free_mpi_errhandler
+
+   subroutine append_mpi_datatype_diagnostic(original_diagnostic, cleanup_diagnostic, diagnostic)
+      character(len=*), intent(in) :: original_diagnostic
+      character(len=*), intent(in) :: cleanup_diagnostic
+      character(len=*), intent(inout) :: diagnostic
+
+      if (len_trim(original_diagnostic) > 0) then
+         diagnostic = trim(original_diagnostic)//"; also "//trim(cleanup_diagnostic)
+      else
+         diagnostic = cleanup_diagnostic
+      end if
+   end subroutine append_mpi_datatype_diagnostic
+
    subroutine build_descriptor_order(summary, descriptors, permutation)
       type(ftimer_summary_t), intent(in) :: summary
       character(len=:), allocatable, intent(out) :: descriptors(:)

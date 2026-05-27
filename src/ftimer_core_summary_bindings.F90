@@ -368,7 +368,11 @@ contains
                                        "ranks in the init communicator")
          end if
       case default
-         call report_summary_status(ierr, status, "ftimer mpi_summary MPI reduction failed")
+         if (len_trim(diagnostic) > 0) then
+            call report_summary_status(ierr, status, trim(diagnostic))
+         else
+            call report_summary_status(ierr, status, "ftimer mpi_summary MPI reduction failed")
+         end if
       end select
    end subroutine report_mpi_summary_error
 

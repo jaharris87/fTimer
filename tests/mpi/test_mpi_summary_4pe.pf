@@ -94,6 +94,44 @@ contains
    end subroutine test_mpi_summary_defaults_to_world_when_comm_omitted
 
    @test
+   subroutine test_mpi_summary_preserves_partial_tie_rank_attribution(this)
+      class(mpi_summary_4pe_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_summary_t) :: summary
+      integer :: ierr
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_partial_tie_timers(timer, this%getProcessRank(), ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(4, summary%num_ranks)
+      @assertEqual(2, summary%num_entries)
+      call assert_real_close(summary%min_total_time, 12.0_wp)
+      call assert_real_close(summary%max_total_time, 13.0_wp)
+      @assertEqual(1, summary%min_total_time_rank)
+      @assertEqual(0, summary%max_total_time_rank)
+      @assertEqual('Amin', trim(summary%entries(1)%name))
+      @assertEqual('Bmax', trim(summary%entries(2)%name))
+      call assert_real_close(summary%entries(1)%min_inclusive_time, 4.0_wp)
+      call assert_real_close(summary%entries(1)%max_inclusive_time, 7.0_wp)
+      @assertEqual(1, summary%entries(1)%min_inclusive_time_rank)
+      @assertEqual(0, summary%entries(1)%max_inclusive_time_rank)
+      call assert_real_close(summary%entries(2)%min_inclusive_time, 6.0_wp)
+      call assert_real_close(summary%entries(2)%max_inclusive_time, 8.0_wp)
+      @assertEqual(0, summary%entries(2)%min_inclusive_time_rank)
+      @assertEqual(1, summary%entries(2)%max_inclusive_time_rank)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_summary_preserves_partial_tie_rank_attribution
+
+   @test
    subroutine test_procedural_mpi_summary_supports_split_communicators(this)
       class(mpi_summary_4pe_case), intent(inout) :: this
       type(ftimer_mpi_summary_t) :: summary
@@ -158,6 +196,45 @@ contains
       fake_time = 4.0_wp + real(rank, wp)
       call timer%stop("world", ierr=ierr)
    end subroutine build_world_timer
+
+   subroutine build_partial_tie_timers(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+      real(wp) :: amin_time
+      real(wp) :: bmax_time
+
+      amin_time = 0.0_wp
+      bmax_time = 0.0_wp
+      select case (rank)
+      case (0)
+         amin_time = 7.0_wp
+         bmax_time = 6.0_wp
+      case (1)
+         amin_time = 4.0_wp
+         bmax_time = 8.0_wp
+      case (2)
+         amin_time = 4.0_wp
+         bmax_time = 8.0_wp
+      case default
+         amin_time = 6.0_wp
+         bmax_time = 7.0_wp
+      end select
+
+      fake_time = 0.0_wp
+      call timer%start("Amin", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = amin_time
+      call timer%stop("Amin", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      call timer%start("Bmax", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = amin_time + bmax_time
+      call timer%stop("Bmax", ierr=ierr)
+   end subroutine build_partial_tie_timers
 
    subroutine build_split_comm_timer_procedural(color, subrank, ierr)
       integer, intent(in) :: color
