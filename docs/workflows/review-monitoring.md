@@ -54,14 +54,19 @@ Use this fallback only when the label-triggered review path is unavailable or in
 Fallback procedure:
 
 1. Still apply the review labels and monitor for the native review flow first.
-2. Request the missing review manually, for example via ChatGPT with GitHub integration.
-   Use the matching detailed prompt from `.github/prompts/detailed/` when doing this.
-3. Ask the manual review to use the exact heading from the matching detailed prompt for that role.
+2. For each missing active review role, launch a fresh-context, read-only, adversarial subagent rather than reviewing your own PR from the same agent session.
+   Use the matching detailed prompt from `.github/prompts/detailed/` when preparing the subagent task.
+3. Instruct each subagent to inspect the current PR diff and relevant surrounding files without relying on prior review comments or the implementer's context.
+4. Ask each manual fallback review to use the exact heading from the matching detailed prompt for that role.
    Common examples include `## Software Review`, `## Methodology Review`, `## Red Team Review`, `## Docs / Contract Review`, and `## Test Quality Review`.
-4. Post the manual review output to the PR as a comment, or post a durable link plus a short summary of the findings.
-5. Add a short PR comment explaining why fallback review was used and which review type it covered.
-6. Handle every finding exactly as in the normal workflow: agree and fix, disagree with evidence, or defer with reason.
-7. Resolve all related review threads or PR discussion threads before merge.
+5. Post the subagent review output to the PR as comments, or post a durable summary that names the subagent-backed roles, records every finding, and links or quotes enough detail for later audit.
+6. Add a short PR comment explaining why fallback review was used and that fresh-context subagents, not same-session self-review, covered the affected roles.
+7. Handle every finding exactly as in the normal workflow: agree and fix, disagree with evidence, or defer with reason.
+8. When fallback findings lead to fixes, push the fixes, rerun relevant validation, and launch focused fresh-context follow-up subagent reviews for the affected roles before posting coverage markers for the new head SHA.
+9. Post one coverage marker comment per active review role on the current head SHA. Do not combine multiple hidden coverage tokens into one PR comment; the coverage checker reads one marker per comment.
+10. Resolve all related review threads or PR discussion threads before merge.
+
+The subagent requirement is a human-audited workflow rule. The `Codex Review Coverage` check still validates only trusted marker comments with the existing `source=manual-fallback` token; it does not currently prove that a marker came from a subagent-backed process. Make the subagent trail visible in PR comments so maintainers can audit it.
 
 This fallback does not replace required CI, required PR checks, or the normal Codex-label workflow when native Codex review is available.
 
