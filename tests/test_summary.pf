@@ -561,6 +561,29 @@ contains
    end subroutine test_format_summary_preserves_metadata_above_legacy_len
 
    @test
+   subroutine test_format_summary_handles_unallocated_metadata_fields()
+      type(ftimer_metadata_t) :: metadata(3)
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      logical :: blank_value_key_present
+      logical :: orphan_value_skipped
+
+      summary%total_time = 1.0_wp
+      summary%num_entries = 0
+      allocate (summary%entries(0))
+      metadata(2)%value = 'orphan-value'
+      metadata(3)%key = 'BlankValue'
+
+      call format_summary(summary, text, metadata)
+
+      blank_value_key_present = index(text, 'BlankValue') > 0
+      orphan_value_skipped = index(text, 'orphan-value') == 0
+
+      @assertTrue(blank_value_key_present)
+      @assertTrue(orphan_value_skipped)
+   end subroutine test_format_summary_handles_unallocated_metadata_fields
+
+   @test
    subroutine test_get_summary_keeps_same_timer_distinct_across_parents()
       type(ftimer_t) :: timer
       type(ftimer_summary_t) :: summary

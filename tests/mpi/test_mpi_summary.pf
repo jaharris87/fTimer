@@ -397,7 +397,7 @@ contains
    subroutine test_mpi_print_summary_emits_global_report(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
-      type(ftimer_metadata_t) :: metadata(1)
+      type(ftimer_metadata_t) :: metadata(3)
       character(len=:), allocatable :: printed
       character(len=*), parameter :: expected_header = &
                                      'Timer name  Min Incl (s)  Min Rank  Avg Incl (s)  Max Incl (s)  Max Rank'// &
@@ -409,7 +409,7 @@ contains
                                      '  inner         4.000000         0      5.000000      6.000000'// &
                                      '         1   1.200      5.000000       1.000     41.67'
       character(len=*), parameter :: print_path = 'test_mpi_print_summary.txt'
-      integer :: flags(13)
+      integer :: flags(15)
       integer :: ierr
       integer :: rank
       integer :: unit
@@ -422,6 +422,8 @@ contains
 
       metadata(1)%key = 'Job'
       metadata(1)%value = 'mpi-report'
+      metadata(2)%value = 'orphan-mpi'
+      metadata(3)%key = 'BlankValue'
 
       call build_nested_timers(timer, rank, ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -455,6 +457,8 @@ contains
          if (index(printed, expected_header) > 0) flags(11) = 1
          if (index(printed, expected_inner_row) > 0) flags(12) = 1
          if (index(printed, wrong_ratio_inner_row) == 0) flags(13) = 1
+         if (index(printed, 'BlankValue') > 0) flags(14) = 1
+         if (index(printed, 'orphan-mpi') == 0) flags(15) = 1
       end if
       call MPI_Bcast(flags, size(flags), MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       @assertEqual(MPI_SUCCESS, ierr)
@@ -472,6 +476,8 @@ contains
       @assertEqual(1, flags(11))
       @assertEqual(1, flags(12))
       @assertEqual(1, flags(13))
+      @assertEqual(1, flags(14))
+      @assertEqual(1, flags(15))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
