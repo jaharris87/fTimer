@@ -16,6 +16,7 @@ module ftimer_mpi
 #ifdef FTIMER_BUILD_TESTS
 #ifdef FTIMER_USE_MPI
    public :: ftimer_test_get_mpi_preflight_collectives
+   public :: ftimer_test_get_mpi_preflight_mismatch_flags
    public :: ftimer_test_reset_mpi_preflight_collectives
 #endif
 #endif
@@ -24,8 +25,11 @@ module ftimer_mpi
 #ifdef FTIMER_USE_MPI
    integer :: test_preflight_allgather_count = 0
    integer :: test_preflight_mismatch_flag_allgather_count = 0
-   ! Test builds route preflight Allgather calls through this wrapper so
-   ! runtime tests can assert the successful preflight collective shape.
+   integer :: test_preflight_summary_reduction_count = 0
+   integer, allocatable :: test_preflight_mismatch_flags(:)
+   ! Test builds route preflight Allgather calls through this wrapper and
+   ! mark the first summary reduction phase so runtime tests can assert the
+   ! descriptor-preflight collective shape.
 #define MPI_Allgather ftimer_test_mpi_allgather
 #endif
 #endif
@@ -251,6 +255,10 @@ contains
          status = FTIMER_ERR_MPI_INCON
          return
       end if
+
+#ifdef FTIMER_BUILD_TESTS
+      call ftimer_test_note_mpi_summary_reductions()
+#endif
 
       call MPI_Allreduce(local_summary%total_time, min_total_time, 1, mpi_wp_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
@@ -905,15 +913,35 @@ contains
    subroutine ftimer_test_reset_mpi_preflight_collectives()
       test_preflight_allgather_count = 0
       test_preflight_mismatch_flag_allgather_count = 0
+      test_preflight_summary_reduction_count = 0
+      if (allocated(test_preflight_mismatch_flags)) deallocate (test_preflight_mismatch_flags)
    end subroutine ftimer_test_reset_mpi_preflight_collectives
 
-   subroutine ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count)
+   subroutine ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count, &
+                                                        summary_reduction_count)
       integer, intent(out) :: allgather_count
       integer, intent(out) :: mismatch_flag_allgather_count
+      integer, intent(out) :: summary_reduction_count
 
       allgather_count = test_preflight_allgather_count
       mismatch_flag_allgather_count = test_preflight_mismatch_flag_allgather_count
+      summary_reduction_count = test_preflight_summary_reduction_count
    end subroutine ftimer_test_get_mpi_preflight_collectives
+
+   subroutine ftimer_test_get_mpi_preflight_mismatch_flags(mismatch_flags)
+      integer, allocatable, intent(out) :: mismatch_flags(:)
+
+      if (allocated(test_preflight_mismatch_flags)) then
+         allocate (mismatch_flags(size(test_preflight_mismatch_flags)))
+         mismatch_flags = test_preflight_mismatch_flags
+      else
+         allocate (mismatch_flags(0))
+      end if
+   end subroutine ftimer_test_get_mpi_preflight_mismatch_flags
+
+   subroutine ftimer_test_note_mpi_summary_reductions()
+      test_preflight_summary_reduction_count = test_preflight_summary_reduction_count + 1
+   end subroutine ftimer_test_note_mpi_summary_reductions
 
    subroutine ftimer_test_mpi_allgather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm, mpierr)
       integer, intent(in) :: sendbuf
@@ -924,6 +952,8 @@ contains
       integer, intent(in) :: recvtype
       integer, intent(in) :: comm
       integer, intent(out) :: mpierr
+      integer :: nvalues
+      integer :: test_mpierr
 
       test_preflight_allgather_count = test_preflight_allgather_count + 1
       if ((sendcount == 1) .and. (recvcount == 1) .and. &
@@ -932,6 +962,15 @@ contains
       end if
 
       call MPI_Allgather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm, mpierr)
+      if ((mpierr == MPI_SUCCESS) .and. (sendcount == 1) .and. (recvcount == 1) .and. &
+          (sendtype == MPI_INTEGER) .and. (recvtype == MPI_INTEGER)) then
+         if (allocated(test_preflight_mismatch_flags)) deallocate (test_preflight_mismatch_flags)
+         call MPI_Comm_size(comm, nvalues, test_mpierr)
+         if (test_mpierr == MPI_SUCCESS) then
+            allocate (test_preflight_mismatch_flags(nvalues))
+            test_preflight_mismatch_flags = recvbuf(1:nvalues)
+         end if
+      end if
    end subroutine ftimer_test_mpi_allgather
 #endif
 #endif

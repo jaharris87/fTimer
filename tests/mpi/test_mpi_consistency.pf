@@ -3,6 +3,7 @@ module test_mpi_consistency
    use mpi
    use ftimer_core, only: ftimer_t
    use ftimer_mpi, only: ftimer_test_get_mpi_preflight_collectives, &
+                         ftimer_test_get_mpi_preflight_mismatch_flags, &
                          ftimer_test_reset_mpi_preflight_collectives
    use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_UNKNOWN, FTIMER_NAME_LEN, FTIMER_SUCCESS, &
                            ftimer_mpi_summary_t, wp
@@ -202,8 +203,11 @@ contains
       type(ftimer_t) :: timer
       type(ftimer_mpi_summary_t) :: summary
       integer :: allgather_count
+      integer :: entry_count
       integer :: ierr
       integer :: mismatch_flag_allgather_count
+      integer :: parent_id
+      integer :: summary_reduction_count
 
       call ftimer_test_reset_mpi_preflight_collectives()
 
@@ -211,16 +215,24 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
       call attach_mock_clock(timer)
 
-      call build_tied_timer_set(timer, ierr)
+      call build_tied_nested_timer_set(timer, ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       call timer%mpi_summary(summary, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
-      call ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count)
+      call ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count, &
+                                                     summary_reduction_count)
 
+      entry_count = summary%num_entries
+      parent_id = -1
+      if (entry_count >= 2) parent_id = summary%entries(2)%parent_id
+
+      @assertEqual(2, entry_count)
+      @assertEqual(1, parent_id)
       @assertEqual(0, allgather_count)
       @assertEqual(0, mismatch_flag_allgather_count)
+      @assertEqual(1, summary_reduction_count)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -233,8 +245,11 @@ contains
       type(ftimer_mpi_summary_t) :: summary
       integer :: allgather_count
       integer :: ierr
+      integer :: mismatch_flag_count
       integer :: mismatch_flag_allgather_count
+      integer, allocatable :: mismatch_flags(:)
       integer :: rank
+      integer :: summary_reduction_count
 
       rank = this%getProcessRank()
       call ftimer_test_reset_mpi_preflight_collectives()
@@ -249,10 +264,19 @@ contains
       call timer%mpi_summary(summary, ierr=ierr)
       @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
 
-      call ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count)
+      call ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count, &
+                                                     summary_reduction_count)
+      call ftimer_test_get_mpi_preflight_mismatch_flags(mismatch_flags)
+      mismatch_flag_count = size(mismatch_flags)
 
       @assertEqual(1, allgather_count)
       @assertEqual(1, mismatch_flag_allgather_count)
+      @assertEqual(0, summary_reduction_count)
+      @assertEqual(2, mismatch_flag_count)
+      if (mismatch_flag_count == 2) then
+         @assertEqual(0, mismatch_flags(1))
+         @assertEqual(1, mismatch_flags(2))
+      end if
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -319,6 +343,26 @@ contains
       fake_time = 6.0_wp
       call timer%stop("tie", ierr=ierr)
    end subroutine build_tied_timer_set
+
+   subroutine build_tied_nested_timer_set(timer, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      call timer%start("tie", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 2.0_wp
+      call timer%start("inner", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 5.0_wp
+      call timer%stop("inner", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 6.0_wp
+      call timer%stop("tie", ierr=ierr)
+   end subroutine build_tied_nested_timer_set
 
    subroutine assert_real_close(actual, expected)
       real(wp), intent(in) :: actual
