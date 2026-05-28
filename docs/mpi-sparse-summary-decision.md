@@ -18,7 +18,7 @@ Follow-up work is split into:
 
 The current implementation is strict by construction:
 
-- `src/ftimer_mpi.F90` builds canonical descriptor path strings, hashes the ordered descriptor list, gathers those hashes from every rank, and returns `FTIMER_ERR_MPI_INCON` before reductions when any rank differs.
+- `src/ftimer_mpi.F90` builds canonical descriptor path strings, hashes the ordered descriptor list, compares those hashes against a rank-0 reference, and returns `FTIMER_ERR_MPI_INCON` before reductions when any rank differs.
 - After the preflight, `src/ftimer_mpi.F90` reduces per-entry arrays by canonical index and divides averages by `nprocs`. That is correct only when every rank has the same descriptor set.
 - `src/ftimer_summary.F90` only emits visible local contexts. A lookup-only timer definition with no recorded context is not enough, by itself, to appear in the current local summary.
 - `src/ftimer_types.F90` has no per-entry participation or absence fields in `ftimer_mpi_summary_entry_t`, so the current result type cannot distinguish "timer absent on this rank" from "timer present with zero calls".

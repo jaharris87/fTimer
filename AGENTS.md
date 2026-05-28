@@ -115,7 +115,7 @@ The call stack state CHANGES between start and stop — this is the most common 
 
 #### MPI Correctness
 
-- **MPI summary hangs on inconsistent timer sets**: If ranks have different timer names or context structures, collective operations (MPI_Allreduce, MPI_Allgather) will deadlock or produce garbage. The hash-based preflight check is mandatory before any collective — it must compare canonical timer descriptors across all ranks and fail the MPI summary cleanly on mismatch.
+- **MPI summary hangs on inconsistent timer sets**: If ranks have different timer names or context structures, summary-field collectives can deadlock or reduce unrelated entries into plausible garbage. The hash-based descriptor preflight must complete before any collective that reduces timer data by canonical index. The current strict preflight compares canonical descriptor hashes against a rank-0 reference with a broadcast plus all-rank mismatch reduction; after a mismatch is known, it gathers only mismatch flags for diagnostics.
 - **Array growth divergence across MPI ranks**: If ranks create timers in different orders or different counts, segment array indices diverge. MPI collectives that assume matching indices will reduce the wrong timers against each other, producing plausible but wrong cross-rank statistics.
 
 #### Code Quality Risks
