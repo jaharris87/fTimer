@@ -13,6 +13,22 @@ module ftimer_mpi
    public :: check_mpi_summary_prereqs
    public :: ftimer_mpi_enabled
    public :: get_mpi_summary_comm_info
+#ifdef FTIMER_BUILD_TESTS
+#ifdef FTIMER_USE_MPI
+   public :: ftimer_test_get_mpi_preflight_collectives
+   public :: ftimer_test_reset_mpi_preflight_collectives
+#endif
+#endif
+
+#ifdef FTIMER_BUILD_TESTS
+#ifdef FTIMER_USE_MPI
+   integer :: test_preflight_allgather_count = 0
+   integer :: test_preflight_mismatch_flag_allgather_count = 0
+   ! Test builds route preflight Allgather calls through this wrapper so
+   ! runtime tests can assert the successful preflight collective shape.
+#define MPI_Allgather ftimer_test_mpi_allgather
+#endif
+#endif
 
 contains
 
@@ -883,6 +899,41 @@ contains
          rank_list = rank_list(1:available_len - 3)//'...'
       end if
    end subroutine mark_rank_list_truncated
+
+#ifdef FTIMER_BUILD_TESTS
+#undef MPI_Allgather
+   subroutine ftimer_test_reset_mpi_preflight_collectives()
+      test_preflight_allgather_count = 0
+      test_preflight_mismatch_flag_allgather_count = 0
+   end subroutine ftimer_test_reset_mpi_preflight_collectives
+
+   subroutine ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count)
+      integer, intent(out) :: allgather_count
+      integer, intent(out) :: mismatch_flag_allgather_count
+
+      allgather_count = test_preflight_allgather_count
+      mismatch_flag_allgather_count = test_preflight_mismatch_flag_allgather_count
+   end subroutine ftimer_test_get_mpi_preflight_collectives
+
+   subroutine ftimer_test_mpi_allgather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm, mpierr)
+      integer, intent(in) :: sendbuf
+      integer, intent(in) :: sendcount
+      integer, intent(in) :: sendtype
+      integer, intent(out) :: recvbuf(*)
+      integer, intent(in) :: recvcount
+      integer, intent(in) :: recvtype
+      integer, intent(in) :: comm
+      integer, intent(out) :: mpierr
+
+      test_preflight_allgather_count = test_preflight_allgather_count + 1
+      if ((sendcount == 1) .and. (recvcount == 1) .and. &
+          (sendtype == MPI_INTEGER) .and. (recvtype == MPI_INTEGER)) then
+         test_preflight_mismatch_flag_allgather_count = test_preflight_mismatch_flag_allgather_count + 1
+      end if
+
+      call MPI_Allgather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm, mpierr)
+   end subroutine ftimer_test_mpi_allgather
+#endif
 #endif
 
    real(wp) function compute_imbalance(max_time, avg_time) result(imbalance)

@@ -2,6 +2,8 @@ module test_mpi_consistency
    use pfunit
    use mpi
    use ftimer_core, only: ftimer_t
+   use ftimer_mpi, only: ftimer_test_get_mpi_preflight_collectives, &
+                         ftimer_test_reset_mpi_preflight_collectives
    use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_UNKNOWN, FTIMER_NAME_LEN, FTIMER_SUCCESS, &
                            ftimer_mpi_summary_t, wp
    use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time
@@ -193,6 +195,68 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_summary_rejects_mpi_comm_null_before_collectives
+
+   @test
+   subroutine test_success_preflight_has_no_allgather(this)
+      class(mpi_consistency_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_summary_t) :: summary
+      integer :: allgather_count
+      integer :: ierr
+      integer :: mismatch_flag_allgather_count
+
+      call ftimer_test_reset_mpi_preflight_collectives()
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_tied_timer_set(timer, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count)
+
+      @assertEqual(0, allgather_count)
+      @assertEqual(0, mismatch_flag_allgather_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_success_preflight_has_no_allgather
+
+   @test
+   subroutine test_mismatch_preflight_allgathers_flags_only(this)
+      class(mpi_consistency_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_summary_t) :: summary
+      integer :: allgather_count
+      integer :: ierr
+      integer :: mismatch_flag_allgather_count
+      integer :: rank
+
+      rank = this%getProcessRank()
+      call ftimer_test_reset_mpi_preflight_collectives()
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_inconsistent_contexts(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
+
+      call ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count)
+
+      @assertEqual(1, allgather_count)
+      @assertEqual(1, mismatch_flag_allgather_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mismatch_preflight_allgathers_flags_only
 
    subroutine build_inconsistent_contexts(timer, rank, ierr)
       class(ftimer_t), intent(inout) :: timer
