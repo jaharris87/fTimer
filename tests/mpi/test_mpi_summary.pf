@@ -93,7 +93,6 @@ contains
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
       type(ftimer_mpi_summary_t) :: summary
-      type(ftimer_mpi_union_summary_t) :: union_summary
       integer :: ierr
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
@@ -367,6 +366,7 @@ contains
       @assertEqual(FTIMER_ERR_ACTIVE, ierr)
       @assertEqual(0, union_summary%num_ranks)
       @assertEqual(0, union_summary%num_entries)
+      call assert_union_summary_empty(union_summary)
 
       fake_time = fake_time + 1.0_wp
       call timer%stop("active", ierr=ierr)
@@ -449,6 +449,39 @@ contains
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_union_summary_api_is_separate_from_strict_summary
+
+   @test
+   subroutine test_mpi_union_summary_sparse_input_is_not_strict_inconsistency(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_union_summary_t) :: union_summary
+      integer :: ierr
+      integer :: rank
+
+      rank = this%getProcessRank()
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      if (rank == 0) then
+         fake_time = 0.0_wp
+         call timer%start("rank_zero_only", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 2.0_wp
+         call timer%stop("rank_zero_only", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      else
+         fake_time = 2.0_wp
+      end if
+
+      call timer%mpi_union_summary(union_summary, ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+      call assert_union_summary_empty(union_summary)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_sparse_input_is_not_strict_inconsistency
 
    @test
    subroutine test_transitional_integer_comm_compatibility(this)
@@ -1397,7 +1430,9 @@ contains
 
    subroutine assert_union_summary_empty(summary)
       type(ftimer_mpi_union_summary_t), intent(in) :: summary
+      logical :: entries_allocated
 
+      entries_allocated = allocated(summary%entries)
       @assertEqual(0, summary%num_ranks)
       @assertEqual(0, summary%num_entries)
       @assertEqual(0.0_wp, summary%min_total_time)
@@ -1406,6 +1441,7 @@ contains
       @assertEqual(-1, summary%min_total_time_rank)
       @assertEqual(-1, summary%max_total_time_rank)
       @assertEqual(1.0_wp, summary%total_time_imbalance)
+      @assertFalse(entries_allocated)
    end subroutine assert_union_summary_empty
 
 end module test_mpi_summary

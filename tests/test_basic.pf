@@ -2,7 +2,8 @@ module test_basic
    use, intrinsic :: iso_c_binding, only: c_associated, c_loc, c_ptr
    use pfunit
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
-   use ftimer_types, only: FTIMER_MISMATCH_STRICT, FTIMER_SUCCESS, wp
+   use ftimer_types, only: FTIMER_MISMATCH_STRICT, FTIMER_SUCCESS, ftimer_mpi_union_summary_entry_t, &
+                           ftimer_mpi_union_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time, find_context_idx, snapshot_timer
    implicit none
 
@@ -56,6 +57,28 @@ contains
       initialized = state%initialized
       @assertTrue(initialized)
    end subroutine test_init_without_ierr_still_initializes
+
+   @test
+   subroutine test_mpi_union_summary_entry_model_defaults()
+      type(ftimer_mpi_union_summary_t) :: summary
+      integer :: missing_rank_count
+      logical :: name_allocated
+
+      allocate (summary%entries(1))
+      summary%num_ranks = 4
+      summary%num_entries = 1
+
+      missing_rank_count = summary%num_ranks - summary%entries(1)%participating_rank_count
+      name_allocated = allocated(summary%entries(1)%name)
+
+      @assertEqual(4, summary%num_ranks)
+      @assertEqual(1, summary%num_entries)
+      @assertFalse(name_allocated)
+      @assertEqual(0, summary%entries(1)%participating_rank_count)
+      @assertEqual(4, missing_rank_count)
+
+      call assert_mpi_union_entry_defaults(summary%entries(1))
+   end subroutine test_mpi_union_summary_entry_model_defaults
 
    @test
    subroutine test_start_stop_auto_creates_and_accumulates()
@@ -207,5 +230,29 @@ contains
    subroutine reset_finalize_callback_count()
       finalize_callback_count = 0
    end subroutine reset_finalize_callback_count
+
+   subroutine assert_mpi_union_entry_defaults(entry)
+      type(ftimer_mpi_union_summary_entry_t), intent(in) :: entry
+
+      @assertEqual(0, entry%depth)
+      @assertEqual(0.0_wp, entry%min_inclusive_time)
+      @assertEqual(0.0_wp, entry%max_inclusive_time)
+      @assertEqual(0.0_wp, entry%avg_inclusive_time)
+      @assertEqual(1.0_wp, entry%inclusive_imbalance)
+      @assertEqual(0.0_wp, entry%min_self_time)
+      @assertEqual(0.0_wp, entry%max_self_time)
+      @assertEqual(0.0_wp, entry%avg_self_time)
+      @assertEqual(1.0_wp, entry%self_imbalance)
+      @assertEqual(0, entry%min_call_count)
+      @assertEqual(0, entry%max_call_count)
+      @assertEqual(0.0_wp, entry%avg_call_count)
+      @assertEqual(0.0_wp, entry%min_pct_time)
+      @assertEqual(0.0_wp, entry%max_pct_time)
+      @assertEqual(0.0_wp, entry%avg_pct_time)
+      @assertEqual(0, entry%node_id)
+      @assertEqual(0, entry%parent_id)
+      @assertEqual(-1, entry%min_inclusive_time_rank)
+      @assertEqual(-1, entry%max_inclusive_time_rank)
+   end subroutine assert_mpi_union_entry_defaults
 
 end module test_basic

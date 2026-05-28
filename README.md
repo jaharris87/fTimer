@@ -25,7 +25,7 @@ fTimer fits best when you want timing behavior you can trust:
 - local summaries are live snapshots: active timers are included explicitly and marked in the data model/report output
 - local summary entries retain formatter-friendly preorder `name`/`depth` data and also expose explicit `node_id`/`parent_id` tree links
 - pure-MPI reductions return a distinct `ftimer_mpi_summary_t` with globally meaningful fields on every participating rank
-- sparse/union MPI summaries have a separate opt-in API and result model reserved for rank-conditional timers
+- a sparse/union MPI API and result model are defined for future rank-conditional summaries; the builder is deferred and currently returns `FTIMER_ERR_NOT_IMPLEMENTED`
 - an injectable clock supports deterministic tests and controlled benchmarking
 - optional callback hooks let in-process code observe normal timer start/stop events during a run
 
