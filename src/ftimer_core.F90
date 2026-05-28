@@ -818,7 +818,6 @@ contains
       if (allocated(self%call_stack%activation_tokens)) deallocate (self%call_stack%activation_tokens)
       self%call_stack%depth = 0
       self%num_segments = 0
-      self%next_activation_token = 0_int64
       self%init_wtime = 0.0_wp
       self%init_date = ''
       self%initialized = .false.

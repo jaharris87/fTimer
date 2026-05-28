@@ -258,6 +258,129 @@ contains
    end subroutine test_scope_rejects_stale_activation_after_reset
 
    @test
+   subroutine test_scope_rejects_stale_activation_after_finalize_init()
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: ierr
+      integer :: saved_fd
+      logical :: has_warning
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call begin_stderr_capture('test_scope_rejects_stale_activation_after_finalize_init.err', saved_fd, &
+                                capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      stale_after_finalize: block
+         type(ftimer_guard_t) :: guard
+
+         call ftimer_scope(guard, "lifecycle_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 1.0_wp
+         call ftimer_stop("lifecycle_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         call ftimer_finalize(ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         call ftimer_init(ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         call attach_mock_clock(ftimer_default_instance)
+
+         call ftimer_start("lifecycle_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 2.0_wp
+
+         call guard%stop(ierr=ierr)
+         @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+
+         call snapshot_timer(ftimer_default_instance, state)
+         ctx = find_context_idx(state, 1, root_stack)
+         @assertEqual(1, state%call_stack%depth)
+         @assertEqual(1, state%call_stack%top())
+         @assertTrue(state%segments(1)%is_running(ctx))
+         @assertEqual(0.0_wp, state%segments(1)%time(ctx))
+
+         call ftimer_stop("lifecycle_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end block stale_after_finalize
+
+      call end_stderr_capture('test_scope_rejects_stale_activation_after_finalize_init.err', saved_fd, stderr_text, &
+                              capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_warning = index(stderr_text, 'ftimer scoped guard stop mismatch') > 0
+      @assertTrue(has_warning)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_scope_rejects_stale_activation_after_finalize_init
+
+   @test
+   subroutine test_scope_rejects_stale_activation_after_reinit()
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: ierr
+      integer :: saved_fd
+      logical :: has_warning
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call begin_stderr_capture('test_scope_rejects_stale_activation_after_reinit.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      stale_after_reinit: block
+         type(ftimer_guard_t) :: guard
+
+         call ftimer_scope(guard, "reinit_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 1.0_wp
+         call ftimer_stop("reinit_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         call ftimer_init(ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         call attach_mock_clock(ftimer_default_instance)
+
+         call ftimer_start("reinit_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 2.0_wp
+
+         call guard%stop(ierr=ierr)
+         @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+
+         call snapshot_timer(ftimer_default_instance, state)
+         ctx = find_context_idx(state, 1, root_stack)
+         @assertEqual(1, state%call_stack%depth)
+         @assertEqual(1, state%call_stack%top())
+         @assertTrue(state%segments(1)%is_running(ctx))
+         @assertEqual(0.0_wp, state%segments(1)%time(ctx))
+
+         call ftimer_stop("reinit_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end block stale_after_reinit
+
+      call end_stderr_capture('test_scope_rejects_stale_activation_after_reinit.err', saved_fd, stderr_text, &
+                              capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_warning = index(stderr_text, 'ftimer scoped guard stop mismatch') > 0
+      @assertTrue(has_warning)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_scope_rejects_stale_activation_after_reinit
+
+   @test
    subroutine test_scope_rejects_owned_activation_below_child()
       type(ftimer_test_state_t) :: state
       integer :: ierr
