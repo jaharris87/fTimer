@@ -23,6 +23,7 @@ fTimer fits best when you want timing behavior you can trust:
 - stable CSV export is available for dashboards, CI comparisons, plotting, and archives
 - local summaries are live snapshots: active timers are included explicitly and marked in the data model/report output
 - local summary entries retain formatter-friendly preorder `name`/`depth` data and also expose explicit `node_id`/`parent_id` tree links
+- finalizable scoped guards can balance a timer interval automatically on lexical scope exit
 - pure-MPI reductions return a distinct `ftimer_mpi_summary_t` with globally meaningful fields on every participating rank
 - an injectable clock supports deterministic tests and controlled benchmarking
 - optional callback hooks let in-process code observe normal timer start/stop events during a run
@@ -45,15 +46,18 @@ Important limitations are documented later in this README. The short version is 
 ```fortran
 program quick_start
    use ftimer, only: ftimer_finalize, ftimer_get_summary, ftimer_init, &
-                     ftimer_print_summary, ftimer_start, ftimer_stop
+                     ftimer_print_summary, ftimer_scope, ftimer_scope_guard_t
    use ftimer_types, only: ftimer_summary_t
    implicit none
 
    type(ftimer_summary_t) :: summary
 
    call ftimer_init()
-   call ftimer_start("work")
-   call ftimer_stop("work")
+   block
+      type(ftimer_scope_guard_t) :: guard
+
+      call ftimer_scope(guard, "work")
+   end block
 
    call ftimer_get_summary(summary)
    call ftimer_print_summary()
@@ -133,7 +137,7 @@ The supported source-level module surface is intentionally narrow: `ftimer`, `ft
 
 The public API supports two styles:
 
-- Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, and `ftimer_default_instance`
+- Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_scope`, `ftimer_scope_guard_t`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, and `ftimer_default_instance`
 - OOP API through `type(ftimer_t)` in `ftimer_core`, including the explicit configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`
 
 New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock or callback configuration on a specific timer object. Procedural callers that need those advanced controls can use `ftimer_default_instance%...` explicitly.
@@ -145,6 +149,8 @@ Operational notes:
 - Stop-mismatch repair remains an explicit `mismatch_mode` choice (`FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR`); omitted-`ierr` alone does not opt a caller into recovery.
 - Timer names are right-trimmed and must be non-empty, must not begin with a blank, and must not contain ASCII control characters. fTimer does not silently truncate timer names and no longer rejects names solely for exceeding the legacy `FTIMER_NAME_LEN = 64` threshold.
 - Name-based `start`/`stop` remains the default ergonomic path. The runtime now uses internal mapped lookup for both resident timer names and per-segment parent-stack contexts, plus capacity-based growth, so that this default path avoids repeated resident-timer linear scans and context-list scans in steady state as the timer set and parent-stack variants grow.
+- Scoped guards are an optional procedural ergonomic layer for lexical regions. Use `type(ftimer_scope_guard_t)` with `call ftimer_scope(guard, "name", ierr=ierr)` for the procedural default instance. A successful guard start fires the normal start callback and the finalizer or `guard%close(ierr=ierr)` fires the normal stop callback. A finalizable OOP guard for arbitrary `type(ftimer_t)` instances is intentionally deferred because the current design does not have a portable way to enforce that a user timer object can be safely referenced after the initializer returns.
+- For guard finalization, Fortran provides no `ierr` return path. Call `guard%close(ierr=ierr)` before leaving scope when stop errors must be handled programmatically; if an active guard reaches finalization and the stop fails, fTimer writes a stderr diagnostic rather than hiding the failure. A guard can close only the exact timer interval it started, including the recorded parent context, so out-of-order close/finalization returns or reports `FTIMER_ERR_MISMATCH` instead of using warn/repair modes to infer ownership. Use nested `block` constructs or explicit `close` calls for nested guards so stop order matches strict timer nesting. Assigning one guard to another creates an inactive non-owning guard, so accidental copies do not duplicate ownership of an active timer context.
 - `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization when one call site times the same known region in a very tight loop. That path is especially useful when a long scientific label would otherwise be validated and hashed on every name-based call.
 - Configure custom clocks through `set_clock()` and restore the build-default wall clock through `clear_clock()`. Direct mutation of raw runtime clock internals is not part of the supported API.
 - Clock changes are allowed before `init()` or before a run records timing data. After timing has started, `set_clock()` and `clear_clock()` return `FTIMER_ERR_ACTIVE` (or warn to stderr when `ierr` is omitted) and leave state unchanged. Use `reset()`, `init()`, or `finalize()` to begin a fresh run on a different clock.

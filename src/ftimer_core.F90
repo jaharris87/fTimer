@@ -11,6 +11,9 @@ module ftimer_core
    private
 
    public :: ftimer_t
+   public :: ftimer_scope_guard_t
+   public :: ftimer_default_instance
+   public :: ftimer_scope_default
 #ifdef FTIMER_BUILD_TESTS
    public :: ftimer_test_get_state
    public :: ftimer_test_state_t
@@ -54,6 +57,7 @@ module ftimer_core
       integer, allocatable :: segment_name_slots(:)
       type(ftimer_context_index_t), allocatable :: segment_context_indices(:)
       integer :: num_segments = 0
+      integer(int64) :: lifecycle_epoch = 0_int64
       real(wp) :: init_wtime = 0.0_wp
       character(len=40) :: init_date = ''
       logical :: initialized = .false.
@@ -91,6 +95,27 @@ module ftimer_core
       procedure, private :: find_or_create_segment
       procedure, private :: repair_mismatch
    end type ftimer_t
+
+   type :: ftimer_scope_guard_t
+      private
+      class(ftimer_t), pointer :: timer => null()
+      character(len=:), allocatable :: name
+      integer :: id = 0
+      integer :: context_idx = 0
+      integer :: generation = 0
+      integer(int64) :: lifecycle_epoch = 0_int64
+      integer :: last_ierr = FTIMER_SUCCESS
+      logical :: active = .false.
+   contains
+      procedure :: close => scope_guard_close
+      procedure :: is_active => scope_guard_is_active
+      procedure :: status => scope_guard_status
+      procedure, private :: assign_scope_guard
+      generic :: assignment(=) => assign_scope_guard
+      final :: scope_guard_finalize
+   end type ftimer_scope_guard_t
+
+   type(ftimer_t), save, target :: ftimer_default_instance
 
    interface
       module subroutine get_summary(self, summary, ierr)
@@ -189,6 +214,7 @@ contains
       end if
 
       call clear_runtime_state(self, keep_hooks=.true.)
+      call advance_lifecycle_epoch(self)
       self%initialized = .true.
 
       if (present(mismatch_mode)) then
@@ -238,6 +264,7 @@ contains
       end if
 
       call clear_runtime_state(self, keep_hooks=.false.)
+      call advance_lifecycle_epoch(self)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine finalize_impl
 
@@ -416,6 +443,66 @@ contains
       call stop_id_impl(self, id, ierr=ierr)
    end subroutine stop_impl
 
+   subroutine ftimer_scope_default(guard, name, ierr)
+      type(ftimer_scope_guard_t), intent(inout) :: guard
+      character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
+
+      !$omp master
+      call scope_impl(ftimer_default_instance, guard, name, ierr=ierr)
+      !$omp end master
+   end subroutine ftimer_scope_default
+
+   subroutine scope_impl(self, guard, name, ierr)
+      class(ftimer_t), intent(inout), target :: self
+      type(ftimer_scope_guard_t), intent(inout) :: guard
+      character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
+      integer :: ctx
+      integer :: id
+      integer :: status
+      integer :: trimmed_len
+      character(len=:), allocatable :: message
+
+      if (guard%active) then
+         guard%last_ierr = FTIMER_ERR_ACTIVE
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer scope guard init on active guard; state unchanged")
+         return
+      end if
+
+      call clear_scope_guard_state(guard)
+
+      if (.not. self%initialized) then
+         call scope_guard_start_failed(guard, ierr, FTIMER_ERR_NOT_INIT, "ftimer scope guard start before init")
+         return
+      end if
+
+      call normalize_name(name, trimmed_len, status, message)
+      if (status /= FTIMER_SUCCESS) then
+         call scope_guard_start_failed(guard, ierr, status, message)
+         return
+      end if
+
+      id = self%find_or_create_segment(name(1:trimmed_len))
+      ctx = find_or_create_segment_context(self, id, self%call_stack)
+      call start_id_impl(self, id, ierr=status)
+      guard%last_ierr = status
+
+      if (status /= FTIMER_SUCCESS) then
+         call report_status(ierr, status, "ftimer scope guard start failed")
+         return
+      end if
+
+      guard%timer => self
+      guard%name = name(1:trimmed_len)
+      guard%id = id
+      guard%context_idx = ctx
+      guard%generation = self%segments(id)%generation(ctx)
+      guard%lifecycle_epoch = self%lifecycle_epoch
+      guard%active = .true.
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine scope_impl
+
    subroutine start_id(self, id, ierr)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: id
@@ -451,6 +538,7 @@ contains
       if (needs_init_wtime_rebase(self)) self%init_wtime = now
       self%segments(id)%start_time(ctx) = now
       self%segments(id)%call_count(ctx) = self%segments(id)%call_count(ctx) + 1
+      self%segments(id)%generation(ctx) = self%segments(id)%generation(ctx) + 1
       self%segments(id)%is_running(ctx) = .true.
 
       if (associated(self%on_event)) then
@@ -590,7 +678,9 @@ contains
          if (allocated(self%segments(i)%start_time)) self%segments(i)%start_time = 0.0_wp
          if (allocated(self%segments(i)%is_running)) self%segments(i)%is_running = .false.
          if (allocated(self%segments(i)%call_count)) self%segments(i)%call_count = 0
+         if (allocated(self%segments(i)%generation)) self%segments(i)%generation = 0
       end do
+      call advance_lifecycle_epoch(self)
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       self%call_stack%depth = 0
       self%init_wtime = self%wtime()
@@ -631,6 +721,8 @@ contains
          call ensure_context_storage(self%segments(unwound_ids(i)), restart_ctx)
          call self%call_stack%push(unwound_ids(i))
          self%segments(unwound_ids(i))%start_time(restart_ctx) = now
+         self%segments(unwound_ids(i))%generation(restart_ctx) = &
+            self%segments(unwound_ids(i))%generation(restart_ctx) + 1
          self%segments(unwound_ids(i))%is_running(restart_ctx) = .true.
       end do
    end subroutine repair_mismatch
@@ -714,6 +806,16 @@ contains
       end if
    end subroutine clear_runtime_state
 
+   subroutine advance_lifecycle_epoch(self)
+      class(ftimer_t), intent(inout) :: self
+
+      if (self%lifecycle_epoch == huge(self%lifecycle_epoch)) then
+         self%lifecycle_epoch = 1_int64
+      else
+         self%lifecycle_epoch = self%lifecycle_epoch + 1_int64
+      end if
+   end subroutine advance_lifecycle_epoch
+
    subroutine restore_default_clock(self)
       class(ftimer_t), intent(inout) :: self
 
@@ -731,12 +833,174 @@ contains
       self%user_data = c_null_ptr
    end subroutine clear_callback_state
 
+   subroutine clear_scope_guard_state(guard)
+      type(ftimer_scope_guard_t), intent(inout) :: guard
+
+      nullify (guard%timer)
+      if (allocated(guard%name)) deallocate (guard%name)
+      guard%id = 0
+      guard%context_idx = 0
+      guard%generation = 0
+      guard%lifecycle_epoch = 0_int64
+      guard%last_ierr = FTIMER_SUCCESS
+      guard%active = .false.
+   end subroutine clear_scope_guard_state
+
+   subroutine scope_guard_start_failed(guard, ierr, status, message)
+      type(ftimer_scope_guard_t), intent(inout) :: guard
+      integer, intent(out), optional :: ierr
+      integer, intent(in) :: status
+      character(len=*), intent(in) :: message
+
+      guard%last_ierr = status
+      call report_status(ierr, status, message)
+   end subroutine scope_guard_start_failed
+
+   subroutine scope_guard_close(self, ierr)
+      class(ftimer_scope_guard_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+
+!$omp master
+      call scope_guard_close_impl(self, ierr=ierr, warn_on_error=.not. present(ierr))
+!$omp end master
+   end subroutine scope_guard_close
+
+   subroutine scope_guard_finalize(self)
+      type(ftimer_scope_guard_t), intent(inout) :: self
+
+!$omp master
+      call scope_guard_close_impl(self, warn_on_error=.true.)
+!$omp end master
+   end subroutine scope_guard_finalize
+
+   subroutine scope_guard_close_impl(self, ierr, warn_on_error)
+      class(ftimer_scope_guard_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+      logical, intent(in) :: warn_on_error
+      type(ftimer_call_stack_t) :: parent_stack
+      integer :: popped_id
+      integer :: top_context
+
+      if (.not. self%active) then
+         self%last_ierr = FTIMER_SUCCESS
+         if (present(ierr)) ierr = FTIMER_SUCCESS
+         return
+      end if
+
+      if (.not. associated(self%timer)) then
+         self%active = .false.
+         self%last_ierr = FTIMER_ERR_NOT_INIT
+         if (warn_on_error) call warn_scope_guard_close(self, FTIMER_ERR_NOT_INIT)
+         if (present(ierr)) ierr = FTIMER_ERR_NOT_INIT
+         return
+      end if
+
+      if (.not. scope_guard_owns_running_context(self)) then
+         if (associated(self%timer)) then
+            if (stack_contains(self%timer%call_stack, self%id)) then
+               self%last_ierr = FTIMER_ERR_MISMATCH
+               if (warn_on_error) call warn_scope_guard_close(self, FTIMER_ERR_MISMATCH)
+               if (present(ierr)) ierr = FTIMER_ERR_MISMATCH
+               return
+            end if
+         end if
+
+         self%active = .false.
+         self%last_ierr = FTIMER_SUCCESS
+         if (present(ierr)) ierr = FTIMER_SUCCESS
+         return
+      end if
+
+      if ((self%timer%call_stack%depth <= 0) .or. (self%timer%call_stack%top() /= self%id)) then
+         self%last_ierr = FTIMER_ERR_MISMATCH
+         if (warn_on_error) call warn_scope_guard_close(self, FTIMER_ERR_MISMATCH)
+         if (present(ierr)) ierr = FTIMER_ERR_MISMATCH
+         return
+      end if
+
+      parent_stack = self%timer%call_stack
+      popped_id = parent_stack%pop()
+      if (popped_id /= self%id) error stop "ftimer internal scope guard context check failed"
+      top_context = find_segment_context(self%timer, self%id, parent_stack)
+
+      if (top_context /= self%context_idx) then
+         self%last_ierr = FTIMER_ERR_MISMATCH
+         if (warn_on_error) call warn_scope_guard_close(self, FTIMER_ERR_MISMATCH)
+         if (present(ierr)) ierr = FTIMER_ERR_MISMATCH
+         return
+      end if
+
+      call stop_segment_with_now(self%timer, self%id, self%timer%wtime(), fire_callback=.true.)
+      self%last_ierr = FTIMER_SUCCESS
+      self%active = .false.
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine scope_guard_close_impl
+
+   logical function scope_guard_owns_running_context(self) result(is_running)
+      class(ftimer_scope_guard_t), intent(in) :: self
+
+      is_running = .false.
+      if (.not. associated(self%timer)) return
+      if (self%id < 1) return
+      if (self%id > self%timer%num_segments) return
+      if (self%context_idx < 1) return
+      if (.not. allocated(self%timer%segments(self%id)%is_running)) return
+      if (.not. allocated(self%timer%segments(self%id)%generation)) return
+      if (self%context_idx > size(self%timer%segments(self%id)%is_running)) return
+      if (self%context_idx > size(self%timer%segments(self%id)%generation)) return
+      if (self%timer%lifecycle_epoch /= self%lifecycle_epoch) return
+      is_running = self%timer%segments(self%id)%is_running(self%context_idx) .and. &
+                   (self%timer%segments(self%id)%generation(self%context_idx) == self%generation)
+   end function scope_guard_owns_running_context
+
+   subroutine warn_scope_guard_close(self, status)
+      class(ftimer_scope_guard_t), intent(in) :: self
+      integer, intent(in) :: status
+      character(len=:), allocatable :: timer_name
+
+      if (allocated(self%name)) then
+         timer_name = self%name
+      else
+         timer_name = '<unknown>'
+      end if
+
+      write (error_unit, '(a,i0,a)') "ftimer scope guard failed to stop timer '"//trim(timer_name)//"' (ierr=", &
+         status, ")"
+   end subroutine warn_scope_guard_close
+
+   logical function scope_guard_is_active(self) result(is_active)
+      class(ftimer_scope_guard_t), intent(in) :: self
+
+      is_active = self%active
+   end function scope_guard_is_active
+
+   integer function scope_guard_status(self) result(ierr)
+      class(ftimer_scope_guard_t), intent(in) :: self
+
+      ierr = self%last_ierr
+   end function scope_guard_status
+
+   subroutine assign_scope_guard(lhs, rhs)
+      class(ftimer_scope_guard_t), intent(inout) :: lhs
+      class(ftimer_scope_guard_t), intent(in) :: rhs
+
+      if (lhs%active) then
+         lhs%last_ierr = FTIMER_ERR_ACTIVE
+         write (error_unit, '(a)') "ftimer scope guard assignment to active guard ignored"
+         return
+      end if
+
+      call clear_scope_guard_state(lhs)
+      lhs%last_ierr = rhs%last_ierr
+   end subroutine assign_scope_guard
+
    subroutine ensure_context_storage(segment, required_size)
       type(ftimer_segment_t), intent(inout) :: segment
       integer, intent(in) :: required_size
       integer :: new_size
       integer :: old_size
       integer, allocatable :: new_counts(:)
+      integer, allocatable :: new_generations(:)
       logical, allocatable :: new_running(:)
       real(wp), allocatable :: new_start_times(:)
       real(wp), allocatable :: new_times(:)
@@ -757,23 +1021,27 @@ contains
       allocate (new_start_times(new_size))
       allocate (new_running(new_size))
       allocate (new_counts(new_size))
+      allocate (new_generations(new_size))
 
       new_times = 0.0_wp
       new_start_times = 0.0_wp
       new_running = .false.
       new_counts = 0
+      new_generations = 0
 
       if (old_size > 0) then
          new_times(1:old_size) = segment%time
          new_start_times(1:old_size) = segment%start_time
          new_running(1:old_size) = segment%is_running
          new_counts(1:old_size) = segment%call_count
+         new_generations(1:old_size) = segment%generation
       end if
 
       call move_alloc(new_times, segment%time)
       call move_alloc(new_start_times, segment%start_time)
       call move_alloc(new_running, segment%is_running)
       call move_alloc(new_counts, segment%call_count)
+      call move_alloc(new_generations, segment%generation)
    end subroutine ensure_context_storage
 
    subroutine ensure_segment_capacity(self, required_size)

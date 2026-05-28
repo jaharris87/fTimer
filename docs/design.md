@@ -154,6 +154,8 @@ The currently exported procedural entry points are:
 - `ftimer_finalize`
 - `ftimer_start`
 - `ftimer_stop`
+- `ftimer_scope`
+- `ftimer_scope_guard_t`
 - `ftimer_start_id`
 - `ftimer_stop_id`
 - `ftimer_lookup`
@@ -174,6 +176,7 @@ Important current-state API notes:
 - `init`, `reset`, and `finalize` treat active timers as an error in both API styles. With `ierr` they return `FTIMER_ERR_ACTIVE`; without `ierr` they warn and leave state untouched rather than force-stopping or cleaning up implicitly. In `FTIMER_USE_OPENMP=ON` builds, that lifecycle-diagnostic contract applies on the master thread; non-master lifecycle calls remain suppressed no-ops.
 - Repairing stop mismatches remains an explicit `mismatch_mode` decision; omitted `ierr` alone is not a recovery mode.
 - Name-based `start`/`stop` remains the default user path. `lookup()` plus `start_id()`/`stop_id()` is documented as an optional cached-id hot path rather than a separate primary workflow.
+- `ftimer_scope_guard_t` is an optional procedural scoped-timing helper for lexical regions on the default instance. It owns one exact started interval in one recorded parent context and refuses to close a later restarted interval for the same timer/context. It is finalizable, but callers that need to handle stop failures programmatically should call `close(ierr=...)` before scope exit because Fortran finalizers cannot return `ierr`. Finalizable OOP guards for arbitrary `type(ftimer_t)` instances are deferred until the API has a portable ownership model.
 - `get_summary()` is the local structured summary path.
 - `ftimer_summary_t` entries now retain `name`/`depth` and also expose `node_id`/`parent_id` links that are stable only within one produced summary object.
 - `print_summary()` and `write_summary()` format local report text.
