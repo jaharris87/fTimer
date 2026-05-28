@@ -834,7 +834,7 @@ contains
       state%initialized = self%initialized
       state%mismatch_mode = self%mismatch_mode
 #ifdef FTIMER_USE_MPI
-      state%mpi_comm = self%mpi_comm%MPI_VAL
+      if (self%initialized) state%mpi_comm = self%mpi_comm%MPI_VAL
       state%mpi_comm_was_present = self%mpi_comm_was_present
       state%mpi_rank = self%mpi_rank
       state%mpi_nprocs = self%mpi_nprocs

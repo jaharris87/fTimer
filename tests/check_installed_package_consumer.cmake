@@ -205,12 +205,19 @@ endif()
 
 if(TEST_ENABLE_MPI)
   set(mpi_consumer_executable "${consumer_build_dir}/ftimer_installed_mpi_consumer${TEST_EXECUTABLE_SUFFIX}")
+  set(legacy_mpi_consumer_executable "${consumer_build_dir}/ftimer_installed_legacy_mpi_consumer${TEST_EXECUTABLE_SUFFIX}")
   if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
     set(configured_mpi_consumer_executable
       "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_mpi_consumer${TEST_EXECUTABLE_SUFFIX}"
     )
     if(EXISTS "${configured_mpi_consumer_executable}")
       set(mpi_consumer_executable "${configured_mpi_consumer_executable}")
+    endif()
+    set(configured_legacy_mpi_consumer_executable
+      "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_legacy_mpi_consumer${TEST_EXECUTABLE_SUFFIX}"
+    )
+    if(EXISTS "${configured_legacy_mpi_consumer_executable}")
+      set(legacy_mpi_consumer_executable "${configured_legacy_mpi_consumer_executable}")
     endif()
   endif()
 
@@ -249,5 +256,32 @@ if(TEST_ENABLE_MPI)
 
   if(NOT EXISTS "${consumer_build_dir}/consumer_mpi_summary.txt")
     message(FATAL_ERROR "Installed-package MPI consumer did not write consumer_mpi_summary.txt.")
+  endif()
+
+  set(ftimer_legacy_mpi_launch_command "${ftimer_mpiexec}")
+  if(DEFINED TEST_MPIEXEC_NUMPROC_FLAG AND NOT TEST_MPIEXEC_NUMPROC_FLAG STREQUAL "")
+    list(APPEND ftimer_legacy_mpi_launch_command "${TEST_MPIEXEC_NUMPROC_FLAG}" 2)
+  else()
+    list(APPEND ftimer_legacy_mpi_launch_command -n 2)
+  endif()
+  if(DEFINED TEST_MPIEXEC_PREFLAGS AND NOT TEST_MPIEXEC_PREFLAGS STREQUAL "")
+    list(APPEND ftimer_legacy_mpi_launch_command ${TEST_MPIEXEC_PREFLAGS})
+  endif()
+  list(APPEND ftimer_legacy_mpi_launch_command "${legacy_mpi_consumer_executable}")
+  if(DEFINED TEST_MPIEXEC_POSTFLAGS AND NOT TEST_MPIEXEC_POSTFLAGS STREQUAL "")
+    list(APPEND ftimer_legacy_mpi_launch_command ${TEST_MPIEXEC_POSTFLAGS})
+  endif()
+
+  execute_process(
+    COMMAND ${ftimer_legacy_mpi_launch_command}
+    WORKING_DIRECTORY "${consumer_build_dir}"
+    RESULT_VARIABLE legacy_mpi_consumer_run_result
+  )
+  if(NOT legacy_mpi_consumer_run_result EQUAL 0)
+    message(FATAL_ERROR "Installed-package legacy MPI consumer executable exited with a nonzero status.")
+  endif()
+
+  if(NOT EXISTS "${consumer_build_dir}/consumer_legacy_mpi_summary.txt")
+    message(FATAL_ERROR "Installed-package legacy MPI consumer did not write consumer_legacy_mpi_summary.txt.")
   endif()
 endif()
