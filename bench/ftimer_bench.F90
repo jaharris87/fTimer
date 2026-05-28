@@ -26,12 +26,16 @@
 !                                     -- new resident timer creation through
 !                                       lookup; names are prebuilt so this
 !                                       isolates internal allocation, growth,
-!                                       and index insertion from formatting
+!                                       and index insertion from formatting;
+!                                       each row uses one long timed batch of
+!                                       independent initialized timer objects
 ! 15-17. Context first-touch C=10/100/1000
 !                                     -- one hot timer first observed under
 !                                       many parent stacks; parent timers and
 !                                       parent root contexts are warmed first
-!                                       to isolate new work-context creation
+!                                       to isolate new work-context creation;
+!                                       each row uses one long timed batch of
+!                                       independent initialized timer objects
 ! 18-23. Context scaling C=1/10/50/100/500/1000
 !                                     -- one hot timer reused under many parent
 !                                        stacks; name-based rows measure the
@@ -80,6 +84,7 @@
 program ftimer_bench
    use, intrinsic :: iso_fortran_env, only: int64, real64
    use ftimer_clock, only: ftimer_date_string
+   use ftimer_core, only: ftimer_t
    use ftimer, only: ftimer_finalize, ftimer_get_summary, ftimer_init, &
                      ftimer_lookup, ftimer_start, ftimer_start_id, &
                      ftimer_stop, ftimer_stop_id
@@ -321,87 +326,102 @@ contains
 
    ! Scenarios 12-14: new timer discovery through lookup. This measures the
    ! internal segment array, name-index, and name storage allocation/growth cost
-   ! that remains on the first touch of a previously unseen timer name.
+   ! that remains on the first touch of a previously unseen timer name. The
+   ! repetitions use independent already-initialized timer objects inside one
+   ! timed window so small rows are not dominated by system_clock call noise.
    subroutine bench_timer_first_touch(reps_outer, num_timers, count_rate)
       integer, intent(in) :: reps_outer
       integer, intent(in) :: num_timers
       integer(int64), intent(in) :: count_rate
-      integer(int64) :: elapsed_ticks
       integer(int64) :: t0, t1
       integer :: i, id, j, total_ops
       character(len=8), allocatable :: tnames(:)
       character(len=47) :: label
+      type(ftimer_t), allocatable :: timers(:)
 
       total_ops = reps_outer*num_timers
-      elapsed_ticks = 0_int64
       allocate (tnames(num_timers))
+      allocate (timers(reps_outer))
       do j = 1, num_timers
          write (tnames(j), '("t",i7.7)') j
       end do
 
       do i = 1, reps_outer
-         call ftimer_init()
-         call system_clock(t0)
-         do j = 1, num_timers
-            id = ftimer_lookup(tnames(j))
-         end do
-         call system_clock(t1)
-         elapsed_ticks = elapsed_ticks + (t1 - t0)
-         call ftimer_finalize()
+         call timers(i)%init()
       end do
 
+      call system_clock(t0)
+      do i = 1, reps_outer
+         do j = 1, num_timers
+            id = timers(i)%lookup(tnames(j))
+         end do
+      end do
+      call system_clock(t1)
+
+      do i = 1, reps_outer
+         call timers(i)%finalize()
+      end do
+
+      deallocate (timers)
       deallocate (tnames)
       write (label, '("timer first-touch N=",i0," (lookup)")') num_timers
-      call print_elapsed_result(trim(label), total_ops, elapsed_ticks, count_rate)
+      call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_timer_first_touch
 
    ! Scenarios 15-17: new context creation for one already-known hot timer.
    ! Parent timers and their root contexts are warmed before the measured block,
    ! so the measured work isolates first creation of the work timer's distinct
-   ! parent-stack contexts plus the steady parent/work start-stop cycle.
+   ! parent-stack contexts plus the steady parent/work start-stop cycle. The
+   ! repetitions use independent already-initialized timer objects inside one
+   ! timed window so small rows are not dominated by system_clock call noise.
    subroutine bench_context_first_touch(reps_outer, num_contexts, count_rate)
       integer, intent(in) :: reps_outer
       integer, intent(in) :: num_contexts
       integer(int64), intent(in) :: count_rate
-      integer(int64) :: elapsed_ticks
       integer(int64) :: t0, t1
       integer, allocatable :: parent_ids(:)
+      type(ftimer_t), allocatable :: timers(:)
       integer :: i, j, total_ops, work_id
       character(len=8) :: parent_name
       character(len=47) :: label
 
       total_ops = reps_outer*num_contexts
-      elapsed_ticks = 0_int64
       allocate (parent_ids(num_contexts))
+      allocate (timers(reps_outer))
 
       do i = 1, reps_outer
-         call ftimer_init()
+         call timers(i)%init()
          do j = 1, num_contexts
             write (parent_name, '("p",i7.7)') j
-            parent_ids(j) = ftimer_lookup(parent_name)
+            parent_ids(j) = timers(i)%lookup(parent_name)
          end do
-         work_id = ftimer_lookup('work')
+         work_id = timers(i)%lookup('work')
 
          do j = 1, num_contexts
-            call ftimer_start_id(parent_ids(j))
-            call ftimer_stop_id(parent_ids(j))
+            call timers(i)%start_id(parent_ids(j))
+            call timers(i)%stop_id(parent_ids(j))
          end do
-
-         call system_clock(t0)
-         do j = 1, num_contexts
-            call ftimer_start_id(parent_ids(j))
-            call ftimer_start_id(work_id)
-            call ftimer_stop_id(work_id)
-            call ftimer_stop_id(parent_ids(j))
-         end do
-         call system_clock(t1)
-         elapsed_ticks = elapsed_ticks + (t1 - t0)
-         call ftimer_finalize()
       end do
 
+      call system_clock(t0)
+      do i = 1, reps_outer
+         do j = 1, num_contexts
+            call timers(i)%start_id(parent_ids(j))
+            call timers(i)%start_id(work_id)
+            call timers(i)%stop_id(work_id)
+            call timers(i)%stop_id(parent_ids(j))
+         end do
+      end do
+      call system_clock(t1)
+
+      do i = 1, reps_outer
+         call timers(i)%finalize()
+      end do
+
+      deallocate (timers)
       deallocate (parent_ids)
       write (label, '("context first-touch C=",i0," (id-based)")') num_contexts
-      call print_elapsed_result(trim(label), total_ops, elapsed_ticks, count_rate)
+      call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_context_first_touch
 
    ! Scenarios 18-23: one timer reused under many parent stacks.
@@ -681,17 +701,5 @@ contains
                   /real(reps, real64)*1.0d9
       write (*, '(a47,i10,f12.2,f13.1)') label, reps, total_ms, per_op_ns
    end subroutine print_result
-
-   subroutine print_elapsed_result(label, reps, elapsed_ticks, count_rate)
-      character(len=*), intent(in) :: label
-      integer, intent(in) :: reps
-      integer(int64), intent(in) :: elapsed_ticks, count_rate
-      real(real64) :: total_ms, per_op_ns
-
-      total_ms = real(elapsed_ticks, real64)/real(count_rate, real64)*1.0d3
-      per_op_ns = real(elapsed_ticks, real64)/real(count_rate, real64) &
-                  /real(reps, real64)*1.0d9
-      write (*, '(a47,i10,f12.2,f13.1)') label, reps, total_ms, per_op_ns
-   end subroutine print_elapsed_result
 
 end program ftimer_bench
