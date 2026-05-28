@@ -4,7 +4,8 @@ submodule(ftimer_core) ftimer_core_summary_bindings
    use ftimer_mpi, only: build_mpi_summary, check_mpi_summary_prereqs, get_mpi_summary_comm_info
    use ftimer_summary, only: build_summary, format_mpi_summary, format_summary
    use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_UNKNOWN, &
-                           ftimer_mpi_summary_t, ftimer_summary_t, wp
+                           ftimer_metadata_t, ftimer_mpi_summary_entry_t, ftimer_mpi_summary_t, &
+                           ftimer_summary_entry_t, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi, only: MPI_Bcast, MPI_CHARACTER, MPI_INTEGER, MPI_SUCCESS
 #endif
@@ -114,6 +115,59 @@ contains
 
    if (present(ierr)) ierr = FTIMER_SUCCESS
    end procedure write_summary
+
+   module procedure write_summary_csv
+   type(ftimer_summary_t) :: summary
+   character(len=:), allocatable :: text
+   character(len=256) :: iomsg
+   integer :: file_unit
+   integer :: header_status
+   integer :: io
+   logical :: append_mode
+   logical :: include_header
+
+   if (.not. self%initialized) then
+      call report_summary_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer write_summary_csv before init")
+      return
+   end if
+
+   append_mode = .false.
+   if (present(append)) append_mode = append
+   call get_csv_header_mode(filename, append_mode, include_header, header_status, iomsg)
+   if (header_status /= FTIMER_SUCCESS) then
+      call report_summary_status(ierr, header_status, "ftimer write_summary_csv append validation failed: "//trim(iomsg))
+      return
+   end if
+
+   call build_current_summary(self, summary)
+   call format_summary_csv(summary, text, metadata, include_header=include_header)
+
+   if (append_mode) then
+      open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', iostat=io, iomsg=iomsg)
+   else
+      open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+   end if
+
+   if (io /= 0) then
+      call report_summary_status(ierr, FTIMER_ERR_IO, "ftimer write_summary_csv open failed: "//trim(iomsg))
+      return
+   end if
+
+   call write_text_block(file_unit, text, io, iomsg)
+   if (io /= 0) then
+      close (file_unit)
+      call report_summary_status(ierr, FTIMER_ERR_IO, "ftimer write_summary_csv write failed: "//trim(iomsg))
+      return
+   end if
+
+   close (file_unit, iostat=io, iomsg=iomsg)
+   if (io /= 0) then
+      call report_summary_status(ierr, FTIMER_ERR_IO, "ftimer write_summary_csv close failed: "//trim(iomsg))
+      return
+   end if
+
+   if (present(ierr)) ierr = FTIMER_SUCCESS
+   end procedure write_summary_csv
 
    module procedure print_mpi_summary
    type(ftimer_mpi_summary_t) :: summary
@@ -265,6 +319,109 @@ contains
    if (present(ierr)) ierr = FTIMER_SUCCESS
    end procedure write_mpi_summary
 
+   module procedure write_mpi_summary_csv
+   type(ftimer_mpi_summary_t) :: summary
+   character(len=:), allocatable :: text
+   character(len=256) :: diagnostic
+   character(len=256) :: collective_message
+   character(len=256) :: iomsg
+   integer :: active_comm
+   integer :: collective_status
+   integer :: file_unit
+   integer :: header_status
+   integer :: io
+   integer :: mpierr
+   integer :: nprocs
+   integer :: rank
+   integer :: status
+   logical :: append_mode
+   logical :: include_header
+
+   if (.not. self%initialized) then
+      call report_summary_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer write_mpi_summary_csv before init")
+      return
+   end if
+
+   call build_current_mpi_summary(self, summary, status, diagnostic)
+   if (status /= FTIMER_SUCCESS) then
+      call report_mpi_summary_error(ierr, status, diagnostic)
+      return
+   end if
+
+#ifdef FTIMER_USE_MPI
+   call get_mpi_summary_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+#else
+   active_comm = -1
+   rank = 0
+   nprocs = 1
+   status = FTIMER_ERR_NOT_IMPLEMENTED
+#endif
+   if (status /= FTIMER_SUCCESS) then
+      call report_summary_status(ierr, status, "ftimer write_mpi_summary_csv communicator lookup failed")
+      return
+   end if
+
+   append_mode = .false.
+   if (present(append)) append_mode = append
+
+   collective_status = FTIMER_SUCCESS
+   collective_message = ''
+   if (rank == 0) then
+      call get_csv_header_mode(filename, append_mode, include_header, header_status, iomsg)
+      if (header_status /= FTIMER_SUCCESS) then
+         collective_status = header_status
+         collective_message = "ftimer write_mpi_summary_csv append validation failed: "//trim(iomsg)
+      else
+         call format_mpi_summary_csv(summary, text, metadata, include_header=include_header)
+
+         if (append_mode) then
+            open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', iostat=io, iomsg=iomsg)
+         else
+            open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+         end if
+
+         if (io /= 0) then
+            collective_status = FTIMER_ERR_IO
+            collective_message = "ftimer write_mpi_summary_csv open failed: "//trim(iomsg)
+         else
+            call write_text_block(file_unit, text, io, iomsg)
+            if (io /= 0) then
+               collective_status = FTIMER_ERR_IO
+               collective_message = "ftimer write_mpi_summary_csv write failed: "//trim(iomsg)
+               close (file_unit)
+            else
+               close (file_unit, iostat=io, iomsg=iomsg)
+               if (io /= 0) then
+                  collective_status = FTIMER_ERR_IO
+                  collective_message = "ftimer write_mpi_summary_csv close failed: "//trim(iomsg)
+               end if
+            end if
+         end if
+      end if
+   end if
+
+#ifdef FTIMER_USE_MPI
+   call MPI_Bcast(collective_status, 1, MPI_INTEGER, 0, active_comm, mpierr)
+   if (mpierr /= MPI_SUCCESS) then
+      call report_summary_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer write_mpi_summary_csv status sync failed")
+      return
+   end if
+
+   call MPI_Bcast(collective_message, len(collective_message), MPI_CHARACTER, 0, active_comm, mpierr)
+   if (mpierr /= MPI_SUCCESS) then
+      call report_summary_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer write_mpi_summary_csv message sync failed")
+      return
+   end if
+#endif
+
+   if (collective_status /= FTIMER_SUCCESS) then
+      call report_summary_status(ierr, collective_status, trim(collective_message))
+      return
+   end if
+
+   if (present(ierr)) ierr = FTIMER_SUCCESS
+   end procedure write_mpi_summary_csv
+
    subroutine build_current_summary(self, summary)
       class(ftimer_t), intent(in) :: self
       type(ftimer_summary_t), intent(out) :: summary
@@ -310,6 +467,299 @@ contains
       call build_mpi_summary(local_summary, comm, summary, status, diagnostic)
       if (status /= FTIMER_SUCCESS) call reset_mpi_summary(summary)
    end subroutine build_current_mpi_summary
+
+   subroutine format_summary_csv(summary, text, metadata, include_header)
+      type(ftimer_summary_t), intent(in) :: summary
+      character(len=:), allocatable, intent(out) :: text
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      logical, intent(in), optional :: include_header
+      integer :: i
+      logical :: emit_header
+
+      text = ''
+      emit_header = .true.
+      if (present(include_header)) emit_header = include_header
+
+      if (emit_header) call append_summary_csv_header(text)
+      call append_local_summary_csv_record(text, summary)
+
+      if (present(metadata)) then
+         do i = 1, size(metadata)
+            if (metadata_key_len(metadata(i)) <= 0) cycle
+            call append_metadata_csv_record(text, 'local', metadata(i))
+         end do
+      end if
+
+      do i = 1, summary%num_entries
+         call append_local_entry_csv_record(text, summary%entries(i))
+      end do
+   end subroutine format_summary_csv
+
+   subroutine format_mpi_summary_csv(summary, text, metadata, include_header)
+      type(ftimer_mpi_summary_t), intent(in) :: summary
+      character(len=:), allocatable, intent(out) :: text
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      logical, intent(in), optional :: include_header
+      integer :: i
+      logical :: emit_header
+
+      text = ''
+      emit_header = .true.
+      if (present(include_header)) emit_header = include_header
+
+      if (emit_header) call append_summary_csv_header(text)
+      call append_mpi_summary_csv_record(text, summary)
+
+      if (present(metadata)) then
+         do i = 1, size(metadata)
+            if (metadata_key_len(metadata(i)) <= 0) cycle
+            call append_metadata_csv_record(text, 'mpi', metadata(i))
+         end do
+      end if
+
+      do i = 1, summary%num_entries
+         call append_mpi_entry_csv_record(text, summary%entries(i))
+      end do
+   end subroutine format_mpi_summary_csv
+
+   subroutine append_summary_csv_header(text)
+      character(len=:), allocatable, intent(inout) :: text
+
+      call append_line(text, csv_header_line())
+   end subroutine append_summary_csv_header
+
+   subroutine append_local_summary_csv_record(text, summary)
+      character(len=:), allocatable, intent(inout) :: text
+      type(ftimer_summary_t), intent(in) :: summary
+      character(len=:), allocatable :: row
+
+      call begin_csv_row(row, 'local', 'summary')
+      call append_empty_csv_fields(row, 2)
+      call append_csv_field(row, summary%start_date)
+      call append_csv_field(row, summary%end_date)
+      call append_csv_field(row, real_csv_text(summary%total_time))
+      call append_csv_field(row, integer_csv_text(summary%num_entries))
+      call append_csv_field(row, logical_csv_text(summary%has_active_timers))
+      call append_empty_csv_fields(row, 33)
+      call append_line(text, row)
+   end subroutine append_local_summary_csv_record
+
+   subroutine append_mpi_summary_csv_record(text, summary)
+      character(len=:), allocatable, intent(inout) :: text
+      type(ftimer_mpi_summary_t), intent(in) :: summary
+      character(len=:), allocatable :: row
+
+      call begin_csv_row(row, 'mpi', 'summary')
+      call append_empty_csv_fields(row, 5)
+      call append_csv_field(row, integer_csv_text(summary%num_entries))
+      call append_empty_csv_fields(row, 1)
+      call append_csv_field(row, integer_csv_text(summary%num_ranks))
+      call append_csv_field(row, real_csv_text(summary%min_total_time))
+      call append_csv_field(row, real_csv_text(summary%avg_total_time))
+      call append_csv_field(row, real_csv_text(summary%max_total_time))
+      call append_csv_field(row, integer_csv_text(summary%min_total_time_rank))
+      call append_csv_field(row, integer_csv_text(summary%max_total_time_rank))
+      call append_csv_field(row, real_csv_text(summary%total_time_imbalance))
+      call append_empty_csv_fields(row, 26)
+      call append_line(text, row)
+   end subroutine append_mpi_summary_csv_record
+
+   subroutine append_metadata_csv_record(text, summary_kind, item)
+      character(len=:), allocatable, intent(inout) :: text
+      character(len=*), intent(in) :: summary_kind
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: row
+
+      call begin_csv_row(row, summary_kind, 'metadata')
+      call append_csv_field(row, metadata_key_text(item))
+      call append_csv_field(row, metadata_value_text(item))
+      call append_empty_csv_fields(row, 38)
+      call append_line(text, row)
+   end subroutine append_metadata_csv_record
+
+   subroutine append_local_entry_csv_record(text, entry)
+      character(len=:), allocatable, intent(inout) :: text
+      type(ftimer_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: row
+
+      call begin_csv_row(row, 'local', 'entry')
+      call append_empty_csv_fields(row, 14)
+      call append_csv_field(row, integer_csv_text(entry%node_id))
+      call append_csv_field(row, integer_csv_text(entry%parent_id))
+      call append_csv_field(row, integer_csv_text(entry%depth))
+      call append_csv_field(row, summary_entry_name(entry))
+      call append_csv_field(row, real_csv_text(entry%inclusive_time))
+      call append_csv_field(row, real_csv_text(entry%self_time))
+      call append_csv_field(row, integer_csv_text(entry%call_count))
+      call append_csv_field(row, real_csv_text(entry%avg_time))
+      call append_csv_field(row, real_csv_text(entry%pct_time))
+      call append_csv_field(row, logical_csv_text(entry%is_active))
+      call append_empty_csv_fields(row, 16)
+      call append_line(text, row)
+   end subroutine append_local_entry_csv_record
+
+   subroutine append_mpi_entry_csv_record(text, entry)
+      character(len=:), allocatable, intent(inout) :: text
+      type(ftimer_mpi_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: row
+
+      call begin_csv_row(row, 'mpi', 'entry')
+      call append_empty_csv_fields(row, 14)
+      call append_csv_field(row, integer_csv_text(entry%node_id))
+      call append_csv_field(row, integer_csv_text(entry%parent_id))
+      call append_csv_field(row, integer_csv_text(entry%depth))
+      call append_csv_field(row, mpi_summary_entry_name(entry))
+      call append_empty_csv_fields(row, 6)
+      call append_csv_field(row, real_csv_text(entry%min_inclusive_time))
+      call append_csv_field(row, real_csv_text(entry%avg_inclusive_time))
+      call append_csv_field(row, real_csv_text(entry%max_inclusive_time))
+      call append_csv_field(row, integer_csv_text(entry%min_inclusive_time_rank))
+      call append_csv_field(row, integer_csv_text(entry%max_inclusive_time_rank))
+      call append_csv_field(row, real_csv_text(entry%inclusive_imbalance))
+      call append_csv_field(row, real_csv_text(entry%min_self_time))
+      call append_csv_field(row, real_csv_text(entry%avg_self_time))
+      call append_csv_field(row, real_csv_text(entry%max_self_time))
+      call append_csv_field(row, real_csv_text(entry%self_imbalance))
+      call append_csv_field(row, integer_csv_text(entry%min_call_count))
+      call append_csv_field(row, real_csv_text(entry%avg_call_count))
+      call append_csv_field(row, integer_csv_text(entry%max_call_count))
+      call append_csv_field(row, real_csv_text(entry%min_pct_time))
+      call append_csv_field(row, real_csv_text(entry%avg_pct_time))
+      call append_csv_field(row, real_csv_text(entry%max_pct_time))
+      call append_line(text, row)
+   end subroutine append_mpi_entry_csv_record
+
+   subroutine begin_csv_row(row, summary_kind, record_type)
+      character(len=:), allocatable, intent(out) :: row
+      character(len=*), intent(in) :: summary_kind
+      character(len=*), intent(in) :: record_type
+
+      row = ''
+      call append_csv_field(row, '1')
+      call append_csv_field(row, summary_kind)
+      call append_csv_field(row, record_type)
+   end subroutine begin_csv_row
+
+   subroutine append_empty_csv_fields(row, count)
+      character(len=:), allocatable, intent(inout) :: row
+      integer, intent(in) :: count
+      integer :: i
+
+      do i = 1, count
+         call append_csv_field(row, '')
+      end do
+   end subroutine append_empty_csv_fields
+
+   subroutine append_csv_field(row, value)
+      character(len=:), allocatable, intent(inout) :: row
+      character(len=*), intent(in) :: value
+
+      if (len(row) > 0) row = row//','
+      row = row//quoted_csv_field(value)
+   end subroutine append_csv_field
+
+   function quoted_csv_field(value) result(field)
+      character(len=*), intent(in) :: value
+      character(len=:), allocatable :: field
+      integer :: i
+
+      field = '"'
+      do i = 1, len_trim(value)
+         if (value(i:i) == '"') then
+            field = field//'""'
+         else
+            field = field//value(i:i)
+         end if
+      end do
+      field = field//'"'
+   end function quoted_csv_field
+
+   function integer_csv_text(value) result(text)
+      integer, intent(in) :: value
+      character(len=:), allocatable :: text
+      character(len=32) :: buffer
+
+      write (buffer, '(i0)') value
+      text = trim(buffer)
+   end function integer_csv_text
+
+   function real_csv_text(value) result(text)
+      real(wp), intent(in) :: value
+      character(len=:), allocatable :: text
+      character(len=48) :: buffer
+
+      write (buffer, '(es32.17e4)') value
+      text = trim(adjustl(buffer))
+   end function real_csv_text
+
+   function logical_csv_text(value) result(text)
+      logical, intent(in) :: value
+      character(len=:), allocatable :: text
+
+      if (value) then
+         text = 'true'
+      else
+         text = 'false'
+      end if
+   end function logical_csv_text
+
+   subroutine append_line(text, line)
+      character(len=:), allocatable, intent(inout) :: text
+      character(len=*), intent(in) :: line
+
+      text = text//trim(line)//new_line('a')
+   end subroutine append_line
+
+   function summary_entry_name(entry) result(name)
+      type(ftimer_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: name
+
+      if (allocated(entry%name)) then
+         name = entry%name
+      else
+         name = ''
+      end if
+   end function summary_entry_name
+
+   function mpi_summary_entry_name(entry) result(name)
+      type(ftimer_mpi_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: name
+
+      if (allocated(entry%name)) then
+         name = entry%name
+      else
+         name = ''
+      end if
+   end function mpi_summary_entry_name
+
+   integer function metadata_key_len(item) result(width)
+      type(ftimer_metadata_t), intent(in) :: item
+
+      width = 0
+      if (allocated(item%key)) width = len_trim(item%key)
+   end function metadata_key_len
+
+   function metadata_key_text(item) result(text)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      if (allocated(item%key)) then
+         text = trim(item%key)
+      else
+         text = ''
+      end if
+   end function metadata_key_text
+
+   function metadata_value_text(item) result(text)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      if (allocated(item%value)) then
+         text = trim(item%value)
+      else
+         text = ''
+      end if
+   end function metadata_value_text
 
    subroutine reset_summary(summary)
       type(ftimer_summary_t), intent(out) :: summary
@@ -376,6 +826,89 @@ contains
          end if
       end select
    end subroutine report_mpi_summary_error
+
+   subroutine get_csv_header_mode(filename, append_mode, include_header, status, iomsg)
+      character(len=*), intent(in) :: filename
+      logical, intent(in) :: append_mode
+      logical, intent(out) :: include_header
+      integer, intent(out) :: status
+      character(len=*), intent(out) :: iomsg
+      character(len=:), allocatable :: expected_header
+      character(len=2048) :: first_line
+      character(len=1) :: last_char
+      integer :: file_size
+      integer :: file_unit
+      integer :: io
+      logical :: exists
+
+      include_header = .true.
+      status = FTIMER_SUCCESS
+      iomsg = ''
+      if (.not. append_mode) return
+
+      exists = .false.
+      file_size = 0
+      inquire (file=filename, exist=exists, size=file_size)
+      if (.not. exists) return
+      if (file_size <= 0) return
+
+      expected_header = csv_header_line()
+      first_line = ''
+      last_char = ''
+
+      open (newunit=file_unit, file=filename, status='old', action='read', iostat=io, iomsg=iomsg)
+      if (io /= 0) then
+         status = FTIMER_ERR_IO
+         return
+      end if
+
+      read (file_unit, '(a)', iostat=io, iomsg=iomsg) first_line
+      close (file_unit)
+      if (io /= 0) then
+         status = FTIMER_ERR_IO
+         return
+      end if
+
+      open (newunit=file_unit, file=filename, status='old', access='stream', form='unformatted', &
+            action='read', iostat=io, iomsg=iomsg)
+      if (io /= 0) then
+         status = FTIMER_ERR_IO
+         return
+      end if
+
+      read (file_unit, pos=file_size, iostat=io, iomsg=iomsg) last_char
+      close (file_unit)
+      if (io /= 0) then
+         status = FTIMER_ERR_IO
+         return
+      end if
+
+      if (last_char /= new_line('a')) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing CSV append target does not end with a newline'
+         return
+      end if
+
+      if (trim(first_line) /= expected_header) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing CSV header does not match fTimer CSV format_version 1'
+         return
+      end if
+
+      include_header = .false.
+   end subroutine get_csv_header_mode
+
+   function csv_header_line() result(header)
+      character(len=:), allocatable :: header
+
+      header = 'format_version,summary_kind,record_type,key,value,start_date,end_date,total_time,'// &
+               'num_entries,has_active_timers,num_ranks,min_total_time,avg_total_time,max_total_time,'// &
+               'min_total_time_rank,max_total_time_rank,total_time_imbalance,node_id,parent_id,depth,'// &
+               'name,inclusive_time,self_time,call_count,avg_time,pct_time,is_active,min_inclusive_time,'// &
+               'avg_inclusive_time,max_inclusive_time,min_inclusive_time_rank,max_inclusive_time_rank,'// &
+               'inclusive_imbalance,min_self_time,avg_self_time,max_self_time,self_imbalance,'// &
+               'min_call_count,avg_call_count,max_call_count,min_pct_time,avg_pct_time,max_pct_time'
+   end function csv_header_line
 
    subroutine write_text_block(unit, text, io, iomsg)
       integer, intent(in) :: unit

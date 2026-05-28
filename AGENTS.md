@@ -70,7 +70,8 @@ ftimer.F90  (procedural wrappers + default global instance)
         ├─► ftimer_types.F90   (derived types, kinds, constants, enums, summary types, callback interface)
         ├─► ftimer_clock.F90   (injectable wall-clock: MPI_Wtime vs system_clock)
         ├─► ftimer_summary.F90 (structured summary building + text formatting)
-        └─► ftimer_mpi.F90    (MPI gather/reduce for cross-rank summaries)
+        ├─► ftimer_mpi.F90    (MPI gather/reduce for cross-rank summaries)
+        └─► ftimer_core_summary_bindings.F90 (summary/report/CSV file-output bindings)
 ```
 
 ### Module Dependency Order (build order)
@@ -78,14 +79,15 @@ ftimer.F90  (procedural wrappers + default global instance)
 1. `ftimer_types` — no dependencies (all types, enums, error codes, abstract interfaces)
 2. `ftimer_clock` — depends on `ftimer_types`
 3. `ftimer_core` — depends on `ftimer_types`, `ftimer_clock`
-4. `ftimer_summary` — depends on `ftimer_types`, `ftimer_core`
+4. `ftimer_summary` — depends on `ftimer_types`
 5. `ftimer_mpi` — depends on `ftimer_types`, `ftimer_core`, `ftimer_summary`
-6. `ftimer` — depends on all above (procedural wrappers)
+6. `ftimer_core_summary_bindings` — submodule of `ftimer_core`; depends on `ftimer_clock`, `ftimer_summary`, and `ftimer_mpi`
+7. `ftimer` — depends on all above (procedural wrappers)
 
 ### Key Design Decisions
 
 - **Strict nesting by default**: Stack-based timer model. Mismatch handling is configurable (`strict`/`warn`/`repair`), default `strict`. `repair` mode exists for Flash-X compatibility.
-- **Data first, report second**: `get_summary()` returns structured `ftimer_summary_t` data. Text formatting is a separate step built on top of structured data.
+- **Data first, report second**: `get_summary()` returns structured `ftimer_summary_t` data. Text reports and CSV exports are separate steps built on top of structured data.
 - **Injectable clock**: All timing goes through a configurable clock function pointer. Use `set_clock()` / `clear_clock()` rather than mutating runtime internals directly. Tests inject a mock clock for deterministic results — no sleeps, no timing jitter.
 - **Error contract**: All public routines accept optional `integer, intent(out) :: ierr`. Present → set error code, no stderr. Absent → warn to stderr, continue.
 - **Context-sensitive accounting**: The same timer name under different parent call stacks is tracked independently.
