@@ -2,7 +2,9 @@ module test_mpi_consistency_4pe
    use pfunit
    use mpi
    use ftimer_core, only: ftimer_t
-   use ftimer_mpi, only: build_mpi_summary
+   use ftimer_mpi, only: build_mpi_summary, ftimer_test_get_mpi_preflight_collectives, &
+                         ftimer_test_get_mpi_preflight_mismatch_flags, &
+                         ftimer_test_reset_mpi_preflight_collectives
    use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_SUCCESS, ftimer_mpi_summary_t, ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time
    implicit none
@@ -108,6 +110,52 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_summary_no_global_result_for_hierarchy_mismatch
+
+   @test
+   subroutine test_mpi_summary_records_partial_mismatch_flags(this)
+      class(mpi_consistency_4pe_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_summary_t) :: summary
+      integer :: allgather_count
+      integer :: ierr
+      integer :: mismatch_flag_allgather_count
+      integer :: mismatch_flag_count
+      integer, allocatable :: mismatch_flags(:)
+      integer :: rank
+      integer :: summary_reduction_count
+
+      rank = this%getProcessRank()
+      call ftimer_test_reset_mpi_preflight_collectives()
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_rank_one_hierarchy_mismatch(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
+
+      call ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count, &
+                                                     summary_reduction_count)
+      call ftimer_test_get_mpi_preflight_mismatch_flags(mismatch_flags)
+      mismatch_flag_count = size(mismatch_flags)
+
+      @assertEqual(1, allgather_count)
+      @assertEqual(1, mismatch_flag_allgather_count)
+      @assertEqual(0, summary_reduction_count)
+      @assertEqual(4, mismatch_flag_count)
+      if (mismatch_flag_count == 4) then
+         @assertEqual(0, mismatch_flags(1))
+         @assertEqual(1, mismatch_flags(2))
+         @assertEqual(0, mismatch_flags(3))
+         @assertEqual(0, mismatch_flags(4))
+      end if
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_summary_records_partial_mismatch_flags
 
    @test
    subroutine test_mpi_summary_reports_all_disagreeing_ranks_on_mismatch(this)
@@ -376,5 +424,38 @@ contains
          call timer%stop("work", ierr=ierr)
       end if
    end subroutine build_four_rank_hierarchy_mismatch
+
+   subroutine build_rank_one_hierarchy_mismatch(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      call timer%start("outer", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      if (rank == 1) then
+         fake_time = 2.0_wp + real(rank, wp)
+         call timer%stop("outer", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         call timer%start("work", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 6.0_wp + real(rank, wp)
+         call timer%stop("work", ierr=ierr)
+      else
+         fake_time = 2.0_wp + real(rank, wp)
+         call timer%start("work", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 5.0_wp + real(rank, wp)
+         call timer%stop("work", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 7.0_wp + real(rank, wp)
+         call timer%stop("outer", ierr=ierr)
+      end if
+   end subroutine build_rank_one_hierarchy_mismatch
 
 end module test_mpi_consistency_4pe
