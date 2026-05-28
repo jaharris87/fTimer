@@ -50,13 +50,13 @@ The sparse path should keep these inherited MPI contracts:
 The sparse path should differ from strict `mpi_summary()` in these ways:
 
 - It builds a canonical union of descriptor paths across ranks rather than requiring every local descriptor list to hash identically.
-- The sparse API/data-model work must define what materializes a descriptor for sparse reporting. If lookup-only or explicitly registered zero-call timers should count as present, the sparse builder cannot rely only on the current visible local summary tree.
+- The first sparse implementation should treat a rank as participating when the descriptor is materialized in that rank's local summary. Lookup-only timer definitions should remain outside the initial sparse presence model unless #169 deliberately adds a first-class registration contract.
 - A rank participates in an entry when that descriptor is present according to the sparse reporting data model.
 - `participating_rank_count` records how many ranks had the descriptor.
-- `absent_rank_count = num_ranks - participating_rank_count`.
-- A present zero-call entry is still participating. It contributes zero calls and its recorded time values to participating-rank statistics.
+- Missing-rank count is a required semantic, but it does not need to be stored redundantly: `absent_rank_count = num_ranks - participating_rank_count`.
+- A present zero-call entry, if the sparse data model materializes one, is still participating. It contributes zero calls and its recorded time values to participating-rank statistics.
 - An absent rank does not participate in per-entry min, max, or participating-rank averages.
-- Per-entry extrema-rank fields choose the lowest communicator-local rank among participating ranks that attains the extremum.
+- Initial per-entry rank-attributed extrema should preserve parity with the current strict MPI result by covering inclusive-time extrema; additional rank-attributed extrema for self time, call count, or percent time should wait for a concrete consumer need.
 - Communicator total-time fields remain all-rank fields because every rank has a local summary window even when some entries are sparse.
 
 The first sparse implementation should not provide an implicit zero-filled compatibility mode. Zero filling makes absence too easy to confuse with real zero work. If an all-rank amortized view is added later, it should be explicitly named and derived from participation-aware data rather than replacing participating-rank statistics.
