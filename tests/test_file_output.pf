@@ -364,6 +364,34 @@ contains
       call delete_if_exists(path)
    end subroutine test_write_summary_csv_rejects_mismatched_append_header
 
+   @test
+   subroutine test_write_summary_csv_rejects_unterminated_append_target()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_header_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_unterminated_append.csv'
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      integer :: ierr
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+
+      call write_raw_text_without_newline(path, header)
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_unterminated_append_target
+
    subroutine build_single_timer_summary(timer, summary, ierr)
       type(ftimer_t), intent(out) :: timer
       type(ftimer_summary_t), intent(out) :: summary
@@ -386,6 +414,20 @@ contains
       open (newunit=unit, file=path, status='old', iostat=io)
       if (io == 0) close (unit, status='delete')
    end subroutine delete_if_exists
+
+   subroutine write_raw_text_without_newline(path, text)
+      character(len=*), intent(in) :: path
+      character(len=*), intent(in) :: text
+      integer :: io
+      integer :: unit
+
+      open (newunit=unit, file=path, status='replace', access='stream', form='unformatted', &
+            action='write', iostat=io)
+      @assertEqual(0, io)
+      write (unit, iostat=io) text
+      @assertEqual(0, io)
+      close (unit)
+   end subroutine write_raw_text_without_newline
 
    function expected_single_timer_output(summary) result(text)
       type(ftimer_summary_t), intent(in) :: summary

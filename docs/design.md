@@ -80,7 +80,7 @@ ftimer_core.F90
      └─ summary/report bindings implemented in ftimer_core_summary_bindings.F90
 
 ftimer_summary.F90
-  └─ local structured summary building plus text and CSV formatting
+  └─ local structured summary building plus text formatting
 
 ftimer_mpi.F90
   └─ MPI descriptor preflight and reduced summary fields
@@ -110,7 +110,7 @@ The CMake source order reflects the real dependency order:
 
 `ftimer_core.F90` owns the mutable timer state in `ftimer_t`: timer definitions, active stack state, mismatch policy, communicator capture, lightweight callback registration, and the guarded timer entry points.
 
-`ftimer_core_summary_bindings.F90` is the submodule-backed binding layer that connects `ftimer_t` to local summary generation, formatted reporting, and file-output entry points without collapsing all summary logic into the core module body.
+`ftimer_core_summary_bindings.F90` is the submodule-backed binding layer that connects `ftimer_t` to local summary generation, formatted reporting, CSV export formatting, and file-output entry points without collapsing all summary logic into the core module body.
 
 `ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, and self-time computation are assembled for local reporting.
 

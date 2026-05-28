@@ -100,8 +100,8 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 - Current `main` does not promise that local summary node ids remain stable across separate runs or across independently produced summary objects
 - `print_summary()` and `write_summary()` format the same local snapshot data. When any returned entry is active, formatted reports add active-state information and reserve the `Active timers` metadata key for the built-in snapshot status line. A formatted local report whose `Active timers` field is `yes` is an interim snapshot, not a final stopped-run report.
 - `write_summary_csv()` exports the same local snapshot data in CSV format version `1`. It writes one header row, a `record_type=summary` row, zero or more `record_type=metadata` rows, and one `record_type=entry` row per summary entry. Entry rows include `node_id`, `parent_id`, `depth`, `name`, `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`.
-- CSV `append=.true.` appends records to the target file and omits the header when the existing file is non-empty. Non-empty append targets must begin with the fTimer CSV format-version-1 header; mismatched headers are rejected with `FTIMER_ERR_IO` instead of silently mixing schemas.
-- CSV text fields preserve timer names and metadata exactly with standard CSV quoting. They are not spreadsheet-formula-sanitized.
+- CSV `append=.true.` appends records to the target file and omits the header when the existing file is non-empty. Non-empty append targets must begin with the fTimer CSV format-version-1 header and end with a newline; mismatched headers or unterminated final records are rejected with `FTIMER_ERR_IO` instead of silently mixing schemas.
+- CSV text fields emit the same trimmed timer names and metadata key/value text used by fTimer reports, with standard CSV quoting. They are not spreadsheet-formula-sanitized.
 - A caller that requires a final local report should stop all timers first and verify `summary%has_active_timers == .false.`
 
 ## MPI Guarantees

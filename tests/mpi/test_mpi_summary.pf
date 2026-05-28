@@ -747,6 +747,62 @@ contains
    end subroutine test_mpi_write_summary_csv_appends_without_duplicate_header
 
    @test
+   subroutine test_mpi_write_summary_csv_rejects_unterminated_append_target(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      character(len=*), parameter :: csv_path = 'test_mpi_summary_unterminated_append.csv'
+      integer :: ierr
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+      integer :: rank
+
+      rank = this%getProcessRank()
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_nested_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) call delete_if_exists(csv_path)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      @assertEqual(MPI_SUCCESS, ierr)
+
+      call timer%write_mpi_summary_csv(csv_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      @assertEqual(MPI_SUCCESS, ierr)
+
+      if (rank == 0) then
+         csv_text = read_file_text(csv_path)
+         header = csv_line_at(csv_text, 1)
+         call write_raw_text_without_newline(csv_path, header)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      @assertEqual(MPI_SUCCESS, ierr)
+
+      call timer%write_mpi_summary_csv(csv_path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+
+      call MPI_Allreduce(ierr, min_err, 1, MPI_INTEGER, MPI_MIN, MPI_COMM_WORLD, mpierr)
+      @assertEqual(MPI_SUCCESS, mpierr)
+      call MPI_Allreduce(ierr, max_err, 1, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, mpierr)
+      @assertEqual(MPI_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_IO, min_err)
+      @assertEqual(FTIMER_ERR_IO, max_err)
+
+      if (rank == 0) call delete_if_exists(csv_path)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_write_summary_csv_rejects_unterminated_append_target
+
+   @test
    subroutine test_mpi_write_summary_syncs_io_error(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
@@ -1032,6 +1088,20 @@ contains
       open (newunit=unit, file=path, status='old', iostat=io)
       if (io == 0) close (unit, status='delete')
    end subroutine delete_if_exists
+
+   subroutine write_raw_text_without_newline(path, text)
+      character(len=*), intent(in) :: path
+      character(len=*), intent(in) :: text
+      integer :: io
+      integer :: unit
+
+      open (newunit=unit, file=path, status='replace', access='stream', form='unformatted', &
+            action='write', iostat=io)
+      @assertEqual(0, io)
+      write (unit, iostat=io) text
+      @assertEqual(0, io)
+      close (unit)
+   end subroutine write_raw_text_without_newline
 
    subroutine assert_real_close(actual, expected)
       real(wp), intent(in) :: actual
