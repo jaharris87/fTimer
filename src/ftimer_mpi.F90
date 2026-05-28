@@ -27,11 +27,18 @@ module ftimer_mpi
    integer :: test_preflight_mismatch_flag_allgather_count = 0
    integer :: test_preflight_summary_reduction_count = 0
    integer, allocatable :: test_preflight_mismatch_flags(:)
-   ! Test builds route preflight Allgather calls through this wrapper and
-   ! mark the first summary reduction phase so runtime tests can assert the
-   ! descriptor-preflight collective shape.
-#define MPI_Allgather ftimer_test_mpi_allgather
+   logical :: test_preflight_after_descriptor_check = .false.
 #endif
+#endif
+
+#ifdef FTIMER_USE_MPI
+   interface ftimer_mpi_allreduce
+      module procedure ftimer_mpi_allreduce_integer_scalar
+      module procedure ftimer_mpi_allreduce_integer_array
+      module procedure ftimer_mpi_allreduce_int64_array
+      module procedure ftimer_mpi_allreduce_real_scalar
+      module procedure ftimer_mpi_allreduce_real_array
+   end interface
 #endif
 
 contains
@@ -124,7 +131,7 @@ contains
       local_active = 0
       if (local_has_active_timers) local_active = 1
 
-      call MPI_Allreduce(local_active, any_active, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_active, any_active, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
@@ -199,6 +206,9 @@ contains
 
       call clear_mpi_summary(summary)
       if (present(diagnostic)) diagnostic = ''
+#ifdef FTIMER_BUILD_TESTS
+      test_preflight_after_descriptor_check = .false.
+#endif
 
       call get_mpi_summary_comm_info(comm, active_comm, rank, nprocs, status)
       if (status /= FTIMER_SUCCESS) return
@@ -206,7 +216,7 @@ contains
       call resolve_mpi_summary_datatypes(mpi_wp_type, mpi_int64_type, status, diagnostic)
       datatypes_ready = 0
       if (status == FTIMER_SUCCESS) datatypes_ready = 1
-      call MPI_Allreduce(datatypes_ready, all_datatypes_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(datatypes_ready, all_datatypes_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
@@ -233,20 +243,23 @@ contains
       local_hash_mismatch = 0
       if (any(local_hashes /= reference_hashes)) local_hash_mismatch = 1
 
-      call MPI_Allreduce(local_hash_mismatch, any_hash_mismatch, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_hash_mismatch, any_hash_mismatch, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
       hashes_match = any_hash_mismatch == 0
+#ifdef FTIMER_BUILD_TESTS
+      test_preflight_after_descriptor_check = .true.
+#endif
 
       if (.not. hashes_match) then
          ! Descriptor consistency is only meaningful after ranks have already
          ! agreed to enter the same communicator collective. Communicator
          ! disagreement across would-be participants is documented as unsupported.
          allocate (mismatch_flags(nprocs))
-         call MPI_Allgather(local_hash_mismatch, 1, MPI_INTEGER, mismatch_flags, 1, MPI_INTEGER, active_comm, mpierr)
+         call ftimer_mpi_allgather(local_hash_mismatch, 1, MPI_INTEGER, mismatch_flags, 1, MPI_INTEGER, active_comm, mpierr)
          if (mpierr /= MPI_SUCCESS) then
             status = FTIMER_ERR_UNKNOWN
             return
@@ -256,23 +269,19 @@ contains
          return
       end if
 
-#ifdef FTIMER_BUILD_TESTS
-      call ftimer_test_note_mpi_summary_reductions()
-#endif
-
-      call MPI_Allreduce(local_summary%total_time, min_total_time, 1, mpi_wp_type, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_summary%total_time, min_total_time, 1, mpi_wp_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_summary%total_time, max_total_time, 1, mpi_wp_type, MPI_MAX, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_summary%total_time, max_total_time, 1, mpi_wp_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_summary%total_time, sum_total_time, 1, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_summary%total_time, sum_total_time, 1, mpi_wp_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
@@ -280,7 +289,7 @@ contains
 
       local_min_total_rank = huge(local_min_total_rank)
       if (local_summary%total_time == min_total_time) local_min_total_rank = rank
-      call MPI_Allreduce(local_min_total_rank, min_total_time_rank, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_min_total_rank, min_total_time_rank, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
@@ -288,7 +297,7 @@ contains
 
       local_max_total_rank = huge(local_max_total_rank)
       if (local_summary%total_time == max_total_time) local_max_total_rank = rank
-      call MPI_Allreduce(local_max_total_rank, max_total_time_rank, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_max_total_rank, max_total_time_rank, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
@@ -343,14 +352,14 @@ contains
          local_pct(i) = local_summary%entries(local_idx)%pct_time
       end do
 
-      call MPI_Allreduce(local_inclusive, min_inclusive, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_inclusive, min_inclusive, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_inclusive, max_inclusive, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_inclusive, max_inclusive, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
@@ -364,84 +373,86 @@ contains
          if (local_inclusive(i) == max_inclusive(i)) local_max_inclusive_ranks(i) = rank
       end do
 
-      call MPI_Allreduce(local_min_inclusive_ranks, min_inclusive_ranks, entry_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_min_inclusive_ranks, min_inclusive_ranks, entry_count, MPI_INTEGER, MPI_MIN, &
+                                active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_max_inclusive_ranks, max_inclusive_ranks, entry_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_max_inclusive_ranks, max_inclusive_ranks, entry_count, MPI_INTEGER, MPI_MIN, &
+                                active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_inclusive, sum_inclusive, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_inclusive, sum_inclusive, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_self, min_self, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_self, min_self, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_self, max_self, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_self, max_self, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_self, sum_self, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_self, sum_self, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_pct, min_pct, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_pct, min_pct, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_pct, max_pct, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_pct, max_pct, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_pct, sum_pct, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_pct, sum_pct, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_calls, min_calls, entry_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_calls, min_calls, entry_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_calls, max_calls, entry_count, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_calls, max_calls, entry_count, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call MPI_Allreduce(local_sum_calls, sum_calls, entry_count, mpi_int64_type, MPI_SUM, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_sum_calls, sum_calls, entry_count, mpi_int64_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
@@ -908,12 +919,117 @@ contains
       end if
    end subroutine mark_rank_list_truncated
 
+   subroutine ftimer_mpi_allgather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm, mpierr)
+      integer, intent(in) :: sendbuf
+      integer, intent(in) :: sendcount
+      integer, intent(in) :: sendtype
+      integer, intent(out) :: recvbuf(*)
+      integer, intent(in) :: recvcount
+      integer, intent(in) :: recvtype
+      integer, intent(in) :: comm
+      integer, intent(out) :: mpierr
 #ifdef FTIMER_BUILD_TESTS
-#undef MPI_Allgather
+      integer :: nvalues
+      integer :: test_mpierr
+
+      test_preflight_allgather_count = test_preflight_allgather_count + 1
+      if ((sendcount == 1) .and. (recvcount == 1) .and. &
+          (sendtype == MPI_INTEGER) .and. (recvtype == MPI_INTEGER)) then
+         test_preflight_mismatch_flag_allgather_count = test_preflight_mismatch_flag_allgather_count + 1
+      end if
+#endif
+
+      call MPI_Allgather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm, mpierr)
+#ifdef FTIMER_BUILD_TESTS
+      if ((mpierr == MPI_SUCCESS) .and. (sendcount == 1) .and. (recvcount == 1) .and. &
+          (sendtype == MPI_INTEGER) .and. (recvtype == MPI_INTEGER)) then
+         if (allocated(test_preflight_mismatch_flags)) deallocate (test_preflight_mismatch_flags)
+         call MPI_Comm_size(comm, nvalues, test_mpierr)
+         if (test_mpierr == MPI_SUCCESS) then
+            allocate (test_preflight_mismatch_flags(nvalues))
+            test_preflight_mismatch_flags = recvbuf(1:nvalues)
+         end if
+      end if
+#endif
+   end subroutine ftimer_mpi_allgather
+
+   subroutine ftimer_mpi_allreduce_integer_scalar(sendbuf, recvbuf, count, datatype, op, comm, mpierr)
+      integer, intent(in) :: sendbuf
+      integer, intent(out) :: recvbuf
+      integer, intent(in) :: count
+      integer, intent(in) :: datatype
+      integer, intent(in) :: op
+      integer, intent(in) :: comm
+      integer, intent(out) :: mpierr
+
+      call ftimer_test_note_summary_reduction_phase()
+      call MPI_Allreduce(sendbuf, recvbuf, count, datatype, op, comm, mpierr)
+   end subroutine ftimer_mpi_allreduce_integer_scalar
+
+   subroutine ftimer_mpi_allreduce_integer_array(sendbuf, recvbuf, count, datatype, op, comm, mpierr)
+      integer, intent(in) :: sendbuf(:)
+      integer, intent(out) :: recvbuf(:)
+      integer, intent(in) :: count
+      integer, intent(in) :: datatype
+      integer, intent(in) :: op
+      integer, intent(in) :: comm
+      integer, intent(out) :: mpierr
+
+      call ftimer_test_note_summary_reduction_phase()
+      call MPI_Allreduce(sendbuf, recvbuf, count, datatype, op, comm, mpierr)
+   end subroutine ftimer_mpi_allreduce_integer_array
+
+   subroutine ftimer_mpi_allreduce_int64_array(sendbuf, recvbuf, count, datatype, op, comm, mpierr)
+      integer(int64), intent(in) :: sendbuf(:)
+      integer(int64), intent(out) :: recvbuf(:)
+      integer, intent(in) :: count
+      integer, intent(in) :: datatype
+      integer, intent(in) :: op
+      integer, intent(in) :: comm
+      integer, intent(out) :: mpierr
+
+      call ftimer_test_note_summary_reduction_phase()
+      call MPI_Allreduce(sendbuf, recvbuf, count, datatype, op, comm, mpierr)
+   end subroutine ftimer_mpi_allreduce_int64_array
+
+   subroutine ftimer_mpi_allreduce_real_scalar(sendbuf, recvbuf, count, datatype, op, comm, mpierr)
+      real(wp), intent(in) :: sendbuf
+      real(wp), intent(out) :: recvbuf
+      integer, intent(in) :: count
+      integer, intent(in) :: datatype
+      integer, intent(in) :: op
+      integer, intent(in) :: comm
+      integer, intent(out) :: mpierr
+
+      call ftimer_test_note_summary_reduction_phase()
+      call MPI_Allreduce(sendbuf, recvbuf, count, datatype, op, comm, mpierr)
+   end subroutine ftimer_mpi_allreduce_real_scalar
+
+   subroutine ftimer_mpi_allreduce_real_array(sendbuf, recvbuf, count, datatype, op, comm, mpierr)
+      real(wp), intent(in) :: sendbuf(:)
+      real(wp), intent(out) :: recvbuf(:)
+      integer, intent(in) :: count
+      integer, intent(in) :: datatype
+      integer, intent(in) :: op
+      integer, intent(in) :: comm
+      integer, intent(out) :: mpierr
+
+      call ftimer_test_note_summary_reduction_phase()
+      call MPI_Allreduce(sendbuf, recvbuf, count, datatype, op, comm, mpierr)
+   end subroutine ftimer_mpi_allreduce_real_array
+
+   subroutine ftimer_test_note_summary_reduction_phase()
+#ifdef FTIMER_BUILD_TESTS
+      if (test_preflight_after_descriptor_check) test_preflight_summary_reduction_count = 1
+#endif
+   end subroutine ftimer_test_note_summary_reduction_phase
+
+#ifdef FTIMER_BUILD_TESTS
    subroutine ftimer_test_reset_mpi_preflight_collectives()
       test_preflight_allgather_count = 0
       test_preflight_mismatch_flag_allgather_count = 0
       test_preflight_summary_reduction_count = 0
+      test_preflight_after_descriptor_check = .false.
       if (allocated(test_preflight_mismatch_flags)) deallocate (test_preflight_mismatch_flags)
    end subroutine ftimer_test_reset_mpi_preflight_collectives
 
@@ -939,39 +1055,6 @@ contains
       end if
    end subroutine ftimer_test_get_mpi_preflight_mismatch_flags
 
-   subroutine ftimer_test_note_mpi_summary_reductions()
-      test_preflight_summary_reduction_count = test_preflight_summary_reduction_count + 1
-   end subroutine ftimer_test_note_mpi_summary_reductions
-
-   subroutine ftimer_test_mpi_allgather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm, mpierr)
-      integer, intent(in) :: sendbuf
-      integer, intent(in) :: sendcount
-      integer, intent(in) :: sendtype
-      integer, intent(out) :: recvbuf(*)
-      integer, intent(in) :: recvcount
-      integer, intent(in) :: recvtype
-      integer, intent(in) :: comm
-      integer, intent(out) :: mpierr
-      integer :: nvalues
-      integer :: test_mpierr
-
-      test_preflight_allgather_count = test_preflight_allgather_count + 1
-      if ((sendcount == 1) .and. (recvcount == 1) .and. &
-          (sendtype == MPI_INTEGER) .and. (recvtype == MPI_INTEGER)) then
-         test_preflight_mismatch_flag_allgather_count = test_preflight_mismatch_flag_allgather_count + 1
-      end if
-
-      call MPI_Allgather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm, mpierr)
-      if ((mpierr == MPI_SUCCESS) .and. (sendcount == 1) .and. (recvcount == 1) .and. &
-          (sendtype == MPI_INTEGER) .and. (recvtype == MPI_INTEGER)) then
-         if (allocated(test_preflight_mismatch_flags)) deallocate (test_preflight_mismatch_flags)
-         call MPI_Comm_size(comm, nvalues, test_mpierr)
-         if (test_mpierr == MPI_SUCCESS) then
-            allocate (test_preflight_mismatch_flags(nvalues))
-            test_preflight_mismatch_flags = recvbuf(1:nvalues)
-         end if
-      end if
-   end subroutine ftimer_test_mpi_allgather
 #endif
 #endif
 
