@@ -38,6 +38,7 @@ fTimer currently supports these usage paths:
 - Pure-MPI builds on the validated `use mpi` path that use `MPI_Wtime()`, produce global MPI summaries on every participating rank, and can emit communicator-level text and CSV reports
 - A narrow OpenMP carve-out: master-thread-only timer guards for timing a parallel region as a whole
 - Downstream consumption through `find_package(fTimer CONFIG REQUIRED)`
+- Application-owned instrumentation facades that can select either the real fTimer implementation or a dependency-free no-op implementation at build time
 
 Important limitations are documented later in this README. The short version is that serial and pure-MPI are the core supported stories on current `main`; OpenMP support is intentionally limited to the documented master-thread-only model.
 
@@ -147,6 +148,50 @@ The downstream example under [`tests/install-consumer/`](tests/install-consumer/
 
 The supported source-level module surface is intentionally narrow: `ftimer`, `ftimer_core`, and `ftimer_types`. Some install trees may still contain compiler module artifacts for implementation modules such as `ftimer_clock`, `ftimer_summary`, and `ftimer_mpi`, but those are internal implementation details, not stable user-facing API. The current validated toolchain matrix does not require any extra compiler-specific companion artifacts in the installed include tree. If a future compiler proves that such artifacts are truly required for downstream consumption, they should be added deliberately and documented as an explicit exception rather than leaked accidentally.
 
+## Compile-Out / No-Op Instrumentation Pattern
+
+For production builds that should keep timing calls in source but remove fTimer overhead and dependencies, the recommended pattern is an application-owned facade module with two implementations selected by the application's build system:
+
+- an enabled implementation that delegates to `use ftimer`
+- a disabled implementation with the same application-facing procedures, but no `use ftimer`, no fTimer link dependency, and no timer state
+
+This keeps normal fTimer users away from preprocessor macros, keeps fTimer's core semantics unconditional, and lets each application decide which calls should remain unconditional in disabled builds.
+
+For example, application code can depend only on its own facade:
+
+```fortran
+program my_app
+   use my_timing, only: timing_finalize, timing_init, timing_start, timing_stop
+   implicit none
+
+   call timing_init()
+   call timing_start("advance")
+   ! application work
+   call timing_stop("advance")
+   call timing_finalize()
+end program my_app
+```
+
+Then CMake can select one facade source:
+
+```cmake
+option(MY_APP_ENABLE_TIMING "Enable fTimer instrumentation" ON)
+
+if(MY_APP_ENABLE_TIMING)
+  find_package(fTimer CONFIG REQUIRED)
+  target_sources(my_app PRIVATE my_timing_enabled.F90)
+  target_link_libraries(my_app PRIVATE fTimer::ftimer)
+else()
+  target_sources(my_app PRIVATE my_timing_disabled.F90)
+endif()
+```
+
+The disabled facade should make instrumentation entry points silent no-ops. If an `ierr` argument is present, set it to `0`, matching `FTIMER_SUCCESS`; if `ierr` is absent, do not write to stderr. Disabled wrappers should not validate names, maintain a stack, create summaries, write timing files, fire callbacks, or enter MPI collectives. If a dependency-free build is required, keep fTimer summary types out of unconditional application code; expose application-level report helpers or simple status/count values instead.
+
+fTimer intentionally does not install a drop-in no-op `ftimer` module. Providing a second module with the same public name as the real library is easy to misconfigure and can hide which semantics are active. The supported strategy is to put the build switch at the application facade boundary.
+
+The repository includes a worked example under `examples/instrumentation_facade_*.F90`. The smoke test builds and runs both `instrumentation_facade_enabled`, which links fTimer and records one timer, and `instrumentation_facade_disabled`, which does not link fTimer and verifies that the same timing calls compile and execute as no-ops.
+
 ## API Surface
 
 The public API supports two styles:
@@ -187,6 +232,7 @@ Operational notes:
 
 - `examples/basic_usage.F90`: serial start/stop plus summary retrieval and formatted output
 - `examples/nested_timers.F90`: nested timers and metadata headers
+- `examples/instrumentation_facade_*.F90`: enabled and disabled application-owned timing facade implementations that demonstrate the supported compile-out/no-op pattern
 - `examples/mpi_example.F90`: pure-MPI timing with a global MPI summary object and first-class MPI report output
 - `examples/openmp_example.F90`: the narrow OpenMP carve-out, where timers bracket the parallel region instead of running inside worker threads
 
@@ -250,6 +296,8 @@ make mpi
 make openmp
 make test
 ```
+
+The smoke-test path also runs the enabled and disabled instrumentation facade examples so the documented compile-out strategy stays buildable.
 
 Supported toolchain matrix:
 
