@@ -188,6 +188,25 @@ if(NOT consumer_run_result EQUAL 0)
   message(FATAL_ERROR "Installed-package consumer executable exited with a nonzero status.")
 endif()
 
+set(oop_consumer_executable "${consumer_build_dir}/ftimer_installed_oop_consumer${TEST_EXECUTABLE_SUFFIX}")
+if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
+  set(configured_oop_consumer_executable
+    "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_oop_consumer${TEST_EXECUTABLE_SUFFIX}"
+  )
+  if(EXISTS "${configured_oop_consumer_executable}")
+    set(oop_consumer_executable "${configured_oop_consumer_executable}")
+  endif()
+endif()
+
+execute_process(
+  COMMAND "${oop_consumer_executable}"
+  WORKING_DIRECTORY "${consumer_build_dir}"
+  RESULT_VARIABLE oop_consumer_run_result
+)
+if(NOT oop_consumer_run_result EQUAL 0)
+  message(FATAL_ERROR "Installed-package OOP consumer executable exited with a nonzero status.")
+endif()
+
 if(TEST_ENABLE_MPI)
   set(mpi_consumer_executable "${consumer_build_dir}/ftimer_installed_mpi_consumer${TEST_EXECUTABLE_SUFFIX}")
   if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")

@@ -1473,9 +1473,10 @@ contains
       class(ftimer_guard_t), intent(in) :: rhs
 
       if (lhs%active) then
-         call guard_stop_impl(lhs, "assignment")
-         if (lhs%active) return
+         write (error_unit, '(a)') "ftimer scoped guard assignment to active guard ignored; original guard remains active"
+         return
       end if
+
       call clear_guard_state(lhs)
       if (rhs%active) then
          write (error_unit, '(a)') "ftimer scoped guards are not copyable; assigned guard left inactive"
