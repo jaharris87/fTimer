@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with an empty MPI summary result.
+Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, scoped timer guards, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with an empty MPI summary result.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -62,6 +62,20 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 - `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization for tight loops that repeatedly time the same known regions, especially when long labels would otherwise be validated and hashed on every name-based call
 - Formatted summary output does not emit unsafe raw summary-entry names literally
 - Escaped formatted-summary forms are stable: leading blanks render as `\x20`, backslashes render as `\\`, tab/newline/carriage return render as `\t`/`\n`/`\r`, other ASCII control characters render as `\xNN`, and blank/empty raw names render as `<blank>`
+
+## Scoped Guard Contract
+
+- Scoped guards are an additive API; explicit `start`/`stop` and `start_id`/`stop_id` remain first-class and are still the right choice when a caller needs a stop status at a specific program point.
+- Procedural users declare `type(ftimer_guard_t)` from `use ftimer` and start it with `ftimer_scope(guard, name, ierr)` or `ftimer_scope_id(guard, id, ierr)`. OOP users declare `type(ftimer_guard_t)` from `use ftimer_core` and start it with `timer%scope(guard, name, ierr)` or `timer%scope_id(guard, id, ierr)`.
+- Guard creation is deliberately subroutine-based rather than a function-return constructor. A finalizable function result can introduce temporaries whose finalization point is not a safe timer lifetime boundary.
+- Starting a guard delegates to the same validation, stack push, call-count, clock, and callback behavior as the corresponding explicit start call. If that start fails, the guard remains inactive; with `ierr` present the error is returned silently, and with `ierr` omitted the normal diagnostic path warns to stderr.
+- On normal scope exit, an active guard finalizer stops the guarded timer only when that timer is the current stack top. This stop is a normal user-visible stop event and fires the configured stop callback.
+- A finalizer cannot return `ierr`. If it cannot stop the timer because the timer object is unavailable, the timer was finalized, the id is invalid, the call stack is empty, or a different timer is on top of the stack, it writes a diagnostic to stderr and leaves timer state unchanged.
+- Guard finalizers never invoke warn/repair mismatch recovery. Even in `FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR` mode, a finalizer stack mismatch is diagnosed and left for explicit caller action instead of silently repairing.
+- `guard%stop(ierr)` provides explicit early release. It uses the same top-of-stack-only policy as finalization, returns the status through `ierr` when present, and turns later finalization into a successful no-op after a successful stop.
+- Scoped guards rely on standard Fortran finalization of local, non-`save` variables on normal scope exit, including block exit and procedure return. They are not a cleanup mechanism for `stop`, `error stop`, process aborts, saved/module/global guard variables, or compiler/toolchain finalization bugs.
+- For OOP guards, the timed `type(ftimer_t)` object must outlive the guard and should be declared with `target` before calling `timer%scope(...)`, because the guard stores a pointer back to that timer instance. The procedural default instance already satisfies this requirement.
+- For nested scoped timing, use nested `block` constructs or nested procedures so each guard has a clear lifetime. Do not place multiple active guards in the same scoping unit and rely on finalization order to provide stack discipline.
 
 ## Reset Behavior
 

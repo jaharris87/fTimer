@@ -1,5 +1,5 @@
 module ftimer
-   use ftimer_core, only: ftimer_t
+   use ftimer_core, only: ftimer_guard_t, ftimer_t
    use ftimer_types, only: ftimer_metadata_t, ftimer_mpi_summary_t, ftimer_summary_t
    implicit none
    private
@@ -8,6 +8,8 @@ module ftimer
    public :: ftimer_finalize
    public :: ftimer_start
    public :: ftimer_stop
+   public :: ftimer_scope
+   public :: ftimer_scope_id
    public :: ftimer_start_id
    public :: ftimer_stop_id
    public :: ftimer_lookup
@@ -21,6 +23,7 @@ module ftimer
    public :: ftimer_write_mpi_summary
    public :: ftimer_write_mpi_summary_csv
    public :: ftimer_default_instance
+   public :: ftimer_guard_t
 
    type(ftimer_t), save, target :: ftimer_default_instance
 
@@ -56,6 +59,22 @@ contains
 
       call ftimer_default_instance%stop(name, ierr=ierr)
    end subroutine ftimer_stop
+
+   subroutine ftimer_scope(guard, name, ierr)
+      type(ftimer_guard_t), intent(inout) :: guard
+      character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
+
+      call ftimer_default_instance%scope(guard, name, ierr=ierr)
+   end subroutine ftimer_scope
+
+   subroutine ftimer_scope_id(guard, id, ierr)
+      type(ftimer_guard_t), intent(inout) :: guard
+      integer, intent(in) :: id
+      integer, intent(out), optional :: ierr
+
+      call ftimer_default_instance%scope_id(guard, id, ierr=ierr)
+   end subroutine ftimer_scope_id
 
    subroutine ftimer_start_id(id, ierr)
       integer, intent(in) :: id

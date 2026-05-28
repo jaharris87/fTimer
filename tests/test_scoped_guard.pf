@@ -1,0 +1,317 @@
+module test_scoped_guard
+   use, intrinsic :: iso_c_binding, only: c_ptr
+   use pfunit
+   use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_get_summary, ftimer_init, ftimer_scope
+   use ftimer_core, only: ftimer_guard_t, ftimer_t, ftimer_test_state_t
+   use ftimer_types, only: FTIMER_ERR_NOT_INIT, FTIMER_EVENT_START, FTIMER_EVENT_STOP, FTIMER_MISMATCH_REPAIR, &
+                           FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_summary_t, wp
+   use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time, find_context_idx, &
+                           snapshot_timer
+   implicit none
+
+   integer, parameter :: max_events = 8
+   integer, save :: callback_count = 0
+   integer, save :: callback_events(max_events) = 0
+   real(wp), save :: callback_timestamps(max_events) = 0.0_wp
+
+contains
+
+   @test
+   subroutine test_oop_guard_stops_on_block_exit()
+      type(ftimer_t), target :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: ierr
+      logical :: active
+      real(wp) :: elapsed
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      block
+         type(ftimer_guard_t) :: guard
+
+         call timer%scope(guard, "scoped", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         active = guard%is_active()
+         @assertTrue(active)
+
+         fake_time = 2.5_wp
+      end block
+
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, 1, root_stack)
+      elapsed = state%segments(1)%time(ctx)
+
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(2.5_wp, elapsed)
+      @assertEqual(1, state%segments(1)%call_count(ctx))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_oop_guard_stops_on_block_exit
+
+   @test
+   subroutine test_oop_guard_stops_on_early_block_exit()
+      type(ftimer_t), target :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: ierr
+      logical :: left_block
+      real(wp) :: elapsed
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      left_block = .false.
+      early_exit: block
+         type(ftimer_guard_t) :: guard
+
+         call timer%scope(guard, "early", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 4.0_wp
+         left_block = .true.
+         exit early_exit
+      end block early_exit
+
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, 1, root_stack)
+      elapsed = state%segments(1)%time(ctx)
+
+      @assertTrue(left_block)
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(4.0_wp, elapsed)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_oop_guard_stops_on_early_block_exit
+
+   @test
+   subroutine test_guard_is_inactive_when_start_fails()
+      type(ftimer_t), target :: timer
+      integer :: ierr
+      logical :: active
+
+      block
+         type(ftimer_guard_t) :: guard
+
+         call timer%scope(guard, "missing init", ierr=ierr)
+         active = guard%is_active()
+
+         @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+         @assertFalse(active)
+      end block
+   end subroutine test_guard_is_inactive_when_start_fails
+
+   @test
+   subroutine test_guard_explicit_stop_prevents_finalizer_double_stop()
+      type(ftimer_t), target :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: ierr
+      logical :: active
+      real(wp) :: elapsed
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      block
+         type(ftimer_guard_t) :: guard
+
+         call timer%scope(guard, "manual", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 2.0_wp
+         call guard%stop(ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         active = guard%is_active()
+         @assertFalse(active)
+         fake_time = 5.0_wp
+      end block
+
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, 1, root_stack)
+      elapsed = state%segments(1)%time(ctx)
+
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(2.0_wp, elapsed)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_guard_explicit_stop_prevents_finalizer_double_stop
+
+   @test
+   subroutine test_scope_id_stops_cached_timer_on_block_exit()
+      type(ftimer_t), target :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: id
+      integer :: ierr
+      real(wp) :: elapsed
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      id = timer%lookup("cached", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      block
+         type(ftimer_guard_t) :: guard
+
+         call timer%scope_id(guard, id, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 3.5_wp
+      end block
+
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id, root_stack)
+      elapsed = state%segments(id)%time(ctx)
+
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(3.5_wp, elapsed)
+      @assertEqual(1, state%segments(id)%call_count(ctx))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_scope_id_stops_cached_timer_on_block_exit
+
+   @test
+   subroutine test_procedural_scope_uses_default_instance()
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      block
+         type(ftimer_guard_t) :: guard
+
+         call ftimer_scope(guard, "procedural", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 1.25_wp
+      end block
+
+      call ftimer_get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, summary%num_entries)
+      @assertEqual("procedural", trim(summary%entries(1)%name))
+      @assertEqual(1.25_wp, summary%entries(1)%inclusive_time)
+      @assertFalse(summary%has_active_timers)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_scope_uses_default_instance
+
+   @test
+   subroutine test_scoped_guard_callbacks_are_normal_start_stop_events()
+      type(ftimer_t), target :: timer
+      integer :: ierr
+      logical :: first_event_is_start
+      logical :: second_event_is_stop
+
+      call reset_callback_log()
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+      call timer%set_callback(record_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      block
+         type(ftimer_guard_t) :: guard
+
+         call timer%scope(guard, "callback", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 6.0_wp
+      end block
+
+      first_event_is_start = callback_events(1) == FTIMER_EVENT_START
+      second_event_is_stop = callback_events(2) == FTIMER_EVENT_STOP
+
+      @assertEqual(2, callback_count)
+      @assertTrue(first_event_is_start)
+      @assertTrue(second_event_is_stop)
+      @assertEqual(0.0_wp, callback_timestamps(1))
+      @assertEqual(6.0_wp, callback_timestamps(2))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_scoped_guard_callbacks_are_normal_start_stop_events
+
+   @test
+   subroutine test_finalizer_mismatch_warns_without_repairing()
+      type(ftimer_t), target :: timer
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: ierr
+      integer :: saved_fd
+      logical :: has_warning
+
+      call timer%init(mismatch_mode=FTIMER_MISMATCH_REPAIR, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call begin_stderr_capture('test_finalizer_mismatch_warns_without_repairing.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      block
+         type(ftimer_guard_t) :: guard
+
+         call timer%scope(guard, "A", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 1.0_wp
+         call timer%start("B", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 3.0_wp
+      end block
+
+      call end_stderr_capture('test_finalizer_mismatch_warns_without_repairing.err', saved_fd, stderr_text, &
+                              capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_warning = index(stderr_text, 'ftimer scoped guard finalizer could not stop A because top of stack is B') > 0
+      @assertTrue(has_warning)
+
+      call snapshot_timer(timer, state)
+      @assertEqual(2, state%call_stack%depth)
+      @assertEqual(2, state%call_stack%top())
+
+      call timer%stop("B", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%stop("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_finalizer_mismatch_warns_without_repairing
+
+   subroutine record_callback(timer_id, context_idx, event, timestamp, user_data)
+      integer, intent(in) :: timer_id
+      integer, intent(in) :: context_idx
+      integer, intent(in) :: event
+      real(wp), intent(in) :: timestamp
+      type(c_ptr), intent(in) :: user_data
+      integer :: slot
+
+      if (callback_count >= max_events) error stop 1
+
+      slot = callback_count + 1
+      callback_count = slot
+      callback_events(slot) = event
+      callback_timestamps(slot) = timestamp
+   end subroutine record_callback
+
+   subroutine reset_callback_log()
+      callback_count = 0
+      callback_events = 0
+      callback_timestamps = 0.0_wp
+   end subroutine reset_callback_log
+
+end module test_scoped_guard

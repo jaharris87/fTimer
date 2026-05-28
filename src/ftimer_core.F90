@@ -11,6 +11,7 @@ module ftimer_core
    private
 
    public :: ftimer_t
+   public :: ftimer_guard_t
 #ifdef FTIMER_BUILD_TESTS
    public :: ftimer_test_get_state
    public :: ftimer_test_state_t
@@ -73,6 +74,8 @@ module ftimer_core
       procedure :: clear_clock
       procedure :: set_callback
       procedure :: clear_callback
+      procedure :: scope
+      procedure :: scope_id
       procedure :: start
       procedure :: stop
       procedure :: start_id
@@ -91,6 +94,17 @@ module ftimer_core
       procedure, private :: find_or_create_segment
       procedure, private :: repair_mismatch
    end type ftimer_t
+
+   type :: ftimer_guard_t
+      private
+      class(ftimer_t), pointer :: timer => null()
+      integer :: id = 0
+      logical :: active = .false.
+   contains
+      procedure :: stop => guard_stop
+      procedure :: is_active => guard_is_active
+      final :: guard_finalize
+   end type ftimer_guard_t
 
    interface
       module subroutine get_summary(self, summary, ierr)
@@ -341,6 +355,78 @@ contains
       call clear_callback_state(self)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine clear_callback_impl
+
+   subroutine scope(self, guard, name, ierr)
+      class(ftimer_t), target, intent(inout) :: self
+      type(ftimer_guard_t), intent(inout) :: guard
+      character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
+
+!$omp master
+      call scope_impl(self, guard, name, ierr=ierr)
+!$omp end master
+   end subroutine scope
+
+   subroutine scope_impl(self, guard, name, ierr)
+      class(ftimer_t), target, intent(inout) :: self
+      type(ftimer_guard_t), intent(inout) :: guard
+      character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
+      integer :: old_depth
+      integer :: status
+
+      if (guard%active) then
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer scope with active scoped guard; state unchanged")
+         return
+      end if
+
+      call clear_guard_state(guard)
+      old_depth = self%call_stack%depth
+      if (present(ierr)) then
+         call start_impl(self, name, ierr=status)
+         if (status == FTIMER_SUCCESS) call arm_guard_if_started(guard, self, old_depth)
+         ierr = status
+      else
+         call start_impl(self, name)
+         call arm_guard_if_started(guard, self, old_depth)
+      end if
+   end subroutine scope_impl
+
+   subroutine scope_id(self, guard, id, ierr)
+      class(ftimer_t), target, intent(inout) :: self
+      type(ftimer_guard_t), intent(inout) :: guard
+      integer, intent(in) :: id
+      integer, intent(out), optional :: ierr
+
+!$omp master
+      call scope_id_impl(self, guard, id, ierr=ierr)
+!$omp end master
+   end subroutine scope_id
+
+   subroutine scope_id_impl(self, guard, id, ierr)
+      class(ftimer_t), target, intent(inout) :: self
+      type(ftimer_guard_t), intent(inout) :: guard
+      integer, intent(in) :: id
+      integer, intent(out), optional :: ierr
+      integer :: old_depth
+      integer :: status
+
+      if (guard%active) then
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer scope_id with active scoped guard; state unchanged")
+         return
+      end if
+
+      call clear_guard_state(guard)
+      old_depth = self%call_stack%depth
+      if (present(ierr)) then
+         call start_id_impl(self, id, ierr=status)
+         if (status == FTIMER_SUCCESS) call arm_guard_if_started(guard, self, old_depth)
+         ierr = status
+      else
+         call start_id_impl(self, id)
+         call arm_guard_if_started(guard, self, old_depth)
+      end if
+   end subroutine scope_id_impl
 
    subroutine start(self, name, ierr)
       class(ftimer_t), intent(inout) :: self
@@ -1213,6 +1299,107 @@ contains
       if (self%initialized .and. has_recorded_timing(self)) return
       can_configure = .true.
    end function can_configure_clock
+
+   subroutine arm_guard_if_started(guard, timer, old_depth)
+      type(ftimer_guard_t), intent(inout) :: guard
+      class(ftimer_t), target, intent(inout) :: timer
+      integer, intent(in) :: old_depth
+
+      if (timer%call_stack%depth /= old_depth + 1) return
+
+      guard%timer => timer
+      guard%id = timer%call_stack%top()
+      guard%active = .true.
+   end subroutine arm_guard_if_started
+
+   subroutine guard_stop(self, ierr)
+      class(ftimer_guard_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+
+!$omp master
+      call guard_stop_impl(self, "stop", ierr=ierr)
+!$omp end master
+   end subroutine guard_stop
+
+   subroutine guard_finalize(self)
+      type(ftimer_guard_t), intent(inout) :: self
+
+!$omp master
+      call guard_stop_impl(self, "finalizer")
+!$omp end master
+   end subroutine guard_finalize
+
+   logical function guard_is_active(self) result(active)
+      class(ftimer_guard_t), intent(in) :: self
+
+      active = self%active
+   end function guard_is_active
+
+   subroutine guard_stop_impl(guard, caller, ierr)
+      class(ftimer_guard_t), intent(inout) :: guard
+      character(len=*), intent(in) :: caller
+      integer, intent(out), optional :: ierr
+      character(len=:), allocatable :: guarded_name
+      character(len=:), allocatable :: message
+      character(len=:), allocatable :: top_name
+      integer :: top_id
+
+      if (.not. guard%active) then
+         if (present(ierr)) ierr = FTIMER_SUCCESS
+         return
+      end if
+
+      if (.not. associated(guard%timer)) then
+         call report_status(ierr, FTIMER_ERR_UNKNOWN, &
+                            "ftimer scoped guard "//trim(caller)//" has no associated timer; state unchanged")
+         return
+      end if
+
+      if (.not. guard%timer%initialized) then
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, &
+                            "ftimer scoped guard "//trim(caller)//" after timer finalize; state unchanged")
+         return
+      end if
+
+      if ((guard%id < 1) .or. (guard%id > guard%timer%num_segments)) then
+         call report_status(ierr, FTIMER_ERR_UNKNOWN, &
+                            "ftimer scoped guard "//trim(caller)//" has unknown timer id; state unchanged")
+         return
+      end if
+
+      guarded_name = guard%timer%segments(guard%id)%name
+      if (guard%timer%call_stack%depth <= 0) then
+         message = "ftimer scoped guard "//trim(caller)//" could not stop "//trim(guarded_name)// &
+                   " because the call stack is empty; state unchanged"
+         call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
+         return
+      end if
+
+      top_id = guard%timer%call_stack%top()
+      if (top_id /= guard%id) then
+         if ((top_id >= 1) .and. (top_id <= guard%timer%num_segments)) then
+            top_name = guard%timer%segments(top_id)%name
+         else
+            top_name = "<unknown>"
+         end if
+         message = "ftimer scoped guard "//trim(caller)//" could not stop "//trim(guarded_name)// &
+                   " because top of stack is "//trim(top_name)//"; state unchanged"
+         call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
+         return
+      end if
+
+      call stop_segment_with_now(guard%timer, guard%id, guard%timer%wtime(), fire_callback=.true.)
+      call clear_guard_state(guard)
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine guard_stop_impl
+
+   subroutine clear_guard_state(guard)
+      class(ftimer_guard_t), intent(inout) :: guard
+
+      nullify (guard%timer)
+      guard%id = 0
+      guard%active = .false.
+   end subroutine clear_guard_state
 
    logical function needs_init_wtime_rebase(self) result(needs_rebase)
       class(ftimer_t), intent(in) :: self
