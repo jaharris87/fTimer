@@ -1,10 +1,13 @@
-# Install the intentional public module surface rather than copying the entire
-# compiler module output directory wholesale.
+# Install the curated module artifact set needed by downstream package
+# consumers rather than copying the entire compiler module output directory
+# wholesale. Some installed artifacts belong to internal implementation
+# modules; see the installed API stability note for the supported import
+# contract.
 
 set(ftimer_install_module_dir "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_INCLUDEDIR@/ftimer")
 file(MAKE_DIRECTORY "${ftimer_install_module_dir}")
 
-set(ftimer_public_module_names
+set(ftimer_installed_module_artifact_names
   ftimer
   ftimer_clock
   ftimer_core
@@ -13,11 +16,11 @@ set(ftimer_public_module_names
   ftimer_types
 )
 
-foreach(ftimer_module_name IN LISTS ftimer_public_module_names)
+foreach(ftimer_module_name IN LISTS ftimer_installed_module_artifact_names)
   set(ftimer_module_file "@FTIMER_PUBLIC_MODULE_DIR@/${ftimer_module_name}.mod")
   if(NOT EXISTS "${ftimer_module_file}")
     message(FATAL_ERROR
-      "Expected public module artifact '${ftimer_module_file}' was not generated before install."
+      "Expected installed module artifact '${ftimer_module_file}' was not generated before install."
     )
   endif()
 
