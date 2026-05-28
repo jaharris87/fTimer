@@ -133,19 +133,13 @@ if(NOT EXISTS "${installed_api_note_path}")
   )
 endif()
 
+file(READ "${REPO_ROOT}/docs/installed-api.md" expected_installed_api_note)
 file(READ "${installed_api_note_path}" installed_api_note)
-foreach(required_note_text IN ITEMS
-  "Stable source-level modules: `ftimer`, `ftimer_core`, `ftimer_types`"
-  "Installed implementation module artifacts: `ftimer_clock.mod`, `ftimer_summary.mod`, `ftimer_mpi.mod`"
-  "not stable import targets"
-)
-  string(FIND "${installed_api_note}" "${required_note_text}" note_text_position)
-  if(note_text_position EQUAL -1)
-    message(FATAL_ERROR
-      "Installed API stability note is missing required text: ${required_note_text}"
-    )
-  endif()
-endforeach()
+if(NOT installed_api_note STREQUAL expected_installed_api_note)
+  message(FATAL_ERROR
+    "Installed API stability note does not match docs/installed-api.md."
+  )
+endif()
 
 set(consumer_configure_args
   -S "${consumer_source_dir}"
