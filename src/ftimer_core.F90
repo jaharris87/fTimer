@@ -83,8 +83,10 @@ module ftimer_core
       procedure :: mpi_summary
       procedure :: print_summary
       procedure :: write_summary
+      procedure :: write_summary_csv
       procedure :: print_mpi_summary
       procedure :: write_mpi_summary
+      procedure :: write_mpi_summary_csv
       procedure, private :: wtime
       procedure, private :: find_or_create_segment
       procedure, private :: repair_mismatch
@@ -118,6 +120,14 @@ module ftimer_core
          integer, intent(out), optional :: ierr
       end subroutine write_summary
 
+      module subroutine write_summary_csv(self, filename, append, metadata, ierr)
+         class(ftimer_t), intent(in) :: self
+         character(len=*), intent(in) :: filename
+         logical, intent(in), optional :: append
+         type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+         integer, intent(out), optional :: ierr
+      end subroutine write_summary_csv
+
       module subroutine print_mpi_summary(self, unit, metadata, ierr)
          class(ftimer_t), intent(in) :: self
          integer, intent(in), optional :: unit
@@ -132,6 +142,14 @@ module ftimer_core
          type(ftimer_metadata_t), intent(in), optional :: metadata(:)
          integer, intent(out), optional :: ierr
       end subroutine write_mpi_summary
+
+      module subroutine write_mpi_summary_csv(self, filename, append, metadata, ierr)
+         class(ftimer_t), intent(in) :: self
+         character(len=*), intent(in) :: filename
+         logical, intent(in), optional :: append
+         type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+         integer, intent(out), optional :: ierr
+      end subroutine write_mpi_summary_csv
    end interface
 
 contains

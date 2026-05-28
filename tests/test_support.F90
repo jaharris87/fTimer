@@ -10,6 +10,10 @@ module test_support
    public :: attach_scripted_mock_clock
    public :: begin_stderr_capture
    public :: build_stack
+   public :: csv_column_index
+   public :: csv_field_value
+   public :: csv_line_at
+   public :: csv_record_count
    public :: end_stderr_capture
    public :: fake_time
    public :: get_mock_clock_call_count
@@ -388,6 +392,133 @@ contains
 
       if (.not. first_line) text = text//new_line('a')
    end function read_unit_text
+
+   integer function csv_record_count(text) result(count)
+      character(len=*), intent(in) :: text
+      integer :: i
+
+      count = 0
+      if (len_trim(text) <= 0) return
+
+      count = 1
+      do i = 1, len(text)
+         if (text(i:i) == new_line('a')) count = count + 1
+      end do
+
+      if (text(len(text):len(text)) == new_line('a')) count = count - 1
+   end function csv_record_count
+
+   function csv_line_at(text, target_line) result(line)
+      character(len=*), intent(in) :: text
+      integer, intent(in) :: target_line
+      character(len=:), allocatable :: line
+      integer :: current_line
+      integer :: i
+      integer :: line_start
+
+      line = ''
+      if (target_line <= 0) return
+
+      current_line = 1
+      line_start = 1
+      do i = 1, len(text)
+         if (text(i:i) /= new_line('a')) cycle
+         if (current_line == target_line) then
+            if (i > line_start) line = text(line_start:i - 1)
+            return
+         end if
+         current_line = current_line + 1
+         line_start = i + 1
+      end do
+
+      if (current_line == target_line) line = text(line_start:)
+   end function csv_line_at
+
+   integer function csv_column_index(header, name) result(column_index)
+      character(len=*), intent(in) :: header
+      character(len=*), intent(in) :: name
+      character(len=:), allocatable :: value
+      integer :: column
+
+      column_index = 0
+      column = 1
+      do
+         value = csv_field_value(header, column)
+         if ((len(value) <= 0) .and. (column > csv_field_count(header))) exit
+         if (trim(value) == trim(name)) then
+            column_index = column
+            return
+         end if
+         column = column + 1
+      end do
+   end function csv_column_index
+
+   function csv_field_value(line, target_column) result(value)
+      character(len=*), intent(in) :: line
+      integer, intent(in) :: target_column
+      character(len=:), allocatable :: value
+      integer :: column
+      integer :: i
+
+      value = ''
+      if (target_column <= 0) return
+
+      column = 1
+      i = 1
+      do while (i <= len_trim(line) + 1)
+         value = csv_read_field(line, i)
+         if (column == target_column) return
+         column = column + 1
+         if (i > len_trim(line)) exit
+         if (line(i:i) == ',') i = i + 1
+      end do
+
+      value = ''
+   end function csv_field_value
+
+   integer function csv_field_count(line) result(count)
+      character(len=*), intent(in) :: line
+      integer :: i
+
+      count = 1
+      do i = 1, len_trim(line)
+         if (line(i:i) == ',') count = count + 1
+      end do
+   end function csv_field_count
+
+   function csv_read_field(line, position) result(value)
+      character(len=*), intent(in) :: line
+      integer, intent(inout) :: position
+      character(len=:), allocatable :: value
+      integer :: line_len
+      integer :: start
+
+      value = ''
+      line_len = len_trim(line)
+      if (position > line_len) return
+
+      if (line(position:position) == '"') then
+         position = position + 1
+         do while (position <= line_len)
+            if (line(position:position) /= '"') then
+               value = value//line(position:position)
+               position = position + 1
+            else if ((position < line_len) .and. (line(position + 1:position + 1) == '"')) then
+               value = value//'"'
+               position = position + 2
+            else
+               position = position + 1
+               exit
+            end if
+         end do
+      else
+         start = position
+         do while ((position <= line_len) .and. (line(position:position) /= ','))
+            position = position + 1
+         end do
+         if (position > start) value = trim(line(start:position - 1))
+      end if
+   end function csv_read_field
 
    subroutine delete_file_if_exists(path)
       character(len=*), intent(in) :: path

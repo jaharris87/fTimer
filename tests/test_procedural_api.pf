@@ -2,7 +2,7 @@ module test_procedural_api
    use pfunit
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_get_summary, ftimer_init, &
                      ftimer_lookup, ftimer_print_summary, ftimer_reset, ftimer_start, ftimer_start_id, &
-                     ftimer_stop, ftimer_stop_id, ftimer_write_summary
+                     ftimer_stop, ftimer_stop_id, ftimer_write_summary, ftimer_write_summary_csv
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
    use ftimer_types, only: FTIMER_MISMATCH_STRICT, FTIMER_ERR_NOT_INIT, FTIMER_SUCCESS, ftimer_metadata_t, &
                            ftimer_summary_t, wp
@@ -557,6 +557,39 @@ contains
       call delete_if_exists(procedural_path)
       call cleanup_matching_timers(oop_timer, ierr)
    end subroutine test_procedural_write_summary_matches_oop
+
+   @test
+   subroutine test_procedural_write_summary_csv_matches_oop()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=*), parameter :: oop_path = 'phase4_oop_summary.csv'
+      character(len=*), parameter :: procedural_path = 'phase4_procedural_summary.csv'
+      character(len=:), allocatable :: oop_text
+      character(len=:), allocatable :: procedural_text
+      integer :: ierr
+      logical :: texts_match
+
+      metadata(1)%key = 'Case'
+      metadata(1)%value = 'Phase4 CSV'
+
+      call delete_if_exists(oop_path)
+      call delete_if_exists(procedural_path)
+      call build_matching_timers(oop_timer, ierr)
+
+      call oop_timer%write_summary_csv(oop_path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_write_summary_csv(procedural_path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      oop_text = read_file_text(oop_path)
+      procedural_text = read_file_text(procedural_path)
+      texts_match = procedural_text == oop_text
+      @assertTrue(texts_match)
+
+      call delete_if_exists(oop_path)
+      call delete_if_exists(procedural_path)
+      call cleanup_matching_timers(oop_timer, ierr)
+   end subroutine test_procedural_write_summary_csv_matches_oop
 
    @test
    subroutine test_procedural_write_summary_append_matches_oop()

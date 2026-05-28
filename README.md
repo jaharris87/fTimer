@@ -10,7 +10,7 @@ For a first release, the focus is a small, dependable core:
 - context-sensitive accounting for the same timer name under different parents
 - inclusive and self time in structured summaries with explicit tree linkage
 - procedural wrappers and an OOP core API
-- optional MPI global summaries plus first-class MPI report output
+- optional MPI global summaries plus first-class text and CSV report output
 - an installable CMake package for downstream projects
 
 ## Why Use fTimer
@@ -20,6 +20,7 @@ fTimer fits best when you want timing behavior you can trust:
 - nested timers are treated as a real hierarchy, not a flat label list
 - mismatch handling is explicit and configurable (`strict`, `warn`, `repair`)
 - summaries are available as data first (`get_summary()`), with text formatting layered on top
+- stable CSV export is available for dashboards, CI comparisons, plotting, and archives
 - local summaries are live snapshots: active timers are included explicitly and marked in the data model/report output
 - local summary entries retain formatter-friendly preorder `name`/`depth` data and also expose explicit `node_id`/`parent_id` tree links
 - pure-MPI reductions return a distinct `ftimer_mpi_summary_t` with globally meaningful fields on every participating rank
@@ -32,8 +33,8 @@ If you need a tiny serial timing helper, you can use fTimer that way. If you nee
 
 fTimer currently supports these usage paths:
 
-- Serial timing with local summaries and formatted reports
-- Pure-MPI builds on the validated `use mpi` path that use `MPI_Wtime()`, produce global MPI summaries on every participating rank, and can emit communicator-level MPI reports
+- Serial timing with local summaries plus formatted text and CSV reports
+- Pure-MPI builds on the validated `use mpi` path that use `MPI_Wtime()`, produce global MPI summaries on every participating rank, and can emit communicator-level text and CSV reports
 - A narrow OpenMP carve-out: master-thread-only timer guards for timing a parallel region as a whole
 - Downstream consumption through `find_package(fTimer CONFIG REQUIRED)`
 
@@ -132,7 +133,7 @@ The supported source-level module surface is intentionally narrow: `ftimer`, `ft
 
 The public API supports two styles:
 
-- Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, and `ftimer_default_instance`
+- Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, and `ftimer_default_instance`
 - OOP API through `type(ftimer_t)` in `ftimer_core`, including the explicit configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`
 
 New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock or callback configuration on a specific timer object. Procedural callers that need those advanced controls can use `ftimer_default_instance%...` explicitly.
@@ -151,10 +152,12 @@ Operational notes:
 - `get_summary()`, `print_summary()`, and `write_summary()` are local-only summary/reporting paths.
 - `get_summary()`, `print_summary()`, and `write_summary()` are live snapshot APIs. They include active local timer contexts through the snapshot timestamp without stopping them, and mark that state with `summary%has_active_timers`, each entry's `is_active`, and, when active entries exist, the formatted report's `Active timers`/`Active` fields. For a final local report, stop all timers first and verify `summary%has_active_timers == .false.`.
 - Local summary entries retain preorder formatting compatibility and now expose explicit tree structure through `node_id` and `parent_id`. `node_id` values are stable only within one produced summary object, and roots use `parent_id = 0`.
+- `write_summary_csv()` and `ftimer_write_summary_csv()` export local summaries as stable CSV records for dashboards, CI comparisons, plotting, and archives. The text report remains human-facing; consumers should use the CSV or structured Fortran summary rather than scraping fixed-width report output.
 - `mpi_summary()` and `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init`.
 - A successful MPI reduction returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
 - The MPI result includes communicator-local rank attribution for total-time extrema and per-entry inclusive-time extrema. Ties resolve to the lowest rank that attains the extremum.
 - `print_mpi_summary()` and `write_mpi_summary()` are the first-class MPI reporting paths. They perform the collective MPI summary build and emit one abbreviated report from communicator root. The printed per-entry table is not a serialization of every `ftimer_mpi_summary_t` field; inspect `mpi_summary()` results for min/max self time, self imbalance, min/max call counts, min/max rank-local `% Total`, and explicit `node_id`/`parent_id` tree links.
+- `write_mpi_summary_csv()` and `ftimer_write_mpi_summary_csv()` perform the same collective MPI summary build and write one CSV artifact from communicator root. The CSV includes the complete reduced MPI entry fields, including explicit tree links and inclusive-time extrema ranks.
 - In MPI text reports, `Avg %` means the arithmetic mean of each rank's local `% Total` for that timer, not `100*Avg Incl/Avg total time`.
 - Callbacks configured on `type(ftimer_t)` are lightweight intra-run hooks. They report normal start/stop events with runtime-local numeric ids; current `main` does not promise a stable semantic id-to-name/path mapping for profiler backends or durable cross-run tooling.
 - Import shared types and constants from `ftimer_types`; `use ftimer` does not re-export them.
@@ -166,6 +169,27 @@ Operational notes:
 - `examples/nested_timers.F90`: nested timers and metadata headers
 - `examples/mpi_example.F90`: pure-MPI timing with a global MPI summary object and first-class MPI report output
 - `examples/openmp_example.F90`: the narrow OpenMP carve-out, where timers bracket the parallel region instead of running inside worker threads
+
+## CSV Export
+
+The first stable machine-readable export format is CSV, chosen because fTimer summaries are snapshot tables rather than event streams. The schema is versioned by the `format_version` column and currently uses version `1`.
+
+Each CSV starts with one header row followed by typed records:
+
+- `record_type=summary` carries run-level fields.
+- `record_type=metadata` carries caller-supplied metadata as `key`/`value`.
+- `record_type=entry` carries one timer node per row.
+
+Common columns include `summary_kind`, `node_id`, `parent_id`, `depth`, and `name`. Local entry rows populate `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. MPI entry rows populate the reduced fields from `ftimer_mpi_summary_t`, including min/avg/max inclusive and self time, call count extrema, rank-local percent extrema, imbalance fields, and inclusive-time extrema ranks.
+
+Example:
+
+```fortran
+call ftimer_write_summary_csv("ftimer-summary.csv", ierr=ierr)
+
+! In an FTIMER_USE_MPI=ON build, collectively writes from communicator root.
+call ftimer_write_mpi_summary_csv("ftimer-mpi-summary.csv", ierr=ierr)
+```
 
 ## Build And Test
 

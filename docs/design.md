@@ -16,13 +16,13 @@ Implemented capabilities include:
 
 - stack-based start/stop timing with context-sensitive accounting
 - configurable mismatch handling (`strict`, `warn`, `repair`) with `strict` as the default
-- structured local summaries plus formatted local report output
+- structured local summaries plus formatted local report output and CSV export
 - procedural wrappers over an OOP core
 - MPI-reduced global summary fields on every participating rank after a descriptor-hash preflight
 - limited OpenMP master-thread-only timer guards
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
-fTimer does not currently provide built-in hardware counter backends, JSON/CSV export utilities, a serious profiler-backend callback contract, or general thread-safe timing across OpenMP worker threads.
+fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, or general thread-safe timing across OpenMP worker threads.
 It also does not provide accelerator/device synchronization hooks or implicit MPI
 barriers; callers own those synchronization decisions when interpreting
 wall-clock intervals.
@@ -80,7 +80,7 @@ ftimer_core.F90
      └─ summary/report bindings implemented in ftimer_core_summary_bindings.F90
 
 ftimer_summary.F90
-  └─ local structured summary building and text formatting
+  └─ local structured summary building plus text and CSV formatting
 
 ftimer_mpi.F90
   └─ MPI descriptor preflight and reduced summary fields
@@ -162,8 +162,10 @@ The currently exported procedural entry points are:
 - `ftimer_mpi_summary`
 - `ftimer_print_summary`
 - `ftimer_write_summary`
+- `ftimer_write_summary_csv`
 - `ftimer_print_mpi_summary`
 - `ftimer_write_mpi_summary`
+- `ftimer_write_mpi_summary_csv`
 - `ftimer_default_instance`
 
 Important current-state API notes:
@@ -175,8 +177,10 @@ Important current-state API notes:
 - `get_summary()` is the local structured summary path.
 - `ftimer_summary_t` entries now retain `name`/`depth` and also expose `node_id`/`parent_id` links that are stable only within one produced summary object.
 - `print_summary()` and `write_summary()` format local report text.
+- `write_summary_csv()` exports local summaries in the versioned CSV record format for non-Fortran tooling.
 - `mpi_summary()` returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
 - `print_mpi_summary()` and `write_mpi_summary()` are the first-class communicator-level MPI reporting paths.
+- `write_mpi_summary_csv()` exports the full reduced MPI summary fields as the same versioned CSV record format from communicator root.
 - `set_clock()` / `clear_clock()` and `set_callback()` / `clear_callback()` are the supported configuration entry points; direct mutation of raw runtime internals is no longer part of the public contract.
 - `on_event` remains a lightweight intra-run hook; the current public surface does not promise stable semantic timer identity for external-profiler integrations.
 - `ftimer_types` owns `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_metadata_t`, and mismatch constants.
@@ -275,7 +279,7 @@ Keeping those boundaries sharp matters. When current behavior changes, update th
 Future-facing ideas should stay clearly separated from the current architecture reference. Examples that remain intentionally deferred today include:
 
 - built-in hardware counter or power-measurement backends
-- richer export formats such as CSV or JSON
+- richer export formats beyond summary CSV, such as JSON or trace/event formats
 - broader OpenMP support beyond the documented master-thread-only guard model
 - stable semantic callback identity or a stronger external-profiler integration contract
 - explicit reservation/preallocation APIs for known timer sets, if profiling shows the new internal capacity strategy is still not enough for an adopter workload

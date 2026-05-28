@@ -2,7 +2,8 @@ submodule(ftimer_core) ftimer_core_summary_bindings
    use, intrinsic :: iso_fortran_env, only: error_unit, output_unit
    use ftimer_clock, only: ftimer_date_string
    use ftimer_mpi, only: build_mpi_summary, check_mpi_summary_prereqs, get_mpi_summary_comm_info
-   use ftimer_summary, only: build_summary, format_mpi_summary, format_summary
+   use ftimer_summary, only: build_summary, format_mpi_summary, format_mpi_summary_csv, format_summary, &
+                             format_summary_csv
    use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_UNKNOWN, &
                            ftimer_mpi_summary_t, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
@@ -114,6 +115,54 @@ contains
 
    if (present(ierr)) ierr = FTIMER_SUCCESS
    end procedure write_summary
+
+   module procedure write_summary_csv
+   type(ftimer_summary_t) :: summary
+   character(len=:), allocatable :: text
+   character(len=256) :: iomsg
+   integer :: file_unit
+   integer :: io
+   logical :: append_mode
+   logical :: include_header
+
+   if (.not. self%initialized) then
+      call report_summary_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer write_summary_csv before init")
+      return
+   end if
+
+   append_mode = .false.
+   if (present(append)) append_mode = append
+   include_header = csv_header_needed(filename, append_mode)
+
+   call build_current_summary(self, summary)
+   call format_summary_csv(summary, text, metadata, include_header=include_header)
+
+   if (append_mode) then
+      open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', iostat=io, iomsg=iomsg)
+   else
+      open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+   end if
+
+   if (io /= 0) then
+      call report_summary_status(ierr, FTIMER_ERR_IO, "ftimer write_summary_csv open failed: "//trim(iomsg))
+      return
+   end if
+
+   call write_text_block(file_unit, text, io, iomsg)
+   if (io /= 0) then
+      close (file_unit)
+      call report_summary_status(ierr, FTIMER_ERR_IO, "ftimer write_summary_csv write failed: "//trim(iomsg))
+      return
+   end if
+
+   close (file_unit, iostat=io, iomsg=iomsg)
+   if (io /= 0) then
+      call report_summary_status(ierr, FTIMER_ERR_IO, "ftimer write_summary_csv close failed: "//trim(iomsg))
+      return
+   end if
+
+   if (present(ierr)) ierr = FTIMER_SUCCESS
+   end procedure write_summary_csv
 
    module procedure print_mpi_summary
    type(ftimer_mpi_summary_t) :: summary
@@ -265,6 +314,103 @@ contains
    if (present(ierr)) ierr = FTIMER_SUCCESS
    end procedure write_mpi_summary
 
+   module procedure write_mpi_summary_csv
+   type(ftimer_mpi_summary_t) :: summary
+   character(len=:), allocatable :: text
+   character(len=256) :: diagnostic
+   character(len=256) :: collective_message
+   character(len=256) :: iomsg
+   integer :: active_comm
+   integer :: collective_status
+   integer :: file_unit
+   integer :: io
+   integer :: mpierr
+   integer :: nprocs
+   integer :: rank
+   integer :: status
+   logical :: append_mode
+   logical :: include_header
+
+   if (.not. self%initialized) then
+      call report_summary_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer write_mpi_summary_csv before init")
+      return
+   end if
+
+   call build_current_mpi_summary(self, summary, status, diagnostic)
+   if (status /= FTIMER_SUCCESS) then
+      call report_mpi_summary_error(ierr, status, diagnostic)
+      return
+   end if
+
+#ifdef FTIMER_USE_MPI
+   call get_mpi_summary_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+#else
+   active_comm = -1
+   rank = 0
+   nprocs = 1
+   status = FTIMER_ERR_NOT_IMPLEMENTED
+#endif
+   if (status /= FTIMER_SUCCESS) then
+      call report_summary_status(ierr, status, "ftimer write_mpi_summary_csv communicator lookup failed")
+      return
+   end if
+
+   append_mode = .false.
+   if (present(append)) append_mode = append
+
+   collective_status = FTIMER_SUCCESS
+   collective_message = ''
+   if (rank == 0) then
+      include_header = csv_header_needed(filename, append_mode)
+      call format_mpi_summary_csv(summary, text, metadata, include_header=include_header)
+
+      if (append_mode) then
+         open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', iostat=io, iomsg=iomsg)
+      else
+         open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+      end if
+
+      if (io /= 0) then
+         collective_status = FTIMER_ERR_IO
+         collective_message = "ftimer write_mpi_summary_csv open failed: "//trim(iomsg)
+      else
+         call write_text_block(file_unit, text, io, iomsg)
+         if (io /= 0) then
+            close (file_unit)
+            collective_status = FTIMER_ERR_IO
+            collective_message = "ftimer write_mpi_summary_csv write failed: "//trim(iomsg)
+         else
+            close (file_unit, iostat=io, iomsg=iomsg)
+            if (io /= 0) then
+               collective_status = FTIMER_ERR_IO
+               collective_message = "ftimer write_mpi_summary_csv close failed: "//trim(iomsg)
+            end if
+         end if
+      end if
+   end if
+
+#ifdef FTIMER_USE_MPI
+   call MPI_Bcast(collective_status, 1, MPI_INTEGER, 0, active_comm, mpierr)
+   if (mpierr /= MPI_SUCCESS) then
+      call report_summary_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer write_mpi_summary_csv status sync failed")
+      return
+   end if
+
+   call MPI_Bcast(collective_message, len(collective_message), MPI_CHARACTER, 0, active_comm, mpierr)
+   if (mpierr /= MPI_SUCCESS) then
+      call report_summary_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer write_mpi_summary_csv message sync failed")
+      return
+   end if
+#endif
+
+   if (collective_status /= FTIMER_SUCCESS) then
+      call report_summary_status(ierr, collective_status, trim(collective_message))
+      return
+   end if
+
+   if (present(ierr)) ierr = FTIMER_SUCCESS
+   end procedure write_mpi_summary_csv
+
    subroutine build_current_summary(self, summary)
       class(ftimer_t), intent(in) :: self
       type(ftimer_summary_t), intent(out) :: summary
@@ -376,6 +522,21 @@ contains
          end if
       end select
    end subroutine report_mpi_summary_error
+
+   logical function csv_header_needed(filename, append_mode) result(needed)
+      character(len=*), intent(in) :: filename
+      logical, intent(in) :: append_mode
+      integer :: file_size
+      logical :: exists
+
+      needed = .true.
+      if (.not. append_mode) return
+
+      exists = .false.
+      file_size = 0
+      inquire (file=filename, exist=exists, size=file_size)
+      if (exists .and. (file_size > 0)) needed = .false.
+   end function csv_header_needed
 
    subroutine write_text_block(unit, text, io, iomsg)
       integer, intent(in) :: unit

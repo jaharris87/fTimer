@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `mpi_summary()`, `print_mpi_summary()`, `write_mpi_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with an empty MPI summary result.
+Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with an empty MPI summary result.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -56,7 +56,7 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 
 - Public timer creation/lookup paths right-trim trailing blanks, reject empty names, reject names that begin with a blank, and reject ASCII control characters. They do not silently truncate names and do not impose the legacy `FTIMER_NAME_LEN` value as a runtime name cap.
 - Timer names, runtime segment names, local summary entry names, MPI summary entry names, and metadata key/value fields use allocatable-length character storage. The exported `FTIMER_NAME_LEN = 64` constant is retained so code that imports it still compiles, but it is not the current storage or validation limit. Pre-1.0 code that treated those components as fixed writable buffers, such as internal writes directly into metadata `%value`, must allocate or assign through a temporary string first.
-- Metadata entries with an unallocated or blank key are skipped by formatted reports. An unallocated metadata value is formatted as blank; assigned metadata values are formatted at their full trimmed length.
+- Metadata entries with an unallocated or blank key are skipped by formatted reports and CSV exports. An unallocated metadata value is emitted as blank; assigned metadata values are emitted at their full trimmed length.
 - Name-based `start`/`stop` remains the default supported timing path; the runtime uses internal mapped lookup for both resident timer names and per-segment parent-stack contexts, plus capacity-based growth, so that this ergonomic path avoids repeated resident-timer linear scans, steady-state context-list scans, and one-slot-at-a-time whole-array growth as the timer set grows
 - Per-timer context selection remains fully context-sensitive accounting over the current parent stack for that timer; repeated reuse of one timer name under many distinct parent stacks now uses a per-segment parent-stack index in steady state rather than rescanning the full known-context list each time
 - `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization for tight loops that repeatedly time the same known regions, especially when long labels would otherwise be validated and hashed on every name-based call
@@ -99,6 +99,8 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 - `parent_id` refers to another entry's `node_id`; roots use `parent_id = 0`
 - Current `main` does not promise that local summary node ids remain stable across separate runs or across independently produced summary objects
 - `print_summary()` and `write_summary()` format the same local snapshot data. When any returned entry is active, formatted reports add active-state information and reserve the `Active timers` metadata key for the built-in snapshot status line. A formatted local report whose `Active timers` field is `yes` is an interim snapshot, not a final stopped-run report.
+- `write_summary_csv()` exports the same local snapshot data in CSV format version `1`. It writes one header row, a `record_type=summary` row, zero or more `record_type=metadata` rows, and one `record_type=entry` row per summary entry. Entry rows include `node_id`, `parent_id`, `depth`, `name`, `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`.
+- CSV `append=.true.` appends records to the target file and omits the header when the existing file is non-empty.
 - A caller that requires a final local report should stop all timers first and verify `summary%has_active_timers == .false.`
 
 ## MPI Guarantees
@@ -141,11 +143,13 @@ The supported pattern is simple: capture one communicator consistently at `init`
 
 ## MPI Reporting Contract
 
-- `print_mpi_summary()` and `write_mpi_summary()` are the first-class reporting paths for `ftimer_mpi_summary_t`
+- `print_mpi_summary()` and `write_mpi_summary()` are the first-class text reporting paths for `ftimer_mpi_summary_t`
+- `write_mpi_summary_csv()` is the first-class machine-readable reporting path for `ftimer_mpi_summary_t`
 - They are collective over the communicator captured by `init`, just like `mpi_summary()`
 - They build the same global MPI summary object that `mpi_summary()` returns
 - They emit one communicator-level report from rank 0; non-root participants take part in the collective build and then return success without duplicating output
 - The default MPI text report is an abbreviated view of `ftimer_mpi_summary_t`, not a serialization of every structured field. It prints communicator totals plus per-entry min/avg/max inclusive time, inclusive-time extrema ranks, inclusive imbalance, average self time, average call count, and `Avg %`; use `mpi_summary()` directly for min/max self time, self imbalance, min/max call count, min/max rank-local `% Total`, and explicit `node_id`/`parent_id` tree links.
+- The MPI CSV export uses CSV format version `1` with `summary_kind=mpi`. It emits summary and metadata rows plus one entry row per MPI summary entry, including explicit tree links and all reduced fields from `ftimer_mpi_summary_t`.
 - In the MPI text report, `Avg %` is `avg_pct_time`: the arithmetic mean of each rank's local `% Total` for that timer. It is not recomputed as `100*avg_inclusive_time/avg_total_time`, because rank-local denominator differences are part of the reported statistic.
 
 ## Name Validation Error Contract
