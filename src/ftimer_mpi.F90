@@ -150,11 +150,14 @@ contains
       integer, allocatable :: max_calls(:)
       integer, allocatable :: min_inclusive_ranks(:)
       integer, allocatable :: min_calls(:)
+      integer, allocatable :: mismatch_flags(:)
       integer, allocatable :: permutation(:)
       integer(int64), allocatable :: local_sum_calls(:)
       integer(int64), allocatable :: sum_calls(:)
       integer(int64) :: local_hashes(2)
-      integer(int64), allocatable :: gathered_hashes(:, :)
+      integer(int64) :: reference_hashes(2)
+      integer :: any_hash_mismatch
+      integer :: local_hash_mismatch
       real(wp) :: avg_total_time
       real(wp) :: max_total_time
       real(wp) :: min_total_time
@@ -200,26 +203,35 @@ contains
       call build_descriptor_order(local_summary, descriptors, permutation)
       call hash_descriptor_list(descriptors, permutation, local_hashes)
 
-      allocate (gathered_hashes(2, nprocs))
-      call MPI_Allgather(local_hashes, 2, mpi_int64_type, gathered_hashes, 2, mpi_int64_type, active_comm, mpierr)
+      reference_hashes = local_hashes
+      call MPI_Bcast(reference_hashes, 2, mpi_int64_type, 0, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      hashes_match = .true.
-      do i = 2, nprocs
-         if (any(gathered_hashes(:, i) /= gathered_hashes(:, 1))) then
-            hashes_match = .false.
-            exit
-         end if
-      end do
+      local_hash_mismatch = 0
+      if (any(local_hashes /= reference_hashes)) local_hash_mismatch = 1
+
+      call MPI_Allreduce(local_hash_mismatch, any_hash_mismatch, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      hashes_match = any_hash_mismatch == 0
 
       if (.not. hashes_match) then
          ! Descriptor consistency is only meaningful after ranks have already
          ! agreed to enter the same communicator collective. Communicator
          ! disagreement across would-be participants is documented as unsupported.
-         if (present(diagnostic)) call format_descriptor_mismatch_diagnostic(gathered_hashes, diagnostic)
+         allocate (mismatch_flags(nprocs))
+         call MPI_Allgather(local_hash_mismatch, 1, MPI_INTEGER, mismatch_flags, 1, MPI_INTEGER, active_comm, mpierr)
+         if (mpierr /= MPI_SUCCESS) then
+            status = FTIMER_ERR_UNKNOWN
+            return
+         end if
+         if (present(diagnostic)) call format_descriptor_mismatch_diagnostic(mismatch_flags, diagnostic)
          status = FTIMER_ERR_MPI_INCON
          return
       end if
@@ -806,8 +818,8 @@ contains
       updated = modulo(current*base + value, modulus)
    end function hash_step
 
-   subroutine format_descriptor_mismatch_diagnostic(gathered_hashes, diagnostic)
-      integer(int64), intent(in) :: gathered_hashes(:, :)
+   subroutine format_descriptor_mismatch_diagnostic(mismatch_flags, diagnostic)
+      integer, intent(in) :: mismatch_flags(:)
       character(len=*), intent(out) :: diagnostic
       character(len=32) :: rank_text
       character(len=len(diagnostic)) :: rank_list
@@ -816,8 +828,8 @@ contains
       diagnostic = "ftimer mpi_summary detected inconsistent timer descriptors across ranks in the init communicator"
       rank_list = ''
 
-      do i = 2, size(gathered_hashes, 2)
-         if (all(gathered_hashes(:, i) == gathered_hashes(:, 1))) cycle
+      do i = 2, size(mismatch_flags)
+         if (mismatch_flags(i) == 0) cycle
 
          write (rank_text, '(i0)') i - 1
          if (len_trim(rank_list) > 0) then
