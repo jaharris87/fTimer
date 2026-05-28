@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with an empty MPI summary result.
+Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the procedural `ftimer_scope` scoped guard, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with an empty MPI summary result.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -62,6 +62,24 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 - `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization for tight loops that repeatedly time the same known regions, especially when long labels would otherwise be validated and hashed on every name-based call
 - Formatted summary output does not emit unsafe raw summary-entry names literally
 - Escaped formatted-summary forms are stable: leading blanks render as `\x20`, backslashes render as `\\`, tab/newline/carriage return render as `\t`/`\n`/`\r`, other ASCII control characters render as `\xNN`, and blank/empty raw names render as `<blank>`
+
+## Scoped Guard Contract
+
+- `ftimer_scope(guard, name, ierr)` is the only scoped guard constructor on current `main`
+- The public guard type is `ftimer_guard_t`, imported from `ftimer`
+- Scoped guards use the default procedural timer instance; there is no `type(ftimer_t)` scoped guard API on current `main`
+- `ftimer_scope` starts the named timer through the same validation, lookup, accounting, and callback path as normal name-based `start`
+- If `ftimer_scope` fails while initializing an inactive guard, the guard remains inactive. Finalization and `guard%stop(ierr)` are no-ops for inactive guards.
+- Calling `ftimer_scope` on an already-active guard returns `FTIMER_ERR_ACTIVE`, or warns when `ierr` is omitted, and leaves the existing active ownership unchanged.
+- A guard owns exactly one activation token from its successful start. `guard%stop(ierr)` may stop only that exact activation while it is still the top of the stack.
+- If the guard's activation has already been stopped, repaired away, or replaced by another activation with the same timer name, `guard%stop(ierr)` returns `FTIMER_ERR_MISMATCH` and leaves timer state unchanged.
+- The guard finalizer attempts the same exact-activation stop without `ierr`. On mismatch or lifecycle errors, it warns to stderr and does not repair.
+- Scoped guard finalization does not force-stop arbitrary matching timer names, synthesize elapsed time, invoke mismatch repair, or hide errors silently.
+- `guard%stop(ierr)` is the supported way to observe finalizer-equivalent stop errors before scope exit.
+- Guard assignment/copy is unsupported and does not copy or transfer active ownership. Assignment involving an active guard warns to stderr and leaves active ownership with the original guard. Use one scalar guard variable per lexical block.
+- Guard arrays, saved/global guards, function-return guard constructors, and cross-procedure lifetime patterns are unsupported.
+- `ftimer_scope_id` is deferred; use explicit `lookup()` plus `start_id()`/`stop_id()` for cached-id hot paths.
+- The scoped guard is a safety layer for simple lexical blocks and early exits. Use explicit `start`/`stop` for non-lexical lifetimes, complex ownership, or timing that spans procedure boundaries.
 
 ## Reset Behavior
 
@@ -199,6 +217,7 @@ The silent worker-thread no-op model has specific, observable consequences that 
 - **Timing inside a parallel region captures only the master-thread timing window**: worker-thread work duration is not separately captured or aggregated into the timer's inclusive or self time.
 - **Supported pattern**: place `start`/`stop` calls outside the `!$omp parallel` block to time a parallel region as a whole. The master-thread timing window then spans the full wall-clock duration of the parallel work.
 - **Misleading pattern**: placing `start`/`stop` inside a parallel region with the expectation that each thread contributes timing data is not supported under this contract. Only the master thread's calls take effect; worker-thread contributions are silently absent.
+- **Scoped guard limitation**: block-local scoped guard finalization inside an OpenMP parallel region is unsupported. To time a parallel region, place explicit `start`/`stop` or a scoped guard outside the `!$omp parallel` block.
 
 ## Callback Contract
 
@@ -209,4 +228,6 @@ The silent worker-thread no-op model has specific, observable consequences that 
 - `on_event` is an optional lightweight intra-run hook for normal start/stop events on one timer instance
 - The current callback contract exposes numeric runtime identifiers only; it does not define a stable semantic mapping back to timer names or full context paths for external-profiler backends
 - Repair transitions do NOT fire callbacks
+- Scoped guards fire only the normal underlying start/stop events. They do not synthesize extra callback events during finalization.
+- Mutating timer state from callbacks during scoped guard start/stop is unsupported.
 - `user_data` remains opaque callback state, not a separate user-facing mutable runtime field

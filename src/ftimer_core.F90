@@ -11,6 +11,8 @@ module ftimer_core
    private
 
    public :: ftimer_t
+   public :: ftimer_internal_start_scope_activation
+   public :: ftimer_internal_stop_scope_activation
 #ifdef FTIMER_BUILD_TESTS
    public :: ftimer_test_get_state
    public :: ftimer_test_state_t
@@ -54,6 +56,7 @@ module ftimer_core
       integer, allocatable :: segment_name_slots(:)
       type(ftimer_context_index_t), allocatable :: segment_context_indices(:)
       integer :: num_segments = 0
+      integer(int64) :: next_activation_token = 0_int64
       real(wp) :: init_wtime = 0.0_wp
       character(len=40) :: init_date = ''
       logical :: initialized = .false.
@@ -153,6 +156,32 @@ module ftimer_core
    end interface
 
 contains
+
+   subroutine ftimer_internal_start_scope_activation(self, name, id, activation_token, ierr)
+      class(ftimer_t), target, intent(inout) :: self
+      character(len=*), intent(in) :: name
+      integer, intent(out) :: id
+      integer(int64), intent(out) :: activation_token
+      integer, intent(out), optional :: ierr
+
+      id = 0
+      activation_token = 0_int64
+!$omp master
+      call start_scope_activation_impl(self, name, id, activation_token, ierr=ierr)
+!$omp end master
+   end subroutine ftimer_internal_start_scope_activation
+
+   integer function ftimer_internal_stop_scope_activation(self, id, activation_token, ierr) result(status)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: id
+      integer(int64), intent(in) :: activation_token
+      integer, intent(out), optional :: ierr
+
+      status = FTIMER_ERR_ACTIVE
+!$omp master
+      status = stop_scope_activation_impl(self, id, activation_token, ierr=ierr)
+!$omp end master
+   end function ftimer_internal_stop_scope_activation
 
    subroutine init(self, comm, mismatch_mode, ierr)
       class(ftimer_t), intent(inout) :: self
@@ -352,14 +381,17 @@ contains
 !$omp end master
    end subroutine start
 
-   subroutine start_impl(self, name, ierr)
+   subroutine start_impl(self, name, ierr, activation_token)
       class(ftimer_t), intent(inout) :: self
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
+      integer(int64), intent(out), optional :: activation_token
       integer :: id
       integer :: status
       integer :: trimmed_len
       character(len=:), allocatable :: message
+
+      if (present(activation_token)) activation_token = 0_int64
 
       if (.not. self%initialized) then
          call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer start before init")
@@ -373,7 +405,7 @@ contains
       end if
 
       id = self%find_or_create_segment(name(1:trimmed_len))
-      call start_id_impl(self, id, ierr=ierr)
+      call start_id_impl(self, id, ierr=ierr, activation_token=activation_token)
    end subroutine start_impl
 
    subroutine stop(self, name, ierr)
@@ -426,12 +458,16 @@ contains
 !$omp end master
    end subroutine start_id
 
-   subroutine start_id_impl(self, id, ierr)
+   subroutine start_id_impl(self, id, ierr, activation_token)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
+      integer(int64), intent(out), optional :: activation_token
       integer :: ctx
+      integer(int64) :: token
       real(wp) :: now
+
+      if (present(activation_token)) activation_token = 0_int64
 
       if (.not. self%initialized) then
          call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer start_id before init")
@@ -446,7 +482,8 @@ contains
       ctx = find_or_create_segment_context(self, id, self%call_stack)
       call ensure_context_storage(self%segments(id), ctx)
 
-      call self%call_stack%push(id)
+      token = create_activation_token(self)
+      call self%call_stack%push(id, token)
       now = self%wtime()
       if (needs_init_wtime_rebase(self)) self%init_wtime = now
       self%segments(id)%start_time(ctx) = now
@@ -457,6 +494,7 @@ contains
          call self%on_event(id, ctx, FTIMER_EVENT_START, now, self%user_data)
       end if
 
+      if (present(activation_token)) activation_token = token
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine start_id_impl
 
@@ -592,6 +630,7 @@ contains
          if (allocated(self%segments(i)%call_count)) self%segments(i)%call_count = 0
       end do
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
+      if (allocated(self%call_stack%activation_tokens)) deallocate (self%call_stack%activation_tokens)
       self%call_stack%depth = 0
       self%init_wtime = self%wtime()
       self%init_date = ftimer_date_string()
@@ -607,6 +646,7 @@ contains
       integer :: restart_ctx
       integer :: unwind_count
       integer :: i
+      integer(int64) :: restart_token
       real(wp) :: now
 
       if (.not. stack_contains(self%call_stack, idx)) return
@@ -629,11 +669,78 @@ contains
       do i = unwind_count, 1, -1
          restart_ctx = find_or_create_segment_context(self, unwound_ids(i), self%call_stack)
          call ensure_context_storage(self%segments(unwound_ids(i)), restart_ctx)
-         call self%call_stack%push(unwound_ids(i))
+         restart_token = create_activation_token(self)
+         call self%call_stack%push(unwound_ids(i), restart_token)
          self%segments(unwound_ids(i))%start_time(restart_ctx) = now
          self%segments(unwound_ids(i))%is_running(restart_ctx) = .true.
       end do
    end subroutine repair_mismatch
+
+   subroutine start_scope_activation_impl(self, name, id, activation_token, ierr)
+      class(ftimer_t), intent(inout) :: self
+      character(len=*), intent(in) :: name
+      integer, intent(out) :: id
+      integer(int64), intent(out) :: activation_token
+      integer, intent(out), optional :: ierr
+
+      id = 0
+      activation_token = 0_int64
+
+      call start_impl(self, name, ierr=ierr, activation_token=activation_token)
+      if (activation_token == 0_int64) return
+
+      if (self%call_stack%depth > 0) then
+         id = self%call_stack%top()
+      end if
+   end subroutine start_scope_activation_impl
+
+   integer function stop_scope_activation_impl(self, id, activation_token, ierr) result(status)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: id
+      integer(int64), intent(in) :: activation_token
+      integer, intent(out), optional :: ierr
+      character(len=:), allocatable :: message
+      integer :: top_id
+
+      if (.not. self%initialized) then
+         status = FTIMER_ERR_NOT_INIT
+         call report_status(ierr, status, "ftimer scoped guard stop before init")
+         return
+      end if
+
+      if ((id < 1) .or. (id > self%num_segments)) then
+         status = FTIMER_ERR_UNKNOWN
+         call report_status(ierr, status, "ftimer scoped guard stop with unknown timer id")
+         return
+      end if
+
+      if (self%call_stack%depth <= 0) then
+         status = FTIMER_ERR_MISMATCH
+         call report_status(ierr, status, "ftimer scoped guard stop mismatch on empty call stack")
+         return
+      end if
+
+      top_id = self%call_stack%top()
+      if (top_id /= id) then
+         message = "ftimer scoped guard stop mismatch: owned "//trim(self%segments(id)%name)// &
+                   " but top of stack is "//trim(self%segments(top_id)%name)
+         status = FTIMER_ERR_MISMATCH
+         call report_status(ierr, status, trim(message))
+         return
+      end if
+
+      if (self%call_stack%top_token() /= activation_token) then
+         message = "ftimer scoped guard stop mismatch: activation no longer matches timer "// &
+                   trim(self%segments(id)%name)
+         status = FTIMER_ERR_MISMATCH
+         call report_status(ierr, status, trim(message))
+         return
+      end if
+
+      call stop_segment_with_now(self, id, self%wtime(), fire_callback=.true.)
+      status = FTIMER_SUCCESS
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end function stop_scope_activation_impl
 
    real(wp) function wtime(self) result(now)
       class(ftimer_t), intent(in) :: self
@@ -644,6 +751,17 @@ contains
          now = ftimer_default_clock()
       end if
    end function wtime
+
+   integer(int64) function create_activation_token(self) result(activation_token)
+      class(ftimer_t), intent(inout) :: self
+
+      if (self%next_activation_token >= huge(self%next_activation_token)) then
+         self%next_activation_token = 0_int64
+      end if
+
+      self%next_activation_token = self%next_activation_token + 1_int64
+      activation_token = self%next_activation_token
+   end function create_activation_token
 
    integer function find_or_create_segment(self, name) result(idx)
       class(ftimer_t), intent(inout) :: self
@@ -697,6 +815,7 @@ contains
       if (allocated(self%segment_name_slots)) deallocate (self%segment_name_slots)
       if (allocated(self%segment_context_indices)) deallocate (self%segment_context_indices)
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
+      if (allocated(self%call_stack%activation_tokens)) deallocate (self%call_stack%activation_tokens)
       self%call_stack%depth = 0
       self%num_segments = 0
       self%init_wtime = 0.0_wp
