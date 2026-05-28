@@ -181,6 +181,57 @@ contains
    end subroutine test_non_master_scope_is_noop
 
    @test
+   subroutine test_non_master_stop_does_not_clear_active_scope_guard()
+      type(ftimer_guard_t) :: guard
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer :: local_ierr
+      integer :: thread_num
+      integer :: worker_stop_ierr
+      logical :: thread_seen(2)
+
+      call omp_set_dynamic(.false.)
+
+      worker_stop_ierr = -1
+      thread_seen = .false.
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+      call ftimer_scope(guard, "shared_scope", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+!$omp parallel num_threads(2) default(shared) private(local_ierr, thread_num)
+      thread_num = omp_get_thread_num()
+      if (thread_num + 1 <= size(thread_seen)) thread_seen(thread_num + 1) = .true.
+
+      if (thread_num /= 0) then
+         local_ierr = NOOP_IERR_SENTINEL
+         call guard%stop(ierr=local_ierr)
+         worker_stop_ierr = local_ierr
+      end if
+!$omp end parallel
+
+      call snapshot_timer(ftimer_default_instance, state)
+
+      @assertTrue(thread_seen(1))
+      @assertTrue(thread_seen(2))
+      @assertEqual(NOOP_IERR_SENTINEL, worker_stop_ierr)
+      @assertEqual(1, state%num_segments)
+      @assertEqual(1, state%call_stack%depth)
+      @assertEqual(1, state%call_stack%top())
+
+      fake_time = 3.0_wp
+      call guard%stop(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(ftimer_default_instance, state)
+      @assertEqual(0, state%call_stack%depth)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_non_master_stop_does_not_clear_active_scope_guard
+
+   @test
    subroutine test_non_master_config_calls_are_noops()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state

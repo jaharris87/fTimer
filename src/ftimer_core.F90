@@ -11,8 +11,8 @@ module ftimer_core
    private
 
    public :: ftimer_t
-   public :: ftimer_start_scope_activation
-   public :: ftimer_stop_scope_activation
+   public :: ftimer_internal_start_scope_activation
+   public :: ftimer_internal_stop_scope_activation
 #ifdef FTIMER_BUILD_TESTS
    public :: ftimer_test_get_state
    public :: ftimer_test_state_t
@@ -157,7 +157,7 @@ module ftimer_core
 
 contains
 
-   subroutine ftimer_start_scope_activation(self, name, id, activation_token, ierr)
+   subroutine ftimer_internal_start_scope_activation(self, name, id, activation_token, ierr)
       class(ftimer_t), target, intent(inout) :: self
       character(len=*), intent(in) :: name
       integer, intent(out) :: id
@@ -169,19 +169,19 @@ contains
 !$omp master
       call start_scope_activation_impl(self, name, id, activation_token, ierr=ierr)
 !$omp end master
-   end subroutine ftimer_start_scope_activation
+   end subroutine ftimer_internal_start_scope_activation
 
-   integer function ftimer_stop_scope_activation(self, id, activation_token, ierr) result(status)
+   integer function ftimer_internal_stop_scope_activation(self, id, activation_token, ierr) result(status)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: id
       integer(int64), intent(in) :: activation_token
       integer, intent(out), optional :: ierr
 
-      status = FTIMER_SUCCESS
+      status = FTIMER_ERR_ACTIVE
 !$omp master
       status = stop_scope_activation_impl(self, id, activation_token, ierr=ierr)
 !$omp end master
-   end function ftimer_stop_scope_activation
+   end function ftimer_internal_stop_scope_activation
 
    subroutine init(self, comm, mismatch_mode, ierr)
       class(ftimer_t), intent(inout) :: self
@@ -632,7 +632,6 @@ contains
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       if (allocated(self%call_stack%activation_tokens)) deallocate (self%call_stack%activation_tokens)
       self%call_stack%depth = 0
-      self%next_activation_token = 0_int64
       self%init_wtime = self%wtime()
       self%init_date = ftimer_date_string()
 

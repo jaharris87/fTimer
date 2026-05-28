@@ -2,7 +2,7 @@ module test_scoped_guard
    use, intrinsic :: iso_c_binding, only: c_ptr
    use pfunit
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_get_summary, ftimer_guard_t, ftimer_init, &
-                     ftimer_scope, ftimer_start, ftimer_stop
+                     ftimer_reset, ftimer_scope, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
                            FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_summary_t, wp
@@ -146,9 +146,11 @@ contains
 
    @test
    subroutine test_scope_assignment_does_not_copy_active_ownership()
-      type(ftimer_summary_t) :: summary
       character(len=:), allocatable :: stderr_text
       integer :: capture_ierr
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
       integer :: ierr
       integer :: saved_fd
       logical :: has_warning
@@ -167,24 +169,141 @@ contains
          call ftimer_scope(owner, "assigned", ierr=ierr)
          @assertEqual(FTIMER_SUCCESS, ierr)
          copy = owner
+         fake_time = 2.0_wp
+         call copy%stop(ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         call snapshot_timer(ftimer_default_instance, state)
+         ctx = find_context_idx(state, 1, root_stack)
+         @assertEqual(1, state%call_stack%depth)
+         @assertTrue(state%segments(1)%is_running(ctx))
+
          fake_time = 6.0_wp
+         call owner%stop(ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
       end block assignment_scope
 
       call end_stderr_capture('test_scope_assignment_does_not_copy_active_ownership.err', saved_fd, stderr_text, &
                               capture_ierr)
       @assertEqual(0, capture_ierr)
 
-      call ftimer_get_summary(summary, ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(ftimer_default_instance, state)
+      ctx = find_context_idx(state, 1, root_stack)
       has_warning = index(stderr_text, 'ftimer guard assignment is unsupported') > 0
       @assertTrue(has_warning)
-      @assertEqual(1, summary%num_entries)
-      @assertEqual(6.0_wp, summary%entries(1)%inclusive_time)
-      @assertFalse(summary%has_active_timers)
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(6.0_wp, state%segments(1)%time(ctx))
 
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_scope_assignment_does_not_copy_active_ownership
+
+   @test
+   subroutine test_scope_rejects_stale_activation_after_reset()
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: ierr
+      integer :: saved_fd
+      logical :: has_warning
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call begin_stderr_capture('test_scope_rejects_stale_activation_after_reset.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      stale_after_reset: block
+         type(ftimer_guard_t) :: guard
+
+         call ftimer_scope(guard, "reset_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 1.0_wp
+         call ftimer_stop("reset_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         call ftimer_reset(ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         call ftimer_start("reset_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 2.0_wp
+
+         call guard%stop(ierr=ierr)
+         @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+
+         call snapshot_timer(ftimer_default_instance, state)
+         ctx = find_context_idx(state, 1, root_stack)
+         @assertEqual(1, state%call_stack%depth)
+         @assertEqual(1, state%call_stack%top())
+         @assertTrue(state%segments(1)%is_running(ctx))
+         @assertEqual(0.0_wp, state%segments(1)%time(ctx))
+
+         call ftimer_stop("reset_owned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end block stale_after_reset
+
+      call end_stderr_capture('test_scope_rejects_stale_activation_after_reset.err', saved_fd, stderr_text, &
+                              capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_warning = index(stderr_text, 'ftimer scoped guard stop mismatch') > 0
+      @assertTrue(has_warning)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_scope_rejects_stale_activation_after_reset
+
+   @test
+   subroutine test_scope_rejects_owned_activation_below_child()
+      type(ftimer_test_state_t) :: state
+      integer :: ierr
+      integer, parameter :: expected_timer_ids(4) = [1, 2, 2, 1]
+      integer, parameter :: expected_events(4) = [FTIMER_EVENT_START, FTIMER_EVENT_START, &
+                                                  FTIMER_EVENT_STOP, FTIMER_EVENT_STOP]
+      real(wp), parameter :: expected_timestamps(4) = [0.0_wp, 1.0_wp, 3.0_wp, 4.0_wp]
+
+      call reset_scope_callback_log()
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+      call ftimer_default_instance%set_callback(record_scope_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      below_child: block
+         type(ftimer_guard_t) :: outer
+
+         call ftimer_scope(outer, "outer", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 1.0_wp
+         call ftimer_start("child", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         fake_time = 2.0_wp
+         call outer%stop(ierr=ierr)
+         @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+
+         call snapshot_timer(ftimer_default_instance, state)
+         @assertEqual(2, state%call_stack%depth)
+         @assertEqual(2, state%call_stack%top())
+         @assertEqual(2, scope_callback_count)
+
+         fake_time = 3.0_wp
+         call ftimer_stop("child", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 4.0_wp
+         call outer%stop(ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end block below_child
+
+      call assert_scope_callback_trace(4, expected_timer_ids, expected_events, expected_timestamps)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_scope_rejects_owned_activation_below_child
 
    @test
    subroutine test_scope_stop_rejects_stale_same_name_activation()
@@ -315,5 +434,21 @@ contains
       scope_callback_events = 0
       scope_callback_timestamps = 0.0_wp
    end subroutine reset_scope_callback_log
+
+   subroutine assert_scope_callback_trace(expected_count, expected_timer_ids, expected_events, expected_timestamps)
+      integer, intent(in) :: expected_count
+      integer, intent(in) :: expected_timer_ids(:)
+      integer, intent(in) :: expected_events(:)
+      real(wp), intent(in) :: expected_timestamps(:)
+      integer :: i
+
+      @assertEqual(expected_count, scope_callback_count)
+
+      do i = 1, expected_count
+         @assertEqual(expected_timer_ids(i), scope_callback_timer_ids(i))
+         @assertEqual(expected_events(i), scope_callback_events(i))
+         @assertEqual(expected_timestamps(i), scope_callback_timestamps(i))
+      end do
+   end subroutine assert_scope_callback_trace
 
 end module test_scoped_guard

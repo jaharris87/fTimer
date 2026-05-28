@@ -68,6 +68,7 @@ For lexical blocks with early exits, the procedural API also provides a scalar s
 block
    use ftimer, only: ftimer_guard_t, ftimer_scope
    type(ftimer_guard_t) :: guard
+   integer :: ierr
 
    call ftimer_scope(guard, "work", ierr=ierr)
    if (ierr /= 0) error stop
@@ -142,7 +143,7 @@ cmake --build my_app/build
 
 The supported downstream contract is the installed package export. New adopters should not need to infer the intended consumption model from the test suite.
 
-The downstream example under [`tests/install-consumer/`](tests/install-consumer/) is also part of the smoke path. It shows the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer_types`, timer start/stop calls, and summary retrieval from an installed prefix.
+The downstream example under [`tests/install-consumer/`](tests/install-consumer/) is also part of the smoke path. It shows the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer`, `use ftimer_types`, scoped timing, and summary retrieval from an installed prefix.
 
 The supported source-level module surface is intentionally narrow: `ftimer`, `ftimer_core`, and `ftimer_types`. Some install trees may still contain compiler module artifacts for implementation modules such as `ftimer_clock`, `ftimer_summary`, and `ftimer_mpi`, but those are internal implementation details, not stable user-facing API. The current validated toolchain matrix does not require any extra compiler-specific companion artifacts in the installed include tree. If a future compiler proves that such artifacts are truly required for downstream consumption, they should be added deliberately and documented as an explicit exception rather than leaked accidentally.
 

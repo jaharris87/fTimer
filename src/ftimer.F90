@@ -1,6 +1,6 @@
 module ftimer
    use, intrinsic :: iso_fortran_env, only: error_unit, int64
-   use ftimer_core, only: ftimer_start_scope_activation, ftimer_stop_scope_activation, ftimer_t
+   use ftimer_core, only: ftimer_internal_start_scope_activation, ftimer_internal_stop_scope_activation, ftimer_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_SUCCESS, ftimer_metadata_t, ftimer_mpi_summary_t, &
                            ftimer_summary_t
    implicit none
@@ -56,7 +56,7 @@ contains
       end if
 
       call clear_guard(guard)
-      call ftimer_start_scope_activation(ftimer_default_instance, name, id, activation_token, ierr=ierr)
+      call ftimer_internal_start_scope_activation(ftimer_default_instance, name, id, activation_token, ierr=ierr)
 
       if ((id <= 0) .or. (activation_token == 0_int64)) return
 
@@ -82,7 +82,7 @@ contains
          return
       end if
 
-      status = ftimer_stop_scope_activation(self%timer, self%timer_id, self%activation_token, ierr=ierr)
+      status = ftimer_internal_stop_scope_activation(self%timer, self%timer_id, self%activation_token, ierr=ierr)
       if (status == FTIMER_SUCCESS) call clear_guard(self)
    end subroutine ftimer_guard_stop
 

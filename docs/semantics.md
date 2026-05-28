@@ -69,7 +69,8 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 - The public guard type is `ftimer_guard_t`, imported from `ftimer`
 - Scoped guards use the default procedural timer instance; there is no `type(ftimer_t)` scoped guard API on current `main`
 - `ftimer_scope` starts the named timer through the same validation, lookup, accounting, and callback path as normal name-based `start`
-- If `ftimer_scope` fails, the guard remains inactive. Finalization and `guard%stop(ierr)` are no-ops for inactive guards.
+- If `ftimer_scope` fails while initializing an inactive guard, the guard remains inactive. Finalization and `guard%stop(ierr)` are no-ops for inactive guards.
+- Calling `ftimer_scope` on an already-active guard returns `FTIMER_ERR_ACTIVE`, or warns when `ierr` is omitted, and leaves the existing active ownership unchanged.
 - A guard owns exactly one activation token from its successful start. `guard%stop(ierr)` may stop only that exact activation while it is still the top of the stack.
 - If the guard's activation has already been stopped, repaired away, or replaced by another activation with the same timer name, `guard%stop(ierr)` returns `FTIMER_ERR_MISMATCH` and leaves timer state unchanged.
 - The guard finalizer attempts the same exact-activation stop without `ierr`. On mismatch or lifecycle errors, it warns to stderr and does not repair.
