@@ -3,6 +3,9 @@ module ftimer
    use ftimer_core, only: ftimer_internal_start_scope_activation, ftimer_internal_stop_scope_activation, ftimer_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_SUCCESS, ftimer_metadata_t, ftimer_mpi_summary_t, &
                            ftimer_summary_t
+#ifdef FTIMER_USE_MPI
+   use mpi_f08, only: MPI_Comm
+#endif
    implicit none
    private
 
@@ -25,6 +28,17 @@ module ftimer
    public :: ftimer_write_mpi_summary
    public :: ftimer_write_mpi_summary_csv
    public :: ftimer_default_instance
+
+#ifdef FTIMER_USE_MPI
+   interface ftimer_init
+      module procedure ftimer_init_with_integer_comm
+      module procedure ftimer_init_with_mpi_comm
+   end interface
+#else
+   interface ftimer_init
+      module procedure ftimer_init_with_integer_comm
+   end interface
+#endif
 
    type(ftimer_t), save, target :: ftimer_default_instance
 
@@ -124,16 +138,23 @@ contains
       end if
    end subroutine report_guard_status
 
-   subroutine ftimer_init(comm, mismatch_mode, ierr)
+   subroutine ftimer_init_with_integer_comm(comm, mismatch_mode, ierr)
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
       integer, intent(out), optional :: ierr
 
-      ! Contract: ierr is last to eliminate the positional intent(out) trap.
-      ! A single positional integer now binds to comm (intent(in)), not ierr.
-      ! Keywords are recommended for readability.
-      call ftimer_default_instance%init(ierr=ierr, comm=comm, mismatch_mode=mismatch_mode)
-   end subroutine ftimer_init
+      call ftimer_default_instance%init(comm=comm, mismatch_mode=mismatch_mode, ierr=ierr)
+   end subroutine ftimer_init_with_integer_comm
+
+#ifdef FTIMER_USE_MPI
+   subroutine ftimer_init_with_mpi_comm(comm, mismatch_mode, ierr)
+      type(MPI_Comm), intent(in) :: comm
+      integer, intent(in), optional :: mismatch_mode
+      integer, intent(out), optional :: ierr
+
+      call ftimer_default_instance%init(comm=comm, mismatch_mode=mismatch_mode, ierr=ierr)
+   end subroutine ftimer_init_with_mpi_comm
+#endif
 
    subroutine ftimer_finalize(ierr)
       integer, intent(out), optional :: ierr

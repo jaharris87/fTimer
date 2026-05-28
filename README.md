@@ -35,7 +35,7 @@ If you need a tiny serial timing helper, you can use fTimer that way. If you nee
 fTimer currently supports these usage paths:
 
 - Serial timing with local summaries plus formatted text and CSV reports
-- Pure-MPI builds on the validated `use mpi` path that use `MPI_Wtime()`, produce global MPI summaries on every participating rank, and can emit communicator-level text and CSV reports
+- Pure-MPI builds on the validated `mpi_f08` path that use `MPI_Wtime()`, produce global MPI summaries on every participating rank, and can emit communicator-level text and CSV reports
 - A narrow OpenMP carve-out: master-thread-only timer guards for timing a parallel region as a whole
 - Downstream consumption through `find_package(fTimer CONFIG REQUIRED)`
 - Application-owned instrumentation facades that can select either the real fTimer implementation or a dependency-free no-op implementation at build time
@@ -203,7 +203,7 @@ New users should start with the procedural API unless they already know they nee
 
 Operational notes:
 
-- `ierr` is now the last optional argument in both `init` signatures (`comm`, `mismatch_mode`, `ierr`), so a single positional integer binds to `comm`, not `ierr`. Keywords are recommended for readability.
+- `ierr` is now the last optional argument in the `init` signatures. In MPI builds, the primary communicator form is `type(MPI_Comm)` from `mpi_f08`; integer communicator handles are accepted as transitional compatibility. A single positional integer still binds to that compatibility `comm` path, not `ierr`. Keywords are recommended for readability.
 - `init`, `reset`, and `finalize` are correctness-first on active timers: with `ierr` they return `FTIMER_ERR_ACTIVE`; without `ierr` they warn and leave state unchanged. In `FTIMER_USE_OPENMP=ON` builds, that diagnostic contract applies on the master thread; worker-thread lifecycle calls remain silent no-ops. These paths do not force-stop active timers or synthesize summary data.
 - Stop-mismatch repair remains an explicit `mismatch_mode` choice (`FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR`); omitted-`ierr` alone does not opt a caller into recovery.
 - Timer names are right-trimmed and must be non-empty, must not begin with a blank, and must not contain ASCII control characters. fTimer does not silently truncate timer names and no longer rejects names solely for exceeding the legacy `FTIMER_NAME_LEN = 64` threshold.
@@ -317,9 +317,9 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - CMake is the supported build and package path. FPM support is intentionally deferred.
 - fTimer is wall-clock only. It does not synchronize asynchronous accelerator/device work, so callers must perform any required device synchronization before `stop` when they intend to measure completed device work rather than host launch/enqueue latency.
 - fTimer does not insert MPI barriers around timed regions. MPI summaries reduce rank-local intervals; callers must add any desired MPI synchronization themselves when they intend to measure a synchronized global phase.
-- `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`. Configure now fails early if the active compiler cannot compile a minimal `use mpi` probe against the discovered MPI installation, or if that `use mpi` path cannot compile the `MPI_Type_match_size`/`MPI_ERRORS_RETURN` calls fTimer uses to validate reduction datatypes.
-- The current validated MPI interface contract is the `use mpi` path with integer communicator handles captured at `init`. Broader `mpif.h` or `mpi_f08` compatibility is not yet part of the documented release contract.
-- MPI summary reductions select MPI datatypes with `MPI_Type_match_size` for fTimer's actual `real(wp)` and `integer(int64)` storage sizes instead of assuming fixed `MPI_DOUBLE_PRECISION`, `MPI_2DOUBLE_PRECISION`, or `MPI_INTEGER8` mappings. The compile-time MPI probe validates that this API is available through the current `use mpi` path; if the API exists but no matching runtime datatype can be returned, `mpi_summary()` temporarily requests MPI error returns for the datatype lookup, fails with `FTIMER_ERR_UNKNOWN`, and leaves the MPI result empty. This is a targeted guard for the current `use mpi` implementation; the broader `mpi_f08` migration remains tracked separately in GitHub issue #136.
+- `FTIMER_USE_MPI=ON` is intended for wrapper-compiler setups such as `FC=mpifort`. Configure now fails early if the active compiler cannot compile a minimal `mpi_f08` probe against the discovered MPI installation, or if that `mpi_f08` path cannot compile the `MPI_Type_match_size`/`MPI_ERRORS_RETURN` calls fTimer uses to validate reduction datatypes.
+- The current primary MPI interface contract is `mpi_f08` with `type(MPI_Comm)` communicator handles captured at `init`. Legacy integer communicator handles are accepted as transitional compatibility pending #187; `mpif.h` is not a supported interface path.
+- MPI summary reductions select MPI datatypes with `MPI_Type_match_size` for fTimer's actual `real(wp)` and `integer(int64)` storage sizes instead of assuming fixed `MPI_DOUBLE_PRECISION`, `MPI_2DOUBLE_PRECISION`, or `MPI_INTEGER8` mappings. The compile-time MPI probe validates that this API is available through the `mpi_f08` path; if the API exists but no matching runtime datatype can be returned, `mpi_summary()` temporarily requests MPI error returns for the datatype lookup, fails with `FTIMER_ERR_UNKNOWN`, and leaves the MPI result empty.
 - `mpi_summary()` now returns a distinct `ftimer_mpi_summary_t`; it does not fall back to a local `ftimer_summary_t` on MPI-disabled or MPI-error paths. Call `get_summary()` separately if you need local data in those cases.
 - Descriptor-preflight failures inside one communicator now report the disagreeing communicator-local ranks in the omitted-`ierr` diagnostic path when possible.
 - Rank-conditional timer reductions are not supported by the current strict `mpi_summary()` API. Sparse/union MPI summaries are planned as a separate opt-in path; see [`docs/mpi-sparse-summary-decision.md`](docs/mpi-sparse-summary-decision.md).

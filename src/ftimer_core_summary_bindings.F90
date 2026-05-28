@@ -7,7 +7,7 @@ submodule(ftimer_core) ftimer_core_summary_bindings
                            ftimer_metadata_t, ftimer_mpi_summary_entry_t, ftimer_mpi_summary_t, &
                            ftimer_summary_entry_t, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
-   use mpi, only: MPI_Bcast, MPI_CHARACTER, MPI_INTEGER, MPI_SUCCESS
+   use mpi_f08, only: MPI_Bcast, MPI_CHARACTER, MPI_INTEGER, MPI_SUCCESS
 #endif
    implicit none
 
@@ -174,12 +174,16 @@ contains
    character(len=:), allocatable :: text
    character(len=256) :: diagnostic
    character(len=256) :: iomsg
-   integer :: active_comm
    integer :: io
    integer :: nprocs
    integer :: out_unit
    integer :: rank
    integer :: status
+#ifdef FTIMER_USE_MPI
+   type(MPI_Comm) :: active_comm
+#else
+   integer :: active_comm
+#endif
 
    if (.not. self%initialized) then
       call report_summary_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer print_mpi_summary before init")
@@ -195,7 +199,11 @@ contains
    call format_mpi_summary(summary, text, metadata)
 
 #ifdef FTIMER_USE_MPI
-   call get_mpi_summary_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+   if (self%mpi_comm_was_present) then
+      call get_mpi_summary_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+   else
+      call get_mpi_summary_comm_info(active_comm=active_comm, rank=rank, nprocs=nprocs, status=status)
+   end if
 #else
    active_comm = -1
    rank = 0
@@ -230,7 +238,6 @@ contains
    character(len=256) :: diagnostic
    character(len=256) :: collective_message
    character(len=256) :: iomsg
-   integer :: active_comm
    integer :: collective_status
    integer :: file_unit
    integer :: io
@@ -239,6 +246,11 @@ contains
    integer :: rank
    integer :: status
    logical :: append_mode
+#ifdef FTIMER_USE_MPI
+   type(MPI_Comm) :: active_comm
+#else
+   integer :: active_comm
+#endif
 
    if (.not. self%initialized) then
       call report_summary_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer write_mpi_summary before init")
@@ -254,7 +266,11 @@ contains
    call format_mpi_summary(summary, text, metadata)
 
 #ifdef FTIMER_USE_MPI
-   call get_mpi_summary_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+   if (self%mpi_comm_was_present) then
+      call get_mpi_summary_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+   else
+      call get_mpi_summary_comm_info(active_comm=active_comm, rank=rank, nprocs=nprocs, status=status)
+   end if
 #else
    active_comm = -1
    rank = 0
@@ -325,7 +341,6 @@ contains
    character(len=256) :: diagnostic
    character(len=256) :: collective_message
    character(len=256) :: iomsg
-   integer :: active_comm
    integer :: collective_status
    integer :: file_unit
    integer :: header_status
@@ -336,6 +351,11 @@ contains
    integer :: status
    logical :: append_mode
    logical :: include_header
+#ifdef FTIMER_USE_MPI
+   type(MPI_Comm) :: active_comm
+#else
+   integer :: active_comm
+#endif
 
    if (.not. self%initialized) then
       call report_summary_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer write_mpi_summary_csv before init")
@@ -349,7 +369,11 @@ contains
    end if
 
 #ifdef FTIMER_USE_MPI
-   call get_mpi_summary_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+   if (self%mpi_comm_was_present) then
+      call get_mpi_summary_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+   else
+      call get_mpi_summary_comm_info(active_comm=active_comm, rank=rank, nprocs=nprocs, status=status)
+   end if
 #else
    active_comm = -1
    rank = 0
@@ -447,24 +471,34 @@ contains
       integer, intent(out) :: status
       character(len=*), intent(out) :: diagnostic
       type(ftimer_summary_t) :: local_summary
-      integer :: comm
       logical :: local_has_active_timers
 
       diagnostic = ''
-      comm = -1
       local_has_active_timers = self%call_stack%depth > 0
       call build_current_summary(self, local_summary)
 #ifdef FTIMER_USE_MPI
-      comm = self%mpi_comm
+      if (self%mpi_comm_was_present) then
+         call check_mpi_summary_prereqs(local_has_active_timers, self%mpi_comm, status)
+      else
+         call check_mpi_summary_prereqs(local_has_active_timers, status=status)
+      end if
+#else
+      call check_mpi_summary_prereqs(local_has_active_timers, status=status)
 #endif
-
-      call check_mpi_summary_prereqs(local_has_active_timers, comm, status)
       if (status /= FTIMER_SUCCESS) then
          call reset_mpi_summary(summary)
          return
       end if
 
-      call build_mpi_summary(local_summary, comm, summary, status, diagnostic)
+#ifdef FTIMER_USE_MPI
+      if (self%mpi_comm_was_present) then
+         call build_mpi_summary(local_summary, self%mpi_comm, summary, status, diagnostic)
+      else
+         call build_mpi_summary(local_summary, summary=summary, status=status, diagnostic=diagnostic)
+      end if
+#else
+      call build_mpi_summary(local_summary, summary=summary, status=status, diagnostic=diagnostic)
+#endif
       if (status /= FTIMER_SUCCESS) call reset_mpi_summary(summary)
    end subroutine build_current_mpi_summary
 

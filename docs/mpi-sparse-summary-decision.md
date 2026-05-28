@@ -28,7 +28,7 @@ The current implementation is strict by construction:
 Prior MPI cleanup work supports keeping the default strict path:
 
 - #119 replaced the earlier hybrid local-plus-reduced result with a distinct `ftimer_mpi_summary_t` and first-class MPI report paths.
-- #124 narrowed the MPI contract to the validated `use mpi` path, added extrema-rank attribution, and improved descriptor mismatch diagnostics.
+- #124 narrowed the MPI summary contract, added extrema-rank attribution, and improved descriptor mismatch diagnostics.
 - #129 positioned fTimer around disciplined serial and pure-MPI timing with correctness-first contracts.
 
 ## Rationale

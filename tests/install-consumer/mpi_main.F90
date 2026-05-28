@@ -2,7 +2,7 @@ program ftimer_installed_mpi_consumer
    use ftimer, only: ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_write_mpi_summary, &
                      ftimer_start, ftimer_stop
    use ftimer_types, only: ftimer_mpi_summary_t, wp
-   use mpi
+   use mpi_f08
    implicit none
    integer :: ierr
    integer :: i

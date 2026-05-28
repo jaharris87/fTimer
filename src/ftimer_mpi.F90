@@ -4,7 +4,12 @@ module ftimer_mpi
                            FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, ftimer_mpi_summary_t, ftimer_summary_entry_t, &
                            ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
-   use mpi
+   use mpi_f08, only: MPI_Allgather, MPI_Allreduce, MPI_Bcast, MPI_CHARACTER, MPI_Comm, MPI_COMM_NULL, &
+                      MPI_COMM_SELF, MPI_COMM_WORLD, MPI_Datatype, MPI_DATATYPE_NULL, MPI_Errhandler, &
+                      MPI_ERRORS_RETURN, MPI_INTEGER, MPI_MAX, MPI_MIN, MPI_Op, MPI_SUCCESS, MPI_SUM, &
+                      MPI_TYPECLASS_INTEGER, MPI_TYPECLASS_REAL, MPI_Comm_get_errhandler, MPI_Comm_rank, &
+                      MPI_Comm_set_errhandler, MPI_Comm_size, MPI_Errhandler_free, MPI_Type_match_size, &
+                      MPI_Type_size
 #endif
    implicit none
    private
@@ -44,17 +49,22 @@ module ftimer_mpi
 contains
 
    subroutine resolve_mpi_summary_comm(comm, active_comm, status)
-      integer, intent(in) :: comm
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm), intent(in), optional :: comm
+      type(MPI_Comm), intent(out) :: active_comm
+#else
+      integer, intent(in), optional :: comm
       integer, intent(out) :: active_comm
+#endif
       integer, intent(out) :: status
 #ifdef FTIMER_USE_MPI
       ! Contract: mpi_summary() is collective over the communicator captured at init.
-      ! If init omitted `comm`, ftimer_core passes a sentinel and mpi_summary()
-      ! resolves that contract to MPI_COMM_WORLD here.
-      active_comm = comm
-      if (active_comm < 0) active_comm = MPI_COMM_WORLD
+      ! If init omitted `comm`, ftimer_core omits it here and mpi_summary()
+      ! resolves that contract to MPI_COMM_WORLD.
+      active_comm = MPI_COMM_WORLD
+      if (present(comm)) active_comm = comm
 
-      if (active_comm == MPI_COMM_NULL) then
+      if (active_comm%MPI_VAL == MPI_COMM_NULL%MPI_VAL) then
          status = FTIMER_ERR_UNKNOWN
          return
       end if
@@ -75,8 +85,13 @@ contains
    end function ftimer_mpi_enabled
 
    subroutine get_mpi_summary_comm_info(comm, active_comm, rank, nprocs, status)
-      integer, intent(in) :: comm
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm), intent(in), optional :: comm
+      type(MPI_Comm), intent(out) :: active_comm
+#else
+      integer, intent(in), optional :: comm
       integer, intent(out) :: active_comm
+#endif
       integer, intent(out) :: rank
       integer, intent(out) :: nprocs
       integer, intent(out) :: status
@@ -115,10 +130,14 @@ contains
 
    subroutine check_mpi_summary_prereqs(local_has_active_timers, comm, status)
       logical, intent(in) :: local_has_active_timers
-      integer, intent(in) :: comm
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm), intent(in), optional :: comm
+#else
+      integer, intent(in), optional :: comm
+#endif
       integer, intent(out) :: status
 #ifdef FTIMER_USE_MPI
-      integer :: active_comm
+      type(MPI_Comm) :: active_comm
       integer :: any_active
       integer :: local_active
       integer :: mpierr
@@ -145,12 +164,16 @@ contains
 
    subroutine build_mpi_summary(local_summary, comm, summary, status, diagnostic)
       type(ftimer_summary_t), intent(in) :: local_summary
-      integer, intent(in) :: comm
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm), intent(in), optional :: comm
+#else
+      integer, intent(in), optional :: comm
+#endif
       type(ftimer_mpi_summary_t), intent(out) :: summary
       integer, intent(out) :: status
       character(len=*), intent(out), optional :: diagnostic
 #ifdef FTIMER_USE_MPI
-      integer :: active_comm
+      type(MPI_Comm) :: active_comm
       integer :: all_datatypes_ready
       integer :: datatypes_ready
       integer :: entry_count
@@ -161,13 +184,13 @@ contains
       integer :: max_node_id
       integer :: max_total_time_rank
       integer :: min_total_time_rank
-      integer :: mpi_int64_type
       integer :: mpierr
-      integer :: mpi_wp_type
       integer :: nprocs
       integer :: parent_entry
       integer :: parent_id
       integer :: rank
+      type(MPI_Datatype) :: mpi_int64_type
+      type(MPI_Datatype) :: mpi_wp_type
       integer, allocatable :: local_calls(:)
       integer, allocatable :: local_entry_to_canonical(:)
       integer, allocatable :: local_max_inclusive_ranks(:)
@@ -536,15 +559,15 @@ contains
 
 #ifdef FTIMER_USE_MPI
    subroutine resolve_mpi_summary_datatypes(mpi_wp_type, mpi_int64_type, status, diagnostic)
-      integer, intent(out) :: mpi_wp_type
-      integer, intent(out) :: mpi_int64_type
+      type(MPI_Datatype), intent(out) :: mpi_wp_type
+      type(MPI_Datatype), intent(out) :: mpi_int64_type
       integer, intent(out) :: status
       character(len=*), intent(out), optional :: diagnostic
       logical :: cleanup_ok
       integer :: int64_size
       integer :: mpierr
       integer :: reported_size
-      integer :: saved_errhandler
+      type(MPI_Errhandler) :: saved_errhandler
       integer :: wp_size
 
       mpi_wp_type = MPI_DATATYPE_NULL
@@ -577,7 +600,7 @@ contains
       end if
 
       call MPI_Type_match_size(MPI_TYPECLASS_REAL, wp_size, mpi_wp_type, mpierr)
-      if ((mpierr /= MPI_SUCCESS) .or. (mpi_wp_type == MPI_DATATYPE_NULL)) then
+      if ((mpierr /= MPI_SUCCESS) .or. (mpi_wp_type%MPI_VAL == MPI_DATATYPE_NULL%MPI_VAL)) then
          if (present(diagnostic)) diagnostic = &
             "ftimer mpi_summary could not find an MPI real datatype matching real(wp)"
          call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
@@ -593,7 +616,7 @@ contains
       end if
 
       call MPI_Type_match_size(MPI_TYPECLASS_INTEGER, int64_size, mpi_int64_type, mpierr)
-      if ((mpierr /= MPI_SUCCESS) .or. (mpi_int64_type == MPI_DATATYPE_NULL)) then
+      if ((mpierr /= MPI_SUCCESS) .or. (mpi_int64_type%MPI_VAL == MPI_DATATYPE_NULL%MPI_VAL)) then
          if (present(diagnostic)) diagnostic = &
             "ftimer mpi_summary could not find an MPI integer datatype matching integer(int64)"
          call restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
@@ -617,7 +640,7 @@ contains
    end subroutine resolve_mpi_summary_datatypes
 
    subroutine restore_mpi_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
-      integer, intent(inout) :: saved_errhandler
+      type(MPI_Errhandler), intent(inout) :: saved_errhandler
       logical, intent(out) :: cleanup_ok
       character(len=*), intent(inout), optional :: diagnostic
       character(len=256) :: original_diagnostic
@@ -636,7 +659,7 @@ contains
    end subroutine restore_mpi_comm_self_errhandler
 
    subroutine free_mpi_errhandler(errhandler, cleanup_ok, diagnostic)
-      integer, intent(inout) :: errhandler
+      type(MPI_Errhandler), intent(inout) :: errhandler
       logical, intent(inout) :: cleanup_ok
       character(len=*), intent(inout), optional :: diagnostic
       character(len=256) :: original_diagnostic
@@ -922,11 +945,11 @@ contains
    subroutine ftimer_mpi_allgather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm, mpierr)
       integer, intent(in) :: sendbuf
       integer, intent(in) :: sendcount
-      integer, intent(in) :: sendtype
+      type(MPI_Datatype), intent(in) :: sendtype
       integer, intent(out) :: recvbuf(*)
       integer, intent(in) :: recvcount
-      integer, intent(in) :: recvtype
-      integer, intent(in) :: comm
+      type(MPI_Datatype), intent(in) :: recvtype
+      type(MPI_Comm), intent(in) :: comm
       integer, intent(out) :: mpierr
 #ifdef FTIMER_BUILD_TESTS
       integer :: nvalues
@@ -934,7 +957,7 @@ contains
 
       test_preflight_allgather_count = test_preflight_allgather_count + 1
       if ((sendcount == 1) .and. (recvcount == 1) .and. &
-          (sendtype == MPI_INTEGER) .and. (recvtype == MPI_INTEGER)) then
+          (sendtype%MPI_VAL == MPI_INTEGER%MPI_VAL) .and. (recvtype%MPI_VAL == MPI_INTEGER%MPI_VAL)) then
          test_preflight_mismatch_flag_allgather_count = test_preflight_mismatch_flag_allgather_count + 1
       end if
 #endif
@@ -942,7 +965,7 @@ contains
       call MPI_Allgather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm, mpierr)
 #ifdef FTIMER_BUILD_TESTS
       if ((mpierr == MPI_SUCCESS) .and. (sendcount == 1) .and. (recvcount == 1) .and. &
-          (sendtype == MPI_INTEGER) .and. (recvtype == MPI_INTEGER)) then
+          (sendtype%MPI_VAL == MPI_INTEGER%MPI_VAL) .and. (recvtype%MPI_VAL == MPI_INTEGER%MPI_VAL)) then
          if (allocated(test_preflight_mismatch_flags)) deallocate (test_preflight_mismatch_flags)
          call MPI_Comm_size(comm, nvalues, test_mpierr)
          if (test_mpierr == MPI_SUCCESS) then
@@ -957,9 +980,9 @@ contains
       integer, intent(in) :: sendbuf
       integer, intent(out) :: recvbuf
       integer, intent(in) :: count
-      integer, intent(in) :: datatype
-      integer, intent(in) :: op
-      integer, intent(in) :: comm
+      type(MPI_Datatype), intent(in) :: datatype
+      type(MPI_Op), intent(in) :: op
+      type(MPI_Comm), intent(in) :: comm
       integer, intent(out) :: mpierr
 
       call ftimer_test_note_summary_reduction_phase()
@@ -970,9 +993,9 @@ contains
       integer, intent(in) :: sendbuf(:)
       integer, intent(out) :: recvbuf(:)
       integer, intent(in) :: count
-      integer, intent(in) :: datatype
-      integer, intent(in) :: op
-      integer, intent(in) :: comm
+      type(MPI_Datatype), intent(in) :: datatype
+      type(MPI_Op), intent(in) :: op
+      type(MPI_Comm), intent(in) :: comm
       integer, intent(out) :: mpierr
 
       call ftimer_test_note_summary_reduction_phase()
@@ -983,9 +1006,9 @@ contains
       integer(int64), intent(in) :: sendbuf(:)
       integer(int64), intent(out) :: recvbuf(:)
       integer, intent(in) :: count
-      integer, intent(in) :: datatype
-      integer, intent(in) :: op
-      integer, intent(in) :: comm
+      type(MPI_Datatype), intent(in) :: datatype
+      type(MPI_Op), intent(in) :: op
+      type(MPI_Comm), intent(in) :: comm
       integer, intent(out) :: mpierr
 
       call ftimer_test_note_summary_reduction_phase()
@@ -996,9 +1019,9 @@ contains
       real(wp), intent(in) :: sendbuf
       real(wp), intent(out) :: recvbuf
       integer, intent(in) :: count
-      integer, intent(in) :: datatype
-      integer, intent(in) :: op
-      integer, intent(in) :: comm
+      type(MPI_Datatype), intent(in) :: datatype
+      type(MPI_Op), intent(in) :: op
+      type(MPI_Comm), intent(in) :: comm
       integer, intent(out) :: mpierr
 
       call ftimer_test_note_summary_reduction_phase()
@@ -1009,9 +1032,9 @@ contains
       real(wp), intent(in) :: sendbuf(:)
       real(wp), intent(out) :: recvbuf(:)
       integer, intent(in) :: count
-      integer, intent(in) :: datatype
-      integer, intent(in) :: op
-      integer, intent(in) :: comm
+      type(MPI_Datatype), intent(in) :: datatype
+      type(MPI_Op), intent(in) :: op
+      type(MPI_Comm), intent(in) :: comm
       integer, intent(out) :: mpierr
 
       call ftimer_test_note_summary_reduction_phase()

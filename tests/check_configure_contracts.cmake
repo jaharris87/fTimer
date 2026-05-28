@@ -96,6 +96,11 @@ if(ftimer_mpi_source MATCHES "MPI_(2DOUBLE_PRECISION|DOUBLE_PRECISION|INTEGER8)"
 endif()
 
 file(READ "${REPO_ROOT}/CMakeLists.txt" ftimer_root_cmake)
+if(NOT ftimer_root_cmake MATCHES "use mpi_f08")
+  message(FATAL_ERROR
+    "FTIMER_USE_MPI=ON configure coverage must compile-check mpi_f08 so the documented MPI interface contract stays explicit."
+  )
+endif()
 if(NOT ftimer_root_cmake MATCHES "MPI_Type_match_size")
   message(FATAL_ERROR
     "FTIMER_USE_MPI=ON configure coverage must compile-check MPI_Type_match_size so MPI reduction datatype validation stays explicit."
