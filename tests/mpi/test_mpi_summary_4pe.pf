@@ -1,6 +1,12 @@
 module test_mpi_summary_4pe
    use pfunit
-   use mpi
+   use mpi_f08, only: MPI_F08_Allreduce => MPI_Allreduce, MPI_F08_Barrier => MPI_Barrier, &
+                      MPI_F08_Bcast => MPI_Bcast, MPI_F08_Comm => MPI_Comm, &
+                      MPI_F08_COMM_NULL => MPI_COMM_NULL, MPI_F08_COMM_WORLD => MPI_COMM_WORLD, &
+                      MPI_F08_Comm_free => MPI_Comm_free, MPI_F08_Comm_rank => MPI_Comm_rank, &
+                      MPI_F08_Comm_split => MPI_Comm_split, MPI_F08_INTEGER => MPI_INTEGER, &
+                      MPI_F08_MAX => MPI_MAX, MPI_F08_MIN => MPI_MIN, MPI_F08_SUCCESS => MPI_SUCCESS, &
+                      MPI_F08_SUM => MPI_SUM
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_t
    use ftimer_types, only: FTIMER_SUCCESS, ftimer_mpi_summary_t, wp
@@ -21,15 +27,15 @@ contains
       integer :: color
       integer :: ierr
       integer :: rank
-      integer :: subcomm
+      type(MPI_F08_Comm) :: subcomm
       integer :: subrank
 
       rank = this%getProcessRank()
       color = rank/2
-      call MPI_Comm_split(MPI_COMM_WORLD, color, rank, subcomm, ierr)
-      @assertEqual(MPI_SUCCESS, ierr)
-      call MPI_Comm_rank(subcomm, subrank, ierr)
-      @assertEqual(MPI_SUCCESS, ierr)
+      call MPI_F08_Comm_split(MPI_F08_COMM_WORLD, color, rank, subcomm, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+      call MPI_F08_Comm_rank(subcomm, subrank, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
 
       call timer%init(comm=subcomm, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -54,8 +60,8 @@ contains
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
-      call MPI_Comm_free(subcomm, ierr)
-      @assertEqual(MPI_SUCCESS, ierr)
+      call MPI_F08_Comm_free(subcomm, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
    end subroutine test_mpi_summary_supports_consistent_split_communicators
 
    @test
@@ -100,7 +106,7 @@ contains
       type(ftimer_mpi_summary_t) :: summary
       integer :: ierr
 
-      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call attach_mock_clock(timer)
 
@@ -138,15 +144,15 @@ contains
       integer :: color
       integer :: ierr
       integer :: rank
-      integer :: subcomm
+      type(MPI_F08_Comm) :: subcomm
       integer :: subrank
 
       rank = this%getProcessRank()
       color = rank/2
-      call MPI_Comm_split(MPI_COMM_WORLD, color, rank, subcomm, ierr)
-      @assertEqual(MPI_SUCCESS, ierr)
-      call MPI_Comm_rank(subcomm, subrank, ierr)
-      @assertEqual(MPI_SUCCESS, ierr)
+      call MPI_F08_Comm_split(MPI_F08_COMM_WORLD, color, rank, subcomm, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+      call MPI_F08_Comm_rank(subcomm, subrank, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
 
       call ftimer_init(comm=subcomm, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -166,8 +172,8 @@ contains
 
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
-      call MPI_Comm_free(subcomm, ierr)
-      @assertEqual(MPI_SUCCESS, ierr)
+      call MPI_F08_Comm_free(subcomm, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
    end subroutine test_procedural_mpi_summary_supports_split_communicators
 
    subroutine build_split_comm_timer(timer, color, subrank, ierr)

@@ -1,6 +1,9 @@
 module ftimer_clock
    use, intrinsic :: iso_fortran_env, only: int64
    use ftimer_types, only: wp
+#ifdef FTIMER_USE_MPI
+   use mpi_f08, only: MPI_Wtime
+#endif
    implicit none
    private
 
@@ -30,10 +33,6 @@ contains
 
    function ftimer_mpi_clock() result(t)
       real(wp) :: t
-#ifdef FTIMER_USE_MPI
-      double precision :: MPI_Wtime
-      external :: MPI_Wtime
-#endif
 
 #ifdef FTIMER_USE_MPI
       t = real(MPI_Wtime(), wp)

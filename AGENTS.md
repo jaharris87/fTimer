@@ -53,7 +53,7 @@ Supported toolchain matrix:
 
 - Serial smoke/library build: GNU Fortran and LLVM Flang are the validated automation paths.
 - Serial + pFUnit tests: GNU Fortran (`gfortran`) with a pFUnit installation built for the same compiler/toolchain.
-- MPI: an MPI wrapper compiler such as `mpifort`. `FTIMER_USE_MPI=ON` now runs a configure-time `use mpi` probe and fails early if the active compiler cannot consume the discovered MPI module files.
+- MPI: an MPI wrapper compiler such as `mpifort`. `FTIMER_USE_MPI=ON` now runs a configure-time `mpi_f08` probe and fails early if the active compiler cannot consume the discovered MPI module files.
 - OpenMP: GNU Fortran (`gfortran`) only for the documented/supported path.
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
@@ -93,7 +93,7 @@ ftimer.F90  (procedural wrappers + default global instance)
 - **Context-sensitive accounting**: The same timer name under different parent call stacks is tracked independently.
 - **Exclusive/self time**: Computed as inclusive time minus sum of direct children's inclusive times.
 - **Callback hooks**: Configure callbacks through `set_callback()` / `clear_callback()`. The hook fires on normal start/stop events only; internal repair transitions do NOT fire callbacks.
-- **MPI interface contract**: The current validated MPI path is `use mpi` with integer communicator handles captured at `init`. Broader `mpif.h` or `mpi_f08` compatibility is not part of the current documented contract.
+- **MPI interface contract**: The primary validated MPI path is `mpi_f08` with `type(MPI_Comm)` communicator handles captured at `init`. Legacy integer communicator handles are accepted as transitional compatibility. `mpif.h` is not part of the current documented contract.
 - **OpenMP master-thread-only timing**: When built with `FTIMER_USE_OPENMP=ON`, all guarded timer operations run only on the master thread (thread 0). Worker-thread calls are silent no-ops: no summary entry is created, no call count is incremented, and no `ierr` is set. Timer calls made exclusively on worker threads produce no summary entry. The supported pattern is to place `start`/`stop` outside `!$omp parallel` blocks. Placing `start`/`stop` inside a parallel region expecting each thread to contribute is the misleading anti-pattern. See `docs/semantics.md` "Consequences for timing data" for the full contract.
 
 ### Key Data Flow
@@ -241,7 +241,7 @@ The native Codex trigger comments are intentionally posted as single-line `@code
 
 ## Configuration
 
-- **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` can populate cross-rank fields. The supported path is an MPI wrapper compiler such as `mpifort`; configure now fails early if the active compiler cannot compile a minimal `use mpi` probe against the discovered MPI toolchain. When OFF, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the summary local-only.
+- **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` can populate cross-rank fields. The supported path is an MPI wrapper compiler such as `mpifort`; configure now fails early if the active compiler cannot compile a minimal `mpi_f08` probe against the discovered MPI toolchain. When OFF, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the summary local-only.
 - **`FTIMER_USE_OPENMP`** (CMake option, default OFF): Enables the Phase 6 `!$omp master` guards around the guarded `ftimer_core` entry points. This is limited master-thread-only protection, not full thread safety. The documented/supported build path is GNU Fortran (`gfortran`).
 - **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the current smoke-test baseline, including install/export consumer verification and the script-driven build-contract regression checks when their toolchain prerequisites are available.
 - **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables the pFUnit-backed behavioral and MPI test suites.

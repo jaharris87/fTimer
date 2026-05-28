@@ -185,8 +185,9 @@ This disabled-facade behavior is an application integration contract, not an alt
 - Omitting `comm` at `init` means `mpi_summary()` uses `MPI_COMM_WORLD`
 - All ranks in that communicator must enter `mpi_summary()` with fully stopped timers
 - Unlike local summaries, MPI summaries are final stopped-run summaries only; active timers return `FTIMER_ERR_ACTIVE`
-- The current validated MPI interface path is `use mpi` with integer communicator handles captured at `init`
-- `FTIMER_USE_MPI=ON` configure requires that the active `use mpi` path compile the `MPI_Type_match_size` and `MPI_ERRORS_RETURN` calls used for datatype validation
+- The primary MPI interface path is `mpi_f08` with `type(MPI_Comm)` communicator handles captured at `init`
+- Integer communicator handles are accepted by `init` as transitional compatibility for pre-`mpi_f08` callers pending #187; `mpif.h` is not a supported interface path
+- `FTIMER_USE_MPI=ON` configure requires that the active `mpi_f08` path compile the `MPI_Type_match_size` and `MPI_ERRORS_RETURN` calls used for datatype validation
 - MPI summary reductions select MPI datatypes with `MPI_Type_match_size` for the actual `real(wp)` and `integer(int64)` storage sizes before reducing those buffers. If that validation API is present but the active MPI implementation cannot provide matching datatypes at runtime, `mpi_summary()` temporarily requests MPI error returns for the datatype lookup, fails with `FTIMER_ERR_UNKNOWN`, and leaves the MPI result empty instead of reducing through a mismatched fixed datatype.
 - Hash-based timer-descriptor preflight before the reduction phase
 - The strict MPI preflight compares rank-local descriptor hashes against a rank-0 reference hash, then reduces a mismatch flag across the communicator. Successful summaries do not allgather every rank's hashes or exchange exact descriptor strings.
@@ -215,7 +216,7 @@ The supported pattern is simple: capture one communicator consistently at `init`
 - `ftimer_mpi_summary_t` entries retain `name`, `depth`, `node_id`, and `parent_id`, so MPI summaries keep the explicit-tree data model instead of collapsing to flat rows.
 - The MPI summary tree order is canonical across ranks. It does not depend on the local timer creation order on one chosen rank.
 - `mpi_summary()` does not return local fallback data on errors. If the caller needs local data after an MPI-disabled or MPI-error path, it must call `get_summary()` separately.
-- This datatype selection is a targeted portability guard for the current `use mpi` implementation. The broader `mpi_f08` interface migration remains separate follow-up work tracked in GitHub issue #136.
+- This datatype selection remains the portability guard for the current `mpi_f08` implementation and preserves the reduction-datatype work completed before the interface migration.
 
 ## MPI Reporting Contract
 

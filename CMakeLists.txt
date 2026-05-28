@@ -13,11 +13,15 @@ function(ftimer_try_compile_mpi out_var)
   set(_ftimer_mpi_probe_src "${CMAKE_BINARY_DIR}/CMakeFiles/ftimer_mpi_probe.F90")
   file(WRITE "${_ftimer_mpi_probe_src}" [=[
 program ftimer_mpi_probe
-  use mpi
+  use mpi_f08
   implicit none
   integer :: ierr
+  integer :: rank
+  type(MPI_Comm) :: comm
 
   call MPI_Init(ierr)
+  comm = MPI_COMM_WORLD
+  call MPI_Comm_rank(comm, rank, ierr)
   call MPI_Finalize(ierr)
 end program ftimer_mpi_probe
 ]=])
@@ -36,12 +40,12 @@ function(ftimer_try_compile_mpi_datatype_probe out_var)
   file(WRITE "${_ftimer_mpi_datatype_probe_src}" [=[
 program ftimer_mpi_datatype_probe
   use, intrinsic :: iso_fortran_env, only: int64
-  use mpi
+  use mpi_f08
   implicit none
 
   integer, parameter :: wp = selected_real_kind(15, 307)
-  integer :: dtype
-  integer :: errhandler
+  type(MPI_Datatype) :: dtype
+  type(MPI_Errhandler) :: errhandler
   integer :: ierr
   integer :: nbytes
 
@@ -89,7 +93,7 @@ if(FTIMER_USE_MPI)
   ftimer_try_compile_mpi(FTIMER_MPI_TOOLCHAIN_OK)
   if(NOT FTIMER_MPI_TOOLCHAIN_OK)
     message(FATAL_ERROR
-      "FTIMER_USE_MPI=ON requires a compiler/toolchain pair that can compile 'use mpi' against the discovered MPI installation.\n"
+      "FTIMER_USE_MPI=ON requires a compiler/toolchain pair that can compile 'use mpi_f08' against the discovered MPI installation.\n"
       "CMake found MPI, but the active Fortran compiler '${CMAKE_Fortran_COMPILER}' failed a configure-time MPI probe.\n"
       "Supported path: select an MPI wrapper compiler from the same toolchain, for example 'FC=mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON ...' or '-DCMAKE_Fortran_COMPILER=mpifort'.\n"
       "Plain compiler + find_package(MPI) is not treated as a documented supported path unless that probe succeeds."
@@ -99,8 +103,8 @@ if(FTIMER_USE_MPI)
   ftimer_try_compile_mpi_datatype_probe(FTIMER_MPI_DATATYPES_PROBE_OK)
   if(NOT FTIMER_MPI_DATATYPES_PROBE_OK)
     message(FATAL_ERROR
-      "FTIMER_USE_MPI=ON requires an MPI 'use mpi' implementation that exposes MPI_Type_match_size for validating fTimer's real(wp) and integer(int64) reduction datatypes.\n"
-      "This configure-time probe is intentionally separate from the broader mpi_f08 migration tracked in #136."
+      "FTIMER_USE_MPI=ON requires an MPI 'mpi_f08' implementation that exposes MPI_Type_match_size for validating fTimer's real(wp) and integer(int64) reduction datatypes.\n"
+      "This configure-time probe intentionally validates the primary mpi_f08 contract."
     )
   endif()
 endif()

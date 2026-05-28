@@ -7,6 +7,9 @@ module ftimer_core
                            FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_SUCCESS, &
                            ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_metadata_t, &
                            ftimer_mpi_summary_t, ftimer_segment_t, ftimer_summary_t, wp
+#ifdef FTIMER_USE_MPI
+   use mpi_f08, only: MPI_Comm, MPI_COMM_WORLD
+#endif
    implicit none
    private
 
@@ -39,6 +42,7 @@ module ftimer_core
       integer :: mismatch_mode = FTIMER_MISMATCH_STRICT
 #ifdef FTIMER_USE_MPI
       integer :: mpi_comm = -1
+      logical :: mpi_comm_was_present = .false.
       integer :: mpi_rank = -1
       integer :: mpi_nprocs = 1
 #endif
@@ -62,7 +66,8 @@ module ftimer_core
       logical :: initialized = .false.
       integer :: mismatch_mode = FTIMER_MISMATCH_STRICT
 #ifdef FTIMER_USE_MPI
-      integer :: mpi_comm = -1
+      type(MPI_Comm) :: mpi_comm
+      logical :: mpi_comm_was_present = .false.
       integer :: mpi_rank = -1
       integer :: mpi_nprocs = 1
 #endif
@@ -70,7 +75,13 @@ module ftimer_core
       procedure(ftimer_hook_proc), pointer, nopass :: on_event => null()
       type(c_ptr) :: user_data = c_null_ptr
    contains
-      procedure :: init
+      procedure, private :: init_with_integer_comm
+#ifdef FTIMER_USE_MPI
+      procedure, private :: init_with_mpi_comm
+      generic, public :: init => init_with_integer_comm, init_with_mpi_comm
+#else
+      procedure, public :: init => init_with_integer_comm
+#endif
       procedure :: finalize
       procedure :: set_clock
       procedure :: clear_clock
@@ -183,25 +194,45 @@ contains
 !$omp end master
    end function ftimer_internal_stop_scope_activation
 
-   subroutine init(self, comm, mismatch_mode, ierr)
+   subroutine init_with_integer_comm(self, comm, mismatch_mode, ierr)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in), optional :: comm
       integer, intent(in), optional :: mismatch_mode
       integer, intent(out), optional :: ierr
 
       ! Contract: ierr is last to eliminate the positional intent(out) trap.
-      ! A single positional integer now binds to comm (intent(in)), not ierr.
-      ! Keywords are recommended for readability.
+      ! A single positional integer still binds to the transitional legacy
+      ! communicator path, not ierr. Keywords are recommended for readability.
       !$omp master
-      call init_impl(self, ierr=ierr, comm=comm, mismatch_mode=mismatch_mode)
+      call init_impl(self, ierr=ierr, legacy_comm=comm, mismatch_mode=mismatch_mode)
 !$omp end master
-   end subroutine init
+   end subroutine init_with_integer_comm
 
-   subroutine init_impl(self, comm, mismatch_mode, ierr)
+#ifdef FTIMER_USE_MPI
+   subroutine init_with_mpi_comm(self, comm, mismatch_mode, ierr)
       class(ftimer_t), intent(inout) :: self
-      integer, intent(in), optional :: comm
+      type(MPI_Comm), intent(in) :: comm
       integer, intent(in), optional :: mismatch_mode
       integer, intent(out), optional :: ierr
+
+!$omp master
+      call init_impl(self, ierr=ierr, comm=comm, mismatch_mode=mismatch_mode)
+!$omp end master
+   end subroutine init_with_mpi_comm
+#endif
+
+   subroutine init_impl(self, mismatch_mode, ierr, comm, legacy_comm)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in), optional :: mismatch_mode
+      integer, intent(out), optional :: ierr
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm), intent(in), optional :: comm
+      type(MPI_Comm) :: requested_mpi_comm
+      logical :: requested_mpi_comm_was_present
+#else
+      integer, intent(in), optional :: comm
+#endif
+      integer, intent(in), optional :: legacy_comm
 
       if (present(mismatch_mode)) then
          select case (mismatch_mode)
@@ -217,6 +248,19 @@ contains
          return
       end if
 
+#ifdef FTIMER_USE_MPI
+      requested_mpi_comm = MPI_COMM_WORLD
+      requested_mpi_comm_was_present = .false.
+      if (present(comm)) then
+         requested_mpi_comm = comm
+         requested_mpi_comm_was_present = .true.
+      end if
+      if (present(legacy_comm)) then
+         requested_mpi_comm%MPI_VAL = legacy_comm
+         requested_mpi_comm_was_present = .true.
+      end if
+#endif
+
       call clear_runtime_state(self, keep_hooks=.true.)
       self%initialized = .true.
 
@@ -227,11 +271,8 @@ contains
       end if
 
 #ifdef FTIMER_USE_MPI
-      if (present(comm)) then
-         self%mpi_comm = comm
-      else
-         self%mpi_comm = -1
-      end if
+      self%mpi_comm = requested_mpi_comm
+      self%mpi_comm_was_present = requested_mpi_comm_was_present
       self%mpi_rank = -1
       self%mpi_nprocs = 1
 #endif
@@ -793,7 +834,8 @@ contains
       state%initialized = self%initialized
       state%mismatch_mode = self%mismatch_mode
 #ifdef FTIMER_USE_MPI
-      state%mpi_comm = self%mpi_comm
+      state%mpi_comm = self%mpi_comm%MPI_VAL
+      state%mpi_comm_was_present = self%mpi_comm_was_present
       state%mpi_rank = self%mpi_rank
       state%mpi_nprocs = self%mpi_nprocs
 #endif
@@ -823,7 +865,8 @@ contains
       self%initialized = .false.
       self%mismatch_mode = FTIMER_MISMATCH_STRICT
 #ifdef FTIMER_USE_MPI
-      self%mpi_comm = -1
+      self%mpi_comm = MPI_COMM_WORLD
+      self%mpi_comm_was_present = .false.
       self%mpi_rank = -1
       self%mpi_nprocs = 1
 #endif

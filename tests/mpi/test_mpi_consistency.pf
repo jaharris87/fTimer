@@ -1,6 +1,12 @@
 module test_mpi_consistency
    use pfunit
-   use mpi
+   use mpi_f08, only: MPI_F08_Allreduce => MPI_Allreduce, MPI_F08_Barrier => MPI_Barrier, &
+                      MPI_F08_Bcast => MPI_Bcast, MPI_F08_Comm => MPI_Comm, &
+                      MPI_F08_COMM_NULL => MPI_COMM_NULL, MPI_F08_COMM_WORLD => MPI_COMM_WORLD, &
+                      MPI_F08_Comm_free => MPI_Comm_free, MPI_F08_Comm_rank => MPI_Comm_rank, &
+                      MPI_F08_Comm_split => MPI_Comm_split, MPI_F08_INTEGER => MPI_INTEGER, &
+                      MPI_F08_MAX => MPI_MAX, MPI_F08_MIN => MPI_MIN, MPI_F08_SUCCESS => MPI_SUCCESS, &
+                      MPI_F08_SUM => MPI_SUM
    use ftimer_core, only: ftimer_t
    use ftimer_mpi, only: ftimer_test_get_mpi_preflight_collectives, &
                          ftimer_test_get_mpi_preflight_mismatch_flags, &
@@ -31,7 +37,7 @@ contains
       rank = this%getProcessRank()
       saved_fd = -1
 
-      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       call attach_mock_clock(timer)
 
       call build_inconsistent_contexts(timer, rank, ierr)
@@ -69,7 +75,7 @@ contains
       saved_fd = -1
       flags = 0
 
-      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       call attach_mock_clock(timer)
 
       call build_inconsistent_contexts(timer, rank, ierr)
@@ -91,8 +97,8 @@ contains
          @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
       end if
 
-      call MPI_Bcast(flags, size(flags), MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-      @assertEqual(MPI_SUCCESS, ierr)
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
 
       @assertEqual(1, flags(1))
       @assertEqual(1, flags(2))
@@ -110,7 +116,7 @@ contains
       type(ftimer_mpi_summary_t) :: summary
       integer :: ierr
 
-      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call attach_mock_clock(timer)
 
@@ -152,7 +158,7 @@ contains
          timer_name = legacy_prefix//'rank0001'
       end if
 
-      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call attach_mock_clock(timer)
 
@@ -180,7 +186,7 @@ contains
       type(ftimer_mpi_summary_t) :: summary
       integer :: ierr
 
-      call timer%init(comm=MPI_COMM_NULL, ierr=ierr)
+      call timer%init(comm=MPI_F08_COMM_NULL, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call attach_mock_clock(timer)
 
@@ -211,7 +217,7 @@ contains
 
       call ftimer_test_reset_mpi_preflight_collectives()
 
-      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call attach_mock_clock(timer)
 
@@ -254,7 +260,7 @@ contains
       rank = this%getProcessRank()
       call ftimer_test_reset_mpi_preflight_collectives()
 
-      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call attach_mock_clock(timer)
 
