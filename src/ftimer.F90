@@ -2,7 +2,7 @@ module ftimer
    use, intrinsic :: iso_fortran_env, only: error_unit, int64
    use ftimer_core, only: ftimer_internal_start_scope_activation, ftimer_internal_stop_scope_activation, ftimer_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_SUCCESS, ftimer_metadata_t, ftimer_mpi_summary_t, &
-                           ftimer_summary_t
+                           ftimer_mpi_union_summary_t, ftimer_summary_t
 #ifdef FTIMER_USE_MPI
    use mpi_f08, only: MPI_Comm
 #endif
@@ -21,6 +21,7 @@ module ftimer
    public :: ftimer_reset
    public :: ftimer_get_summary
    public :: ftimer_mpi_summary
+   public :: ftimer_mpi_union_summary
    public :: ftimer_print_summary
    public :: ftimer_write_summary
    public :: ftimer_write_summary_csv
@@ -216,6 +217,13 @@ contains
 
       call ftimer_default_instance%mpi_summary(summary, ierr=ierr)
    end subroutine ftimer_mpi_summary
+
+   subroutine ftimer_mpi_union_summary(summary, ierr)
+      type(ftimer_mpi_union_summary_t), intent(out) :: summary
+      integer, intent(out), optional :: ierr
+
+      call ftimer_default_instance%mpi_union_summary(summary, ierr=ierr)
+   end subroutine ftimer_mpi_union_summary
 
    subroutine ftimer_print_summary(unit, metadata, ierr)
       integer, intent(in), optional :: unit

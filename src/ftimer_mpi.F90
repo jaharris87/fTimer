@@ -1,8 +1,8 @@
 module ftimer_mpi
    use, intrinsic :: iso_fortran_env, only: int64
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, &
-                           FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, ftimer_mpi_summary_t, ftimer_summary_entry_t, &
-                           ftimer_summary_t, wp
+                           FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, &
+                           ftimer_summary_entry_t, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi_f08, only: MPI_Allgather, MPI_Allreduce, MPI_Bcast, MPI_CHARACTER, MPI_Comm, MPI_COMM_NULL, &
                       MPI_COMM_SELF, MPI_COMM_WORLD, MPI_Datatype, MPI_DATATYPE_NULL, MPI_Errhandler, &
@@ -15,6 +15,7 @@ module ftimer_mpi
    private
 
    public :: build_mpi_summary
+   public :: build_mpi_union_summary
    public :: check_mpi_summary_prereqs
    public :: ftimer_mpi_enabled
    public :: get_mpi_summary_comm_info
@@ -543,6 +544,59 @@ contains
 #endif
    end subroutine build_mpi_summary
 
+   subroutine build_mpi_union_summary(local_summary, comm, summary, status, diagnostic)
+      type(ftimer_summary_t), intent(in) :: local_summary
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm), intent(in), optional :: comm
+#else
+      integer, intent(in), optional :: comm
+#endif
+      type(ftimer_mpi_union_summary_t), intent(out) :: summary
+      integer, intent(out) :: status
+      character(len=*), intent(out), optional :: diagnostic
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm) :: active_comm
+      integer :: all_datatypes_ready
+      integer :: datatypes_ready
+      integer :: mpierr
+      integer :: nprocs
+      integer :: rank
+      type(MPI_Datatype) :: mpi_int64_type
+      type(MPI_Datatype) :: mpi_wp_type
+
+      call clear_mpi_union_summary(summary)
+      if (present(diagnostic)) diagnostic = ''
+
+      call get_mpi_summary_comm_info(comm, active_comm, rank, nprocs, status)
+      if (status /= FTIMER_SUCCESS) return
+
+      call resolve_mpi_summary_datatypes(mpi_wp_type, mpi_int64_type, status, diagnostic)
+      datatypes_ready = 0
+      if (status == FTIMER_SUCCESS) datatypes_ready = 1
+      call ftimer_mpi_allreduce(datatypes_ready, all_datatypes_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      if (all_datatypes_ready /= 1) then
+         if (status == FTIMER_SUCCESS) then
+            status = FTIMER_ERR_UNKNOWN
+            if (present(diagnostic)) diagnostic = &
+               "ftimer mpi_union_summary datatype validation failed on another rank"
+         end if
+         return
+      end if
+
+      if (present(diagnostic)) diagnostic = &
+         "ftimer mpi_union_summary descriptor-union builder is not implemented yet"
+      status = FTIMER_ERR_NOT_IMPLEMENTED
+#else
+      call clear_mpi_union_summary(summary)
+      if (present(diagnostic)) diagnostic = ''
+      status = FTIMER_ERR_NOT_IMPLEMENTED
+#endif
+   end subroutine build_mpi_union_summary
+
    subroutine clear_mpi_summary(summary)
       type(ftimer_mpi_summary_t), intent(out) :: summary
 
@@ -556,6 +610,20 @@ contains
       summary%max_total_time_rank = -1
       summary%total_time_imbalance = 1.0_wp
    end subroutine clear_mpi_summary
+
+   subroutine clear_mpi_union_summary(summary)
+      type(ftimer_mpi_union_summary_t), intent(out) :: summary
+
+      if (allocated(summary%entries)) deallocate (summary%entries)
+      summary%num_ranks = 0
+      summary%num_entries = 0
+      summary%min_total_time = 0.0_wp
+      summary%max_total_time = 0.0_wp
+      summary%avg_total_time = 0.0_wp
+      summary%min_total_time_rank = -1
+      summary%max_total_time_rank = -1
+      summary%total_time_imbalance = 1.0_wp
+   end subroutine clear_mpi_union_summary
 
 #ifdef FTIMER_USE_MPI
    subroutine resolve_mpi_summary_datatypes(mpi_wp_type, mpi_int64_type, status, diagnostic)

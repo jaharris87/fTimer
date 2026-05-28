@@ -1,9 +1,11 @@
 module test_mpi_disabled
    use pfunit
-   use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_start, ftimer_stop
+   use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
+                     ftimer_mpi_union_summary, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_SUCCESS, ftimer_mpi_summary_t, wp
-   use test_support, only: attach_mock_clock, fake_time
+   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_NOT_INIT, FTIMER_SUCCESS, ftimer_mpi_summary_t, &
+                           ftimer_mpi_union_summary_t, wp
+   use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time
    implicit none
 
 contains
@@ -69,6 +71,89 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_procedural_mpi_summary_matches_oop_when_disabled
 
+   @test
+   subroutine test_mpi_union_summary_api_is_explicit_and_empty_when_disabled()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_mpi_union_summary_t) :: oop_summary
+      type(ftimer_mpi_union_summary_t) :: procedural_summary
+      integer :: ierr
+
+      call oop_timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(oop_timer)
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call build_single_timer(oop_timer, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call build_single_timer_procedural(ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call oop_timer%mpi_union_summary(oop_summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+      call ftimer_mpi_union_summary(procedural_summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+
+      call assert_union_summary_empty(oop_summary)
+      call assert_union_summary_empty(procedural_summary)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_api_is_explicit_and_empty_when_disabled
+
+   @test
+   subroutine test_mpi_union_summary_before_init_error_contract()
+      character(len=:), allocatable :: oop_stderr
+      character(len=:), allocatable :: procedural_stderr
+      type(ftimer_t) :: oop_timer
+      type(ftimer_mpi_union_summary_t) :: oop_summary
+      type(ftimer_mpi_union_summary_t) :: procedural_summary
+      integer :: capture_ierr
+      integer :: ierr
+      integer :: saved_fd
+      logical :: oop_warned
+      logical :: procedural_warned
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call seed_union_summary(oop_summary)
+      call oop_timer%mpi_union_summary(oop_summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      call assert_union_summary_empty(oop_summary)
+
+      call seed_union_summary(procedural_summary)
+      call ftimer_mpi_union_summary(procedural_summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      call assert_union_summary_empty(procedural_summary)
+
+      call seed_union_summary(oop_summary)
+      call begin_stderr_capture('test_mpi_union_before_init_oop_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call oop_timer%mpi_union_summary(oop_summary)
+      call end_stderr_capture('test_mpi_union_before_init_oop_warn.err', saved_fd, oop_stderr, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call seed_union_summary(procedural_summary)
+      call begin_stderr_capture('test_mpi_union_before_init_procedural_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_mpi_union_summary(procedural_summary)
+      call end_stderr_capture('test_mpi_union_before_init_procedural_warn.err', saved_fd, procedural_stderr, &
+                              capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      oop_warned = index(oop_stderr, 'ftimer mpi_union_summary before init') > 0
+      procedural_warned = index(procedural_stderr, 'ftimer mpi_union_summary before init') > 0
+      @assertTrue(oop_warned)
+      @assertTrue(procedural_warned)
+      call assert_union_summary_empty(oop_summary)
+      call assert_union_summary_empty(procedural_summary)
+   end subroutine test_mpi_union_summary_before_init_error_contract
+
    subroutine build_single_timer(timer, ierr)
       class(ftimer_t), intent(inout) :: timer
       integer, intent(out) :: ierr
@@ -105,5 +190,35 @@ contains
       @assertEqual(rhs%max_total_time_rank, lhs%max_total_time_rank)
       @assertEqual(rhs%total_time_imbalance, lhs%total_time_imbalance)
    end subroutine assert_summary_equal
+
+   subroutine seed_union_summary(summary)
+      type(ftimer_mpi_union_summary_t), intent(out) :: summary
+
+      summary%num_ranks = 99
+      summary%num_entries = 1
+      summary%min_total_time = 1.0_wp
+      summary%max_total_time = 2.0_wp
+      summary%avg_total_time = 1.5_wp
+      summary%min_total_time_rank = 7
+      summary%max_total_time_rank = 8
+      allocate (summary%entries(1))
+      summary%entries(1)%participating_rank_count = 1
+   end subroutine seed_union_summary
+
+   subroutine assert_union_summary_empty(summary)
+      type(ftimer_mpi_union_summary_t), intent(in) :: summary
+      logical :: entries_allocated
+
+      entries_allocated = allocated(summary%entries)
+      @assertEqual(0, summary%num_ranks)
+      @assertEqual(0, summary%num_entries)
+      @assertEqual(0.0_wp, summary%min_total_time)
+      @assertEqual(0.0_wp, summary%max_total_time)
+      @assertEqual(0.0_wp, summary%avg_total_time)
+      @assertEqual(-1, summary%min_total_time_rank)
+      @assertEqual(-1, summary%max_total_time_rank)
+      @assertEqual(1.0_wp, summary%total_time_imbalance)
+      @assertFalse(entries_allocated)
+   end subroutine assert_union_summary_empty
 
 end module test_mpi_disabled

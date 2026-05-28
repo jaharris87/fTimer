@@ -8,10 +8,11 @@ module test_mpi_summary
                       MPI_F08_MAX => MPI_MAX, MPI_F08_MIN => MPI_MIN, MPI_F08_SUCCESS => MPI_SUCCESS, &
                       MPI_F08_SUM => MPI_SUM
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
-                     ftimer_print_mpi_summary, ftimer_start, ftimer_stop
+                     ftimer_mpi_union_summary, ftimer_print_mpi_summary, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_NAME_LEN, FTIMER_SUCCESS, ftimer_metadata_t, &
-                           ftimer_mpi_summary_t, wp
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_NAME_LEN, &
+                           FTIMER_SUCCESS, ftimer_metadata_t, ftimer_mpi_summary_t, &
+                           ftimer_mpi_union_summary_t, wp
    use test_support, only: attach_mock_clock, csv_column_index, csv_field_value, csv_line_at, csv_record_count, &
                            fake_time, read_file_text, summary_node_ids_unique, summary_parent_index
    implicit none
@@ -342,6 +343,7 @@ contains
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
       type(ftimer_mpi_summary_t) :: summary
+      type(ftimer_mpi_union_summary_t) :: union_summary
       integer :: ierr
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
@@ -358,6 +360,13 @@ contains
       @assertEqual(FTIMER_ERR_ACTIVE, ierr)
       @assertEqual(0, summary%num_ranks)
       @assertEqual(0, summary%num_entries)
+
+      call timer%mpi_union_summary(union_summary, ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+      @assertEqual(0, union_summary%num_ranks)
+      @assertEqual(0, union_summary%num_entries)
+      call assert_union_summary_empty(union_summary)
 
       fake_time = fake_time + 1.0_wp
       call timer%stop("active", ierr=ierr)
@@ -399,6 +408,80 @@ contains
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_procedural_mpi_summary_matches_oop_api
+
+   @test
+   subroutine test_mpi_union_summary_api_is_separate_from_strict_summary(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: oop_timer
+      type(ftimer_mpi_summary_t) :: strict_summary
+      type(ftimer_mpi_union_summary_t) :: oop_union_summary
+      type(ftimer_mpi_union_summary_t) :: procedural_union_summary
+      integer :: ierr
+
+      call oop_timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(oop_timer)
+
+      call build_nested_timers(oop_timer, this%getProcessRank(), ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call oop_timer%mpi_summary(strict_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, strict_summary%num_entries)
+
+      call oop_timer%mpi_union_summary(oop_union_summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+      call assert_union_summary_empty(oop_union_summary)
+
+      call ftimer_init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call build_nested_timers_procedural(this%getProcessRank(), ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_mpi_union_summary(procedural_union_summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+      call assert_union_summary_empty(procedural_union_summary)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_api_is_separate_from_strict_summary
+
+   @test
+   subroutine test_mpi_union_summary_sparse_input_is_not_strict_inconsistency(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_union_summary_t) :: union_summary
+      integer :: ierr
+      integer :: rank
+
+      rank = this%getProcessRank()
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      if (rank == 0) then
+         fake_time = 0.0_wp
+         call timer%start("rank_zero_only", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 2.0_wp
+         call timer%stop("rank_zero_only", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      else
+         fake_time = 2.0_wp
+      end if
+
+      call timer%mpi_union_summary(union_summary, ierr=ierr)
+
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+      call assert_union_summary_empty(union_summary)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_sparse_input_is_not_strict_inconsistency
 
    @test
    subroutine test_transitional_integer_comm_compatibility(this)
@@ -1344,5 +1427,21 @@ contains
          call assert_real_close(lhs%entries(i)%avg_pct_time, rhs%entries(i)%avg_pct_time)
       end do
    end subroutine assert_summary_equal
+
+   subroutine assert_union_summary_empty(summary)
+      type(ftimer_mpi_union_summary_t), intent(in) :: summary
+      logical :: entries_allocated
+
+      entries_allocated = allocated(summary%entries)
+      @assertEqual(0, summary%num_ranks)
+      @assertEqual(0, summary%num_entries)
+      @assertEqual(0.0_wp, summary%min_total_time)
+      @assertEqual(0.0_wp, summary%max_total_time)
+      @assertEqual(0.0_wp, summary%avg_total_time)
+      @assertEqual(-1, summary%min_total_time_rank)
+      @assertEqual(-1, summary%max_total_time_rank)
+      @assertEqual(1.0_wp, summary%total_time_imbalance)
+      @assertFalse(entries_allocated)
+   end subroutine assert_union_summary_empty
 
 end module test_mpi_summary

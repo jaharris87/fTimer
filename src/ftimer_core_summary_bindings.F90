@@ -1,11 +1,12 @@
 submodule(ftimer_core) ftimer_core_summary_bindings
    use, intrinsic :: iso_fortran_env, only: error_unit, output_unit
    use ftimer_clock, only: ftimer_date_string
-   use ftimer_mpi, only: build_mpi_summary, check_mpi_summary_prereqs, get_mpi_summary_comm_info
+   use ftimer_mpi, only: build_mpi_summary, build_mpi_union_summary, check_mpi_summary_prereqs, &
+                         get_mpi_summary_comm_info
    use ftimer_summary, only: build_summary, format_mpi_summary, format_summary
    use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_UNKNOWN, &
                            ftimer_metadata_t, ftimer_mpi_summary_entry_t, ftimer_mpi_summary_t, &
-                           ftimer_summary_entry_t, ftimer_summary_t, wp
+                           ftimer_mpi_union_summary_t, ftimer_summary_entry_t, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi_f08, only: MPI_Bcast, MPI_CHARACTER, MPI_INTEGER, MPI_SUCCESS
 #endif
@@ -42,6 +43,25 @@ contains
 
    if (present(ierr)) ierr = FTIMER_SUCCESS
    end procedure mpi_summary
+
+   module procedure mpi_union_summary
+   character(len=256) :: diagnostic
+   integer :: status
+
+   if (.not. self%initialized) then
+      call reset_mpi_union_summary(summary)
+      call report_summary_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer mpi_union_summary before init")
+      return
+   end if
+
+   call build_current_mpi_union_summary(self, summary, status, diagnostic)
+   if (status /= FTIMER_SUCCESS) then
+      call report_mpi_union_summary_error(ierr, status, diagnostic)
+      return
+   end if
+
+   if (present(ierr)) ierr = FTIMER_SUCCESS
+   end procedure mpi_union_summary
 
    module procedure print_summary
    type(ftimer_summary_t) :: summary
@@ -502,6 +522,43 @@ contains
       if (status /= FTIMER_SUCCESS) call reset_mpi_summary(summary)
    end subroutine build_current_mpi_summary
 
+   subroutine build_current_mpi_union_summary(self, summary, status, diagnostic)
+      class(ftimer_t), intent(in) :: self
+      type(ftimer_mpi_union_summary_t), intent(out) :: summary
+      integer, intent(out) :: status
+      character(len=*), intent(out) :: diagnostic
+      type(ftimer_summary_t) :: local_summary
+      logical :: local_has_active_timers
+
+      diagnostic = ''
+      local_has_active_timers = self%call_stack%depth > 0
+      call build_current_summary(self, local_summary)
+#ifdef FTIMER_USE_MPI
+      if (self%mpi_comm_was_present) then
+         call check_mpi_summary_prereqs(local_has_active_timers, self%mpi_comm, status)
+      else
+         call check_mpi_summary_prereqs(local_has_active_timers, status=status)
+      end if
+#else
+      call check_mpi_summary_prereqs(local_has_active_timers, status=status)
+#endif
+      if (status /= FTIMER_SUCCESS) then
+         call reset_mpi_union_summary(summary)
+         return
+      end if
+
+#ifdef FTIMER_USE_MPI
+      if (self%mpi_comm_was_present) then
+         call build_mpi_union_summary(local_summary, self%mpi_comm, summary, status, diagnostic)
+      else
+         call build_mpi_union_summary(local_summary, summary=summary, status=status, diagnostic=diagnostic)
+      end if
+#else
+      call build_mpi_union_summary(local_summary, summary=summary, status=status, diagnostic=diagnostic)
+#endif
+      if (status /= FTIMER_SUCCESS) call reset_mpi_union_summary(summary)
+   end subroutine build_current_mpi_union_summary
+
    subroutine format_summary_csv(summary, text, metadata, include_header)
       type(ftimer_summary_t), intent(in) :: summary
       character(len=:), allocatable, intent(out) :: text
@@ -820,6 +877,20 @@ contains
       summary%total_time_imbalance = 1.0_wp
    end subroutine reset_mpi_summary
 
+   subroutine reset_mpi_union_summary(summary)
+      type(ftimer_mpi_union_summary_t), intent(out) :: summary
+
+      if (allocated(summary%entries)) deallocate (summary%entries)
+      summary%num_ranks = 0
+      summary%num_entries = 0
+      summary%min_total_time = 0.0_wp
+      summary%max_total_time = 0.0_wp
+      summary%avg_total_time = 0.0_wp
+      summary%min_total_time_rank = -1
+      summary%max_total_time_rank = -1
+      summary%total_time_imbalance = 1.0_wp
+   end subroutine reset_mpi_union_summary
+
    subroutine report_summary_status(ierr, code, message)
       integer, intent(out), optional :: ierr
       integer, intent(in) :: code
@@ -860,6 +931,39 @@ contains
          end if
       end select
    end subroutine report_mpi_summary_error
+
+   subroutine report_mpi_union_summary_error(ierr, status, diagnostic)
+      integer, intent(out), optional :: ierr
+      integer, intent(in) :: status
+      character(len=*), intent(in) :: diagnostic
+
+      select case (status)
+      case (FTIMER_ERR_NOT_IMPLEMENTED)
+         if (len_trim(diagnostic) > 0) then
+            call report_summary_status(ierr, status, trim(diagnostic))
+         else
+            call report_summary_status(ierr, status, "ftimer mpi_union_summary requires FTIMER_USE_MPI=ON")
+         end if
+      case (FTIMER_ERR_ACTIVE)
+         call report_summary_status(ierr, status, &
+                                    "ftimer mpi_union_summary requires all timers stopped before reduction on "// &
+                                    "the init communicator")
+      case (FTIMER_ERR_MPI_INCON)
+         if (len_trim(diagnostic) > 0) then
+            call report_summary_status(ierr, status, trim(diagnostic))
+         else
+            call report_summary_status(ierr, status, &
+                                       "ftimer mpi_union_summary detected invalid sparse timer descriptors across "// &
+                                       "ranks in the init communicator")
+         end if
+      case default
+         if (len_trim(diagnostic) > 0) then
+            call report_summary_status(ierr, status, trim(diagnostic))
+         else
+            call report_summary_status(ierr, status, "ftimer mpi_union_summary MPI reduction failed")
+         end if
+      end select
+   end subroutine report_mpi_union_summary_error
 
    subroutine get_csv_header_mode(filename, append_mode, include_header, status, iomsg)
       character(len=*), intent(in) :: filename

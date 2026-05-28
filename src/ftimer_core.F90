@@ -6,7 +6,7 @@ module ftimer_core
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
                            FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_SUCCESS, &
                            ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_metadata_t, &
-                           ftimer_mpi_summary_t, ftimer_segment_t, ftimer_summary_t, wp
+                           ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, ftimer_segment_t, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi_f08, only: MPI_Comm, MPI_COMM_WORLD
 #endif
@@ -95,6 +95,7 @@ module ftimer_core
       procedure :: reset
       procedure :: get_summary
       procedure :: mpi_summary
+      procedure :: mpi_union_summary
       procedure :: print_summary
       procedure :: write_summary
       procedure :: write_summary_csv
@@ -118,6 +119,12 @@ module ftimer_core
          type(ftimer_mpi_summary_t), intent(out) :: summary
          integer, intent(out), optional :: ierr
       end subroutine mpi_summary
+
+      module subroutine mpi_union_summary(self, summary, ierr)
+         class(ftimer_t), intent(in) :: self
+         type(ftimer_mpi_union_summary_t), intent(out) :: summary
+         integer, intent(out), optional :: ierr
+      end subroutine mpi_union_summary
 
       module subroutine print_summary(self, unit, metadata, ierr)
          class(ftimer_t), intent(in) :: self

@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the procedural `ftimer_scope` scoped guard, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` with an empty MPI summary result.
+Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the procedural `ftimer_scope` scoped guard, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` API/data-model skeletons, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -192,7 +192,7 @@ This disabled-facade behavior is an application integration contract, not an alt
 - Hash-based timer-descriptor preflight before the reduction phase
 - The strict MPI preflight compares rank-local descriptor hashes against a rank-0 reference hash, then reduces a mismatch flag across the communicator. Successful summaries do not allgather every rank's hashes or exchange exact descriptor strings.
 - Extra timers, missing timers, renamed timers, and hierarchy/context mismatches fail the MPI summary with `FTIMER_ERR_MPI_INCON`; they do not fall back to a local summary object through the MPI API
-- Rank-conditional timer reductions are not supported by the current strict `mpi_summary()` API. Sparse/union MPI summaries are planned as a separate opt-in path; see [`docs/mpi-sparse-summary-decision.md`](mpi-sparse-summary-decision.md).
+- Rank-conditional timer reductions are not supported by the current strict `mpi_summary()` API. Sparse/union MPI summaries are defined as the separate opt-in `mpi_union_summary()` / `ftimer_mpi_union_summary()` API and `ftimer_mpi_union_summary_t` result model; the descriptor-union builder is deferred to #170, so the current API skeleton returns `FTIMER_ERR_NOT_IMPLEMENTED`. See [`docs/mpi-sparse-summary-decision.md`](mpi-sparse-summary-decision.md).
 - When that descriptor preflight fails inside one communicator, the omitted-`ierr` diagnostic reports the disagreeing communicator-local ranks when possible
 - MPI descriptor matching is based on the local summary tree shape and names, not on raw local `node_id` values
 - The MPI descriptor preflight materializes deterministic length-prefixed path strings at summary time so names that differ only after the legacy 64-character threshold remain distinguishable. This is outside the start/stop hot path, but its memory and sort cost scales with summary entry count and encoded path length for very large timer trees.
@@ -217,6 +217,20 @@ The supported pattern is simple: capture one communicator consistently at `init`
 - The MPI summary tree order is canonical across ranks. It does not depend on the local timer creation order on one chosen rank.
 - `mpi_summary()` does not return local fallback data on errors. If the caller needs local data after an MPI-disabled or MPI-error path, it must call `get_summary()` separately.
 - This datatype selection remains the portability guard for the current `mpi_f08` implementation and preserves the reduction-datatype work completed before the interface migration.
+
+## Sparse/Union MPI Summary Contract
+
+`mpi_union_summary()` is the explicit opt-in path reserved for rank-conditional timers. It is a separate API from strict `mpi_summary()`, not a mode argument, so existing strict calls cannot silently relax descriptor consistency. The procedural wrapper is `ftimer_mpi_union_summary()`.
+
+- The sparse result type is `ftimer_mpi_union_summary_t`, with `ftimer_mpi_union_summary_entry_t` entries. It does not reuse or extend `ftimer_mpi_summary_t`, whose semantics remain strict identical-tree semantics.
+- Top-level communicator total-time fields remain all-rank fields because every rank contributes a local summary window.
+- Per-entry `participating_rank_count` records how many communicator ranks materialized that descriptor. Missing rank count is derived as `num_ranks - participating_rank_count` and is not stored redundantly.
+- Descriptors are materialized from the local summary emitted on each rank. Lookup-only timer definitions do not count as present unless a future issue adds a first-class registration contract.
+- A materialized present zero-call entry is participating and contributes zero calls plus its recorded time values to participating-rank statistics. An absent rank contributes only to the derived missing-rank count.
+- Entry min/avg/max time, call-count, percent, and imbalance fields are defined over participating ranks only. Absent ranks are not zero-filled.
+- No all-rank zero-filled or amortized entry fields are part of the initial result model. If such a view is added later, it must be explicitly named as all-rank or amortized.
+- The sparse API keeps the same init-captured communicator model as strict MPI summaries. The primary path is `mpi_f08` `type(MPI_Comm)`; transitional integer communicator capture remains only through `init` until #187 removes it.
+- The current #169 implementation defines and compile-checks the public API and data model. The descriptor-union builder is #170, and sparse report output is #171.
 
 ## MPI Reporting Contract
 
