@@ -193,3 +193,8 @@ install(FILES
   ${CMAKE_CURRENT_BINARY_DIR}/fTimerConfigVersion.cmake
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fTimer
 )
+
+install(FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/docs/installed-api.md
+  DESTINATION ${CMAKE_INSTALL_DOCDIR}
+)

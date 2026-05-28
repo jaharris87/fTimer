@@ -146,7 +146,7 @@ The public surface on current `main` is split between:
 - the OOP API through `type(ftimer_t)` from `use ftimer_core`
 - shared types and constants from `use ftimer_types`
 
-The supported source-level module surface is intentionally limited to those three modules. Install trees may still contain compiler module artifacts for implementation modules such as `ftimer_clock`, `ftimer_summary`, and `ftimer_mpi`, but those are internal implementation details rather than stable external integration points.
+The supported source-level module surface is intentionally limited to those three modules. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md`, and the installed-consumer smoke test checks that this note matches the artifact contract.
 
 The currently exported procedural entry points are:
 
