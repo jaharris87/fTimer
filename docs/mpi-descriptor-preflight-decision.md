@@ -6,7 +6,7 @@ Issue #151 revisited whether strict `mpi_summary()` should keep allgathering des
 
 ## Decision
 
-Replace the successful-path `MPI_Allgather` of every rank's descriptor hashes with a rank-0 reference hash broadcast plus an all-rank mismatch reduction. If a mismatch is detected, gather one integer mismatch flag per rank so the omitted-`ierr` diagnostic can still report the communicator-local ranks that disagree with rank 0.
+Replace the successful-path `MPI_Allgather` of every rank's descriptor hashes with a rank-0 reference hash broadcast plus an all-rank mismatch reduction. If a mismatch is detected, gather one integer mismatch flag per rank so the omitted-`ierr` diagnostic can still report communicator-local ranks that disagree with rank 0, bounded by the diagnostic buffer and with truncation marked when the list does not fit.
 
 Keep strict `mpi_summary()` hash-based by default. Do not exchange exact descriptor strings on every successful summary call.
 
@@ -28,11 +28,11 @@ Exact descriptor diagnostics are useful, but they should be a mismatch-only debu
 The current recommendation is:
 
 - keep exact descriptor strings local during normal preflight
-- preserve disagreeing-rank diagnostics in the default omitted-`ierr` path
+- preserve bounded disagreeing-rank diagnostics in the default omitted-`ierr` path
 - consider a future mismatch-only exact diagnostic mode that exchanges rank-0 and one or more disagreeing descriptor lists, then reports a bounded first-difference summary
 
 That future mode should be tested separately because useful exact output needs truncation, first-difference selection, and a clear contract for very large timer trees.
 
 ## Validation
 
-The existing MPI consistency tests cover missing, extra, renamed, hierarchy, and long-name descriptor mismatches. The four-rank diagnostic test also checks that the omitted-`ierr` path reports all ranks that disagree with rank 0 after the preflight switches away from allgathering hashes on successful summaries.
+The existing MPI consistency tests cover missing, extra, renamed, hierarchy, and long-name descriptor mismatches. The four-rank diagnostic tests also check that the omitted-`ierr` path reports ranks that disagree with rank 0, preserves communicator-local rank numbering for split communicators, and marks truncated rank-list diagnostics.

@@ -821,28 +821,68 @@ contains
    subroutine format_descriptor_mismatch_diagnostic(mismatch_flags, diagnostic)
       integer, intent(in) :: mismatch_flags(:)
       character(len=*), intent(out) :: diagnostic
+      character(len=*), parameter :: base_message = "ftimer mpi_summary detected inconsistent timer descriptors "// &
+                                     "across ranks in the init communicator"
+      character(len=*), parameter :: rank_prefix = "; reference rank 0 differs from ranks "
+      character(len=*), parameter :: truncated_message = "ftimer mpi_summary descriptor mismatch; "// &
+                                     "disagreeing-rank list truncated"
       character(len=32) :: rank_text
       character(len=len(diagnostic)) :: rank_list
+      character(len=34) :: rank_piece
+      integer :: available_len
       integer :: i
+      logical :: truncated
 
-      diagnostic = "ftimer mpi_summary detected inconsistent timer descriptors across ranks in the init communicator"
+      diagnostic = base_message
       rank_list = ''
+      truncated = .false.
+      available_len = len(diagnostic) - len_trim(base_message) - len_trim(rank_prefix)
+
+      if (available_len < 3) then
+         diagnostic = truncated_message
+         return
+      end if
 
       do i = 2, size(mismatch_flags)
          if (mismatch_flags(i) == 0) cycle
-
          write (rank_text, '(i0)') i - 1
          if (len_trim(rank_list) > 0) then
-            rank_list = trim(rank_list)//", "//trim(rank_text)
+            rank_piece = ", "//trim(rank_text)
          else
-            rank_list = trim(rank_text)
+            rank_piece = trim(rank_text)
+         end if
+
+         if (len_trim(rank_list) + len_trim(rank_piece) <= available_len) then
+            rank_list = trim(rank_list)//trim(rank_piece)
+         else
+            truncated = .true.
+            exit
          end if
       end do
 
+      if (truncated) call mark_rank_list_truncated(rank_list, available_len)
+
       if (len_trim(rank_list) > 0) then
-         diagnostic = trim(diagnostic)//"; reference rank 0 differs from ranks "//trim(rank_list)
+         diagnostic = trim(diagnostic)//rank_prefix//trim(rank_list)
       end if
    end subroutine format_descriptor_mismatch_diagnostic
+
+   subroutine mark_rank_list_truncated(rank_list, available_len)
+      character(len=*), intent(inout) :: rank_list
+      integer, intent(in) :: available_len
+
+      if (available_len < 3) then
+         rank_list = ''
+      else if (len_trim(rank_list) == 0) then
+         rank_list = '...'
+      else if (len_trim(rank_list) + 5 <= available_len) then
+         rank_list = trim(rank_list)//", ..."
+      else if (available_len == 3) then
+         rank_list = '...'
+      else
+         rank_list = rank_list(1:available_len - 3)//'...'
+      end if
+   end subroutine mark_rank_list_truncated
 #endif
 
    real(wp) function compute_imbalance(max_time, avg_time) result(imbalance)

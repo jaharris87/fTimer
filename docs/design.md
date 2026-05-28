@@ -130,7 +130,7 @@ The current implementation is organized around a few design choices that show up
 - Name-based timing remains the primary ergonomic story, backed internally by mapped resident-timer lookup, mapped per-segment parent-stack lookup, and capacity-based growth so the default path no longer depends on repeated resident-timer linear scans, steady-state context-list scans, or one-slot-at-a-time array growth.
 - Per-segment context selection remains fully context-sensitive, but it now uses a per-segment parent-stack index in steady state instead of rescanning the known parent-stack variants for that timer on every hit.
 - Callback hooks are lightweight intra-run hooks for normal start/stop events only; internal mismatch repair transitions must stay invisible to callback consumers, and current `main` does not define a stronger profiler-backend identity contract.
-- MPI summary reduction is descriptor-validated before collectives, and reduced cross-rank fields are valid only in the documented result shape.
+- MPI summary-field reductions are descriptor-validated first, and reduced cross-rank fields are valid only in the documented result shape. The validation itself uses MPI collectives over the init communicator before any timer-data reduction assumes matching canonical entries.
 - MPI timed regions are rank-local wall-clock intervals unless the caller adds
   synchronization; `mpi_summary()` reduces the recorded intervals but does not
   imply phase-entry or phase-exit barriers.
