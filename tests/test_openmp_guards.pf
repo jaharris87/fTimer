@@ -353,14 +353,18 @@ contains
       integer :: ierr
       integer :: local_ierr
       integer :: master_scope_ierr
+      integer :: master_stop_ierr
       integer :: thread_num
       integer :: worker_scope_ierr
+      integer :: worker_stop_ierr
       logical :: thread_seen(2)
 
       call omp_set_dynamic(.false.)
 
       master_scope_ierr = -1
+      master_stop_ierr = -1
       worker_scope_ierr = -1
+      worker_stop_ierr = -1
       thread_seen = .false.
 
       call ftimer_init(ierr=ierr)
@@ -387,6 +391,14 @@ contains
          if (thread_num == 0) fake_time = 3.0_wp
 
 !$omp barrier
+
+         local_ierr = NOOP_IERR_SENTINEL
+         call guard%stop(ierr=local_ierr)
+         if (thread_num == 0) then
+            master_stop_ierr = local_ierr
+         else
+            worker_stop_ierr = local_ierr
+         end if
       end block
 !$omp end parallel
 
@@ -395,7 +407,9 @@ contains
       @assertTrue(thread_seen(1))
       @assertTrue(thread_seen(2))
       @assertEqual(FTIMER_SUCCESS, master_scope_ierr)
+      @assertEqual(FTIMER_SUCCESS, master_stop_ierr)
       @assertEqual(NOOP_IERR_SENTINEL, worker_scope_ierr)
+      @assertEqual(NOOP_IERR_SENTINEL, worker_stop_ierr)
       @assertEqual(1, summary%num_entries)
       @assertEqual(1, summary%entries(1)%call_count)
       @assertEqual(3.0_wp, summary%entries(1)%inclusive_time)

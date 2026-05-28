@@ -74,7 +74,7 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 - Guard finalizers never invoke warn/repair mismatch recovery. Even in `FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR` mode, a finalizer stack mismatch is diagnosed and left for explicit caller action instead of silently repairing.
 - `guard%stop(ierr)` provides explicit early release. It uses the same top-of-stack-only policy as finalization, returns the status through `ierr` when present, and turns later finalization into a successful no-op after a successful stop.
 - Scoped guards are ownership objects and must not be copied or assigned while active. fTimer records an activation token so stale or copied guards cannot stop a later matching timer activation, but copied active guards can still create confusing diagnostics.
-- Scoped guards rely on standard Fortran finalization of local, non-`save` variables on normal scope exit, including block exit and procedure return. They are not a cleanup mechanism for `stop`, `error stop`, process aborts, saved/module/global guard variables, or compiler/toolchain finalization bugs.
+- Scoped guards rely on standard Fortran finalization of local, non-`save` variables on normal serial scope exit, including block exit and procedure return. They are not a cleanup mechanism for `stop`, `error stop`, process aborts, saved/module/global guard variables, block-local guard finalization inside OpenMP parallel regions, or compiler/toolchain finalization bugs.
 - For OOP guards, pass a `type(ftimer_t), pointer` associated with a timer object that outlives the guard, because the guard stores a pointer back to that timer instance. The procedural default instance already satisfies this requirement.
 - For nested scoped timing, use nested `block` constructs or nested procedures so each guard has a clear lifetime. Do not place multiple active guards in the same scoping unit and rely on finalization order to provide stack discipline.
 
@@ -212,8 +212,9 @@ The silent worker-thread no-op model has specific, observable consequences that 
 - **Timer calls made exclusively on worker threads are silently dropped**: no summary entry is created, no call count is incremented, and no timing data is recorded for those calls. A timer name that is started and stopped only on worker threads will not appear in the summary at all.
 - **Call counts reflect only master-thread invocations, not all-thread counts**: when all N threads in a parallel region call `start`/`stop` for the same timer, only the master thread's call is recorded; the summary shows `call_count = 1`, not `N`.
 - **Timing inside a parallel region captures only the master-thread timing window**: worker-thread work duration is not separately captured or aggregated into the timer's inclusive or self time.
-- **Supported pattern**: place `start`/`stop` calls outside the `!$omp parallel` block to time a parallel region as a whole. The master-thread timing window then spans the full wall-clock duration of the parallel work.
-- **Misleading pattern**: placing `start`/`stop` inside a parallel region with the expectation that each thread contributes timing data is not supported under this contract. Only the master thread's calls take effect; worker-thread contributions are silently absent.
+- **Supported pattern**: place `start`/`stop` calls or a scoped guard outside the `!$omp parallel` block to time a parallel region as a whole. The master-thread timing window then spans the full wall-clock duration of the parallel work.
+- **Misleading pattern**: placing `start`/`stop` or scoped-guard calls inside a parallel region with the expectation that each thread contributes timing data is not supported under this contract. Only the master thread's calls take effect; worker-thread contributions are silently absent.
+- **Scoped guard finalization inside parallel regions is not a portable stop boundary**: do not rely on block-local guard finalization inside `!$omp parallel`. If a scoped guard is deliberately started inside a parallel region, call `guard%stop(ierr=...)` on the master thread before leaving the region.
 
 ## Callback Contract
 
