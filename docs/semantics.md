@@ -52,6 +52,19 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 - Validation and lifecycle errors follow a warn-and-return contract: they leave timer state unchanged unless the caller explicitly selected a repair-capable mismatch mode
 - Error codes and their meanings
 
+## Compile-Out / No-Op Instrumentation Pattern
+
+The fTimer runtime itself is not conditionally compiled into a no-op mode. Its core semantics remain unconditional: when an application links fTimer and calls `ftimer_start`, `ftimer_stop`, scoped guards, summary APIs, callbacks, or MPI reporting APIs, the normal runtime contracts in this document apply.
+
+Applications that need to leave timing calls in source while removing runtime overhead and fTimer dependencies in selected builds should use an application-owned facade module. The supported pattern is two facade implementations with the same application-facing interface:
+
+- an enabled facade that delegates to fTimer and links `fTimer::ftimer`
+- a disabled facade that does not `use ftimer`, does not link fTimer, and stores no timer state
+
+Disabled facade entry points are intentionally silent no-ops. If an `ierr` argument is present, the disabled facade should set it to `0`, matching `FTIMER_SUCCESS`; if `ierr` is absent, it should not write to stderr. Disabled calls do not validate timer names, maintain a nesting stack, create segments or summaries, write timing artifacts, fire callbacks, or enter MPI collectives.
+
+This disabled-facade behavior is an application integration contract, not an alternate fTimer runtime mode. To keep disabled builds dependency-free, applications should avoid exposing fTimer summary types or constants in unconditional source and should instead expose application-level report helpers, simple counters, or status values from the facade. fTimer intentionally does not provide an installed drop-in no-op module named `ftimer`, because that would make it too easy for a build to accidentally shadow the real library API.
+
 ## Timer Name / Summary Text Policy
 
 - Public timer creation/lookup paths right-trim trailing blanks, reject empty names, reject names that begin with a blank, and reject ASCII control characters. They do not silently truncate names and do not impose the legacy `FTIMER_NAME_LEN` value as a runtime name cap.
