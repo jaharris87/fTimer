@@ -220,6 +220,7 @@ enforcement should pass `ierr` and check it.
 - Suppressed non-master calls are skipped before normal validation, emit no stderr warning, and leave any caller-provided `ierr` unchanged
 - The OpenMP guards do not broaden support for concurrent access to other APIs; summary/report generation and other shared access remain unsupported in threaded regions
 - Thread-local timer instances, fuller concurrent timing support, and any `suppress_in_parallel` control remain deferred
+- Future real hybrid MPI+OpenMP timing is deferred pending concrete adopter demand; see [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md)
 
 ### Consequences for timing data
 

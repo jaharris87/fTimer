@@ -284,7 +284,7 @@ Future-facing ideas should stay clearly separated from the current architecture 
 
 - built-in hardware counter or power-measurement backends
 - richer export formats beyond summary CSV, such as JSON or trace/event formats
-- broader OpenMP support beyond the documented master-thread-only guard model
+- broader OpenMP support beyond the documented master-thread-only guard model, deferred pending concrete adopter demand in [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md)
 - stable semantic callback identity or a stronger external-profiler integration contract
 - explicit reservation/preallocation APIs for known timer sets, if profiling shows the new internal capacity strategy is still not enough for an adopter workload
 
