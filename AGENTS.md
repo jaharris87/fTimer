@@ -69,7 +69,7 @@ ftimer.F90  (procedural wrappers + default global instance)
   └─► ftimer_core.F90  (ftimer_t OOP class: init, start, stop, reset, finalize)
         ├─► ftimer_types.F90   (derived types, kinds, constants, enums, summary types, callback interface)
         ├─► ftimer_clock.F90   (injectable wall-clock: MPI_Wtime vs system_clock)
-        ├─► ftimer_summary.F90 (structured summary building + text formatting)
+        ├─► ftimer_summary.F90 (structured summary building + text/CSV formatting)
         └─► ftimer_mpi.F90    (MPI gather/reduce for cross-rank summaries)
 ```
 
@@ -85,7 +85,7 @@ ftimer.F90  (procedural wrappers + default global instance)
 ### Key Design Decisions
 
 - **Strict nesting by default**: Stack-based timer model. Mismatch handling is configurable (`strict`/`warn`/`repair`), default `strict`. `repair` mode exists for Flash-X compatibility.
-- **Data first, report second**: `get_summary()` returns structured `ftimer_summary_t` data. Text formatting is a separate step built on top of structured data.
+- **Data first, report second**: `get_summary()` returns structured `ftimer_summary_t` data. Text and CSV formatting are separate steps built on top of structured data.
 - **Injectable clock**: All timing goes through a configurable clock function pointer. Use `set_clock()` / `clear_clock()` rather than mutating runtime internals directly. Tests inject a mock clock for deterministic results — no sleeps, no timing jitter.
 - **Error contract**: All public routines accept optional `integer, intent(out) :: ierr`. Present → set error code, no stderr. Absent → warn to stderr, continue.
 - **Context-sensitive accounting**: The same timer name under different parent call stacks is tracked independently.
