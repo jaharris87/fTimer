@@ -70,7 +70,8 @@ ftimer.F90  (procedural wrappers + default global instance)
         ├─► ftimer_types.F90   (derived types, kinds, constants, enums, summary types, callback interface)
         ├─► ftimer_clock.F90   (injectable wall-clock: MPI_Wtime vs system_clock)
         ├─► ftimer_summary.F90 (structured summary building + text formatting)
-        └─► ftimer_mpi.F90    (MPI gather/reduce for cross-rank summaries)
+        ├─► ftimer_mpi.F90    (MPI gather/reduce for cross-rank summaries)
+        └─► ftimer_core_summary_bindings.F90 (summary/report/CSV file-output bindings)
 ```
 
 ### Module Dependency Order (build order)
@@ -78,9 +79,10 @@ ftimer.F90  (procedural wrappers + default global instance)
 1. `ftimer_types` — no dependencies (all types, enums, error codes, abstract interfaces)
 2. `ftimer_clock` — depends on `ftimer_types`
 3. `ftimer_core` — depends on `ftimer_types`, `ftimer_clock`
-4. `ftimer_summary` — depends on `ftimer_types`, `ftimer_core`
+4. `ftimer_summary` — depends on `ftimer_types`
 5. `ftimer_mpi` — depends on `ftimer_types`, `ftimer_core`, `ftimer_summary`
-6. `ftimer` — depends on all above (procedural wrappers)
+6. `ftimer_core_summary_bindings` — submodule of `ftimer_core`; depends on `ftimer_clock`, `ftimer_summary`, and `ftimer_mpi`
+7. `ftimer` — depends on all above (procedural wrappers)
 
 ### Key Design Decisions
 
