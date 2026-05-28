@@ -70,7 +70,7 @@ ftimer.F90  (procedural wrappers + default global instance)
         ├─► ftimer_types.F90   (derived types, kinds, constants, enums, summary types, callback interface)
         ├─► ftimer_clock.F90   (injectable wall-clock: MPI_Wtime vs system_clock)
         ├─► ftimer_summary.F90 (structured summary building + text formatting)
-        ├─► ftimer_mpi.F90    (strict MPI reductions + sparse/union API skeleton)
+        ├─► ftimer_mpi.F90    (strict MPI reductions + sparse/union descriptor reductions)
         └─► ftimer_core_summary_bindings.F90 (summary/report/CSV file-output bindings)
 ```
 
@@ -128,7 +128,7 @@ The call stack state CHANGES between start and stop — this is the most common 
 
 ## Development Workflow
 
-Current `main` is in Phase 6. The shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, sparse/union MPI API/data-model skeletons, and limited OpenMP master-thread guards are implemented.
+Current `main` is in Phase 6. The shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, sparse/union MPI descriptor summaries, and limited OpenMP master-thread guards are implemented.
 
 During Phase 6, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: preserve procedural-wrapper parity with the OOP core unless a tracked issue explicitly defers parity, keep MPI summary behavior correct and explicit, preserve the limited master-thread-only OpenMP guard model, and keep current-state docs/examples honest. Do not pull fuller post-Phase-6 design work or broader OpenMP support forward.
 
