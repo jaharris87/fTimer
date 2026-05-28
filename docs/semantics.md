@@ -16,6 +16,50 @@ Current architecture, validation, and workflow notes belong in `docs/design.md`.
 - Wall-clock only (no CPU time, no hardware counters)
 - Injected clocks are expected to be monotonic within a timing run
 
+### Default serial `system_clock` assumptions
+
+In non-MPI builds, the build-default clock used by `type(ftimer_t)` and the
+procedural wrappers is Fortran `system_clock(count, rate)` converted to seconds
+as `real(count, wp) / real(rate, wp)`.
+
+- fTimer assumes `rate > 0` and that the returned count is nondecreasing over a
+  timing run. If `rate` is unavailable, the current default clock stops with
+  `error stop`.
+- fTimer does not independently prove monotonicity, clamp backward movement, or
+  synthesize corrected elapsed time. If the processor clock moves backward,
+  resets, or otherwise returns a smaller count than an earlier call, the
+  resulting negative interval remains visible in accumulated times and
+  summaries. This matches the injected-clock contract: bad clock values are not
+  hidden by the timing runtime.
+- fTimer does not compensate for `system_clock` counter wrap. The useful
+  uninterrupted run length therefore depends on the compiler/runtime
+  `count_max` and `count_rate` for the integer kind used by fTimer's
+  `system_clock` call. On common modern 64-bit implementations this horizon is
+  expected to be very large, but less-common toolchains should be checked before
+  relying on one timing run for very long jobs.
+- The nominal resolution is one clock tick, `1 / count_rate` seconds. Arithmetic
+  after the clock read uses `real(wp)`, so fTimer preserves double-precision
+  timing arithmetic but cannot recover resolution or monotonicity that the
+  underlying `system_clock` backend does not provide.
+- The `start_date` and `end_date` strings in local summaries are wall-date
+  labels from `date_and_time`; they are not the source of elapsed-time
+  accounting and should not be interpreted as clock metadata.
+
+Current local and MPI summary types do not expose clock rate, count range, or
+monotonicity metadata, and formatted reports do not inject automatic clock
+metadata. That is deliberate for current `main`: arbitrary injected clocks do
+not have a common rate/wrap model, MPI builds use `MPI_Wtime()` as their default
+clock, and adding partial metadata to summary schemas would be a user-visible API
+change. Applications that need to record target-system clock characteristics can
+add them as user metadata in reports after inspecting their toolchain. A future
+explicit clock-info helper can be designed if adopter demand appears.
+
+No runtime monotonicity or wrap sanity check is currently performed beyond the
+`rate > 0` guard in the serial default clock. A small sample at initialization
+cannot guarantee future monotonicity or wrap safety, while per-call checks would
+add overhead and change the current contract that backward clock values are
+surfaced rather than hidden.
+
 ### Wall-clock interpretation responsibilities
 
 fTimer records the elapsed host wall-clock interval between the caller's
