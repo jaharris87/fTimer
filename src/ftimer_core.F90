@@ -12,6 +12,8 @@ module ftimer_core
 
    public :: ftimer_t
    public :: ftimer_guard_t
+   public :: ftimer_scope
+   public :: ftimer_scope_id
 #ifdef FTIMER_BUILD_TESTS
    public :: ftimer_test_get_state
    public :: ftimer_test_state_t
@@ -32,6 +34,7 @@ module ftimer_core
       type(ftimer_call_stack_t) :: call_stack
       type(ftimer_segment_t), allocatable :: segments(:)
       integer :: num_segments = 0
+      integer(int64) :: activation_epoch = 0_int64
       real(wp) :: init_wtime = 0.0_wp
       character(len=40) :: init_date = ''
       logical :: initialized = .false.
@@ -55,6 +58,7 @@ module ftimer_core
       integer, allocatable :: segment_name_slots(:)
       type(ftimer_context_index_t), allocatable :: segment_context_indices(:)
       integer :: num_segments = 0
+      integer(int64) :: activation_epoch = 0_int64
       real(wp) :: init_wtime = 0.0_wp
       character(len=40) :: init_date = ''
       logical :: initialized = .false.
@@ -74,8 +78,6 @@ module ftimer_core
       procedure :: clear_clock
       procedure :: set_callback
       procedure :: clear_callback
-      procedure :: scope
-      procedure :: scope_id
       procedure :: start
       procedure :: stop
       procedure :: start_id
@@ -99,10 +101,16 @@ module ftimer_core
       private
       class(ftimer_t), pointer :: timer => null()
       integer :: id = 0
+      integer :: context_idx = 0
+      integer :: depth = 0
+      integer :: call_count = 0
+      integer(int64) :: activation_epoch = 0_int64
       logical :: active = .false.
    contains
       procedure :: stop => guard_stop
       procedure :: is_active => guard_is_active
+      procedure, private :: assign_guard
+      generic, public :: assignment(=) => assign_guard
       final :: guard_finalize
    end type ftimer_guard_t
 
@@ -356,19 +364,23 @@ contains
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine clear_callback_impl
 
-   subroutine scope(self, guard, name, ierr)
-      class(ftimer_t), target, intent(inout) :: self
+   subroutine ftimer_scope(timer, guard, name, ierr)
+      type(ftimer_t), pointer :: timer
       type(ftimer_guard_t), intent(inout) :: guard
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
 
 !$omp master
-      call scope_impl(self, guard, name, ierr=ierr)
+      if (.not. associated(timer)) then
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer scope with unassociated timer pointer")
+      else
+         call scope_impl(timer, guard, name, ierr=ierr)
+      end if
 !$omp end master
-   end subroutine scope
+   end subroutine ftimer_scope
 
-   subroutine scope_impl(self, guard, name, ierr)
-      class(ftimer_t), target, intent(inout) :: self
+   subroutine scope_impl(timer, guard, name, ierr)
+      type(ftimer_t), pointer :: timer
       type(ftimer_guard_t), intent(inout) :: guard
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
@@ -381,30 +393,34 @@ contains
       end if
 
       call clear_guard_state(guard)
-      old_depth = self%call_stack%depth
+      old_depth = timer%call_stack%depth
       if (present(ierr)) then
-         call start_impl(self, name, ierr=status)
-         if (status == FTIMER_SUCCESS) call arm_guard_if_started(guard, self, old_depth)
+         call start_impl(timer, name, ierr=status)
+         if (status == FTIMER_SUCCESS) call arm_guard_if_started(guard, timer, old_depth)
          ierr = status
       else
-         call start_impl(self, name)
-         call arm_guard_if_started(guard, self, old_depth)
+         call start_impl(timer, name)
+         call arm_guard_if_started(guard, timer, old_depth)
       end if
    end subroutine scope_impl
 
-   subroutine scope_id(self, guard, id, ierr)
-      class(ftimer_t), target, intent(inout) :: self
+   subroutine ftimer_scope_id(timer, guard, id, ierr)
+      type(ftimer_t), pointer :: timer
       type(ftimer_guard_t), intent(inout) :: guard
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
 
 !$omp master
-      call scope_id_impl(self, guard, id, ierr=ierr)
+      if (.not. associated(timer)) then
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer scope_id with unassociated timer pointer")
+      else
+         call scope_id_impl(timer, guard, id, ierr=ierr)
+      end if
 !$omp end master
-   end subroutine scope_id
+   end subroutine ftimer_scope_id
 
-   subroutine scope_id_impl(self, guard, id, ierr)
-      class(ftimer_t), target, intent(inout) :: self
+   subroutine scope_id_impl(timer, guard, id, ierr)
+      type(ftimer_t), pointer :: timer
       type(ftimer_guard_t), intent(inout) :: guard
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
@@ -417,14 +433,14 @@ contains
       end if
 
       call clear_guard_state(guard)
-      old_depth = self%call_stack%depth
+      old_depth = timer%call_stack%depth
       if (present(ierr)) then
-         call start_id_impl(self, id, ierr=status)
-         if (status == FTIMER_SUCCESS) call arm_guard_if_started(guard, self, old_depth)
+         call start_id_impl(timer, id, ierr=status)
+         if (status == FTIMER_SUCCESS) call arm_guard_if_started(guard, timer, old_depth)
          ierr = status
       else
-         call start_id_impl(self, id)
-         call arm_guard_if_started(guard, self, old_depth)
+         call start_id_impl(timer, id)
+         call arm_guard_if_started(guard, timer, old_depth)
       end if
    end subroutine scope_id_impl
 
@@ -679,6 +695,7 @@ contains
       end do
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       self%call_stack%depth = 0
+      self%activation_epoch = self%activation_epoch + 1_int64
       self%init_wtime = self%wtime()
       self%init_date = ftimer_date_string()
 
@@ -756,6 +773,7 @@ contains
 
       state%call_stack = self%call_stack
       state%num_segments = self%num_segments
+      state%activation_epoch = self%activation_epoch
       state%init_wtime = self%init_wtime
       state%init_date = self%init_date
       state%initialized = self%initialized
@@ -785,6 +803,7 @@ contains
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       self%call_stack%depth = 0
       self%num_segments = 0
+      self%activation_epoch = self%activation_epoch + 1_int64
       self%init_wtime = 0.0_wp
       self%init_date = ''
       self%initialized = .false.
@@ -1302,15 +1321,43 @@ contains
 
    subroutine arm_guard_if_started(guard, timer, old_depth)
       type(ftimer_guard_t), intent(inout) :: guard
-      class(ftimer_t), target, intent(inout) :: timer
+      type(ftimer_t), pointer :: timer
       integer, intent(in) :: old_depth
+      integer :: ctx
 
       if (timer%call_stack%depth /= old_depth + 1) return
 
+      ctx = active_top_context(timer)
+      if (ctx <= 0) return
+
       guard%timer => timer
       guard%id = timer%call_stack%top()
+      guard%context_idx = ctx
+      guard%depth = timer%call_stack%depth
+      guard%call_count = timer%segments(guard%id)%call_count(ctx)
+      guard%activation_epoch = timer%activation_epoch
       guard%active = .true.
    end subroutine arm_guard_if_started
+
+   integer function active_top_context(timer) result(ctx)
+      class(ftimer_t), intent(inout) :: timer
+      type(ftimer_call_stack_t) :: parent_stack
+      integer :: depth
+      integer :: id
+
+      ctx = 0
+      depth = timer%call_stack%depth
+      if (depth <= 0) return
+
+      id = timer%call_stack%top()
+      parent_stack%depth = depth - 1
+      if (parent_stack%depth > 0) then
+         allocate (parent_stack%ids(parent_stack%depth))
+         parent_stack%ids = timer%call_stack%ids(1:parent_stack%depth)
+      end if
+
+      ctx = find_segment_context(timer, id, parent_stack)
+   end function active_top_context
 
    subroutine guard_stop(self, ierr)
       class(ftimer_guard_t), intent(inout) :: self
@@ -1388,16 +1435,62 @@ contains
          return
       end if
 
+      if (.not. guard_activation_is_current(guard)) then
+         message = "ftimer scoped guard "//trim(caller)//" could not stop "//trim(guarded_name)// &
+                   " because the guarded activation is no longer current; state unchanged"
+         call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
+         return
+      end if
+
       call stop_segment_with_now(guard%timer, guard%id, guard%timer%wtime(), fire_callback=.true.)
       call clear_guard_state(guard)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine guard_stop_impl
+
+   logical function guard_activation_is_current(guard) result(is_current)
+      class(ftimer_guard_t), intent(in) :: guard
+
+      is_current = .false.
+      if (.not. associated(guard%timer)) return
+      if (guard%depth <= 0) return
+      if (guard%context_idx <= 0) return
+      if (guard%timer%call_stack%depth /= guard%depth) return
+      if (guard%timer%call_stack%top() /= guard%id) return
+      if (guard%context_idx > guard%timer%segments(guard%id)%contexts%count) return
+      if (.not. allocated(guard%timer%segments(guard%id)%is_running)) return
+      if (.not. allocated(guard%timer%segments(guard%id)%call_count)) return
+      if (guard%context_idx > size(guard%timer%segments(guard%id)%is_running)) return
+      if (guard%context_idx > size(guard%timer%segments(guard%id)%call_count)) return
+      if (guard%timer%activation_epoch /= guard%activation_epoch) return
+      if (.not. guard%timer%segments(guard%id)%is_running(guard%context_idx)) return
+      if (guard%timer%segments(guard%id)%call_count(guard%context_idx) /= guard%call_count) return
+
+      is_current = .true.
+   end function guard_activation_is_current
+
+   subroutine assign_guard(lhs, rhs)
+      class(ftimer_guard_t), intent(inout) :: lhs
+      class(ftimer_guard_t), intent(in) :: rhs
+
+      if (lhs%active) then
+         call guard_stop_impl(lhs, "assignment")
+         if (lhs%active) return
+      end if
+      call clear_guard_state(lhs)
+      if (rhs%active) then
+         write (error_unit, '(a)') "ftimer scoped guards are not copyable; assigned guard left inactive"
+      end if
+   end subroutine assign_guard
 
    subroutine clear_guard_state(guard)
       class(ftimer_guard_t), intent(inout) :: guard
 
       nullify (guard%timer)
       guard%id = 0
+      guard%context_idx = 0
+      guard%depth = 0
+      guard%call_count = 0
+      guard%activation_epoch = 0_int64
       guard%active = .false.
    end subroutine clear_guard_state
 

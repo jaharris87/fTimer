@@ -1,5 +1,6 @@
 module ftimer
-   use ftimer_core, only: ftimer_guard_t, ftimer_t
+   use ftimer_core, only: ftimer_core_scope => ftimer_scope, ftimer_core_scope_id => ftimer_scope_id, &
+                          ftimer_guard_t, ftimer_t
    use ftimer_types, only: ftimer_metadata_t, ftimer_mpi_summary_t, ftimer_summary_t
    implicit none
    private
@@ -64,16 +65,20 @@ contains
       type(ftimer_guard_t), intent(inout) :: guard
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
+      type(ftimer_t), pointer :: timer_ptr
 
-      call ftimer_default_instance%scope(guard, name, ierr=ierr)
+      timer_ptr => ftimer_default_instance
+      call ftimer_core_scope(timer_ptr, guard, name, ierr=ierr)
    end subroutine ftimer_scope
 
    subroutine ftimer_scope_id(guard, id, ierr)
       type(ftimer_guard_t), intent(inout) :: guard
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
+      type(ftimer_t), pointer :: timer_ptr
 
-      call ftimer_default_instance%scope_id(guard, id, ierr=ierr)
+      timer_ptr => ftimer_default_instance
+      call ftimer_core_scope_id(timer_ptr, guard, id, ierr=ierr)
    end subroutine ftimer_scope_id
 
    subroutine ftimer_start_id(id, ierr)

@@ -66,14 +66,32 @@ Use `ftimer` for the procedural API and `ftimer_types` for shared types and cons
 For scope-balanced instrumentation, declare a guard in the scope you want to time and start it with `ftimer_scope`. Its finalizer stops the timer on normal scope exit, including early exits from the block:
 
 ```fortran
-block
-   type(ftimer_guard_t) :: guard
+program scoped_quick_start
+   use ftimer, only: ftimer_finalize, ftimer_guard_t, ftimer_init, ftimer_print_summary, ftimer_scope
+   implicit none
+   integer :: ierr
+   integer :: i
+   real :: accumulator
 
-   call ftimer_scope(guard, "work", ierr=ierr)
-   if (ierr /= 0) return
+   accumulator = 0.0
+   call ftimer_init(ierr=ierr)
+   if (ierr /= 0) error stop 1
 
-   call do_work()
-end block
+   block
+      type(ftimer_guard_t) :: guard
+
+      call ftimer_scope(guard, "work", ierr=ierr)
+      if (ierr /= 0) error stop 2
+
+      do i = 1, 100000
+         accumulator = accumulator + real(i)
+      end do
+   end block
+
+   call ftimer_print_summary()
+   call ftimer_finalize(ierr=ierr)
+   if (ierr /= 0) error stop 3
+end program scoped_quick_start
 ```
 
 Scoped guards complement explicit `start`/`stop`; they do not replace them. Use explicit stops when you need immediate error handling at a specific program point, and check `ierr` from `ftimer_scope` because a guard is inactive if the start fails.
@@ -150,9 +168,29 @@ The public API supports these styles:
 
 - Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, and `ftimer_default_instance`
 - Scoped guard API from `use ftimer`, including `type(ftimer_guard_t)`, `ftimer_scope`, and `ftimer_scope_id`
-- OOP API through `type(ftimer_t)` in `ftimer_core`, including the explicit configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`, plus scoped guard methods `scope` and `scope_id`
+- OOP API through `type(ftimer_t)` in `ftimer_core`, including the explicit configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`. OOP callers that need scoped guards can use the module procedures `ftimer_scope` and `ftimer_scope_id` from `ftimer_core` with a `type(ftimer_t), pointer` actual argument.
 
 New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock or callback configuration on a specific timer object. Procedural callers that need those advanced controls can use `ftimer_default_instance%...` explicitly.
+
+Instance-level scoped timing uses an associated pointer so the guard cannot accidentally store a pointer to a temporary timer actual:
+
+```fortran
+use ftimer_core, only: ftimer_guard_t, ftimer_scope, ftimer_t
+
+type(ftimer_t), target :: timer_storage
+type(ftimer_t), pointer :: timer
+integer :: ierr
+
+timer => timer_storage
+call timer%init(ierr=ierr)
+
+block
+   type(ftimer_guard_t) :: guard
+
+   call ftimer_scope(timer, guard, "work", ierr=ierr)
+   if (ierr /= 0) error stop 1
+end block
+```
 
 Operational notes:
 
@@ -163,9 +201,10 @@ Operational notes:
 - Name-based `start`/`stop` remains the default ergonomic path. The runtime now uses internal mapped lookup for both resident timer names and per-segment parent-stack contexts, plus capacity-based growth, so that this default path avoids repeated resident-timer linear scans and context-list scans in steady state as the timer set and parent-stack variants grow.
 - `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization when one call site times the same known region in a very tight loop. That path is especially useful when a long scientific label would otherwise be validated and hashed on every name-based call.
 - Scoped guards start through the same validation and callback path as `start`/`start_id`. A failed guard start returns the underlying error through `ierr` when present, or warns to stderr when `ierr` is omitted; the guard then remains inactive and its finalizer is a no-op.
-- A guard finalizer cannot return `ierr`. On normal scope exit, it stops the guarded timer only when that timer is the current top of the stack and fires the normal stop callback. If the stack no longer matches, the finalizer warns to stderr and leaves timer state unchanged; it does not invoke warn/repair mismatch recovery, even when the timer was initialized in a repair-capable mismatch mode.
+- A guard finalizer cannot return `ierr`. On normal scope exit, it stops the guarded activation only when that exact activation is still the current top of the stack and fires the normal stop callback. If the stack or activation no longer matches, the finalizer warns to stderr and leaves timer state unchanged; it does not invoke warn/repair mismatch recovery, even when the timer was initialized in a repair-capable mismatch mode.
 - `guard%stop(ierr=ierr)` is available for callers that want explicit error handling before scope exit. Inactive guard stops are successful no-ops, so an explicit stop prevents a later finalizer double-stop.
-- Scoped guards rely on standard Fortran finalization for local, non-`save` variables on normal scope exit. Do not rely on them for `stop`, `error stop`, process aborts, saved/module/global guard variables, or function-return guard constructors. For OOP use, declare the timed `type(ftimer_t)` object with `target` and ensure it outlives the guard. Use nested `block` or procedure scopes for nested guards; do not put multiple active guards in one scoping unit and rely on finalization order.
+- Scoped guards are ownership objects and must not be copied or assigned while active. fTimer records an activation token so stale or copied guards cannot stop a later matching timer activation, but copied active guards can still create confusing diagnostics.
+- Scoped guards rely on standard Fortran finalization for local, non-`save` variables on normal scope exit. Do not rely on them for `stop`, `error stop`, process aborts, saved/module/global guard variables, or function-return guard constructors. For OOP use, pass a `type(ftimer_t), pointer` associated with a timer object that outlives the guard. Use nested `block` or procedure scopes for nested guards; do not put multiple active guards in one scoping unit and rely on finalization order.
 - Configure custom clocks through `set_clock()` and restore the build-default wall clock through `clear_clock()`. Direct mutation of raw runtime clock internals is not part of the supported API.
 - Clock changes are allowed before `init()` or before a run records timing data. After timing has started, `set_clock()` and `clear_clock()` return `FTIMER_ERR_ACTIVE` (or warn to stderr when `ierr` is omitted) and leave state unchanged. Use `reset()`, `init()`, or `finalize()` to begin a fresh run on a different clock.
 - Configure callbacks through `set_callback()` and `clear_callback()`. Callback configuration is rejected while timers are active, `clear_callback()` also clears callback `user_data`, and `finalize()` clears callback configuration.
