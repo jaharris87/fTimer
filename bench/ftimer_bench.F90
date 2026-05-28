@@ -22,23 +22,33 @@
 !                                       whether steady-state mapped lookup
 !                                       stays near-flat as the resident timer
 !                                       set grows into the larger regimes
-! 12-17. Context scaling C=1/10/50/100/500/1000
+! 12-14. Timer first-touch N=10/100/1000
+!                                     -- new resident timer creation through
+!                                       lookup; names are prebuilt so this
+!                                       isolates internal allocation, growth,
+!                                       and index insertion from formatting
+! 15-17. Context first-touch C=10/100/1000
+!                                     -- one hot timer first observed under
+!                                       many parent stacks; parent timers and
+!                                       parent root contexts are warmed first
+!                                       to isolate new work-context creation
+! 18-23. Context scaling C=1/10/50/100/500/1000
 !                                     -- one hot timer reused under many parent
 !                                        stacks; name-based rows measure the
 !                                        default path under growing context
 !                                        counts and id-based rows isolate the
 !                                        per-segment parent-stack lookup
-! 18-21. Nesting depth 1/5/10/20     -- id-based; each cycle does D pushes +
+! 24-27. Nesting depth 1/5/10/20     -- id-based; each cycle does D pushes +
 !                                       D pops; shows stack bookkeeping cost
 !                                       scaling with nesting depth
-! 22-24. get_summary N=10/50/100     -- summary build scaling with timer count
-! 25-27. build_summary N=10/50/100   -- direct local summary construction on
+! 28-30. get_summary N=10/50/100     -- summary build scaling with timer count
+! 31-33. build_summary N=10/50/100   -- direct local summary construction on
 !                                       prebuilt flat segments; isolates the
 !                                       tree build/allocation work from the
 !                                       wrapper's timestamp capture
-! 28. raw date string formatting     -- date_and_time + string formatting,
+! 34. raw date string formatting     -- date_and_time + string formatting,
 !                                       matching the original per-call wrapper
-! 29. ftimer_date_string steady-state -- cached second-resolution date stamp
+! 35. ftimer_date_string steady-state -- cached second-resolution date stamp
 !                                        path used by get_summary/print/write
 !
 ! METRICS
@@ -60,6 +70,9 @@
 !   warm-up has removed first-growth effects.
 !   Compare lookup-scaling rows to confirm the mapped name path stays much
 !   flatter than the old linear-scan baseline as timer count grows.
+!   Compare first-touch rows to measure the allocation/growth cost that users
+!   can avoid today only by warming known timers and contexts before a measured
+!   timestep.
 !   Compare context-scaling rows to quantify the per-segment parent-stack cost
 !   when one timer is reused under many distinct parent stacks.
 !   Compare get_summary timer counts to see summary-generation scaling.
@@ -116,6 +129,16 @@ program ftimer_bench
 
    write (*, '(a)') ''
 
+   ! --- First-touch allocation scenarios ---
+   call bench_timer_first_touch(1000, 10, count_rate)
+   call bench_timer_first_touch(200, 100, count_rate)
+   call bench_timer_first_touch(50, 1000, count_rate)
+   call bench_context_first_touch(1000, 10, count_rate)
+   call bench_context_first_touch(200, 100, count_rate)
+   call bench_context_first_touch(50, 1000, count_rate)
+
+   write (*, '(a)') ''
+
    ! --- Context-scaling scenarios ---
    call bench_context_scaling_name(REPS_HOT, 1, count_rate)
    call bench_context_scaling_name(REPS_HOT/10, 10, count_rate)
@@ -162,6 +185,7 @@ program ftimer_bench
    write (*, '(a)') 'Notes:'
    write (*, '(a)') '  - Nesting "per-op" = per full nest cycle (D pushes + D pops).'
    write (*, '(a)') '  - Context scaling "per-op" = one parent/work start-stop cycle.'
+   write (*, '(a)') '  - First-touch rows exclude timer init/finalize and prebuilt-name formatting.'
    write (*, '(a)') '  - get_summary "per-op" = per summary build call.'
    write (*, '(a)') '  - build_summary (direct) uses prebuilt flat segments and fixed dates.'
    write (*, '(a)') '  - raw date string = uncached date_and_time + formatting.'
@@ -295,7 +319,92 @@ contains
       call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_lookup_scaling
 
-   ! Scenarios 8-13: one timer reused under many parent stacks.
+   ! Scenarios 12-14: new timer discovery through lookup. This measures the
+   ! internal segment array, name-index, and name storage allocation/growth cost
+   ! that remains on the first touch of a previously unseen timer name.
+   subroutine bench_timer_first_touch(reps_outer, num_timers, count_rate)
+      integer, intent(in) :: reps_outer
+      integer, intent(in) :: num_timers
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: elapsed_ticks
+      integer(int64) :: t0, t1
+      integer :: i, id, j, total_ops
+      character(len=8), allocatable :: tnames(:)
+      character(len=47) :: label
+
+      total_ops = reps_outer*num_timers
+      elapsed_ticks = 0_int64
+      allocate (tnames(num_timers))
+      do j = 1, num_timers
+         write (tnames(j), '("t",i7.7)') j
+      end do
+
+      do i = 1, reps_outer
+         call ftimer_init()
+         call system_clock(t0)
+         do j = 1, num_timers
+            id = ftimer_lookup(tnames(j))
+         end do
+         call system_clock(t1)
+         elapsed_ticks = elapsed_ticks + (t1 - t0)
+         call ftimer_finalize()
+      end do
+
+      deallocate (tnames)
+      write (label, '("timer first-touch N=",i0," (lookup)")') num_timers
+      call print_elapsed_result(trim(label), total_ops, elapsed_ticks, count_rate)
+   end subroutine bench_timer_first_touch
+
+   ! Scenarios 15-17: new context creation for one already-known hot timer.
+   ! Parent timers and their root contexts are warmed before the measured block,
+   ! so the measured work isolates first creation of the work timer's distinct
+   ! parent-stack contexts plus the steady parent/work start-stop cycle.
+   subroutine bench_context_first_touch(reps_outer, num_contexts, count_rate)
+      integer, intent(in) :: reps_outer
+      integer, intent(in) :: num_contexts
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: elapsed_ticks
+      integer(int64) :: t0, t1
+      integer, allocatable :: parent_ids(:)
+      integer :: i, j, total_ops, work_id
+      character(len=8) :: parent_name
+      character(len=47) :: label
+
+      total_ops = reps_outer*num_contexts
+      elapsed_ticks = 0_int64
+      allocate (parent_ids(num_contexts))
+
+      do i = 1, reps_outer
+         call ftimer_init()
+         do j = 1, num_contexts
+            write (parent_name, '("p",i7.7)') j
+            parent_ids(j) = ftimer_lookup(parent_name)
+         end do
+         work_id = ftimer_lookup('work')
+
+         do j = 1, num_contexts
+            call ftimer_start_id(parent_ids(j))
+            call ftimer_stop_id(parent_ids(j))
+         end do
+
+         call system_clock(t0)
+         do j = 1, num_contexts
+            call ftimer_start_id(parent_ids(j))
+            call ftimer_start_id(work_id)
+            call ftimer_stop_id(work_id)
+            call ftimer_stop_id(parent_ids(j))
+         end do
+         call system_clock(t1)
+         elapsed_ticks = elapsed_ticks + (t1 - t0)
+         call ftimer_finalize()
+      end do
+
+      deallocate (parent_ids)
+      write (label, '("context first-touch C=",i0," (id-based)")') num_contexts
+      call print_elapsed_result(trim(label), total_ops, elapsed_ticks, count_rate)
+   end subroutine bench_context_first_touch
+
+   ! Scenarios 18-23: one timer reused under many parent stacks.
    ! Each cycle times the same "work" timer under a distinct parent, so the
    ! hot path sees growing context counts for one segment. The name-based rows
    ! keep the default public API path; the id-based rows isolate the
@@ -383,7 +492,7 @@ contains
       call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_context_scaling_id
 
-   ! Scenarios 14-17: id-based nesting at increasing depths.
+   ! Scenarios 24-27: id-based nesting at increasing depths.
    ! Each cycle does D id-based starts then D id-based stops.
    ! Using id-based ops isolates call-stack bookkeeping cost from
    ! name-lookup cost.  After the warm-up cycle has grown the stack to the
@@ -431,7 +540,7 @@ contains
       call print_result(trim(label), reps, t0, t1, count_rate)
    end subroutine bench_nesting
 
-   ! Scenarios 18-20: get_summary overhead with N flat timers.
+   ! Scenarios 28-30: get_summary overhead with N flat timers.
    ! Creates N timers each called once, then measures the cost of repeatedly
    ! calling get_summary().  The summary build walks the visible timer tree,
    ! computes self-times from direct children, and allocates the entries array.
@@ -572,5 +681,17 @@ contains
                   /real(reps, real64)*1.0d9
       write (*, '(a47,i10,f12.2,f13.1)') label, reps, total_ms, per_op_ns
    end subroutine print_result
+
+   subroutine print_elapsed_result(label, reps, elapsed_ticks, count_rate)
+      character(len=*), intent(in) :: label
+      integer, intent(in) :: reps
+      integer(int64), intent(in) :: elapsed_ticks, count_rate
+      real(real64) :: total_ms, per_op_ns
+
+      total_ms = real(elapsed_ticks, real64)/real(count_rate, real64)*1.0d3
+      per_op_ns = real(elapsed_ticks, real64)/real(count_rate, real64) &
+                  /real(reps, real64)*1.0d9
+      write (*, '(a47,i10,f12.2,f13.1)') label, reps, total_ms, per_op_ns
+   end subroutine print_elapsed_result
 
 end program ftimer_bench
