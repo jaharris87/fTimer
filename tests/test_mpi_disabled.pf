@@ -1,8 +1,10 @@
 module test_mpi_disabled
    use pfunit
-   use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_start, ftimer_stop
+   use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
+                     ftimer_mpi_union_summary, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_SUCCESS, ftimer_mpi_summary_t, wp
+   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_SUCCESS, ftimer_mpi_summary_t, &
+                           ftimer_mpi_union_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time
    implicit none
 
@@ -69,6 +71,40 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_procedural_mpi_summary_matches_oop_when_disabled
 
+   @test
+   subroutine test_mpi_union_summary_api_is_explicit_and_empty_when_disabled()
+      type(ftimer_t) :: oop_timer
+      type(ftimer_mpi_union_summary_t) :: oop_summary
+      type(ftimer_mpi_union_summary_t) :: procedural_summary
+      integer :: ierr
+
+      call oop_timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(oop_timer)
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call build_single_timer(oop_timer, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call build_single_timer_procedural(ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call oop_timer%mpi_union_summary(oop_summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+      call ftimer_mpi_union_summary(procedural_summary, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+
+      call assert_union_summary_empty(oop_summary)
+      call assert_union_summary_empty(procedural_summary)
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_api_is_explicit_and_empty_when_disabled
+
    subroutine build_single_timer(timer, ierr)
       class(ftimer_t), intent(inout) :: timer
       integer, intent(out) :: ierr
@@ -105,5 +141,18 @@ contains
       @assertEqual(rhs%max_total_time_rank, lhs%max_total_time_rank)
       @assertEqual(rhs%total_time_imbalance, lhs%total_time_imbalance)
    end subroutine assert_summary_equal
+
+   subroutine assert_union_summary_empty(summary)
+      type(ftimer_mpi_union_summary_t), intent(in) :: summary
+
+      @assertEqual(0, summary%num_ranks)
+      @assertEqual(0, summary%num_entries)
+      @assertEqual(0.0_wp, summary%min_total_time)
+      @assertEqual(0.0_wp, summary%max_total_time)
+      @assertEqual(0.0_wp, summary%avg_total_time)
+      @assertEqual(-1, summary%min_total_time_rank)
+      @assertEqual(-1, summary%max_total_time_rank)
+      @assertEqual(1.0_wp, summary%total_time_imbalance)
+   end subroutine assert_union_summary_empty
 
 end module test_mpi_disabled

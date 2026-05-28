@@ -14,6 +14,12 @@ Follow-up work is split into:
 - #170: implement the descriptor-union summary builder
 - #171: add sparse MPI reporting, docs, and adoption tests
 
+Issue #169 chooses the public shape for that follow-up:
+
+- Sparse MPI summaries use a separate opt-in API: `mpi_union_summary()` on `type(ftimer_t)` and `ftimer_mpi_union_summary()` for the procedural default instance.
+- Sparse MPI summaries use a distinct result type: `ftimer_mpi_union_summary_t` with `ftimer_mpi_union_summary_entry_t` entries. The strict `ftimer_mpi_summary_t` shape is not extended with sparse-only fields.
+- The #169 API skeleton is public and compile-checked, but the descriptor-union builder is still deferred to #170. Until that builder lands, `mpi_union_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` after preserving the same stopped-timer, communicator, datatype-validation, no-local-fallback, and `ierr`/stderr preconditions as the strict MPI summary path.
+
 ## Evidence
 
 The current implementation is strict by construction:
@@ -56,10 +62,13 @@ The sparse path should differ from strict `mpi_summary()` in these ways:
 - Missing-rank count is a required semantic, but it does not need to be stored redundantly: `absent_rank_count = num_ranks - participating_rank_count`.
 - A present zero-call entry, if the sparse data model materializes one, is still participating. It contributes zero calls and its recorded time values to participating-rank statistics.
 - An absent rank does not participate in per-entry min, max, or participating-rank averages.
+- `min_*`, `avg_*`, `max_*`, imbalance, call-count, and rank-local percent statistics in `ftimer_mpi_union_summary_entry_t` are defined over participating ranks only.
 - Initial per-entry rank-attributed extrema should preserve parity with the current strict MPI result by covering inclusive-time extrema; additional rank-attributed extrema for self time, call count, or percent time should wait for a concrete consumer need.
 - Communicator total-time fields remain all-rank fields because every rank has a local summary window even when some entries are sparse.
 
-The first sparse implementation should not provide an implicit zero-filled compatibility mode. Zero filling makes absence too easy to confuse with real zero work. If an all-rank amortized view is added later, it should be explicitly named and derived from participation-aware data rather than replacing participating-rank statistics.
+The first sparse implementation should not provide an implicit zero-filled compatibility mode. Zero filling makes absence too easy to confuse with real zero work. If an all-rank amortized view is added later, it should be explicitly named and derived from participation-aware data rather than replacing participating-rank statistics. No all-rank zero-filled fields are part of the #169 result type.
+
+The sparse API follows the same `mpi_f08` primary contract as strict MPI summaries: communicator choice is captured at `init` as `type(MPI_Comm)` on the validated path, with legacy integer communicator capture remaining only as transitional compatibility until #187 removes it. No sparse API overload is added for per-call communicator selection, so #187 does not need to change the sparse summary entry point.
 
 ## Non-Goals
 

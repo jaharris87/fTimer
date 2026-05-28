@@ -25,6 +25,7 @@ fTimer fits best when you want timing behavior you can trust:
 - local summaries are live snapshots: active timers are included explicitly and marked in the data model/report output
 - local summary entries retain formatter-friendly preorder `name`/`depth` data and also expose explicit `node_id`/`parent_id` tree links
 - pure-MPI reductions return a distinct `ftimer_mpi_summary_t` with globally meaningful fields on every participating rank
+- sparse/union MPI summaries have a separate opt-in API and result model reserved for rank-conditional timers
 - an injectable clock supports deterministic tests and controlled benchmarking
 - optional callback hooks let in-process code observe normal timer start/stop events during a run
 
@@ -80,7 +81,7 @@ end block
 
 The guard starts the named timer through the default procedural instance and stops that same activation when the guard leaves scope. Call `guard%stop(ierr=ierr)` when you need to observe the stop result before scope exit. For non-lexical lifetimes, cached-id hot paths, or complex ownership, prefer explicit `ftimer_start`/`ftimer_stop`.
 
-Use `ftimer` for the procedural API and `ftimer_types` for shared types and constants such as `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_metadata_t`, and `FTIMER_MISMATCH_*`.
+Use `ftimer` for the procedural API and `ftimer_types` for shared types and constants such as `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, `ftimer_metadata_t`, and `FTIMER_MISMATCH_*`.
 
 For metadata headers, construct `ftimer_metadata_t` values by assigning `%key` and `%value` directly. These fields use allocatable-length storage, so assigned strings are not silently capped at the legacy 64-character threshold. fTimer does not currently provide a helper constructor such as `ftimer_metadata(...)`; for formatted numeric metadata, write to a temporary character variable and then assign that string to `%value`.
 
@@ -196,7 +197,7 @@ The repository includes a worked example under `examples/instrumentation_facade_
 
 The public API supports two styles:
 
-- Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_scope`, `ftimer_guard_t`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, and `ftimer_default_instance`
+- Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_scope`, `ftimer_guard_t`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_mpi_union_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, and `ftimer_default_instance`
 - OOP API through `type(ftimer_t)` in `ftimer_core`, including the explicit configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`
 
 New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock or callback configuration on a specific timer object. Procedural callers that need those advanced controls can use `ftimer_default_instance%...` explicitly.
@@ -223,6 +224,10 @@ Operational notes:
 - `mpi_summary()` and `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init`.
 - A successful MPI reduction returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
 - The MPI result includes communicator-local rank attribution for total-time extrema and per-entry inclusive-time extrema. Ties resolve to the lowest rank that attains the extremum.
+- Sparse/union MPI summaries are reserved for the separate `mpi_union_summary()` / `ftimer_mpi_union_summary()` API and `ftimer_mpi_union_summary_t` result type. The API shape and result fields are public, but the descriptor-union builder is deferred to #170 and currently returns `FTIMER_ERR_NOT_IMPLEMENTED`.
+- `ftimer_mpi_union_summary_t` keeps communicator total-time fields as all-rank statistics. Each entry records `participating_rank_count`; missing rank count is derived as `num_ranks - participating_rank_count`, and entry min/avg/max statistics are defined over participating ranks only.
+- Sparse entries are materialized from descriptors emitted by each rank's local summary. Lookup-only timer definitions are not a first-class sparse-registration contract, absent ranks are not zero-filled, and no all-rank amortized compatibility fields are included in the initial result model.
+- Sparse text and CSV reporting entry points are deferred to #171; current MPI report functions remain strict-summary report paths.
 - `print_mpi_summary()` and `write_mpi_summary()` are the first-class MPI reporting paths. They perform the collective MPI summary build and emit one abbreviated report from communicator root. The printed per-entry table is not a serialization of every `ftimer_mpi_summary_t` field; inspect `mpi_summary()` results for min/max self time, self imbalance, min/max call counts, min/max rank-local `% Total`, and explicit `node_id`/`parent_id` tree links.
 - `write_mpi_summary_csv()` and `ftimer_write_mpi_summary_csv()` perform the same collective MPI summary build and write one CSV artifact from communicator root. The CSV includes the complete reduced MPI entry fields, including explicit tree links and inclusive-time extrema ranks.
 - In MPI text reports, `Avg %` means the arithmetic mean of each rank's local `% Total` for that timer, not `100*Avg Incl/Avg total time`.
@@ -322,14 +327,14 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - MPI summary reductions select MPI datatypes with `MPI_Type_match_size` for fTimer's actual `real(wp)` and `integer(int64)` storage sizes instead of assuming fixed `MPI_DOUBLE_PRECISION`, `MPI_2DOUBLE_PRECISION`, or `MPI_INTEGER8` mappings. The compile-time MPI probe validates that this API is available through the `mpi_f08` path; if the API exists but no matching runtime datatype can be returned, `mpi_summary()` temporarily requests MPI error returns for the datatype lookup, fails with `FTIMER_ERR_UNKNOWN`, and leaves the MPI result empty.
 - `mpi_summary()` now returns a distinct `ftimer_mpi_summary_t`; it does not fall back to a local `ftimer_summary_t` on MPI-disabled or MPI-error paths. Call `get_summary()` separately if you need local data in those cases.
 - Descriptor-preflight failures inside one communicator now report the disagreeing communicator-local ranks in the omitted-`ierr` diagnostic path when possible.
-- Rank-conditional timer reductions are not supported by the current strict `mpi_summary()` API. Sparse/union MPI summaries are planned as a separate opt-in path; see [`docs/mpi-sparse-summary-decision.md`](docs/mpi-sparse-summary-decision.md).
+- Rank-conditional timer reductions are not supported by the current strict `mpi_summary()` API. Sparse/union MPI summaries are defined as the separate opt-in `mpi_union_summary()` / `ftimer_mpi_union_summary()` API with `ftimer_mpi_union_summary_t`; the descriptor-union builder is deferred to #170. See [`docs/mpi-sparse-summary-decision.md`](docs/mpi-sparse-summary-decision.md).
 - Local summary `node_id` values are not a cross-run identity contract. Treat them as explicit links inside one produced summary object, not as durable ids across separate runs or independently produced summaries.
 - All ranks that participate in `mpi_summary()` must agree on the communicator captured by `init`. If would-be participants diverge onto different communicators, the library cannot safely discover that mistake after the split; the practical failure mode is a hang, not a clean local fallback.
 - `FTIMER_USE_OPENMP=ON` enables only limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
 - The OpenMP path does not make fTimer thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.
 - Future real hybrid MPI+OpenMP timing is deferred pending concrete adopter demand; see [`docs/openmp-hybrid-strategy-decision.md`](docs/openmp-hybrid-strategy-decision.md).
 - `on_event` remains a lightweight intra-run hook, not a serious profiler-backend integration contract with stable semantic timer identity.
-- If `FTIMER_USE_MPI=OFF`, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the MPI result empty.
+- If `FTIMER_USE_MPI=OFF`, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` and leave their MPI result objects empty.
 - Formatted local and MPI report output are separate paths: `print_summary()`/`write_summary()` are local, while `print_mpi_summary()`/`write_mpi_summary()` emit communicator-level MPI reports from root. MPI reports are deliberately abbreviated; `ftimer_mpi_summary_t` remains the complete structured data model.
 
 ## Performance Measurement
