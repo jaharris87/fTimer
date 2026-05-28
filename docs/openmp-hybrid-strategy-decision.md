@@ -1,0 +1,111 @@
+> **When to read this:** When revisiting whether fTimer should support real
+> hybrid MPI+OpenMP timing beyond the current master-thread-only OpenMP
+> carve-out.
+
+# Hybrid OpenMP Timing Strategy Decision
+
+Issue #160 asked whether fTimer should ever support real hybrid MPI+OpenMP
+timing beyond the documented master-thread-only carve-out.
+
+## Decision
+
+Real hybrid MPI+OpenMP timing is deferred pending concrete adopter demand. It is
+not planned for the current release path, but it is not rejected forever.
+
+The current `FTIMER_USE_OPENMP=ON` behavior stays unchanged: timer operations in
+OpenMP parallel regions run only on the master thread, and worker-thread calls
+remain silent no-ops. fTimer should not add partial worker-thread timing until a
+future issue defines an explicit opt-in API, aggregation model, summary data
+contract, migration story, and test plan.
+
+No child implementation issues are opened from #160 because implementation is
+not planned yet. If a real adopter need turns this into planned work later, use
+the potential breakdown below to split that work before code changes begin.
+
+## Evidence
+
+The current implementation and documentation are internally consistent:
+
+- `src/ftimer_core.F90` guards timer lifecycle, start/stop, lookup, reset, clock,
+  callback, and scoped-activation entry points with `!$omp master`.
+- `tests/test_openmp_guards.pf` verifies that worker-thread calls do not create
+  segments, do not increment call counts, do not clear active scoped guards, and
+  leave caller-provided `ierr` values unchanged.
+- `tests/test_openmp_guards.pf` also verifies that all-thread `start`/`stop`
+  calls record only the master-thread invocation and that procedural wrappers
+  match the OOP behavior.
+- `docs/semantics.md`, `README.md`, and `examples/openmp_example.F90` describe
+  OpenMP support as a narrow region-bracketing carve-out, not per-thread timing.
+- Issue #120 and PR #131 resolved the previous product-positioning concern by
+  narrowing current `main` around disciplined serial and pure-MPI timing.
+
+## Rationale
+
+Hybrid MPI+OpenMP codes are common, but adding credible worker-thread timing is
+not a small extension of the existing guard model. The current runtime has one
+mutable timer stack per `ftimer_t`, context-sensitive accounting tied to that
+stack, callback events tied to runtime-local timer/context ids, and MPI summary
+reductions that assume each rank has a well-defined local summary tree.
+
+Real threaded timing would need to answer questions that the current contract
+intentionally avoids:
+
+- whether each OpenMP thread owns a private stack, a private timer instance, or
+  a synchronized view of one shared instance
+- how per-thread inclusive, self, and call-count data are represented in local
+  and MPI summaries
+- whether default reports show per-thread rows, aggregate rows, or both
+- how thread participation and missing-thread data differ from real zero work
+- what callback events mean when many threads start the same semantic timer
+- how much synchronization overhead is acceptable in hot timing paths
+- whether the current worker-thread no-op behavior remains the default for
+  compatibility
+
+Without an adopter-backed use case, choosing those answers now would risk a
+large API and data-model commitment for a capability outside fTimer's strongest
+current niche.
+
+## Reconsideration Gate
+
+Revisit this decision when there is a concrete adopter or benchmark that needs
+timing inside OpenMP parallel regions and can state which data they expect. A
+useful request should include:
+
+- representative instrumentation patterns inside parallel regions
+- expected local summary shape and call-count semantics
+- expected MPI aggregation behavior in hybrid runs
+- acceptable overhead constraints
+- compatibility expectations for existing master-thread-only builds
+
+Until that evidence exists, keep the documented master-thread-only carve-out and
+do not infer worker-thread timing from `FTIMER_USE_OPENMP=ON`.
+
+## Potential Work Breakdown If Support Becomes Planned
+
+If the reconsideration gate is met, split the work before implementation:
+
+- Define the opt-in hybrid API and compatibility model. Decide whether worker
+  timing is a new mode, a new timer type, a new summary entry point, or a new
+  explicit thread-local instance pattern.
+- Define the hybrid summary data contract. Specify per-thread participation,
+  aggregation, call-count semantics, self-time rules, and MPI reduction behavior.
+- Prototype the core concurrency model. Compare thread-local stacks plus
+  post-region aggregation against a synchronized shared instance and document
+  the overhead and correctness tradeoffs.
+- Add deterministic OpenMP tests. Preserve the existing worker no-op tests for
+  the default mode, then add opt-in tests for worker-only timers, all-thread
+  timers, nested per-thread stacks, callbacks, and summary generation.
+- Update user-facing docs and examples. Keep the current region-bracketing
+  example, add a clearly separate hybrid example, and explain migration risks.
+
+## Non-Goals
+
+This decision does not change current OpenMP semantics, make `ftimer_t`
+thread-safe, add thread-local timer instances, reinterpret worker-thread no-ops
+as errors, or add a hidden aggregation fallback to existing summaries.
+
+## Validation
+
+Issue #160 is investigation-only. Because this change records a strategic
+decision without changing runtime behavior, validation is limited to Markdown
+diff checks.
