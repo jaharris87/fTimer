@@ -91,6 +91,7 @@ if(FTIMER_BUILD_TESTS)
     test_file_output.pf
     test_callbacks.pf
     test_procedural_api.pf
+    test_scoped_guard.pf
   )
 
   if(FTIMER_USE_OPENMP)

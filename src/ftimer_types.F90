@@ -1,5 +1,6 @@
 module ftimer_types
    use, intrinsic :: iso_c_binding, only: c_ptr
+   use, intrinsic :: iso_fortran_env, only: int64
    implicit none
    private
 
@@ -122,10 +123,12 @@ module ftimer_types
    type :: ftimer_call_stack_t
       integer :: depth = 0
       integer, allocatable :: ids(:)
+      integer(int64), allocatable :: activation_tokens(:)
    contains
       procedure :: push => ftimer_call_stack_push
       procedure :: pop => ftimer_call_stack_pop
       procedure :: top => ftimer_call_stack_top
+      procedure :: top_token => ftimer_call_stack_top_token
       procedure :: equals => ftimer_call_stack_equals
       procedure :: copy => ftimer_call_stack_copy
    end type ftimer_call_stack_t
@@ -167,37 +170,51 @@ module ftimer_types
 
 contains
 
-   subroutine ftimer_call_stack_push(self, id)
+   subroutine ftimer_call_stack_push(self, id, activation_token)
       class(ftimer_call_stack_t), intent(inout) :: self
       integer, intent(in) :: id
+      integer(int64), intent(in), optional :: activation_token
       integer, allocatable :: new_ids(:)
+      integer(int64), allocatable :: new_tokens(:)
       integer :: new_capacity
 
       if (.not. allocated(self%ids)) then
          allocate (self%ids(FTIMER_CALL_STACK_INITIAL_CAPACITY))
+         allocate (self%activation_tokens(FTIMER_CALL_STACK_INITIAL_CAPACITY))
       else if (self%depth >= size(self%ids)) then
          new_capacity = max(FTIMER_CALL_STACK_INITIAL_CAPACITY, 2*size(self%ids))
          allocate (new_ids(new_capacity))
+         allocate (new_tokens(new_capacity))
          if (self%depth > 0) then
             new_ids(1:self%depth) = self%ids(1:self%depth)
+            new_tokens(1:self%depth) = self%activation_tokens(1:self%depth)
          end if
          call move_alloc(new_ids, self%ids)
+         call move_alloc(new_tokens, self%activation_tokens)
       end if
 
       self%depth = self%depth + 1
       self%ids(self%depth) = id
+      if (present(activation_token)) then
+         self%activation_tokens(self%depth) = activation_token
+      else
+         self%activation_tokens(self%depth) = 0_int64
+      end if
    end subroutine ftimer_call_stack_push
 
-   integer function ftimer_call_stack_pop(self) result(id)
+   integer function ftimer_call_stack_pop(self, activation_token) result(id)
       class(ftimer_call_stack_t), intent(inout) :: self
+      integer(int64), intent(out), optional :: activation_token
 
       id = 0
+      if (present(activation_token)) activation_token = 0_int64
       if (self%depth <= 0) then
          self%depth = 0
          return
       end if
 
       id = self%ids(self%depth)
+      if (present(activation_token)) activation_token = self%activation_tokens(self%depth)
       self%depth = self%depth - 1
    end function ftimer_call_stack_pop
 
@@ -208,6 +225,14 @@ contains
       if (self%depth <= 0) return
       id = self%ids(self%depth)
    end function ftimer_call_stack_top
+
+   integer(int64) function ftimer_call_stack_top_token(self) result(activation_token)
+      class(ftimer_call_stack_t), intent(in) :: self
+
+      activation_token = 0_int64
+      if (self%depth <= 0) return
+      activation_token = self%activation_tokens(self%depth)
+   end function ftimer_call_stack_top_token
 
    logical function ftimer_call_stack_equals(self, other) result(is_equal)
       class(ftimer_call_stack_t), intent(in) :: self
@@ -229,12 +254,16 @@ contains
 
       self%depth = other%depth
       if (allocated(self%ids)) deallocate (self%ids)
+      if (allocated(self%activation_tokens)) deallocate (self%activation_tokens)
 
       if (other%depth > 0) then
          allocate (self%ids(other%depth))
+         allocate (self%activation_tokens(other%depth))
          self%ids = other%ids(1:other%depth)
+         self%activation_tokens = other%activation_tokens(1:other%depth)
       else if (allocated(other%ids)) then
          allocate (self%ids(0))
+         allocate (self%activation_tokens(0))
       end if
    end subroutine ftimer_call_stack_copy
 

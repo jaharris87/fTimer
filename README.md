@@ -9,6 +9,7 @@ For a first release, the focus is a small, dependable core:
 - strict, stack-based start/stop timing by default
 - context-sensitive accounting for the same timer name under different parents
 - inclusive and self time in structured summaries with explicit tree linkage
+- a small procedural scoped guard for lexical blocks with early exits
 - procedural wrappers and an OOP core API
 - optional MPI global summaries plus first-class text and CSV report output
 - an installable CMake package for downstream projects
@@ -60,6 +61,22 @@ program quick_start
    call ftimer_finalize()
 end program quick_start
 ```
+
+For lexical blocks with early exits, the procedural API also provides a scalar scoped guard:
+
+```fortran
+block
+   use ftimer, only: ftimer_guard_t, ftimer_scope
+   type(ftimer_guard_t) :: guard
+
+   call ftimer_scope(guard, "work", ierr=ierr)
+   if (ierr /= 0) error stop
+
+   ! work that may return or exit the block early
+end block
+```
+
+The guard starts the named timer through the default procedural instance and stops that same activation when the guard leaves scope. Call `guard%stop(ierr=ierr)` when you need to observe the stop result before scope exit. For non-lexical lifetimes, cached-id hot paths, or complex ownership, prefer explicit `ftimer_start`/`ftimer_stop`.
 
 Use `ftimer` for the procedural API and `ftimer_types` for shared types and constants such as `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_metadata_t`, and `FTIMER_MISMATCH_*`.
 
@@ -133,7 +150,7 @@ The supported source-level module surface is intentionally narrow: `ftimer`, `ft
 
 The public API supports two styles:
 
-- Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, and `ftimer_default_instance`
+- Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_scope`, `ftimer_guard_t`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, and `ftimer_default_instance`
 - OOP API through `type(ftimer_t)` in `ftimer_core`, including the explicit configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`
 
 New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock or callback configuration on a specific timer object. Procedural callers that need those advanced controls can use `ftimer_default_instance%...` explicitly.
@@ -145,6 +162,8 @@ Operational notes:
 - Stop-mismatch repair remains an explicit `mismatch_mode` choice (`FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR`); omitted-`ierr` alone does not opt a caller into recovery.
 - Timer names are right-trimmed and must be non-empty, must not begin with a blank, and must not contain ASCII control characters. fTimer does not silently truncate timer names and no longer rejects names solely for exceeding the legacy `FTIMER_NAME_LEN = 64` threshold.
 - Name-based `start`/`stop` remains the default ergonomic path. The runtime now uses internal mapped lookup for both resident timer names and per-segment parent-stack contexts, plus capacity-based growth, so that this default path avoids repeated resident-timer linear scans and context-list scans in steady state as the timer set and parent-stack variants grow.
+- `ftimer_scope(guard, name, ierr)` is a small safety layer for scalar lexical-block timing on the default procedural instance. The guard may stop only the exact activation it started; if that activation was already stopped or displaced by other timer operations, `guard%stop(ierr)` returns `FTIMER_ERR_MISMATCH` and the finalizer warns when it cannot report `ierr`.
+- Scoped guards do not replace explicit `start`/`stop`. Guard assignment/copy is unsupported and does not copy or transfer active ownership; assignment involving an active guard warns and leaves ownership with the original guard. Guard arrays, saved/global guards, function-return guard constructors, cross-procedure lifetime patterns, and block-local finalization inside OpenMP parallel regions are unsupported. `ftimer_scope_id` and OOP scoped guards are deferred.
 - `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization when one call site times the same known region in a very tight loop. That path is especially useful when a long scientific label would otherwise be validated and hashed on every name-based call.
 - Configure custom clocks through `set_clock()` and restore the build-default wall clock through `clear_clock()`. Direct mutation of raw runtime clock internals is not part of the supported API.
 - Clock changes are allowed before `init()` or before a run records timing data. After timing has started, `set_clock()` and `clear_clock()` return `FTIMER_ERR_ACTIVE` (or warn to stderr when `ierr` is omitted) and leave state unchanged. Use `reset()`, `init()`, or `finalize()` to begin a fresh run on a different clock.
@@ -159,7 +178,7 @@ Operational notes:
 - `print_mpi_summary()` and `write_mpi_summary()` are the first-class MPI reporting paths. They perform the collective MPI summary build and emit one abbreviated report from communicator root. The printed per-entry table is not a serialization of every `ftimer_mpi_summary_t` field; inspect `mpi_summary()` results for min/max self time, self imbalance, min/max call counts, min/max rank-local `% Total`, and explicit `node_id`/`parent_id` tree links.
 - `write_mpi_summary_csv()` and `ftimer_write_mpi_summary_csv()` perform the same collective MPI summary build and write one CSV artifact from communicator root. The CSV includes the complete reduced MPI entry fields, including explicit tree links and inclusive-time extrema ranks.
 - In MPI text reports, `Avg %` means the arithmetic mean of each rank's local `% Total` for that timer, not `100*Avg Incl/Avg total time`.
-- Callbacks configured on `type(ftimer_t)` are lightweight intra-run hooks. They report normal start/stop events with runtime-local numeric ids; current `main` does not promise a stable semantic id-to-name/path mapping for profiler backends or durable cross-run tooling.
+- Callbacks configured on `type(ftimer_t)` are lightweight intra-run hooks. They report normal start/stop events with runtime-local numeric ids; current `main` does not promise a stable semantic id-to-name/path mapping for profiler backends or durable cross-run tooling. Scoped guards produce only the normal underlying start/stop callback events; mutating timer state from callbacks during scoped guard start/stop is unsupported.
 - Import shared types and constants from `ftimer_types`; `use ftimer` does not re-export them.
 - `FTIMER_NAME_LEN` remains exported so code that only imports the constant still compiles, but timer names, summary names, MPI summary names, and metadata key/value fields now use allocatable-length storage rather than that fixed width. Pre-1.0 callers that treated those public components as preallocated fixed buffers, such as internal writes directly into `%value`, should write to a temporary string and assign the result.
 
