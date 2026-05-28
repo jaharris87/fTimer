@@ -182,6 +182,8 @@ Each CSV starts with one header row followed by typed records:
 
 Common columns include `summary_kind`, `node_id`, `parent_id`, `depth`, and `name`. Local entry rows populate `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. MPI entry rows populate the reduced fields from `ftimer_mpi_summary_t`, including min/avg/max inclusive and self time, call count extrema, rank-local percent extrema, imbalance fields, and inclusive-time extrema ranks.
 
+Appending to an existing non-empty CSV requires the existing first row to match the fTimer CSV format-version-1 header; mismatched headers are rejected instead of mixing schemas silently. Text fields preserve timer names and metadata exactly with standard CSV quoting. They are not spreadsheet-formula-sanitized, so treat CSV opened in spreadsheet software as data from the generating program.
+
 Example:
 
 ```fortran

@@ -498,27 +498,39 @@ contains
       character(len=:), allocatable :: summary_line
       character(len=*), parameter :: csv_path = 'test_mpi_summary_export.csv'
       integer :: avg_inclusive_col
+      integer :: avg_pct_col
+      integer :: avg_self_col
       integer :: avg_total_col
-      integer :: flags(16)
+      integer :: avg_call_count_col
+      integer :: flags(43)
       integer :: ierr
+      integer :: inclusive_imbalance_col
       integer :: max_inclusive_col
+      integer :: max_pct_col
       integer :: max_rank_col
+      integer :: max_self_col
+      integer :: max_call_count_col
       integer :: min_inclusive_col
+      integer :: min_pct_col
       integer :: min_rank_col
+      integer :: min_self_col
+      integer :: min_call_count_col
+      integer :: min_total_col
+      integer :: min_total_rank_col
       integer :: name_col
       integer :: node_col
       integer :: num_entries_col
       integer :: num_ranks_col
+      integer :: max_total_col
+      integer :: max_total_rank_col
       integer :: parent_col
       integer :: rank
       integer :: record_type_col
+      integer :: self_imbalance_col
       integer :: summary_kind_col
+      integer :: total_imbalance_col
       integer :: unit
       integer :: io
-      real(wp) :: avg_inclusive
-      real(wp) :: avg_total
-      real(wp) :: max_inclusive
-      real(wp) :: min_inclusive
 
       rank = this%getProcessRank()
       flags = 0
@@ -556,7 +568,12 @@ contains
          summary_kind_col = csv_column_index(header, 'summary_kind')
          num_entries_col = csv_column_index(header, 'num_entries')
          num_ranks_col = csv_column_index(header, 'num_ranks')
+         min_total_col = csv_column_index(header, 'min_total_time')
          avg_total_col = csv_column_index(header, 'avg_total_time')
+         max_total_col = csv_column_index(header, 'max_total_time')
+         min_total_rank_col = csv_column_index(header, 'min_total_time_rank')
+         max_total_rank_col = csv_column_index(header, 'max_total_time_rank')
+         total_imbalance_col = csv_column_index(header, 'total_time_imbalance')
          node_col = csv_column_index(header, 'node_id')
          parent_col = csv_column_index(header, 'parent_id')
          name_col = csv_column_index(header, 'name')
@@ -565,46 +582,64 @@ contains
          max_inclusive_col = csv_column_index(header, 'max_inclusive_time')
          min_rank_col = csv_column_index(header, 'min_inclusive_time_rank')
          max_rank_col = csv_column_index(header, 'max_inclusive_time_rank')
+         inclusive_imbalance_col = csv_column_index(header, 'inclusive_imbalance')
+         min_self_col = csv_column_index(header, 'min_self_time')
+         avg_self_col = csv_column_index(header, 'avg_self_time')
+         max_self_col = csv_column_index(header, 'max_self_time')
+         self_imbalance_col = csv_column_index(header, 'self_imbalance')
+         min_call_count_col = csv_column_index(header, 'min_call_count')
+         avg_call_count_col = csv_column_index(header, 'avg_call_count')
+         max_call_count_col = csv_column_index(header, 'max_call_count')
+         min_pct_col = csv_column_index(header, 'min_pct_time')
+         avg_pct_col = csv_column_index(header, 'avg_pct_time')
+         max_pct_col = csv_column_index(header, 'max_pct_time')
 
          if (record_type_col > 0) flags(2) = 1
-         field_text = csv_field_value(summary_line, summary_kind_col)
-         if (field_text == 'mpi') flags(3) = 1
-         field_text = csv_field_value(summary_line, record_type_col)
-         if (field_text == 'summary') flags(4) = 1
-         field_text = csv_field_value(summary_line, num_ranks_col)
-         if (field_text == '2') flags(5) = 1
-         field_text = csv_field_value(summary_line, num_entries_col)
-         if (field_text == '2') flags(6) = 1
-         field_text = csv_field_value(summary_line, avg_total_col)
-         read (field_text, *) avg_total
-         if (abs(avg_total - 12.0_wp) < 1.0e-12_wp) flags(7) = 1
+         if (csv_text_field_equals(summary_line, summary_kind_col, 'mpi')) flags(3) = 1
+         if (csv_text_field_equals(summary_line, record_type_col, 'summary')) flags(4) = 1
+         if (csv_text_field_equals(summary_line, num_ranks_col, '2')) flags(5) = 1
+         if (csv_text_field_equals(summary_line, num_entries_col, '2')) flags(6) = 1
+         if (csv_real_field_close(summary_line, min_total_col, 10.0_wp)) flags(7) = 1
+         if (csv_real_field_close(summary_line, avg_total_col, 12.0_wp)) flags(8) = 1
+         if (csv_real_field_close(summary_line, max_total_col, 14.0_wp)) flags(9) = 1
+         if (csv_text_field_equals(summary_line, min_total_rank_col, '0')) flags(10) = 1
+         if (csv_text_field_equals(summary_line, max_total_rank_col, '1')) flags(11) = 1
+         if (csv_real_field_close(summary_line, total_imbalance_col, 14.0_wp/12.0_wp)) flags(12) = 1
 
          field_text = csv_field_value(metadata_line, csv_column_index(header, 'value'))
-         if (field_text == 'mpi, "csv"') flags(8) = 1
+         if (field_text == 'mpi, "csv"') flags(13) = 1
 
-         field_text = csv_field_value(outer_line, name_col)
-         if (field_text == 'outer') flags(9) = 1
-         field_text = csv_field_value(outer_line, node_col)
-         if (field_text == '1') flags(10) = 1
-         field_text = csv_field_value(outer_line, parent_col)
-         if (field_text == '0') flags(11) = 1
-         field_text = csv_field_value(outer_line, min_inclusive_col)
-         read (field_text, *) min_inclusive
-         field_text = csv_field_value(outer_line, avg_inclusive_col)
-         read (field_text, *) avg_inclusive
-         field_text = csv_field_value(outer_line, max_inclusive_col)
-         read (field_text, *) max_inclusive
-         if (abs(min_inclusive - 10.0_wp) < 1.0e-12_wp) flags(12) = 1
-         if (abs(avg_inclusive - 12.0_wp) < 1.0e-12_wp) flags(13) = 1
-         if (abs(max_inclusive - 14.0_wp) < 1.0e-12_wp) flags(14) = 1
+         if (csv_text_field_equals(outer_line, name_col, 'outer')) flags(14) = 1
+         if (csv_text_field_equals(outer_line, node_col, '1')) flags(15) = 1
+         if (csv_text_field_equals(outer_line, parent_col, '0')) flags(16) = 1
+         if (csv_real_field_close(outer_line, min_inclusive_col, 10.0_wp)) flags(17) = 1
+         if (csv_real_field_close(outer_line, avg_inclusive_col, 12.0_wp)) flags(18) = 1
+         if (csv_real_field_close(outer_line, max_inclusive_col, 14.0_wp)) flags(19) = 1
+         if (csv_real_field_close(outer_line, inclusive_imbalance_col, 14.0_wp/12.0_wp)) flags(20) = 1
+         if (csv_real_field_close(outer_line, min_self_col, 6.0_wp)) flags(21) = 1
+         if (csv_real_field_close(outer_line, avg_self_col, 7.0_wp)) flags(22) = 1
+         if (csv_real_field_close(outer_line, max_self_col, 8.0_wp)) flags(23) = 1
+         if (csv_real_field_close(outer_line, self_imbalance_col, 8.0_wp/7.0_wp)) flags(24) = 1
+         if (csv_text_field_equals(outer_line, min_call_count_col, '1')) flags(25) = 1
+         if (csv_real_field_close(outer_line, avg_call_count_col, 1.0_wp)) flags(26) = 1
+         if (csv_text_field_equals(outer_line, max_call_count_col, '1')) flags(27) = 1
+         if (csv_real_field_close(outer_line, min_pct_col, 100.0_wp)) flags(28) = 1
+         if (csv_real_field_close(outer_line, avg_pct_col, 100.0_wp)) flags(29) = 1
+         if (csv_real_field_close(outer_line, max_pct_col, 100.0_wp)) flags(30) = 1
 
-         field_text = csv_field_value(inner_line, parent_col)
-         if (field_text == '1') flags(15) = 1
-         field_text = csv_field_value(inner_line, min_rank_col)
-         if (field_text == '0') then
-            field_text = csv_field_value(inner_line, max_rank_col)
-            if (field_text == '1') flags(16) = 1
-         end if
+         if (csv_text_field_equals(inner_line, parent_col, '1')) flags(31) = 1
+         if (csv_text_field_equals(inner_line, min_rank_col, '0')) flags(32) = 1
+         if (csv_text_field_equals(inner_line, max_rank_col, '1')) flags(33) = 1
+         if (csv_real_field_close(inner_line, min_self_col, 4.0_wp)) flags(34) = 1
+         if (csv_real_field_close(inner_line, avg_self_col, 5.0_wp)) flags(35) = 1
+         if (csv_real_field_close(inner_line, max_self_col, 6.0_wp)) flags(36) = 1
+         if (csv_real_field_close(inner_line, self_imbalance_col, 6.0_wp/5.0_wp)) flags(37) = 1
+         if (csv_text_field_equals(inner_line, min_call_count_col, '1')) flags(38) = 1
+         if (csv_real_field_close(inner_line, avg_call_count_col, 1.0_wp)) flags(39) = 1
+         if (csv_text_field_equals(inner_line, max_call_count_col, '1')) flags(40) = 1
+         if (csv_real_field_close(inner_line, min_pct_col, 40.0_wp)) flags(41) = 1
+         if (csv_real_field_close(inner_line, avg_pct_col, 0.5_wp*(40.0_wp + 100.0_wp*6.0_wp/14.0_wp))) flags(42) = 1
+         if (csv_real_field_close(inner_line, max_pct_col, 100.0_wp*6.0_wp/14.0_wp)) flags(43) = 1
 
          open (newunit=unit, file=csv_path, status='old', iostat=io)
          if (io == 0) close (unit, status='delete')
@@ -629,10 +664,87 @@ contains
       @assertEqual(1, flags(14))
       @assertEqual(1, flags(15))
       @assertEqual(1, flags(16))
+      @assertEqual(1, flags(17))
+      @assertEqual(1, flags(18))
+      @assertEqual(1, flags(19))
+      @assertEqual(1, flags(20))
+      @assertEqual(1, flags(21))
+      @assertEqual(1, flags(22))
+      @assertEqual(1, flags(23))
+      @assertEqual(1, flags(24))
+      @assertEqual(1, flags(25))
+      @assertEqual(1, flags(26))
+      @assertEqual(1, flags(27))
+      @assertEqual(1, flags(28))
+      @assertEqual(1, flags(29))
+      @assertEqual(1, flags(30))
+      @assertEqual(1, flags(31))
+      @assertEqual(1, flags(32))
+      @assertEqual(1, flags(33))
+      @assertEqual(1, flags(34))
+      @assertEqual(1, flags(35))
+      @assertEqual(1, flags(36))
+      @assertEqual(1, flags(37))
+      @assertEqual(1, flags(38))
+      @assertEqual(1, flags(39))
+      @assertEqual(1, flags(40))
+      @assertEqual(1, flags(41))
+      @assertEqual(1, flags(42))
+      @assertEqual(1, flags(43))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_write_summary_csv_emits_parseable_global_records
+
+   @test
+   subroutine test_mpi_write_summary_csv_appends_without_duplicate_header(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      character(len=*), parameter :: csv_path = 'test_mpi_summary_append_export.csv'
+      integer :: flags(2)
+      integer :: ierr
+      integer :: rank
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_nested_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) call delete_if_exists(csv_path)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      @assertEqual(MPI_SUCCESS, ierr)
+
+      call timer%write_mpi_summary_csv(csv_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%write_mpi_summary_csv(csv_path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      @assertEqual(MPI_SUCCESS, ierr)
+
+      if (rank == 0) then
+         csv_text = read_file_text(csv_path)
+         header = csv_line_at(csv_text, 1)
+         if (csv_record_count(csv_text) == 7) flags(1) = 1
+         if (count_csv_header_records(csv_text, header) == 1) flags(2) = 1
+         call delete_if_exists(csv_path)
+      end if
+
+      call MPI_Bcast(flags, size(flags), MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+      @assertEqual(MPI_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_write_summary_csv_appends_without_duplicate_header
 
    @test
    subroutine test_mpi_write_summary_syncs_io_error(this)
@@ -664,6 +776,37 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_write_summary_syncs_io_error
+
+   @test
+   subroutine test_mpi_write_summary_csv_syncs_io_error(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      integer :: ierr
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+
+      call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_nested_timers(timer, this%getProcessRank(), ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_mpi_summary_csv('/no_such_dir/test_mpi_summary.csv', ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+
+      call MPI_Allreduce(ierr, min_err, 1, MPI_INTEGER, MPI_MIN, MPI_COMM_WORLD, mpierr)
+      @assertEqual(MPI_SUCCESS, mpierr)
+      call MPI_Allreduce(ierr, max_err, 1, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, mpierr)
+      @assertEqual(MPI_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_IO, min_err)
+      @assertEqual(FTIMER_ERR_IO, max_err)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_write_summary_csv_syncs_io_error
 
    subroutine build_nested_timers(timer, rank, ierr)
       class(ftimer_t), intent(inout) :: timer
@@ -898,6 +1041,47 @@ contains
       diff = abs(actual - expected)
       @assertTrue(diff < 1.0e-12_wp)
    end subroutine assert_real_close
+
+   logical function csv_text_field_equals(line, column, expected) result(matches)
+      character(len=*), intent(in) :: line
+      integer, intent(in) :: column
+      character(len=*), intent(in) :: expected
+      character(len=:), allocatable :: actual
+
+      actual = csv_field_value(line, column)
+      matches = actual == expected
+   end function csv_text_field_equals
+
+   logical function csv_real_field_close(line, column, expected) result(matches)
+      character(len=*), intent(in) :: line
+      integer, intent(in) :: column
+      real(wp), intent(in) :: expected
+      character(len=:), allocatable :: field_text
+      integer :: io
+      real(wp) :: actual
+
+      matches = .false.
+      field_text = csv_field_value(line, column)
+      if (len_trim(field_text) <= 0) return
+
+      read (field_text, *, iostat=io) actual
+      if (io /= 0) return
+
+      matches = abs(actual - expected) < 1.0e-12_wp
+   end function csv_real_field_close
+
+   integer function count_csv_header_records(text, header) result(count)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: header
+      character(len=:), allocatable :: line
+      integer :: i
+
+      count = 0
+      do i = 1, csv_record_count(text)
+         line = csv_line_at(text, i)
+         if (line == header) count = count + 1
+      end do
+   end function count_csv_header_records
 
    subroutine assert_summary_equal(lhs, rhs)
       type(ftimer_mpi_summary_t), intent(in) :: lhs

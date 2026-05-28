@@ -10,6 +10,7 @@ module ftimer_summary
    public :: format_summary_csv
    public :: format_mpi_summary
    public :: ftimer_summary_status
+   public :: summary_csv_header_line
 
 contains
 
@@ -275,15 +276,20 @@ contains
    subroutine append_summary_csv_header(text)
       character(len=:), allocatable, intent(inout) :: text
 
-      call append_line(text, &
-                       'format_version,summary_kind,record_type,key,value,start_date,end_date,total_time,'// &
-                       'num_entries,has_active_timers,num_ranks,min_total_time,avg_total_time,max_total_time,'// &
-                       'min_total_time_rank,max_total_time_rank,total_time_imbalance,node_id,parent_id,depth,'// &
-                       'name,inclusive_time,self_time,call_count,avg_time,pct_time,is_active,min_inclusive_time,'// &
-                       'avg_inclusive_time,max_inclusive_time,min_inclusive_time_rank,max_inclusive_time_rank,'// &
-                       'inclusive_imbalance,min_self_time,avg_self_time,max_self_time,self_imbalance,'// &
-                       'min_call_count,avg_call_count,max_call_count,min_pct_time,avg_pct_time,max_pct_time')
+      call append_line(text, summary_csv_header_line())
    end subroutine append_summary_csv_header
+
+   function summary_csv_header_line() result(header)
+      character(len=:), allocatable :: header
+
+      header = 'format_version,summary_kind,record_type,key,value,start_date,end_date,total_time,'// &
+               'num_entries,has_active_timers,num_ranks,min_total_time,avg_total_time,max_total_time,'// &
+               'min_total_time_rank,max_total_time_rank,total_time_imbalance,node_id,parent_id,depth,'// &
+               'name,inclusive_time,self_time,call_count,avg_time,pct_time,is_active,min_inclusive_time,'// &
+               'avg_inclusive_time,max_inclusive_time,min_inclusive_time_rank,max_inclusive_time_rank,'// &
+               'inclusive_imbalance,min_self_time,avg_self_time,max_self_time,self_imbalance,'// &
+               'min_call_count,avg_call_count,max_call_count,min_pct_time,avg_pct_time,max_pct_time'
+   end function summary_csv_header_line
 
    subroutine append_local_summary_csv_record(text, summary)
       character(len=:), allocatable, intent(inout) :: text

@@ -3,7 +3,7 @@ submodule(ftimer_core) ftimer_core_summary_bindings
    use ftimer_clock, only: ftimer_date_string
    use ftimer_mpi, only: build_mpi_summary, check_mpi_summary_prereqs, get_mpi_summary_comm_info
    use ftimer_summary, only: build_summary, format_mpi_summary, format_mpi_summary_csv, format_summary, &
-                             format_summary_csv
+                             format_summary_csv, summary_csv_header_line
    use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_UNKNOWN, &
                            ftimer_mpi_summary_t, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
@@ -121,6 +121,7 @@ contains
    character(len=:), allocatable :: text
    character(len=256) :: iomsg
    integer :: file_unit
+   integer :: header_status
    integer :: io
    logical :: append_mode
    logical :: include_header
@@ -132,7 +133,11 @@ contains
 
    append_mode = .false.
    if (present(append)) append_mode = append
-   include_header = csv_header_needed(filename, append_mode)
+   call get_csv_header_mode(filename, append_mode, include_header, header_status, iomsg)
+   if (header_status /= FTIMER_SUCCESS) then
+      call report_summary_status(ierr, header_status, "ftimer write_summary_csv append validation failed: "//trim(iomsg))
+      return
+   end if
 
    call build_current_summary(self, summary)
    call format_summary_csv(summary, text, metadata, include_header=include_header)
@@ -323,6 +328,7 @@ contains
    integer :: active_comm
    integer :: collective_status
    integer :: file_unit
+   integer :: header_status
    integer :: io
    integer :: mpierr
    integer :: nprocs
@@ -361,29 +367,34 @@ contains
    collective_status = FTIMER_SUCCESS
    collective_message = ''
    if (rank == 0) then
-      include_header = csv_header_needed(filename, append_mode)
-      call format_mpi_summary_csv(summary, text, metadata, include_header=include_header)
-
-      if (append_mode) then
-         open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', iostat=io, iomsg=iomsg)
+      call get_csv_header_mode(filename, append_mode, include_header, header_status, iomsg)
+      if (header_status /= FTIMER_SUCCESS) then
+         collective_status = header_status
+         collective_message = "ftimer write_mpi_summary_csv append validation failed: "//trim(iomsg)
       else
-         open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
-      end if
+         call format_mpi_summary_csv(summary, text, metadata, include_header=include_header)
 
-      if (io /= 0) then
-         collective_status = FTIMER_ERR_IO
-         collective_message = "ftimer write_mpi_summary_csv open failed: "//trim(iomsg)
-      else
-         call write_text_block(file_unit, text, io, iomsg)
-         if (io /= 0) then
-            close (file_unit)
-            collective_status = FTIMER_ERR_IO
-            collective_message = "ftimer write_mpi_summary_csv write failed: "//trim(iomsg)
+         if (append_mode) then
+            open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', iostat=io, iomsg=iomsg)
          else
-            close (file_unit, iostat=io, iomsg=iomsg)
+            open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+         end if
+
+         if (io /= 0) then
+            collective_status = FTIMER_ERR_IO
+            collective_message = "ftimer write_mpi_summary_csv open failed: "//trim(iomsg)
+         else
+            call write_text_block(file_unit, text, io, iomsg)
             if (io /= 0) then
                collective_status = FTIMER_ERR_IO
-               collective_message = "ftimer write_mpi_summary_csv close failed: "//trim(iomsg)
+               collective_message = "ftimer write_mpi_summary_csv write failed: "//trim(iomsg)
+               close (file_unit)
+            else
+               close (file_unit, iostat=io, iomsg=iomsg)
+               if (io /= 0) then
+                  collective_status = FTIMER_ERR_IO
+                  collective_message = "ftimer write_mpi_summary_csv close failed: "//trim(iomsg)
+               end if
             end if
          end if
       end if
@@ -523,20 +534,54 @@ contains
       end select
    end subroutine report_mpi_summary_error
 
-   logical function csv_header_needed(filename, append_mode) result(needed)
+   subroutine get_csv_header_mode(filename, append_mode, include_header, status, iomsg)
       character(len=*), intent(in) :: filename
       logical, intent(in) :: append_mode
+      logical, intent(out) :: include_header
+      integer, intent(out) :: status
+      character(len=*), intent(out) :: iomsg
+      character(len=:), allocatable :: expected_header
+      character(len=2048) :: first_line
       integer :: file_size
+      integer :: file_unit
+      integer :: io
       logical :: exists
 
-      needed = .true.
+      include_header = .true.
+      status = FTIMER_SUCCESS
+      iomsg = ''
       if (.not. append_mode) return
 
       exists = .false.
       file_size = 0
       inquire (file=filename, exist=exists, size=file_size)
-      if (exists .and. (file_size > 0)) needed = .false.
-   end function csv_header_needed
+      if (.not. exists) return
+      if (file_size <= 0) return
+
+      expected_header = summary_csv_header_line()
+      first_line = ''
+
+      open (newunit=file_unit, file=filename, status='old', action='read', iostat=io, iomsg=iomsg)
+      if (io /= 0) then
+         status = FTIMER_ERR_IO
+         return
+      end if
+
+      read (file_unit, '(a)', iostat=io, iomsg=iomsg) first_line
+      close (file_unit)
+      if (io /= 0) then
+         status = FTIMER_ERR_IO
+         return
+      end if
+
+      if (trim(first_line) /= expected_header) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing CSV header does not match fTimer CSV format_version 1'
+         return
+      end if
+
+      include_header = .false.
+   end subroutine get_csv_header_mode
 
    subroutine write_text_block(unit, text, io, iomsg)
       integer, intent(in) :: unit
