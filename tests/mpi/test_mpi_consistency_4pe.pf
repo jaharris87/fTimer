@@ -170,10 +170,10 @@ contains
       integer :: capture_ierr
       integer :: color
       integer :: comm_rank
-      integer :: global_flags(4)
+      integer :: global_flags(5)
       integer :: ierr
       integer :: rank
-      integer :: root_flags(4)
+      integer :: root_flags(5)
       integer :: saved_fd
       integer :: split_comm
 
@@ -206,6 +206,7 @@ contains
          if (index(captured, 'ranks 1') > 0) root_flags(2) = 1
          if (index(captured, 'descriptor') > 0) root_flags(3) = 1
          if ((summary%num_ranks == 0) .and. (summary%num_entries == 0)) root_flags(4) = 1
+         if (index(captured, 'ranks 1,') == 0) root_flags(5) = 1
       else
          call timer%mpi_summary(summary, ierr=ierr)
          @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
@@ -218,6 +219,7 @@ contains
       @assertEqual(2, global_flags(2))
       @assertEqual(2, global_flags(3))
       @assertEqual(2, global_flags(4))
+      @assertEqual(2, global_flags(5))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -229,17 +231,20 @@ contains
    subroutine test_mpi_summary_marks_truncated_rank_diagnostic(this)
       class(mpi_consistency_4pe_case), intent(inout) :: this
       character(len=96) :: diagnostic
+      character(len=140) :: partial_diagnostic
       type(ftimer_t) :: timer
       type(ftimer_mpi_summary_t) :: mpi_summary
       type(ftimer_summary_t) :: local_summary
-      integer :: flags(3)
+      integer :: flags(6)
       integer :: ierr
+      integer :: partial_status
       integer :: rank
       integer :: status
 
       rank = this%getProcessRank()
       flags = 0
       diagnostic = ''
+      partial_diagnostic = ''
 
       call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -252,14 +257,21 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       call build_mpi_summary(local_summary, MPI_COMM_WORLD, mpi_summary, status, diagnostic)
+      call build_mpi_summary(local_summary, MPI_COMM_WORLD, mpi_summary, partial_status, partial_diagnostic)
 
-      if (status == FTIMER_ERR_MPI_INCON) flags(1) = 1
+      if ((status == FTIMER_ERR_MPI_INCON) .and. (partial_status == FTIMER_ERR_MPI_INCON)) flags(1) = 1
       if (index(diagnostic, 'truncated') > 0) flags(2) = 1
       if ((mpi_summary%num_ranks == 0) .and. (mpi_summary%num_entries == 0)) flags(3) = 1
+      if (index(partial_diagnostic, 'ranks 1') > 0) flags(4) = 1
+      if (index(partial_diagnostic, '...') > 0) flags(5) = 1
+      if (index(partial_diagnostic, 'truncated') == 0) flags(6) = 1
 
       @assertEqual(1, flags(1))
       @assertEqual(1, flags(2))
       @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)

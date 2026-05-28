@@ -114,7 +114,7 @@ The CMake source order reflects the real dependency order:
 
 `ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, and self-time computation are assembled for local reporting.
 
-`ftimer_mpi.F90` is an internal MPI summary helper module. It adds cross-rank behavior on top of local summaries, verifies that all ranks agree on the timer descriptor set before any collective reduction, and then populates reduced MPI fields only where that contract allows.
+`ftimer_mpi.F90` is an internal MPI summary helper module. It adds cross-rank behavior on top of local summaries, uses communicator-wide preflight collectives to verify that all ranks agree on the timer descriptor set, and then populates reduced MPI fields only where that contract allows.
 
 `ftimer.F90` exposes the procedural API by forwarding to the default saved `ftimer_t` instance. Shared types and constants still come from `ftimer_types`; they are not re-exported from `ftimer`.
 

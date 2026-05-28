@@ -836,7 +836,7 @@ contains
       diagnostic = base_message
       rank_list = ''
       truncated = .false.
-      available_len = len(diagnostic) - len_trim(base_message) - len_trim(rank_prefix)
+      available_len = len(diagnostic) - len_trim(base_message) - len(rank_prefix)
 
       if (available_len < 3) then
          diagnostic = truncated_message
