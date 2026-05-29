@@ -136,6 +136,10 @@ The current implementation is organized around a few design choices that show up
 - MPI timed regions are rank-local wall-clock intervals unless the caller adds
   synchronization; `mpi_summary()` reduces the recorded intervals but does not
   imply phase-entry or phase-exit barriers.
+- MPI-enabled fTimer is used inside the MPI runtime lifetime: after
+  `MPI_Init` and before `MPI_Finalize`. The communicator captured by
+  `init(comm=...)` is a non-owning handle that the caller must keep valid while
+  fTimer summaries, reports, finalization, or reinitialization may use it.
 - OpenMP support is intentionally narrow: guarded timer operations run only on the master thread when `FTIMER_USE_OPENMP=ON`, so this path should not be read as general hybrid-thread timing support.
 
 Those runtime semantics are specified in detail in [`docs/semantics.md`](semantics.md); this document focuses on how the repository realizes them.
@@ -179,6 +183,8 @@ Important current-state API notes:
 
 - `ierr` is now the last optional argument in the `init` signatures. Keywords are recommended for readability.
 - In MPI builds, the primary communicator argument is `type(MPI_Comm)` from `mpi_f08`; integer communicator handles are accepted only as transitional compatibility pending #187.
+- In MPI builds, fTimer must be used after `MPI_Init` and before
+  `MPI_Finalize`; communicator arguments are borrowed, not duplicated or owned.
 - `init`, `reset`, and `finalize` treat active timers as an error in both API styles. With `ierr` they return `FTIMER_ERR_ACTIVE`; without `ierr` they warn and leave state untouched rather than force-stopping or cleaning up implicitly. In `FTIMER_USE_OPENMP=ON` builds, that lifecycle-diagnostic contract applies on the master thread; non-master lifecycle calls remain suppressed no-ops.
 - Repairing stop mismatches remains an explicit `mismatch_mode` decision; omitted `ierr` alone is not a recovery mode.
 - Name-based `start`/`stop` remains the default user path. `lookup()` plus `start_id()`/`stop_id()` is documented as an optional cached-id hot path rather than a separate primary workflow.
