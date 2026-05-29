@@ -3,7 +3,7 @@ submodule(ftimer_core) ftimer_core_summary_bindings
    use ftimer_clock, only: ftimer_date_string
    use ftimer_mpi, only: build_mpi_summary, build_mpi_union_summary, check_mpi_summary_prereqs, &
                          get_mpi_summary_comm_info
-   use ftimer_summary, only: build_summary, format_mpi_summary, format_summary
+   use ftimer_summary, only: build_summary, format_mpi_summary, format_mpi_union_summary, format_summary
    use ftimer_types, only: FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_UNKNOWN, &
                            ftimer_metadata_t, ftimer_mpi_summary_entry_t, ftimer_mpi_summary_t, &
                            ftimer_mpi_union_summary_t, ftimer_summary_entry_t, ftimer_summary_t, wp
@@ -465,6 +465,172 @@ contains
 
    if (present(ierr)) ierr = FTIMER_SUCCESS
    end procedure write_mpi_summary_csv
+
+   module procedure print_mpi_union_summary
+   type(ftimer_mpi_union_summary_t) :: summary
+   character(len=:), allocatable :: text
+   character(len=256) :: diagnostic
+   character(len=256) :: iomsg
+   integer :: io
+   integer :: nprocs
+   integer :: out_unit
+   integer :: rank
+   integer :: status
+#ifdef FTIMER_USE_MPI
+   type(MPI_Comm) :: active_comm
+#else
+   integer :: active_comm
+#endif
+
+   if (.not. self%initialized) then
+      call report_summary_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer print_mpi_union_summary before init")
+      return
+   end if
+
+   call build_current_mpi_union_summary(self, summary, status, diagnostic)
+   if (status /= FTIMER_SUCCESS) then
+      call report_mpi_union_summary_error(ierr, status, diagnostic)
+      return
+   end if
+
+   call format_mpi_union_summary(summary, text, metadata)
+
+#ifdef FTIMER_USE_MPI
+   if (self%mpi_comm_was_present) then
+      call get_mpi_summary_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+   else
+      call get_mpi_summary_comm_info(active_comm=active_comm, rank=rank, nprocs=nprocs, status=status)
+   end if
+#else
+   active_comm = -1
+   rank = 0
+   nprocs = 1
+   status = FTIMER_ERR_NOT_IMPLEMENTED
+#endif
+   if (status /= FTIMER_SUCCESS) then
+      call report_summary_status(ierr, status, "ftimer print_mpi_union_summary communicator lookup failed")
+      return
+   end if
+
+   if (rank /= 0) then
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+      return
+   end if
+
+   out_unit = output_unit
+   if (present(unit)) out_unit = unit
+
+   call write_text_block(out_unit, text, io, iomsg)
+   if (io /= 0) then
+      call report_summary_status(ierr, FTIMER_ERR_IO, "ftimer print_mpi_union_summary write failed: "//trim(iomsg))
+      return
+   end if
+
+   if (present(ierr)) ierr = FTIMER_SUCCESS
+   end procedure print_mpi_union_summary
+
+   module procedure write_mpi_union_summary
+   type(ftimer_mpi_union_summary_t) :: summary
+   character(len=:), allocatable :: text
+   character(len=256) :: diagnostic
+   character(len=256) :: collective_message
+   character(len=256) :: iomsg
+   integer :: collective_status
+   integer :: file_unit
+   integer :: io
+   integer :: mpierr
+   integer :: nprocs
+   integer :: rank
+   integer :: status
+   logical :: append_mode
+#ifdef FTIMER_USE_MPI
+   type(MPI_Comm) :: active_comm
+#else
+   integer :: active_comm
+#endif
+
+   if (.not. self%initialized) then
+      call report_summary_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer write_mpi_union_summary before init")
+      return
+   end if
+
+   call build_current_mpi_union_summary(self, summary, status, diagnostic)
+   if (status /= FTIMER_SUCCESS) then
+      call report_mpi_union_summary_error(ierr, status, diagnostic)
+      return
+   end if
+
+   call format_mpi_union_summary(summary, text, metadata)
+
+#ifdef FTIMER_USE_MPI
+   if (self%mpi_comm_was_present) then
+      call get_mpi_summary_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+   else
+      call get_mpi_summary_comm_info(active_comm=active_comm, rank=rank, nprocs=nprocs, status=status)
+   end if
+#else
+   active_comm = -1
+   rank = 0
+   nprocs = 1
+   status = FTIMER_ERR_NOT_IMPLEMENTED
+#endif
+   if (status /= FTIMER_SUCCESS) then
+      call report_summary_status(ierr, status, "ftimer write_mpi_union_summary communicator lookup failed")
+      return
+   end if
+
+   append_mode = .false.
+   if (present(append)) append_mode = append
+
+   collective_status = FTIMER_SUCCESS
+   collective_message = ''
+   if (rank == 0) then
+      if (append_mode) then
+         open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', iostat=io, iomsg=iomsg)
+      else
+         open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+      end if
+
+      if (io /= 0) then
+         collective_status = FTIMER_ERR_IO
+         collective_message = "ftimer write_mpi_union_summary open failed: "//trim(iomsg)
+      else
+         call write_text_block(file_unit, text, io, iomsg)
+         if (io /= 0) then
+            close (file_unit)
+            collective_status = FTIMER_ERR_IO
+            collective_message = "ftimer write_mpi_union_summary write failed: "//trim(iomsg)
+         else
+            close (file_unit, iostat=io, iomsg=iomsg)
+            if (io /= 0) then
+               collective_status = FTIMER_ERR_IO
+               collective_message = "ftimer write_mpi_union_summary close failed: "//trim(iomsg)
+            end if
+         end if
+      end if
+   end if
+
+#ifdef FTIMER_USE_MPI
+   call MPI_Bcast(collective_status, 1, MPI_INTEGER, 0, active_comm, mpierr)
+   if (mpierr /= MPI_SUCCESS) then
+      call report_summary_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer write_mpi_union_summary status sync failed")
+      return
+   end if
+
+   call MPI_Bcast(collective_message, len(collective_message), MPI_CHARACTER, 0, active_comm, mpierr)
+   if (mpierr /= MPI_SUCCESS) then
+      call report_summary_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer write_mpi_union_summary message sync failed")
+      return
+   end if
+#endif
+
+   if (collective_status /= FTIMER_SUCCESS) then
+      call report_summary_status(ierr, collective_status, trim(collective_message))
+      return
+   end if
+
+   if (present(ierr)) ierr = FTIMER_SUCCESS
+   end procedure write_mpi_union_summary
 
    subroutine build_current_summary(self, summary)
       class(ftimer_t), intent(in) :: self

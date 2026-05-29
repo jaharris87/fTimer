@@ -8,7 +8,8 @@ module test_mpi_summary
                       MPI_F08_MAX => MPI_MAX, MPI_F08_MIN => MPI_MIN, MPI_F08_SUCCESS => MPI_SUCCESS, &
                       MPI_F08_SUM => MPI_SUM
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
-                     ftimer_mpi_union_summary, ftimer_print_mpi_summary, ftimer_start, ftimer_stop
+                     ftimer_mpi_union_summary, ftimer_print_mpi_summary, ftimer_start, ftimer_stop, &
+                     ftimer_write_mpi_union_summary
    use ftimer_core, only: ftimer_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MPI_INCON, FTIMER_NAME_LEN, &
                            FTIMER_SUCCESS, ftimer_metadata_t, ftimer_mpi_summary_t, &
@@ -892,6 +893,264 @@ contains
    end subroutine test_mpi_print_summary_emits_global_report
 
    @test
+   subroutine test_mpi_union_write_summary_reports_sparse_participation(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: printed
+      character(len=*), parameter :: strict_path = 'test_mpi_sparse_strict_report.txt'
+      character(len=*), parameter :: union_path = 'test_mpi_union_report.txt'
+      integer :: flags(19)
+      integer :: ierr
+      integer :: max_rank
+      integer :: min_rank
+      integer :: missing
+      integer :: participating
+      integer :: rank
+      logical :: found
+      logical :: strict_exists
+      real(wp) :: avg_calls
+      real(wp) :: avg_incl
+      real(wp) :: avg_pct
+      real(wp) :: avg_self
+      real(wp) :: imbalance
+      real(wp) :: max_incl
+      real(wp) :: min_incl
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_common_plus_sparse_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) then
+         call delete_if_exists(strict_path)
+         call delete_if_exists(union_path)
+      end if
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_summary(strict_path, ierr=ierr)
+      @assertEqual(FTIMER_ERR_MPI_INCON, ierr)
+
+      call timer%write_mpi_union_summary(union_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         inquire (file=strict_path, exist=strict_exists)
+         if (.not. strict_exists) flags(1) = 1
+
+         printed = read_file_text(union_path)
+         if (index(printed, 'Sparse MPI union summary') > 0) flags(2) = 1
+         if (index(printed, 'participating ranks only') > 0) flags(3) = 1
+         if (index(printed, 'missing ranks are not zero-filled') > 0) flags(4) = 1
+         if (index(printed, 'Participating') > 0) flags(5) = 1
+         if (index(printed, 'Missing') > 0) flags(6) = 1
+
+         found = union_report_row_values(printed, 'common', participating, missing, min_incl, min_rank, &
+                                         avg_incl, max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct)
+         if (found) flags(7) = 1
+         if (participating == 2) flags(8) = 1
+         if (missing == 0) flags(9) = 1
+         if (real_close(avg_incl, 5.0_wp)) flags(10) = 1
+
+         found = union_report_row_values(printed, 'rank_zero', participating, missing, min_incl, min_rank, &
+                                         avg_incl, max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct)
+         if (found) flags(11) = 1
+         if (participating == 1) flags(12) = 1
+         if (missing == 1) flags(13) = 1
+         if (real_close(min_incl, 3.0_wp)) flags(14) = 1
+         if (real_close(avg_incl, 3.0_wp)) flags(15) = 1
+         if (real_close(max_incl, 3.0_wp)) flags(16) = 1
+         if (min_rank == 0) flags(17) = 1
+         if (max_rank == 0) flags(18) = 1
+         if (real_close(avg_pct, 42.86_wp)) flags(19) = 1
+
+         call delete_if_exists(union_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
+      @assertEqual(1, flags(7))
+      @assertEqual(1, flags(8))
+      @assertEqual(1, flags(9))
+      @assertEqual(1, flags(10))
+      @assertEqual(1, flags(11))
+      @assertEqual(1, flags(12))
+      @assertEqual(1, flags(13))
+      @assertEqual(1, flags(14))
+      @assertEqual(1, flags(15))
+      @assertEqual(1, flags(16))
+      @assertEqual(1, flags(17))
+      @assertEqual(1, flags(18))
+      @assertEqual(1, flags(19))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_write_summary_reports_sparse_participation
+
+   @test
+   subroutine test_mpi_union_print_summary_counts_zero_elapsed_present_timer(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: printed
+      character(len=*), parameter :: print_path = 'test_mpi_union_zero_elapsed_report.txt'
+      integer :: flags(8)
+      integer :: ierr
+      integer :: max_rank
+      integer :: min_rank
+      integer :: missing
+      integer :: participating
+      integer :: rank
+      integer :: unit
+      logical :: found
+      real(wp) :: avg_calls
+      real(wp) :: avg_incl
+      real(wp) :: avg_pct
+      real(wp) :: avg_self
+      real(wp) :: imbalance
+      real(wp) :: max_incl
+      real(wp) :: min_incl
+
+      rank = this%getProcessRank()
+      flags = 0
+      fake_time = 0.0_wp
+
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) then
+         call timer%start("zero_elapsed", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         call timer%stop("zero_elapsed", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end if
+
+      if (rank == 0) then
+         call delete_if_exists(print_path)
+         open (newunit=unit, file=print_path, status='replace', action='write', iostat=ierr)
+         @assertEqual(0, ierr)
+         call timer%print_mpi_union_summary(unit=unit, ierr=ierr)
+         close (unit)
+      else
+         call timer%print_mpi_union_summary(ierr=ierr)
+      end if
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         printed = read_file_text(print_path)
+         found = union_report_row_values(printed, 'zero_elapsed', participating, missing, min_incl, min_rank, &
+                                         avg_incl, max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct)
+         if (found) flags(1) = 1
+         if (participating == 1) flags(2) = 1
+         if (missing == 1) flags(3) = 1
+         if (real_close(min_incl, 0.0_wp)) flags(4) = 1
+         if (real_close(avg_incl, 0.0_wp)) flags(5) = 1
+         if (real_close(max_incl, 0.0_wp)) flags(6) = 1
+         if (real_close(avg_calls, 1.0_wp)) flags(7) = 1
+         if (real_close(avg_pct, 0.0_wp)) flags(8) = 1
+         call delete_if_exists(print_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
+      @assertEqual(1, flags(7))
+      @assertEqual(1, flags(8))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_print_summary_counts_zero_elapsed_present_timer
+
+   @test
+   subroutine test_procedural_mpi_union_write_summary_matches_oop_report(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: oop_timer
+      character(len=:), allocatable :: oop_text
+      character(len=:), allocatable :: procedural_text
+      character(len=*), parameter :: oop_path = 'test_mpi_union_oop_report.txt'
+      character(len=*), parameter :: procedural_path = 'test_mpi_union_procedural_report.txt'
+      integer :: flags(2)
+      integer :: ierr
+      integer :: rank
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      fake_time = 0.0_wp
+      call oop_timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call oop_timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_default_instance%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call build_common_plus_sparse_timers(oop_timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call build_common_plus_sparse_timers_procedural(rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) then
+         call delete_if_exists(oop_path)
+         call delete_if_exists(procedural_path)
+      end if
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call oop_timer%write_mpi_union_summary(oop_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_write_mpi_union_summary(procedural_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         oop_text = read_file_text(oop_path)
+         procedural_text = read_file_text(procedural_path)
+         if (oop_text == procedural_text) flags(1) = 1
+         if (index(procedural_text, 'rank_zero') > 0) flags(2) = 1
+         call delete_if_exists(oop_path)
+         call delete_if_exists(procedural_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_mpi_union_write_summary_matches_oop_report
+
+   @test
    subroutine test_mpi_write_summary_csv_emits_parseable_global_records(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
@@ -1559,6 +1818,29 @@ contains
       end if
    end subroutine build_common_plus_sparse_timers
 
+   subroutine build_common_plus_sparse_timers_procedural(rank, ierr)
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      call ftimer_start("common", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 4.0_wp + 2.0_wp*real(rank, wp)
+      call ftimer_stop("common", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      if (rank == 0) then
+         call ftimer_start("rank_zero", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 7.0_wp
+         call ftimer_stop("rank_zero", ierr=ierr)
+      else
+         fake_time = 6.0_wp
+      end if
+   end subroutine build_common_plus_sparse_timers_procedural
+
    subroutine build_nested_sparse_union_timers(timer, rank, ierr)
       class(ftimer_t), intent(inout) :: timer
       integer, intent(in) :: rank
@@ -1767,6 +2049,76 @@ contains
       diff = abs(actual - expected)
       @assertTrue(diff < 1.0e-12_wp)
    end subroutine assert_real_close
+
+   logical function real_close(actual, expected) result(matches)
+      real(wp), intent(in) :: actual
+      real(wp), intent(in) :: expected
+
+      matches = abs(actual - expected) < 1.0e-12_wp
+   end function real_close
+
+   logical function union_report_row_values(text, timer_name, participating, missing, min_incl, min_rank, &
+                                            avg_incl, max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct) &
+      result(found)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: timer_name
+      integer, intent(out) :: participating
+      integer, intent(out) :: missing
+      real(wp), intent(out) :: min_incl
+      integer, intent(out) :: min_rank
+      real(wp), intent(out) :: avg_incl
+      real(wp), intent(out) :: max_incl
+      integer, intent(out) :: max_rank
+      real(wp), intent(out) :: imbalance
+      real(wp), intent(out) :: avg_self
+      real(wp), intent(out) :: avg_calls
+      real(wp), intent(out) :: avg_pct
+      character(len=:), allocatable :: line
+      character(len=128) :: row_name
+      integer :: io
+      integer :: line_end
+      integer :: line_start
+      integer :: next_newline
+
+      found = .false.
+      participating = -1
+      missing = -1
+      min_incl = -1.0_wp
+      min_rank = -1
+      avg_incl = -1.0_wp
+      max_incl = -1.0_wp
+      max_rank = -1
+      imbalance = -1.0_wp
+      avg_self = -1.0_wp
+      avg_calls = -1.0_wp
+      avg_pct = -1.0_wp
+
+      line_start = 1
+      do while (line_start <= len(text))
+         next_newline = index(text(line_start:), new_line('a'))
+         if (next_newline <= 0) then
+            line_end = len(text)
+         else
+            line_end = line_start + next_newline - 2
+         end if
+
+         if (line_end >= line_start) then
+            line = text(line_start:line_end)
+            if (index(line, trim(timer_name)) > 0) then
+               row_name = ''
+               read (line, *, iostat=io) row_name, participating, missing, min_incl, min_rank, avg_incl, &
+                  max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct
+               if ((io == 0) .and. (trim(row_name) == trim(timer_name))) then
+                  found = .true.
+                  return
+               end if
+            end if
+         end if
+
+         if (next_newline <= 0) exit
+         line_start = line_end + 2
+      end do
+   end function union_report_row_values
 
    logical function csv_text_field_equals(line, column, expected) result(matches)
       character(len=*), intent(in) :: line
