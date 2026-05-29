@@ -1,5 +1,6 @@
 module test_mpi_summary_4pe
    use pfunit
+   use, intrinsic :: iso_fortran_env, only: int64
    use mpi_f08, only: MPI_F08_Allreduce => MPI_Allreduce, MPI_F08_Barrier => MPI_Barrier, &
                       MPI_F08_Bcast => MPI_Bcast, MPI_F08_Comm => MPI_Comm, &
                       MPI_F08_COMM_NULL => MPI_COMM_NULL, MPI_F08_COMM_WORLD => MPI_COMM_WORLD, &
@@ -9,7 +10,7 @@ module test_mpi_summary_4pe
                       MPI_F08_SUM => MPI_SUM
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
                      ftimer_mpi_union_summary, ftimer_start, ftimer_stop
-   use ftimer_core, only: ftimer_t
+   use ftimer_core, only: ftimer_t, ftimer_test_set_call_count
    use ftimer_types, only: FTIMER_SUCCESS, ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, wp
    use test_support, only: attach_mock_clock, fake_time, mock_clock
    implicit none
@@ -99,6 +100,82 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_summary_defaults_to_world_when_comm_omitted
+
+   @test
+   subroutine test_mpi_avg_call_count_is_bounded_on_odd_rank_subcomm(this)
+      class(mpi_summary_4pe_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_summary_t) :: summary
+      type(ftimer_mpi_union_summary_t) :: union_summary
+      type(MPI_F08_Comm) :: subcomm
+      integer :: color
+      integer :: id_hot
+      integer :: ierr
+      integer :: rank
+      integer :: subrank
+      integer(int64) :: boundary_count
+      logical :: strict_avg_bounded
+      logical :: union_avg_bounded
+
+      rank = this%getProcessRank()
+      if (rank < 3) then
+         color = 0
+      else
+         color = 1
+      end if
+
+      call MPI_F08_Comm_split(MPI_F08_COMM_WORLD, color, rank, subcomm, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank < 3) then
+         call MPI_F08_Comm_rank(subcomm, subrank, ierr)
+         @assertEqual(MPI_F08_SUCCESS, ierr)
+
+         boundary_count = huge(0_int64) - 6143_int64
+
+         call timer%init(comm=subcomm, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         call attach_mock_clock(timer)
+
+         call timer%start("odd-wide-count", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 1.0_wp + real(subrank, wp)
+         call timer%stop("odd-wide-count", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         id_hot = timer%lookup("odd-wide-count", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         call ftimer_test_set_call_count(timer, id_hot, 1, boundary_count, ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         call timer%mpi_summary(summary, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         @assertEqual(3, summary%num_ranks)
+         @assertEqual(1, summary%num_entries)
+         @assertEqual(boundary_count, summary%entries(1)%min_call_count)
+         @assertEqual(boundary_count, summary%entries(1)%max_call_count)
+         strict_avg_bounded = summary%entries(1)%avg_call_count <= real(boundary_count, wp)
+         @assertTrue(strict_avg_bounded)
+         call assert_real_close(summary%entries(1)%avg_call_count, real(boundary_count, wp))
+
+         call timer%mpi_union_summary(union_summary, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         @assertEqual(3, union_summary%num_ranks)
+         @assertEqual(1, union_summary%num_entries)
+         @assertEqual(3, union_summary%entries(1)%participating_rank_count)
+         @assertEqual(boundary_count, union_summary%entries(1)%min_call_count)
+         @assertEqual(boundary_count, union_summary%entries(1)%max_call_count)
+         union_avg_bounded = union_summary%entries(1)%avg_call_count <= real(boundary_count, wp)
+         @assertTrue(union_avg_bounded)
+         call assert_real_close(union_summary%entries(1)%avg_call_count, real(boundary_count, wp))
+
+         call timer%finalize(ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end if
+
+      call MPI_F08_Comm_free(subcomm, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+   end subroutine test_mpi_avg_call_count_is_bounded_on_odd_rank_subcomm
 
    @test
    subroutine test_mpi_summary_preserves_partial_tie_rank_attribution(this)
