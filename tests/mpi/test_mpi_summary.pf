@@ -612,6 +612,159 @@ contains
    end subroutine test_mpi_union_summary_preserves_sparse_tree_links
 
    @test
+   subroutine test_mpi_union_summary_canonicalizes_sparse_paths(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_union_summary_t) :: union_summary
+      integer :: ierr
+      integer :: rank
+
+      rank = this%getProcessRank()
+      fake_time = 0.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call build_rank_ordered_sparse_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_union_summary(union_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(2, union_summary%num_entries)
+      @assertEqual('aaa_rank_one', trim(union_summary%entries(1)%name))
+      @assertEqual('zzz_rank_zero', trim(union_summary%entries(2)%name))
+      @assertEqual(1, union_summary%entries(1)%node_id)
+      @assertEqual(2, union_summary%entries(2)%node_id)
+      @assertEqual(0, union_summary%entries(1)%parent_id)
+      @assertEqual(0, union_summary%entries(2)%parent_id)
+      @assertEqual(1, union_summary%entries(1)%participating_rank_count)
+      @assertEqual(1, union_summary%entries(2)%participating_rank_count)
+      @assertEqual(1, union_summary%entries(1)%min_inclusive_time_rank)
+      @assertEqual(0, union_summary%entries(2)%min_inclusive_time_rank)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_canonicalizes_sparse_paths
+
+   @test
+   subroutine test_mpi_union_summary_uses_canonical_parent_ids(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_union_summary_t) :: union_summary
+      integer :: child_idx
+      integer :: ierr
+      integer :: outer_idx
+      integer :: rank
+      integer :: z_after_idx
+
+      rank = this%getProcessRank()
+      fake_time = 0.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call build_shifted_parent_sparse_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_union_summary(union_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      outer_idx = union_entry_index(union_summary, 'outer')
+      child_idx = union_entry_index(union_summary, 'inner_sparse')
+      z_after_idx = union_entry_index(union_summary, 'zzzzz')
+
+      @assertEqual(3, union_summary%num_entries)
+      @assertEqual(1, outer_idx)
+      @assertEqual(2, child_idx)
+      @assertEqual(3, z_after_idx)
+      @assertEqual(0, union_summary%entries(outer_idx)%parent_id)
+      @assertEqual(outer_idx, union_summary%entries(child_idx)%parent_id)
+      @assertEqual(0, union_summary%entries(z_after_idx)%parent_id)
+      @assertEqual(2, union_summary%entries(outer_idx)%participating_rank_count)
+      @assertEqual(1, union_summary%entries(child_idx)%participating_rank_count)
+      @assertEqual(1, union_summary%entries(z_after_idx)%participating_rank_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_uses_canonical_parent_ids
+
+   @test
+   subroutine test_mpi_union_summary_distinguishes_same_name_paths(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_union_summary_t) :: union_summary
+      integer :: ierr
+      integer :: parent_a_idx
+      integer :: parent_b_idx
+      integer :: rank
+
+      rank = this%getProcessRank()
+      fake_time = 0.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call build_same_name_different_parent_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_union_summary(union_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      parent_a_idx = union_entry_index(union_summary, 'parent_a')
+      parent_b_idx = union_entry_index(union_summary, 'parent_b')
+
+      @assertEqual(4, union_summary%num_entries)
+      @assertEqual(1, parent_a_idx)
+      @assertEqual(3, parent_b_idx)
+      @assertEqual('work', trim(union_summary%entries(2)%name))
+      @assertEqual('work', trim(union_summary%entries(4)%name))
+      @assertEqual(parent_a_idx, union_summary%entries(2)%parent_id)
+      @assertEqual(parent_b_idx, union_summary%entries(4)%parent_id)
+      @assertEqual(1, union_summary%entries(2)%participating_rank_count)
+      @assertEqual(1, union_summary%entries(4)%participating_rank_count)
+      @assertEqual(0, union_summary%entries(2)%min_inclusive_time_rank)
+      @assertEqual(1, union_summary%entries(4)%min_inclusive_time_rank)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_distinguishes_same_name_paths
+
+   @test
+   subroutine test_mpi_union_summary_handles_empty_trees(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_union_summary_t) :: union_summary
+      integer :: ierr
+
+      fake_time = 0.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp
+
+      call timer%mpi_union_summary(union_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(2, union_summary%num_ranks)
+      @assertEqual(0, union_summary%num_entries)
+      call assert_real_close(union_summary%min_total_time, 2.0_wp)
+      call assert_real_close(union_summary%avg_total_time, 2.0_wp)
+      call assert_real_close(union_summary%max_total_time, 2.0_wp)
+      @assertEqual(0, union_summary%min_total_time_rank)
+      @assertEqual(0, union_summary%max_total_time_rank)
+      @assertTrue(allocated(union_summary%entries))
+      @assertEqual(0, size(union_summary%entries))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_handles_empty_trees
+
+   @test
    subroutine test_transitional_integer_comm_compatibility(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: oop_timer
@@ -1431,6 +1584,99 @@ contains
          call timer%stop("outer", ierr=ierr)
       end if
    end subroutine build_nested_sparse_union_timers
+
+   subroutine build_rank_ordered_sparse_timers(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      if (rank == 0) then
+         call timer%start("zzz_rank_zero", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 4.0_wp
+         call timer%stop("zzz_rank_zero", ierr=ierr)
+      else
+         call timer%start("aaa_rank_one", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 3.0_wp
+         call timer%stop("aaa_rank_one", ierr=ierr)
+      end if
+   end subroutine build_rank_ordered_sparse_timers
+
+   subroutine build_shifted_parent_sparse_timers(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      if (rank == 0) then
+         call timer%start("zzzzz", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 1.0_wp
+         call timer%stop("zzzzz", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+      end if
+
+      call timer%start("outer", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      if (rank == 0) then
+         fake_time = 2.0_wp
+         call timer%start("inner_sparse", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 4.0_wp
+         call timer%stop("inner_sparse", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 6.0_wp
+         call timer%stop("outer", ierr=ierr)
+      else
+         fake_time = 5.0_wp
+         call timer%stop("outer", ierr=ierr)
+      end if
+   end subroutine build_shifted_parent_sparse_timers
+
+   subroutine build_same_name_different_parent_timers(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      if (rank == 0) then
+         call timer%start("parent_a", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 1.0_wp
+         call timer%start("work", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 3.0_wp
+         call timer%stop("work", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 4.0_wp
+         call timer%stop("parent_a", ierr=ierr)
+      else
+         call timer%start("parent_b", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 1.0_wp
+         call timer%start("work", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 5.0_wp
+         call timer%stop("work", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 6.0_wp
+         call timer%stop("parent_b", ierr=ierr)
+      end if
+   end subroutine build_same_name_different_parent_timers
 
    subroutine build_reordered_nested_timers(timer, rank, ierr)
       class(ftimer_t), intent(inout) :: timer

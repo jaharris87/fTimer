@@ -573,7 +573,6 @@ contains
       integer :: nprocs
       integer :: parent_id
       integer :: rank
-      integer :: total_descriptor_count
       integer :: union_count
       integer :: union_idx
       type(MPI_Datatype) :: mpi_int64_type
@@ -692,13 +691,6 @@ contains
          return
       end if
 
-      call ftimer_mpi_allreduce(local_descriptor_count, total_descriptor_count, 1, MPI_INTEGER, MPI_SUM, &
-                                active_comm, mpierr)
-      if (mpierr /= MPI_SUCCESS) then
-         status = FTIMER_ERR_UNKNOWN
-         return
-      end if
-
       call ftimer_mpi_allreduce(local_max_descriptor_len, max_descriptor_len, 1, MPI_INTEGER, MPI_MAX, &
                                 active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
@@ -707,8 +699,7 @@ contains
       end if
 
       call build_union_descriptor_list(descriptors, permutation, max_descriptor_count, max_descriptor_len, &
-                                       total_descriptor_count, nprocs, active_comm, union_descriptors, union_count, &
-                                       local_to_union, mpierr)
+                                       nprocs, active_comm, union_descriptors, union_count, local_to_union, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_union_summary(summary)
          status = FTIMER_ERR_UNKNOWN
@@ -985,14 +976,29 @@ contains
    end subroutine clear_mpi_union_summary
 
 #ifdef FTIMER_USE_MPI
+   logical function checked_multiply_int(lhs, rhs, product) result(ok)
+      integer, intent(in) :: lhs
+      integer, intent(in) :: rhs
+      integer, intent(out) :: product
+      integer(int64) :: wide_product
+
+      ok = .false.
+      product = 0
+      if ((lhs < 0) .or. (rhs < 0)) return
+
+      wide_product = int(lhs, int64)*int(rhs, int64)
+      if (wide_product > int(huge(product), int64)) return
+
+      product = int(wide_product)
+      ok = .true.
+   end function checked_multiply_int
+
    subroutine build_union_descriptor_list(descriptors, permutation, max_descriptor_count, max_descriptor_len, &
-                                          total_descriptor_count, nprocs, active_comm, union_descriptors, &
-                                          union_count, local_to_union, mpierr)
+                                          nprocs, active_comm, union_descriptors, union_count, local_to_union, mpierr)
       character(len=*), intent(in) :: descriptors(:)
       integer, intent(in) :: permutation(:)
       integer, intent(in) :: max_descriptor_count
       integer, intent(in) :: max_descriptor_len
-      integer, intent(in) :: total_descriptor_count
       integer, intent(in) :: nprocs
       type(MPI_Comm), intent(in) :: active_comm
       character(len=:), allocatable, intent(out) :: union_descriptors(:)
@@ -1010,6 +1016,7 @@ contains
       integer :: offset
       integer :: rank_slot
       integer :: slot
+      integer :: union_capacity
       integer, allocatable :: all_descriptor_lengths(:)
       integer, allocatable :: local_descriptor_lengths(:)
 
@@ -1018,21 +1025,35 @@ contains
       union_count = 0
       mpierr = MPI_SUCCESS
 
-      if (total_descriptor_count <= 0) then
+      if (max_descriptor_count <= 0) then
          allocate (character(len=1) :: union_descriptors(0))
          return
       end if
 
-      allocate (character(len=max_descriptor_len) :: union_descriptors(total_descriptor_count))
+      if (.not. checked_multiply_int(max_descriptor_count, nprocs, union_capacity)) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      if (.not. checked_multiply_int(max_descriptor_count, max_descriptor_len, char_count)) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      allocate (character(len=max_descriptor_len) :: union_descriptors(union_capacity))
       union_descriptors = ''
 
       allocate (local_descriptor_lengths(max_descriptor_count))
-      allocate (all_descriptor_lengths(max_descriptor_count*nprocs))
+      allocate (all_descriptor_lengths(union_capacity))
       local_descriptor_lengths = 0
 
-      char_count = max_descriptor_count*max_descriptor_len
+      if (.not. checked_multiply_int(char_count, nprocs, union_capacity)) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
       allocate (local_descriptor_chars(char_count))
-      allocate (all_descriptor_chars(char_count*nprocs))
+      allocate (all_descriptor_chars(union_capacity))
       local_descriptor_chars = ' '
 
       do i = 1, size(permutation)

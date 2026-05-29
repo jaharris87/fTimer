@@ -6,7 +6,7 @@ Issue #149 asked whether fTimer should support MPI summaries for timer descripto
 
 ## Decision
 
-Sparse/union MPI summaries are planned, but only as an explicit opt-in MPI summary path. The existing strict `mpi_summary()` contract stays unchanged: it requires identical descriptor trees on all participating ranks and returns `FTIMER_ERR_MPI_INCON` when timer descriptors differ.
+Sparse/union MPI summaries are implemented as an explicit opt-in MPI summary path. The existing strict `mpi_summary()` contract stays unchanged: it requires identical descriptor trees on all participating ranks and returns `FTIMER_ERR_MPI_INCON` when timer descriptors differ.
 
 Follow-up work is split into:
 
