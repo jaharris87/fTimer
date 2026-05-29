@@ -273,3 +273,6 @@ jobs:
           find tests -name '*.pf' -exec fprettify --diff {} +
           find tests -name '*.F90' -exec fprettify --diff {} +
           find examples -name '*.F90' -exec fprettify --diff {} +
+
+      - name: Check manual fallback audit helper
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_check_manual_fallback_audit.py
