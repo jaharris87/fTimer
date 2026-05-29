@@ -102,6 +102,12 @@ foreach(module_source IN LISTS module_sources)
       )
     endif()
 
+    if(stripped_declaration MATCHES "^[Pp][Uu][Bb][Ll][Ii][Cc][ \t]+[^:]")
+      message(FATAL_ERROR
+        "${source_file} contains a public access statement without '::'. Stable modules must use standalone 'public :: name' declarations so the allowlist parser sees every module-level public symbol."
+      )
+    endif()
+
     if(NOT in_derived_type AND
        stripped_declaration MATCHES "^[^!#]*,[ \t]*[Pp][Uu][Bb][Ll][Ii][Cc][ \t]*(,|::|$)")
       message(FATAL_ERROR
