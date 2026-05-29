@@ -337,7 +337,7 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - The OpenMP path does not make fTimer thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.
 - Future real hybrid MPI+OpenMP timing is deferred pending concrete adopter demand; see [`docs/openmp-hybrid-strategy-decision.md`](docs/openmp-hybrid-strategy-decision.md).
 - `on_event` remains a lightweight intra-run hook, not a serious profiler-backend integration contract with stable semantic timer identity.
-- If `FTIMER_USE_MPI=OFF`, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` and leave their MPI result objects empty.
+- If `FTIMER_USE_MPI=OFF`, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` and leave their MPI result objects empty. MPI report APIs, including the sparse union report APIs, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output or creating/replacing report files.
 - Formatted local and MPI report output are separate paths: `print_summary()`/`write_summary()` are local, `print_mpi_summary()`/`write_mpi_summary()` are strict MPI reports, and `print_mpi_union_summary()`/`write_mpi_union_summary()` are opt-in sparse MPI union reports. MPI reports are deliberately abbreviated; `ftimer_mpi_summary_t` and `ftimer_mpi_union_summary_t` remain the complete structured data models.
 
 ## Performance Measurement

@@ -1241,6 +1241,184 @@ contains
    end subroutine test_mpi_union_report_apis_reject_active_timers
 
    @test
+   subroutine test_mpi_union_reports_reject_nonroot_active_timer(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: printed
+      character(len=*), parameter :: print_path = 'test_mpi_union_nonroot_active_print.txt'
+      character(len=*), parameter :: write_path = 'test_mpi_union_nonroot_active_write.txt'
+      integer :: flags(2)
+      integer :: ierr
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+      integer :: rank
+      integer :: unit
+      logical :: report_exists
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      fake_time = 0.0_wp
+      if (rank /= 0) then
+         call timer%start("nonroot_active", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 3.0_wp
+      end if
+
+      if (rank == 0) then
+         call delete_if_exists(print_path)
+         open (newunit=unit, file=print_path, status='replace', action='write', iostat=ierr)
+         @assertEqual(0, ierr)
+         call timer%print_mpi_union_summary(unit=unit, ierr=ierr)
+         close (unit)
+      else
+         call timer%print_mpi_union_summary(ierr=ierr)
+      end if
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_ACTIVE, min_err)
+      @assertEqual(FTIMER_ERR_ACTIVE, max_err)
+
+      if (rank == 0) then
+         printed = read_file_text(print_path)
+         if (len(printed) == 0) flags(1) = 1
+         call delete_if_exists(print_path)
+         call delete_if_exists(write_path)
+      end if
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_union_summary(write_path, ierr=ierr)
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_ACTIVE, min_err)
+      @assertEqual(FTIMER_ERR_ACTIVE, max_err)
+
+      if (rank == 0) then
+         inquire (file=write_path, exist=report_exists)
+         if (.not. report_exists) flags(2) = 1
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+
+      if (rank /= 0) then
+         fake_time = fake_time + 1.0_wp
+         call timer%stop("nonroot_active", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end if
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_reports_reject_nonroot_active_timer
+
+   @test
+   subroutine test_proc_union_reports_reject_nonroot_active(this)
+      class(mpi_summary_case), intent(inout) :: this
+      character(len=:), allocatable :: printed
+      character(len=*), parameter :: print_path = 'test_proc_union_nonroot_active_print.txt'
+      character(len=*), parameter :: write_path = 'test_proc_union_nonroot_active_write.txt'
+      integer :: flags(2)
+      integer :: ierr
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+      integer :: rank
+      integer :: unit
+      logical :: report_exists
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      fake_time = 0.0_wp
+      call ftimer_default_instance%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank /= 0) then
+         call ftimer_start("nonroot_active", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 3.0_wp
+      end if
+
+      if (rank == 0) then
+         call delete_if_exists(print_path)
+         open (newunit=unit, file=print_path, status='replace', action='write', iostat=ierr)
+         @assertEqual(0, ierr)
+         call ftimer_print_mpi_union_summary(unit=unit, ierr=ierr)
+         close (unit)
+      else
+         call ftimer_print_mpi_union_summary(ierr=ierr)
+      end if
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_ACTIVE, min_err)
+      @assertEqual(FTIMER_ERR_ACTIVE, max_err)
+
+      if (rank == 0) then
+         printed = read_file_text(print_path)
+         if (len(printed) == 0) flags(1) = 1
+         call delete_if_exists(print_path)
+         call delete_if_exists(write_path)
+      end if
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call ftimer_write_mpi_union_summary(write_path, ierr=ierr)
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_ACTIVE, min_err)
+      @assertEqual(FTIMER_ERR_ACTIVE, max_err)
+
+      if (rank == 0) then
+         inquire (file=write_path, exist=report_exists)
+         if (.not. report_exists) flags(2) = 1
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+
+      if (rank /= 0) then
+         fake_time = fake_time + 1.0_wp
+         call ftimer_stop("nonroot_active", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end if
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_proc_union_reports_reject_nonroot_active
+
+   @test
    subroutine test_mpi_union_print_summary_syncs_io_error(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
@@ -1279,14 +1457,79 @@ contains
    end subroutine test_mpi_union_print_summary_syncs_io_error
 
    @test
+   subroutine test_mpi_union_print_summary_writes_root_unit_only(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: printed
+      character(len=128) :: print_path
+      integer :: ierr
+      integer :: local_flag
+      integer :: min_flag
+      integer :: mpierr
+      integer :: rank
+      integer :: unit
+
+      rank = this%getProcessRank()
+      local_flag = 0
+      write (print_path, '("test_mpi_union_print_unit_rank_",i0,".txt")') rank
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_common_plus_sparse_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call delete_if_exists(trim(print_path))
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      open (newunit=unit, file=trim(print_path), status='replace', action='write', iostat=ierr)
+      @assertEqual(0, ierr)
+      call timer%print_mpi_union_summary(unit=unit, ierr=ierr)
+      close (unit)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      printed = read_file_text(trim(print_path))
+      if (rank == 0) then
+         if (index(printed, 'Sparse MPI union summary') > 0) local_flag = 1
+      else
+         if (len(printed) == 0) local_flag = 1
+      end if
+
+      call MPI_F08_Allreduce(local_flag, min_flag, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(1, min_flag)
+
+      call delete_if_exists(trim(print_path))
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_print_summary_writes_root_unit_only
+
+   @test
    subroutine test_mpi_union_write_summary_preserves_nested_same_name_display(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
       character(len=:), allocatable :: printed
       character(len=*), parameter :: report_path = 'test_mpi_union_same_name_report.txt'
-      integer :: flags(5)
+      integer :: flags(17)
       integer :: ierr
+      integer :: max_rank
+      integer :: min_rank
+      integer :: missing
+      integer :: participating
       integer :: rank
+      logical :: found
+      real(wp) :: avg_calls
+      real(wp) :: avg_incl
+      real(wp) :: avg_pct
+      real(wp) :: avg_self
+      real(wp) :: imbalance
+      real(wp) :: max_incl
+      real(wp) :: min_incl
 
       rank = this%getProcessRank()
       flags = 0
@@ -1316,6 +1559,24 @@ contains
          if (count_union_report_rows(printed, 'work') == 2) flags(3) = 1
          if (count_lines_with_prefix(printed, '  work') == 2) flags(4) = 1
          if (same_name_tree_rows_are_ordered(printed)) flags(5) = 1
+         found = union_report_row_values_after_marker(printed, 'parent_a', 'work', participating, missing, &
+                                                      min_incl, min_rank, avg_incl, max_incl, max_rank, &
+                                                      imbalance, avg_self, avg_calls, avg_pct)
+         if (found) flags(6) = 1
+         if (participating == 1) flags(7) = 1
+         if (missing == 1) flags(8) = 1
+         if (min_rank == 0) flags(9) = 1
+         if (max_rank == 0) flags(10) = 1
+         if (real_close(avg_incl, 2.0_wp)) flags(11) = 1
+         found = union_report_row_values_after_marker(printed, 'parent_b', 'work', participating, missing, &
+                                                      min_incl, min_rank, avg_incl, max_incl, max_rank, &
+                                                      imbalance, avg_self, avg_calls, avg_pct)
+         if (found) flags(12) = 1
+         if (participating == 1) flags(13) = 1
+         if (missing == 1) flags(14) = 1
+         if (min_rank == 1) flags(15) = 1
+         if (max_rank == 1) flags(16) = 1
+         if (real_close(avg_incl, 4.0_wp)) flags(17) = 1
          call delete_if_exists(report_path)
       end if
 
@@ -1327,6 +1588,18 @@ contains
       @assertEqual(1, flags(3))
       @assertEqual(1, flags(4))
       @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
+      @assertEqual(1, flags(7))
+      @assertEqual(1, flags(8))
+      @assertEqual(1, flags(9))
+      @assertEqual(1, flags(10))
+      @assertEqual(1, flags(11))
+      @assertEqual(1, flags(12))
+      @assertEqual(1, flags(13))
+      @assertEqual(1, flags(14))
+      @assertEqual(1, flags(15))
+      @assertEqual(1, flags(16))
+      @assertEqual(1, flags(17))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -2513,6 +2786,49 @@ contains
          line_start = line_end + 2
       end do
    end function union_report_row_values
+
+   logical function union_report_row_values_after_marker(text, marker, timer_name, participating, missing, min_incl, &
+                                                         min_rank, avg_incl, max_incl, max_rank, imbalance, avg_self, &
+                                                         avg_calls, avg_pct) result(found)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: marker
+      character(len=*), intent(in) :: timer_name
+      integer, intent(out) :: participating
+      integer, intent(out) :: missing
+      real(wp), intent(out) :: min_incl
+      integer, intent(out) :: min_rank
+      real(wp), intent(out) :: avg_incl
+      real(wp), intent(out) :: max_incl
+      integer, intent(out) :: max_rank
+      real(wp), intent(out) :: imbalance
+      real(wp), intent(out) :: avg_self
+      real(wp), intent(out) :: avg_calls
+      real(wp), intent(out) :: avg_pct
+      integer :: marker_pos
+      integer :: search_start
+
+      found = .false.
+      participating = -1
+      missing = -1
+      min_incl = -1.0_wp
+      min_rank = -1
+      avg_incl = -1.0_wp
+      max_incl = -1.0_wp
+      max_rank = -1
+      imbalance = -1.0_wp
+      avg_self = -1.0_wp
+      avg_calls = -1.0_wp
+      avg_pct = -1.0_wp
+
+      marker_pos = index(text, trim(marker))
+      if (marker_pos <= 0) return
+
+      search_start = marker_pos + len_trim(marker)
+      if (search_start > len(text)) return
+
+      found = union_report_row_values(text(search_start:), timer_name, participating, missing, min_incl, min_rank, &
+                                      avg_incl, max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct)
+   end function union_report_row_values_after_marker
 
    integer function count_union_report_rows(text, timer_name) result(count)
       character(len=*), intent(in) :: text
