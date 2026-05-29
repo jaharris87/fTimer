@@ -1,4 +1,5 @@
 module test_callcount
+   use, intrinsic :: iso_c_binding, only: c_ptr
    use pfunit
    use, intrinsic :: iso_fortran_env, only: int64
    use ftimer_core, only: ftimer_t, ftimer_test_set_call_count, ftimer_test_state_t
@@ -8,6 +9,8 @@ module test_callcount
    use test_support, only: attach_mock_clock, begin_stderr_capture, build_stack, csv_line_at, end_stderr_capture, &
                            fake_time, find_context_idx, snapshot_timer
    implicit none
+
+   integer, save :: overflow_callback_count = 0
 
 contains
 
@@ -262,6 +265,62 @@ contains
    end subroutine test_start_rejects_int64_call_count_overflow
 
    @test
+   subroutine test_start_overflow_without_ierr_warns_and_preserves_state()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      character(len=*), parameter :: stderr_path = 'call_count_overflow_stderr.txt'
+      character(len=:), allocatable :: captured
+      integer :: capture_ierr
+      integer :: ctx
+      integer :: id_hot
+      integer :: ierr
+      integer :: saved_fd
+      integer(int64) :: stored_count
+      logical :: count_unchanged
+      logical :: warning_emitted
+
+      overflow_callback_count = 0
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      fake_time = 0.0_wp
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_hot, root_stack)
+      call ftimer_test_set_call_count(timer, id_hot, ctx, huge(0_int64), ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%set_callback(record_overflow_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call begin_stderr_capture(stderr_path, saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start("hot")
+      call end_stderr_capture(stderr_path, saved_fd, captured, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      warning_emitted = index(captured, 'ftimer start call count overflow') > 0
+      @assertTrue(warning_emitted)
+
+      call snapshot_timer(timer, state)
+      stored_count = state%segments(id_hot)%call_count(ctx)
+      count_unchanged = stored_count == huge(0_int64)
+      @assertTrue(count_unchanged)
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(0, overflow_callback_count)
+   end subroutine test_start_overflow_without_ierr_warns_and_preserves_state
+
+   @test
    subroutine test_active_snapshot_formats_int64_call_count_layout()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state
@@ -415,5 +474,15 @@ contains
       warning_emitted = index(captured, 'ftimer test_set_call_count before init') > 0
       @assertTrue(warning_emitted)
    end subroutine test_test_set_call_count_warns_without_ierr_on_setup_error
+
+   subroutine record_overflow_callback(timer_id, context_idx, event, timestamp, user_data)
+      integer, intent(in) :: timer_id
+      integer, intent(in) :: context_idx
+      integer, intent(in) :: event
+      real(wp), intent(in) :: timestamp
+      type(c_ptr), intent(in) :: user_data
+
+      overflow_callback_count = overflow_callback_count + 1
+   end subroutine record_overflow_callback
 
 end module test_callcount

@@ -372,7 +372,7 @@ contains
          local_inclusive(i) = local_summary%entries(local_idx)%inclusive_time
          local_self(i) = local_summary%entries(local_idx)%self_time
          local_calls(i) = local_summary%entries(local_idx)%call_count
-         local_call_avg(i) = real(local_summary%entries(local_idx)%call_count, wp)
+         local_call_avg(i) = call_count_average_operand(local_summary%entries(local_idx)%call_count)
          local_pct(i) = local_summary%entries(local_idx)%pct_time
       end do
 
@@ -783,7 +783,7 @@ contains
          local_pct_sum(union_idx) = local_summary%entries(local_idx)%pct_time
          local_calls_min(union_idx) = local_summary%entries(local_idx)%call_count
          local_calls_max(union_idx) = local_summary%entries(local_idx)%call_count
-         local_avg_calls(union_idx) = real(local_summary%entries(local_idx)%call_count, wp)
+         local_avg_calls(union_idx) = call_count_average_operand(local_summary%entries(local_idx)%call_count)
       end do
 
       call ftimer_mpi_allreduce(local_present, participating_counts, union_count, MPI_INTEGER, MPI_SUM, &
@@ -1750,5 +1750,41 @@ contains
 
       imbalance = max_time/avg_time
    end function compute_imbalance
+
+   real(wp) function call_count_average_operand(count) result(value)
+      integer(int64), intent(in) :: count
+      integer :: exponent
+      integer :: i
+      integer :: spacing_power
+      integer(int64) :: floored_count
+      integer(int64) :: scaled
+      integer(int64) :: spacing
+
+      if (count <= 0_int64) then
+         value = 0.0_wp
+         return
+      end if
+
+      scaled = count
+      exponent = 0
+      do while (scaled >= 2_int64)
+         scaled = scaled/2_int64
+         exponent = exponent + 1
+      end do
+
+      spacing_power = exponent - digits(1.0_wp) + 1
+      if (spacing_power <= 0) then
+         value = real(count, wp)
+         return
+      end if
+
+      spacing = 1_int64
+      do i = 1, spacing_power
+         spacing = spacing*2_int64
+      end do
+
+      floored_count = count - modulo(count, spacing)
+      value = real(floored_count, wp)
+   end function call_count_average_operand
 
 end module ftimer_mpi

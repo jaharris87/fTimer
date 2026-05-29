@@ -1,4 +1,5 @@
 program ftimer_installed_mpi_consumer
+   use, intrinsic :: iso_fortran_env, only: int64
    use ftimer, only: ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_mpi_union_summary, &
                      ftimer_write_mpi_summary, ftimer_write_mpi_union_summary, ftimer_start, ftimer_stop
    use ftimer_types, only: ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, wp
@@ -40,26 +41,30 @@ program ftimer_installed_mpi_consumer
    if (summary%entries(1)%max_inclusive_time < summary%entries(1)%min_inclusive_time) error stop 11
    if (summary%entries(1)%avg_inclusive_time < summary%entries(1)%min_inclusive_time) error stop 12
    if (summary%entries(1)%avg_call_count < 1.0_wp) error stop 13
+   if (kind(summary%entries(1)%min_call_count) /= int64) error stop 14
+   if (kind(summary%entries(1)%max_call_count) /= int64) error stop 15
 
    call ftimer_mpi_union_summary(union_summary, ierr=ierr)
-   if (ierr /= 0) error stop 14
-   if (union_summary%num_ranks /= 2) error stop 15
-   if (union_summary%num_entries /= 1) error stop 16
-   if (trim(union_summary%entries(1)%name) /= "consumer_mpi_work") error stop 17
-   if (union_summary%entries(1)%participating_rank_count /= 2) error stop 18
-   if (union_summary%entries(1)%avg_call_count < 1.0_wp) error stop 19
+   if (ierr /= 0) error stop 16
+   if (union_summary%num_ranks /= 2) error stop 17
+   if (union_summary%num_entries /= 1) error stop 18
+   if (trim(union_summary%entries(1)%name) /= "consumer_mpi_work") error stop 19
+   if (union_summary%entries(1)%participating_rank_count /= 2) error stop 20
+   if (union_summary%entries(1)%avg_call_count < 1.0_wp) error stop 21
+   if (kind(union_summary%entries(1)%min_call_count) /= int64) error stop 22
+   if (kind(union_summary%entries(1)%max_call_count) /= int64) error stop 23
 
    call ftimer_write_mpi_summary("consumer_mpi_summary.txt", ierr=ierr)
-   if (ierr /= 0) error stop 20
+   if (ierr /= 0) error stop 24
 
    call ftimer_write_mpi_union_summary("consumer_mpi_union_summary.txt", ierr=ierr)
-   if (ierr /= 0) error stop 21
+   if (ierr /= 0) error stop 25
 
    call ftimer_finalize(ierr=ierr)
-   if (ierr /= 0) error stop 22
+   if (ierr /= 0) error stop 26
 
    call MPI_Finalize(ierr)
-   if (ierr /= MPI_SUCCESS) error stop 23
+   if (ierr /= MPI_SUCCESS) error stop 27
 
    if (accumulator < 0.0) print *, accumulator
 end program ftimer_installed_mpi_consumer

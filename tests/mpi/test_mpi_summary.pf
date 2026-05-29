@@ -203,6 +203,7 @@ contains
       integer(int64) :: local_count
       integer(int64) :: low_count
       logical :: avg_count_matches
+      logical :: avg_count_not_above_max
       logical :: avg_count_positive
       logical :: max_count_matches
       logical :: min_count_matches
@@ -216,7 +217,8 @@ contains
       else
          local_count = high_count
       end if
-      expected_avg = 0.5_wp*(real(low_count, wp) + real(high_count, wp))
+      expected_avg = 0.5_wp*(call_count_average_operand_for_test(low_count) + &
+                             call_count_average_operand_for_test(high_count))
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -241,14 +243,61 @@ contains
       max_count_matches = summary%entries(1)%max_call_count == high_count
       avg_count_positive = summary%entries(1)%avg_call_count > 0.0_wp
       avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
+      avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, high_count)
       @assertTrue(min_count_matches)
       @assertTrue(max_count_matches)
       @assertTrue(avg_count_positive)
       @assertTrue(avg_count_matches)
+      @assertTrue(avg_count_not_above_max)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_summary_reduces_int64_call_extrema
+
+   @test
+   subroutine test_mpi_summary_bounds_avg_call_count_at_int64_limit(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_summary_t) :: summary
+      integer :: id_hot
+      integer :: ierr
+      integer(int64) :: boundary_count
+      logical :: avg_count_not_above_max
+      logical :: max_count_matches
+      logical :: min_count_matches
+
+      boundary_count = huge(0_int64)
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("wide-count-boundary", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop("wide-count-boundary", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("wide-count-boundary", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_test_set_call_count(timer, id_hot, 1, boundary_count, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(1, summary%num_entries)
+      min_count_matches = summary%entries(1)%min_call_count == boundary_count
+      max_count_matches = summary%entries(1)%max_call_count == boundary_count
+      avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, &
+                                                                   boundary_count)
+      @assertTrue(min_count_matches)
+      @assertTrue(max_count_matches)
+      @assertTrue(avg_count_not_above_max)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_summary_bounds_avg_call_count_at_int64_limit
 
    @test
    subroutine test_mpi_union_summary_preserves_sparse_int64_call_count(this)
@@ -309,6 +358,7 @@ contains
       integer(int64) :: local_count
       integer(int64) :: low_count
       logical :: avg_count_matches
+      logical :: avg_count_not_above_max
       logical :: avg_count_positive
       logical :: max_count_matches
       logical :: min_count_matches
@@ -322,7 +372,8 @@ contains
       else
          local_count = high_count
       end if
-      expected_avg = 0.5_wp*(real(low_count, wp) + real(high_count, wp))
+      expected_avg = 0.5_wp*(call_count_average_operand_for_test(low_count) + &
+                             call_count_average_operand_for_test(high_count))
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -348,14 +399,62 @@ contains
       max_count_matches = summary%entries(1)%max_call_count == high_count
       avg_count_positive = summary%entries(1)%avg_call_count > 0.0_wp
       avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
+      avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, high_count)
       @assertTrue(min_count_matches)
       @assertTrue(max_count_matches)
       @assertTrue(avg_count_positive)
       @assertTrue(avg_count_matches)
+      @assertTrue(avg_count_not_above_max)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_union_summary_avoids_int64_avg_sum_overflow
+
+   @test
+   subroutine test_mpi_union_summary_bounds_avg_call_count_at_int64_limit(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_union_summary_t) :: summary
+      integer :: id_hot
+      integer :: ierr
+      integer(int64) :: boundary_count
+      logical :: avg_count_not_above_max
+      logical :: max_count_matches
+      logical :: min_count_matches
+
+      boundary_count = huge(0_int64)
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("union-wide-count-boundary", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop("union-wide-count-boundary", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("union-wide-count-boundary", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_test_set_call_count(timer, id_hot, 1, boundary_count, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_union_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(1, summary%num_entries)
+      @assertEqual(2, summary%entries(1)%participating_rank_count)
+      min_count_matches = summary%entries(1)%min_call_count == boundary_count
+      max_count_matches = summary%entries(1)%max_call_count == boundary_count
+      avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, &
+                                                                   boundary_count)
+      @assertTrue(min_count_matches)
+      @assertTrue(max_count_matches)
+      @assertTrue(avg_count_not_above_max)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_bounds_avg_call_count_at_int64_limit
 
    @test
    subroutine test_mpi_summary_uses_canonical_order_for_consistent_timer_sets(this)
@@ -1086,14 +1185,15 @@ contains
 
       rank = this%getProcessRank()
       flags = 0
-      low_count = huge(0_int64) - 4096_int64
-      high_count = huge(0_int64) - 2048_int64
+      low_count = huge(0_int64)
+      high_count = huge(0_int64)
       if (rank == 0) then
          local_count = low_count
       else
          local_count = high_count
       end if
-      expected_avg = 0.5_wp*(real(low_count, wp) + real(high_count, wp))
+      expected_avg = 0.5_wp*(call_count_average_operand_for_test(low_count) + &
+                             call_count_average_operand_for_test(high_count))
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -1175,14 +1275,15 @@ contains
 
       rank = this%getProcessRank()
       flags = 0
-      low_count = huge(0_int64) - 8192_int64
-      high_count = huge(0_int64) - 4096_int64
+      low_count = huge(0_int64)
+      high_count = huge(0_int64)
       if (rank == 0) then
          local_count = low_count
       else
          local_count = high_count
       end if
-      expected_avg = 0.5_wp*(real(low_count, wp) + real(high_count, wp))
+      expected_avg = 0.5_wp*(call_count_average_operand_for_test(low_count) + &
+                             call_count_average_operand_for_test(high_count))
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -2492,7 +2593,7 @@ contains
       character(len=32) :: expected_max_text
       character(len=32) :: expected_min_text
       integer :: avg_call_count_col
-      integer :: flags(8)
+      integer :: flags(9)
       integer :: format_version_col
       integer :: id_hot
       integer :: ierr
@@ -2504,7 +2605,7 @@ contains
 
       rank = this%getProcessRank()
       flags = 0
-      base_count = int(huge(0), int64) + 23_int64
+      base_count = huge(0_int64) - 1_int64
       local_count = base_count + int(rank, int64)
       write (expected_min_text, '(i0)') base_count
       write (expected_max_text, '(i0)') base_count + 1_int64
@@ -2546,12 +2647,13 @@ contains
          max_call_count_col = csv_column_index(header, 'max_call_count')
 
          if (csv_text_field_equals(entry_line, min_call_count_col, trim(expected_min_text))) flags(2) = 1
-         if (csv_real_field_close(entry_line, avg_call_count_col, real(base_count, wp) + 0.5_wp)) flags(3) = 1
+         if (csv_decimal_field_not_above_int64(entry_line, avg_call_count_col, base_count + 1_int64)) flags(3) = 1
          if (csv_text_field_equals(entry_line, max_call_count_col, trim(expected_max_text))) flags(4) = 1
          if (min_call_count_col > 0) flags(5) = 1
          if (max_call_count_col > 0) flags(6) = 1
          if (csv_text_field_equals(summary_line, format_version_col, '2')) flags(7) = 1
          if (csv_text_field_equals(entry_line, format_version_col, '2')) flags(8) = 1
+         if (avg_call_count_col > 0) flags(9) = 1
 
          call delete_if_exists(csv_path)
       end if
@@ -2567,6 +2669,7 @@ contains
       @assertEqual(1, flags(6))
       @assertEqual(1, flags(7))
       @assertEqual(1, flags(8))
+      @assertEqual(1, flags(9))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -3171,6 +3274,98 @@ contains
       tolerance = max(1.0e-12_wp, abs(expected)*1.0e-12_wp)
       matches = diff < tolerance
    end function real_rel_close
+
+   real(wp) function call_count_average_operand_for_test(count) result(value)
+      integer(int64), intent(in) :: count
+      integer :: exponent
+      integer :: i
+      integer :: spacing_power
+      integer(int64) :: floored_count
+      integer(int64) :: scaled
+      integer(int64) :: spacing
+
+      if (count <= 0_int64) then
+         value = 0.0_wp
+         return
+      end if
+
+      scaled = count
+      exponent = 0
+      do while (scaled >= 2_int64)
+         scaled = scaled/2_int64
+         exponent = exponent + 1
+      end do
+
+      spacing_power = exponent - digits(1.0_wp) + 1
+      if (spacing_power <= 0) then
+         value = real(count, wp)
+         return
+      end if
+
+      spacing = 1_int64
+      do i = 1, spacing_power
+         spacing = spacing*2_int64
+      end do
+
+      floored_count = count - modulo(count, spacing)
+      value = real(floored_count, wp)
+   end function call_count_average_operand_for_test
+
+   logical function fixed_decimal_real_not_above_int64(value, limit) result(matches)
+      real(wp), intent(in) :: value
+      integer(int64), intent(in) :: limit
+      character(len=96) :: value_text
+
+      write (value_text, '(f0.3)') value
+      matches = decimal_field_not_above_int64(value_text, limit)
+   end function fixed_decimal_real_not_above_int64
+
+   logical function csv_decimal_field_not_above_int64(line, column, limit) result(matches)
+      character(len=*), intent(in) :: line
+      integer, intent(in) :: column
+      integer(int64), intent(in) :: limit
+      character(len=:), allocatable :: field_text
+
+      field_text = csv_field_value(line, column)
+      matches = decimal_field_not_above_int64(field_text, limit)
+   end function csv_decimal_field_not_above_int64
+
+   logical function decimal_field_not_above_int64(field_text, limit) result(matches)
+      character(len=*), intent(in) :: field_text
+      integer(int64), intent(in) :: limit
+      character(len=32) :: limit_text
+      character(len=:), allocatable :: integer_part
+      integer :: decimal_pos
+
+      decimal_pos = index(field_text, '.')
+      if (decimal_pos > 1) then
+         integer_part = field_text(1:decimal_pos - 1)
+      else
+         integer_part = trim(field_text)
+      end if
+
+      write (limit_text, '(i0)') limit
+      matches = decimal_integer_text_leq(trim(integer_part), trim(limit_text))
+   end function decimal_field_not_above_int64
+
+   logical function decimal_integer_text_leq(lhs, rhs) result(matches)
+      character(len=*), intent(in) :: lhs
+      character(len=*), intent(in) :: rhs
+      integer :: lhs_len
+      integer :: rhs_len
+
+      lhs_len = len_trim(lhs)
+      rhs_len = len_trim(rhs)
+      if (lhs_len <= 0) then
+         matches = .false.
+      else if (lhs_len < rhs_len) then
+         matches = .true.
+      else if (lhs_len > rhs_len) then
+         matches = .false.
+      else
+         matches = lhs(1:lhs_len) <= rhs(1:rhs_len)
+      end if
+   end function decimal_integer_text_leq
 
    logical function mpi_report_row_values(text, timer_name, min_incl, min_rank, avg_incl, max_incl, max_rank, &
                                           imbalance, avg_self, avg_calls, avg_pct) result(found)
