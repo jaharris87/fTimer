@@ -69,6 +69,7 @@ foreach(module_source IN LISTS module_sources)
   set(has_default_private FALSE)
   set(seen_public_declaration FALSE)
   set(in_ftimer_build_tests FALSE)
+  set(in_derived_type FALSE)
 
   foreach(source_line IN LISTS source_lines)
     string(REGEX REPLACE "!.*$" "" declaration "${source_line}")
@@ -84,6 +85,11 @@ foreach(module_source IN LISTS module_sources)
       set(in_ftimer_build_tests FALSE)
     endif()
 
+    if(stripped_declaration MATCHES "^[Ee][Nn][Dd][ \t]+[Tt][Yy][Pp][Ee]([ \t]+.*)?$")
+      set(in_derived_type FALSE)
+      continue()
+    endif()
+
     if(stripped_declaration MATCHES "^[Pp][Rr][Ii][Vv][Aa][Tt][Ee]$")
       if(NOT seen_public_declaration)
         set(has_default_private TRUE)
@@ -94,6 +100,18 @@ foreach(module_source IN LISTS module_sources)
       message(FATAL_ERROR
         "${source_file} contains a bare public statement. Stable modules must keep default private and list public symbols explicitly."
       )
+    endif()
+
+    if(NOT in_derived_type AND
+       stripped_declaration MATCHES "^[^!#]*,[ \t]*[Pp][Uu][Bb][Ll][Ii][Cc][ \t]*(,|::|$)")
+      message(FATAL_ERROR
+        "${source_file} contains a public declaration attribute. Stable modules must use standalone 'public :: name' declarations so the allowlist parser sees every module-level public symbol."
+      )
+    endif()
+
+    if(NOT in_derived_type AND
+       stripped_declaration MATCHES "^[Tt][Yy][Pp][Ee][ \t]*(,|::)")
+      set(in_derived_type TRUE)
     endif()
 
     if(NOT stripped_declaration MATCHES "^[Pp][Uu][Bb][Ll][Ii][Cc][ \t]*::")

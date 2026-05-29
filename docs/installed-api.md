@@ -8,11 +8,14 @@ The supported source-level import surface is intentionally narrow:
 - `use ftimer_core` for `type(ftimer_t)` and its OOP methods
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
-The checked source-level public-symbol boundary for those modules is
-`tests/public_symbol_allowlist.txt`. Any source-level public symbol added to
+The checked module-level public-symbol boundary for those modules is
+`tests/public_symbol_allowlist.txt`. Any module-level public symbol added to
 `src/ftimer.F90`, `src/ftimer_core.F90`, or `src/ftimer_types.F90` must be added
 there intentionally and documented here as either stable API, unstable
-public-by-necessity API, or test-only API.
+public-by-necessity API, or test-only API. The allowlist check intentionally
+requires default-private modules and standalone `public :: name` declarations so
+new module-level exports cannot bypass the checked boundary through implicit
+visibility or declaration attributes.
 
 ## Stable user API
 
