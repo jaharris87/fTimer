@@ -1172,17 +1172,15 @@ contains
       character(len=:), allocatable :: expected_header
       character(len=2048) :: first_line
       character(len=1) :: last_char
-      character(len=2048) :: second_line
+      character(len=2048) :: record_line
       integer :: file_size
       integer :: file_unit
       integer :: io
       logical :: exists
-      logical :: has_data_row
 
       include_header = .true.
       status = FTIMER_SUCCESS
       iomsg = ''
-      has_data_row = .false.
       if (.not. append_mode) return
 
       exists = .false.
@@ -1202,15 +1200,36 @@ contains
       end if
 
       read (file_unit, '(a)', iostat=io, iomsg=iomsg) first_line
-      if (io == 0) then
-         read (file_unit, '(a)', iostat=io, iomsg=iomsg) second_line
-         has_data_row = io == 0
-      end if
-      close (file_unit)
-      if ((io /= 0) .and. (io /= iostat_end)) then
+      if (io /= 0) then
+         close (file_unit)
          status = FTIMER_ERR_IO
          return
       end if
+
+      if (trim(first_line) /= expected_header) then
+         close (file_unit)
+         status = FTIMER_ERR_IO
+         iomsg = 'existing CSV header does not match fTimer CSV format_version 2'
+         return
+      end if
+
+      do
+         read (file_unit, '(a)', iostat=io, iomsg=iomsg) record_line
+         if (io == iostat_end) exit
+         if (io /= 0) then
+            close (file_unit)
+            status = FTIMER_ERR_IO
+            return
+         end if
+
+         if (.not. csv_record_has_format_version(record_line, FTIMER_CSV_FORMAT_VERSION)) then
+            close (file_unit)
+            status = FTIMER_ERR_IO
+            iomsg = 'existing CSV records do not match fTimer CSV format_version 2'
+            return
+         end if
+      end do
+      close (file_unit)
 
       open (newunit=file_unit, file=filename, status='old', access='stream', form='unformatted', &
             action='read', iostat=io, iomsg=iomsg)
@@ -1229,18 +1248,6 @@ contains
       if (last_char /= new_line('a')) then
          status = FTIMER_ERR_IO
          iomsg = 'existing CSV append target does not end with a newline'
-         return
-      end if
-
-      if (trim(first_line) /= expected_header) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing CSV header does not match fTimer CSV format_version 2'
-         return
-      end if
-
-      if (has_data_row .and. (.not. csv_record_has_format_version(second_line, FTIMER_CSV_FORMAT_VERSION))) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing CSV records do not match fTimer CSV format_version 2'
          return
       end if
 

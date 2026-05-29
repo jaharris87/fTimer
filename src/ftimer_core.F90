@@ -596,6 +596,11 @@ contains
       ctx = find_or_create_segment_context(self, id, self%call_stack)
       call ensure_context_storage(self%segments(id), ctx)
 
+      if (self%segments(id)%call_count(ctx) >= huge(0_int64)) then
+         call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer start call count overflow")
+         return
+      end if
+
       token = create_activation_token(self)
       call self%call_stack%push(id, token)
       now = self%wtime()
@@ -954,7 +959,7 @@ contains
          return
       end if
 
-      if ((context_id < 1) .or. (context_id > size(self%segments(segment_id)%call_count))) then
+      if ((context_id < 1) .or. (context_id > self%segments(segment_id)%contexts%count)) then
          call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer test_set_call_count with unknown context id")
          return
       end if

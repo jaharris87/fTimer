@@ -97,14 +97,17 @@ contains
       character(len=:), allocatable :: field_text
       character(len=:), allocatable :: header
       character(len=:), allocatable :: metadata_line
+      character(len=:), allocatable :: record_line
       character(len=:), allocatable :: summary_line
       integer :: avg_col
       integer :: call_count_col
       integer :: depth_col
       integer :: format_version_col
+      integer :: header_field_count
       integer :: ierr
       integer :: inclusive_col
       integer :: is_active_col
+      integer :: line_idx
       integer :: name_col
       integer :: node_col
       integer :: parent_col
@@ -115,6 +118,8 @@ contains
       integer :: total_col
       integer :: unit
       integer :: io
+      logical :: all_field_counts_match
+      logical :: all_versions_match
       logical :: kind_matches
       logical :: metadata_value_matches
       logical :: record_type_matches
@@ -179,6 +184,17 @@ contains
       @assertTrue(parent_col > 0)
       @assertTrue(inclusive_col > 0)
       @assertTrue(self_col > 0)
+
+      header_field_count = csv_field_count_local(header)
+      all_versions_match = .true.
+      all_field_counts_match = .true.
+      do line_idx = 2, record_count
+         record_line = csv_line_at(csv_text, line_idx)
+         all_versions_match = all_versions_match .and. (csv_field_value(record_line, format_version_col) == '2')
+         all_field_counts_match = all_field_counts_match .and. (csv_field_count_local(record_line) == header_field_count)
+      end do
+      @assertTrue(all_versions_match)
+      @assertTrue(all_field_counts_match)
 
       record_type_matches = csv_field_value(summary_line, record_type_col) == 'summary'
       @assertTrue(record_type_matches)
@@ -462,7 +478,8 @@ contains
       open (newunit=unit, file=path, status='replace', action='write', iostat=io)
       @assertEqual(0, io)
       write (unit, '(a)') trim(header)
-      write (unit, '(a)') '"1","local","summary"'
+      write (unit, '(a)') '"2","local","summary"'
+      write (unit, '(a)') '"1","local","entry"'
       close (unit)
 
       call timer%write_summary_csv(path, append=.true., ierr=ierr)
@@ -570,5 +587,29 @@ contains
          if (line == header) count = count + 1
       end do
    end function count_csv_header_records
+
+   integer function csv_field_count_local(line) result(count)
+      character(len=*), intent(in) :: line
+      integer :: i
+      integer :: text_len
+      logical :: in_quotes
+
+      count = 1
+      in_quotes = .false.
+      text_len = len_trim(line)
+      i = 1
+      do while (i <= text_len)
+         if (line(i:i) == '"') then
+            if (in_quotes .and. (i < text_len) .and. (line(i + 1:i + 1) == '"')) then
+               i = i + 1
+            else
+               in_quotes = .not. in_quotes
+            end if
+         else if ((line(i:i) == ',') .and. (.not. in_quotes)) then
+            count = count + 1
+         end if
+         i = i + 1
+      end do
+   end function csv_field_count_local
 
 end module test_file_output

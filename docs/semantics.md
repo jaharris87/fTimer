@@ -169,7 +169,7 @@ This disabled-facade behavior is an application integration contract, not an alt
 - `summary%has_active_timers` is true when at least one returned entry was active at the snapshot timestamp
 - `summary%entries` remain in preorder so current formatted-report traversal and existing depth-oriented consumers keep working
 - Each entry retains `name` and `depth`, exposes explicit tree linkage through `node_id` and `parent_id`, and exposes `is_active` for that timer context at the snapshot timestamp
-- `call_count` remains the count of user-visible `start` calls for that exact timer context. It is stored and exported as `integer(int64)` so hot-loop instrumentation is not limited to the default integer range. Repair-mode internal continuations can therefore appear as active entries with `is_active = .true.` and `call_count = 0`; that is not a hidden user call.
+- `call_count` remains the count of user-visible `start` calls for that exact timer context. It is stored and exported as `integer(int64)` so hot-loop instrumentation is not limited to the default integer range. Starting a context whose count is already at the signed-64-bit maximum fails with `FTIMER_ERR_UNKNOWN` or the normal omitted-`ierr` warning path instead of wrapping. Repair-mode internal continuations can therefore appear as active entries with `is_active = .true.` and `call_count = 0`; that is not a hidden user call.
 - `node_id` is unique and stable only within one produced summary object
 - `parent_id` refers to another entry's `node_id`; roots use `parent_id = 0`
 - Current `main` does not promise that local summary node ids remain stable across separate runs or across independently produced summary objects
