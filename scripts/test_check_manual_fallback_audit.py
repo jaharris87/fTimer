@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 
+import json
+import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from check_manual_fallback_audit import audit_comments
 
 
 CURRENT_SHA = "a318d358232f9c55b348a155d288e78e183c67af"
 OLD_SHA = "0b981ff235726ab93d6739ac5b674be68eb6cb5b"
+SCRIPT_PATH = Path(__file__).with_name("check_manual_fallback_audit.py")
 
 
 class ManualFallbackAuditTests(unittest.TestCase):
@@ -83,6 +89,45 @@ class ManualFallbackAuditTests(unittest.TestCase):
         warnings = audit_comments(comments, CURRENT_SHA)
 
         self.assertEqual(1, len(warnings))
+
+    def test_cli_writes_warning_and_summary_file(self):
+        comments = [
+            {
+                "id": 1,
+                "body": (
+                    "Manual fallback disposition for superseded-head findings:\n\n"
+                    "- Agreed and fixed a missing test."
+                ),
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            comments_path = Path(tmpdir) / "comments.json"
+            summary_path = Path(tmpdir) / "summary.md"
+            comments_path.write_text(json.dumps(comments), encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT_PATH),
+                    "--comments-json",
+                    str(comments_path),
+                    "--head-sha",
+                    CURRENT_SHA,
+                    "--summary-file",
+                    str(summary_path),
+                    "--github-warning-format",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode)
+            self.assertIn("::warning::", result.stdout)
+            summary = summary_path.read_text(encoding="utf-8")
+            self.assertIn("Manual fallback audit warnings", summary)
+            self.assertIn("superseded-head findings", summary)
 
 
 if __name__ == "__main__":
