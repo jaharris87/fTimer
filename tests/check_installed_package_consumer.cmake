@@ -107,11 +107,25 @@ endif()
 if(NOT DEFINED TEST_PACKAGE_VERSION_MINOR OR TEST_PACKAGE_VERSION_MINOR STREQUAL "")
   message(FATAL_ERROR "TEST_PACKAGE_VERSION_MINOR must be provided.")
 endif()
+if(NOT DEFINED TEST_PACKAGE_VERSION_PATCH OR TEST_PACKAGE_VERSION_PATCH STREQUAL "")
+  message(FATAL_ERROR "TEST_PACKAGE_VERSION_PATCH must be provided.")
+endif()
 if(NOT DEFINED TEST_PACKAGE_VERSION_COMPATIBILITY OR TEST_PACKAGE_VERSION_COMPATIBILITY STREQUAL "")
   message(FATAL_ERROR "TEST_PACKAGE_VERSION_COMPATIBILITY must be provided.")
 endif()
 
 include(CMakePackageConfigHelpers)
+
+function(ftimer_write_synthetic_package_prefix prefix_path package_version)
+  set(synthetic_config_dir "${prefix_path}/lib/cmake/fTimer")
+  file(MAKE_DIRECTORY "${synthetic_config_dir}")
+  file(WRITE "${synthetic_config_dir}/fTimerConfig.cmake" "set(fTimer_FOUND TRUE)\n")
+  write_basic_package_version_file(
+    "${synthetic_config_dir}/fTimerConfigVersion.cmake"
+    VERSION "${package_version}"
+    COMPATIBILITY ${TEST_PACKAGE_VERSION_COMPATIBILITY}
+  )
+endfunction()
 
 function(ftimer_check_package_version_request probe_name requested_version expected_result prefix_path)
   string(REPLACE "." "_" version_probe_fragment "${requested_version}")
@@ -186,6 +200,14 @@ math(EXPR future_minor_package_version "${TEST_PACKAGE_VERSION_MINOR} + 1")
 set(future_minor_package_version_request
   "${TEST_PACKAGE_VERSION_MAJOR}.${future_minor_package_version}.0"
 )
+math(EXPR same_minor_newer_patch_version "${TEST_PACKAGE_VERSION_PATCH} + 1")
+math(EXPR same_minor_too_new_patch_version "${TEST_PACKAGE_VERSION_PATCH} + 2")
+set(same_minor_newer_patch_package_version
+  "${TEST_PACKAGE_VERSION_MAJOR}.${TEST_PACKAGE_VERSION_MINOR}.${same_minor_newer_patch_version}"
+)
+set(same_minor_too_new_patch_request
+  "${TEST_PACKAGE_VERSION_MAJOR}.${TEST_PACKAGE_VERSION_MINOR}.${same_minor_too_new_patch_version}"
+)
 if(TEST_PACKAGE_VERSION_MINOR GREATER 0)
   math(EXPR previous_minor_package_version "${TEST_PACKAGE_VERSION_MINOR} - 1")
   set(incompatible_package_version_request
@@ -221,14 +243,30 @@ ftimer_check_package_version_request(
   "${install_prefix}"
 )
 
+set(same_minor_newer_patch_prefix
+  "${TEST_BINARY_DIR}/version-probes/same-minor-newer-patch-prefix"
+)
+ftimer_write_synthetic_package_prefix(
+  "${same_minor_newer_patch_prefix}"
+  "${same_minor_newer_patch_package_version}"
+)
+ftimer_check_package_version_request(
+  same-minor-newer-patch-package
+  "${current_package_version_request}"
+  ACCEPT
+  "${same_minor_newer_patch_prefix}"
+)
+ftimer_check_package_version_request(
+  same-minor-too-new-patch-request
+  "${same_minor_too_new_patch_request}"
+  REJECT
+  "${same_minor_newer_patch_prefix}"
+)
+
 set(future_minor_prefix "${TEST_BINARY_DIR}/version-probes/future-minor-prefix")
-set(future_minor_config_dir "${future_minor_prefix}/lib/cmake/fTimer")
-file(MAKE_DIRECTORY "${future_minor_config_dir}")
-file(WRITE "${future_minor_config_dir}/fTimerConfig.cmake" "set(fTimer_FOUND TRUE)\n")
-write_basic_package_version_file(
-  "${future_minor_config_dir}/fTimerConfigVersion.cmake"
-  VERSION "${future_minor_package_version_request}"
-  COMPATIBILITY ${TEST_PACKAGE_VERSION_COMPATIBILITY}
+ftimer_write_synthetic_package_prefix(
+  "${future_minor_prefix}"
+  "${future_minor_package_version_request}"
 )
 ftimer_check_package_version_request(
   future-minor-package
