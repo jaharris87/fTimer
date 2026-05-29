@@ -1085,6 +1085,223 @@ contains
    end subroutine test_mpi_union_print_summary_counts_zero_elapsed_present_timer
 
    @test
+   subroutine test_mpi_union_write_summary_syncs_io_error(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      integer :: ierr
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_common_plus_sparse_timers(timer, this%getProcessRank(), ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_mpi_union_summary('/no_such_dir/test_mpi_union_summary.txt', ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_IO, min_err)
+      @assertEqual(FTIMER_ERR_IO, max_err)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_write_summary_syncs_io_error
+
+   @test
+   subroutine test_mpi_union_report_apis_reject_active_timers(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=*), parameter :: report_path = 'test_mpi_union_active_report.txt'
+      integer :: flags(1)
+      integer :: ierr
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+      integer :: rank
+      logical :: report_exists
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      fake_time = 0.0_wp
+      call timer%start("active", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 3.0_wp + real(rank, wp)
+
+      call timer%print_mpi_union_summary(ierr=ierr)
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_ACTIVE, min_err)
+      @assertEqual(FTIMER_ERR_ACTIVE, max_err)
+
+      if (rank == 0) call delete_if_exists(report_path)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_union_summary(report_path, ierr=ierr)
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_ACTIVE, min_err)
+      @assertEqual(FTIMER_ERR_ACTIVE, max_err)
+
+      if (rank == 0) then
+         inquire (file=report_path, exist=report_exists)
+         if (.not. report_exists) flags(1) = 1
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+
+      fake_time = fake_time + 1.0_wp
+      call timer%stop("active", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_report_apis_reject_active_timers
+
+   @test
+   subroutine test_mpi_union_write_summary_preserves_nested_same_name_display(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: printed
+      character(len=*), parameter :: report_path = 'test_mpi_union_same_name_report.txt'
+      integer :: flags(5)
+      integer :: ierr
+      integer :: rank
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      fake_time = 0.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call build_same_name_different_parent_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) call delete_if_exists(report_path)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_union_summary(report_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         printed = read_file_text(report_path)
+         if (count_lines_with_prefix(printed, 'parent_a') == 1) flags(1) = 1
+         if (count_lines_with_prefix(printed, 'parent_b') == 1) flags(2) = 1
+         if (count_union_report_rows(printed, 'work') == 2) flags(3) = 1
+         if (count_lines_with_prefix(printed, '  work') == 2) flags(4) = 1
+         if (same_name_tree_rows_are_ordered(printed)) flags(5) = 1
+         call delete_if_exists(report_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_write_summary_preserves_nested_same_name_display
+
+   @test
+   subroutine test_proc_union_write_forwards_append_metadata(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=:), allocatable :: procedural_text
+      character(len=*), parameter :: procedural_path = 'test_mpi_union_procedural_append_report.txt'
+      integer :: flags(4)
+      integer :: ierr
+      integer :: io
+      integer :: rank
+      integer :: unit
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      fake_time = 0.0_wp
+      call ftimer_default_instance%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call build_common_plus_sparse_timers_procedural(rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      metadata(1)%key = 'Case'
+      metadata(1)%value = 'procedure-metadata'
+
+      if (rank == 0) then
+         call delete_if_exists(procedural_path)
+         open (newunit=unit, file=procedural_path, status='replace', action='write', iostat=io)
+         @assertEqual(0, io)
+         write (unit, '(a)', iostat=io) 'existing marker'
+         @assertEqual(0, io)
+         close (unit)
+      end if
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call ftimer_write_mpi_union_summary(procedural_path, append=.true., metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         procedural_text = read_file_text(procedural_path)
+         if (index(procedural_text, 'existing marker') > 0) flags(1) = 1
+         if (index(procedural_text, 'Case') > 0) flags(2) = 1
+         if (index(procedural_text, 'procedure-metadata') > 0) flags(3) = 1
+         if (index(procedural_text, 'rank_zero') > 0) flags(4) = 1
+         call delete_if_exists(procedural_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_proc_union_write_forwards_append_metadata
+
+   @test
    subroutine test_procedural_mpi_union_write_summary_matches_oop_report(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: oop_timer
@@ -2119,6 +2336,96 @@ contains
          line_start = line_end + 2
       end do
    end function union_report_row_values
+
+   integer function count_union_report_rows(text, timer_name) result(count)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: timer_name
+      character(len=:), allocatable :: line
+      character(len=128) :: row_name
+      integer :: io
+      integer :: line_end
+      integer :: line_start
+      integer :: next_newline
+
+      count = 0
+      line_start = 1
+      do while (line_start <= len(text))
+         next_newline = index(text(line_start:), new_line('a'))
+         if (next_newline <= 0) then
+            line_end = len(text)
+         else
+            line_end = line_start + next_newline - 2
+         end if
+
+         if (line_end >= line_start) then
+            line = text(line_start:line_end)
+            row_name = ''
+            read (line, *, iostat=io) row_name
+            if ((io == 0) .and. (trim(row_name) == trim(timer_name))) count = count + 1
+         end if
+
+         if (next_newline <= 0) exit
+         line_start = line_end + 2
+      end do
+   end function count_union_report_rows
+
+   integer function count_lines_with_prefix(text, prefix) result(count)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: prefix
+      character(len=:), allocatable :: line
+      integer :: line_end
+      integer :: line_start
+      integer :: next_newline
+
+      count = 0
+      line_start = 1
+      do while (line_start <= len(text))
+         next_newline = index(text(line_start:), new_line('a'))
+         if (next_newline <= 0) then
+            line_end = len(text)
+         else
+            line_end = line_start + next_newline - 2
+         end if
+
+         if (line_end >= line_start) then
+            line = text(line_start:line_end)
+            if (len(line) >= len(prefix)) then
+               if (line(1:len(prefix)) == prefix) count = count + 1
+            end if
+         end if
+
+         if (next_newline <= 0) exit
+         line_start = line_end + 2
+      end do
+   end function count_lines_with_prefix
+
+   logical function same_name_tree_rows_are_ordered(text) result(matches)
+      character(len=*), intent(in) :: text
+      character(len=1) :: nl
+      integer :: first_work_pos
+      integer :: parent_a_pos
+      integer :: parent_b_pos
+      integer :: second_work_pos
+      integer :: search_start
+
+      matches = .false.
+      nl = new_line('a')
+
+      parent_a_pos = index(text, nl//'parent_a')
+      if (parent_a_pos <= 0) return
+
+      search_start = parent_a_pos + 1
+      first_work_pos = index(text(search_start:), nl//'  work')
+      if (first_work_pos <= 0) return
+
+      search_start = search_start + first_work_pos
+      parent_b_pos = index(text(search_start:), nl//'parent_b')
+      if (parent_b_pos <= 0) return
+
+      search_start = search_start + parent_b_pos
+      second_work_pos = index(text(search_start:), nl//'  work')
+      matches = second_work_pos > 0
+   end function same_name_tree_rows_are_ordered
 
    logical function csv_text_field_equals(line, column, expected) result(matches)
       character(len=*), intent(in) :: line
