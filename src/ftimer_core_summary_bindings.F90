@@ -1,5 +1,5 @@
 submodule(ftimer_core) ftimer_core_summary_bindings
-   use, intrinsic :: iso_fortran_env, only: error_unit, int64, output_unit
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64, iostat_end, output_unit
    use ftimer_clock, only: ftimer_date_string
    use ftimer_mpi, only: build_mpi_summary, build_mpi_union_summary, check_mpi_summary_prereqs, &
                          get_mpi_summary_comm_info
@@ -11,6 +11,8 @@ submodule(ftimer_core) ftimer_core_summary_bindings
    use mpi_f08, only: MPI_Bcast, MPI_CHARACTER, MPI_INTEGER, MPI_SUCCESS
 #endif
    implicit none
+
+   character(len=*), parameter :: FTIMER_CSV_FORMAT_VERSION = '2'
 
 contains
 
@@ -913,7 +915,7 @@ contains
       character(len=*), intent(in) :: record_type
 
       row = ''
-      call append_csv_field(row, '1')
+      call append_csv_field(row, FTIMER_CSV_FORMAT_VERSION)
       call append_csv_field(row, summary_kind)
       call append_csv_field(row, record_type)
    end subroutine begin_csv_row
@@ -1170,14 +1172,17 @@ contains
       character(len=:), allocatable :: expected_header
       character(len=2048) :: first_line
       character(len=1) :: last_char
+      character(len=2048) :: second_line
       integer :: file_size
       integer :: file_unit
       integer :: io
       logical :: exists
+      logical :: has_data_row
 
       include_header = .true.
       status = FTIMER_SUCCESS
       iomsg = ''
+      has_data_row = .false.
       if (.not. append_mode) return
 
       exists = .false.
@@ -1197,8 +1202,12 @@ contains
       end if
 
       read (file_unit, '(a)', iostat=io, iomsg=iomsg) first_line
+      if (io == 0) then
+         read (file_unit, '(a)', iostat=io, iomsg=iomsg) second_line
+         has_data_row = io == 0
+      end if
       close (file_unit)
-      if (io /= 0) then
+      if ((io /= 0) .and. (io /= iostat_end)) then
          status = FTIMER_ERR_IO
          return
       end if
@@ -1225,12 +1234,38 @@ contains
 
       if (trim(first_line) /= expected_header) then
          status = FTIMER_ERR_IO
-         iomsg = 'existing CSV header does not match fTimer CSV format_version 1'
+         iomsg = 'existing CSV header does not match fTimer CSV format_version 2'
+         return
+      end if
+
+      if (has_data_row .and. (.not. csv_record_has_format_version(second_line, FTIMER_CSV_FORMAT_VERSION))) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing CSV records do not match fTimer CSV format_version 2'
          return
       end if
 
       include_header = .false.
    end subroutine get_csv_header_mode
+
+   logical function csv_record_has_format_version(line, version) result(matches)
+      character(len=*), intent(in) :: line
+      character(len=*), intent(in) :: version
+      character(len=:), allocatable :: expected
+      integer :: expected_len
+      integer :: trimmed_len
+
+      expected = '"'//version//'"'
+      expected_len = len(expected)
+      trimmed_len = len_trim(line)
+      matches = .false.
+      if (trimmed_len < expected_len) return
+      if (line(1:expected_len) /= expected) return
+      if (trimmed_len == expected_len) then
+         matches = .true.
+      else
+         matches = line(expected_len + 1:expected_len + 1) == ','
+      end if
+   end function csv_record_has_format_version
 
    function csv_header_line() result(header)
       character(len=:), allocatable :: header

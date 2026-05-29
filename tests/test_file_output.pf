@@ -101,6 +101,7 @@ contains
       integer :: avg_col
       integer :: call_count_col
       integer :: depth_col
+      integer :: format_version_col
       integer :: ierr
       integer :: inclusive_col
       integer :: is_active_col
@@ -159,6 +160,7 @@ contains
       child_line = csv_line_at(csv_text, 5)
 
       record_type_col = csv_column_index(header, 'record_type')
+      format_version_col = csv_column_index(header, 'format_version')
       total_col = csv_column_index(header, 'total_time')
       node_col = csv_column_index(header, 'node_id')
       parent_col = csv_column_index(header, 'parent_id')
@@ -171,6 +173,7 @@ contains
       pct_col = csv_column_index(header, 'pct_time')
       is_active_col = csv_column_index(header, 'is_active')
 
+      @assertTrue(format_version_col > 0)
       @assertTrue(record_type_col > 0)
       @assertTrue(node_col > 0)
       @assertTrue(parent_col > 0)
@@ -179,6 +182,8 @@ contains
 
       record_type_matches = csv_field_value(summary_line, record_type_col) == 'summary'
       @assertTrue(record_type_matches)
+      field_text = csv_field_value(summary_line, format_version_col)
+      @assertEqual('2', field_text)
       field_text = csv_field_value(summary_line, total_col)
       read (field_text, *) total_time
       call assert_real_close(total_time, 8.0_wp)
@@ -192,6 +197,8 @@ contains
       kind_matches = csv_field_value(entry_line, csv_column_index(header, 'summary_kind')) == 'local'
       @assertTrue(record_type_matches)
       @assertTrue(kind_matches)
+      field_text = csv_field_value(entry_line, format_version_col)
+      @assertEqual('2', field_text)
       field_text = csv_field_value(entry_line, node_col)
       @assertEqual('1', field_text)
       field_text = csv_field_value(entry_line, parent_col)
@@ -252,9 +259,11 @@ contains
       character(len=:), allocatable :: entry_line
       character(len=:), allocatable :: field_text
       character(len=:), allocatable :: header
+      character(len=:), allocatable :: summary_line
       character(len=32) :: expected_count_text
       integer :: call_count_col
       integer :: ctx
+      integer :: format_version_col
       integer :: id_hot
       integer :: ierr
       integer :: io
@@ -289,8 +298,14 @@ contains
 
       csv_text = read_file_text(path)
       header = csv_line_at(csv_text, 1)
+      summary_line = csv_line_at(csv_text, 2)
       entry_line = csv_line_at(csv_text, 3)
+      format_version_col = csv_column_index(header, 'format_version')
       call_count_col = csv_column_index(header, 'call_count')
+      field_text = csv_field_value(summary_line, format_version_col)
+      @assertEqual('2', field_text)
+      field_text = csv_field_value(entry_line, format_version_col)
+      @assertEqual('2', field_text)
       field_text = csv_field_value(entry_line, call_count_col)
       field_matches = field_text == trim(expected_count_text)
       @assertTrue(field_matches)
@@ -421,6 +436,41 @@ contains
 
       call delete_if_exists(path)
    end subroutine test_write_summary_csv_rejects_mismatched_append_header
+
+   @test
+   subroutine test_write_summary_csv_rejects_prior_format_version_append()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_v2_header_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_prior_version_append.csv'
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      integer :: ierr
+      integer :: io
+      integer :: unit
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+
+      open (newunit=unit, file=path, status='replace', action='write', iostat=io)
+      @assertEqual(0, io)
+      write (unit, '(a)') trim(header)
+      write (unit, '(a)') '"1","local","summary"'
+      close (unit)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_prior_format_version_append
 
    @test
    subroutine test_write_summary_csv_rejects_unterminated_append_target()

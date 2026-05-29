@@ -199,14 +199,24 @@ contains
       integer :: id_hot
       integer :: ierr
       integer :: rank
-      integer(int64) :: base_count
+      integer(int64) :: high_count
       integer(int64) :: local_count
+      integer(int64) :: low_count
+      logical :: avg_count_matches
+      logical :: avg_count_positive
       logical :: max_count_matches
       logical :: min_count_matches
+      real(wp) :: expected_avg
 
       rank = this%getProcessRank()
-      base_count = int(huge(0), int64) + 11_int64
-      local_count = base_count + int(rank, int64)
+      low_count = huge(0_int64) - 1024_int64
+      high_count = huge(0_int64) - 512_int64
+      if (rank == 0) then
+         local_count = low_count
+      else
+         local_count = high_count
+      end if
+      expected_avg = 0.5_wp*(real(low_count, wp) + real(high_count, wp))
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -227,11 +237,14 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       @assertEqual(1, summary%num_entries)
-      min_count_matches = summary%entries(1)%min_call_count == base_count
-      max_count_matches = summary%entries(1)%max_call_count == base_count + 1_int64
+      min_count_matches = summary%entries(1)%min_call_count == low_count
+      max_count_matches = summary%entries(1)%max_call_count == high_count
+      avg_count_positive = summary%entries(1)%avg_call_count > 0.0_wp
+      avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
       @assertTrue(min_count_matches)
       @assertTrue(max_count_matches)
-      call assert_real_close(summary%entries(1)%avg_call_count, real(base_count, wp) + 0.5_wp)
+      @assertTrue(avg_count_positive)
+      @assertTrue(avg_count_matches)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -283,6 +296,66 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_union_summary_preserves_sparse_int64_call_count
+
+   @test
+   subroutine test_mpi_union_summary_avoids_int64_avg_sum_overflow(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_union_summary_t) :: summary
+      integer :: id_hot
+      integer :: ierr
+      integer :: rank
+      integer(int64) :: high_count
+      integer(int64) :: local_count
+      integer(int64) :: low_count
+      logical :: avg_count_matches
+      logical :: avg_count_positive
+      logical :: max_count_matches
+      logical :: min_count_matches
+      real(wp) :: expected_avg
+
+      rank = this%getProcessRank()
+      low_count = huge(0_int64) - 2048_int64
+      high_count = huge(0_int64) - 1024_int64
+      if (rank == 0) then
+         local_count = low_count
+      else
+         local_count = high_count
+      end if
+      expected_avg = 0.5_wp*(real(low_count, wp) + real(high_count, wp))
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("union-wide-count", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp + real(rank, wp)
+      call timer%stop("union-wide-count", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("union-wide-count", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_test_set_call_count(timer, id_hot, 1, local_count, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_union_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(1, summary%num_entries)
+      @assertEqual(2, summary%entries(1)%participating_rank_count)
+      min_count_matches = summary%entries(1)%min_call_count == low_count
+      max_count_matches = summary%entries(1)%max_call_count == high_count
+      avg_count_positive = summary%entries(1)%avg_call_count > 0.0_wp
+      avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
+      @assertTrue(min_count_matches)
+      @assertTrue(max_count_matches)
+      @assertTrue(avg_count_positive)
+      @assertTrue(avg_count_matches)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_avoids_int64_avg_sum_overflow
 
    @test
    subroutine test_mpi_summary_uses_canonical_order_for_consistent_timer_sets(this)
@@ -985,6 +1058,184 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_print_summary_emits_global_report
+
+   @test
+   subroutine test_mpi_write_summary_formats_int64_call_count_average(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: printed
+      character(len=*), parameter :: report_path = 'test_mpi_summary_int64_count_report.txt'
+      integer :: flags(6)
+      integer :: id_hot
+      integer :: ierr
+      integer :: max_rank
+      integer :: min_rank
+      integer :: rank
+      integer(int64) :: high_count
+      integer(int64) :: local_count
+      integer(int64) :: low_count
+      logical :: found
+      real(wp) :: avg_calls
+      real(wp) :: avg_incl
+      real(wp) :: avg_pct
+      real(wp) :: avg_self
+      real(wp) :: expected_avg
+      real(wp) :: imbalance
+      real(wp) :: max_incl
+      real(wp) :: min_incl
+
+      rank = this%getProcessRank()
+      flags = 0
+      low_count = huge(0_int64) - 4096_int64
+      high_count = huge(0_int64) - 2048_int64
+      if (rank == 0) then
+         local_count = low_count
+      else
+         local_count = high_count
+      end if
+      expected_avg = 0.5_wp*(real(low_count, wp) + real(high_count, wp))
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("wide-count-report", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp + real(rank, wp)
+      call timer%stop("wide-count-report", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("wide-count-report", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_test_set_call_count(timer, id_hot, 1, local_count, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) call delete_if_exists(report_path)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_summary(report_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         printed = read_file_text(report_path)
+         if (index(printed, 'Avg Calls') > 0) flags(1) = 1
+         if (index(printed, '********') == 0) flags(2) = 1
+         found = mpi_report_row_values(printed, 'wide-count-report', min_incl, min_rank, avg_incl, &
+                                       max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct)
+         if (found) flags(3) = 1
+         if (avg_calls > 0.0_wp) flags(4) = 1
+         if (real_rel_close(avg_calls, expected_avg)) flags(5) = 1
+         if (max_rank == 1) flags(6) = 1
+         call delete_if_exists(report_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_write_summary_formats_int64_call_count_average
+
+   @test
+   subroutine test_mpi_union_write_summary_formats_int64_call_count_average(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: printed
+      character(len=*), parameter :: report_path = 'test_mpi_union_int64_count_report.txt'
+      integer :: flags(7)
+      integer :: id_hot
+      integer :: ierr
+      integer :: max_rank
+      integer :: min_rank
+      integer :: missing
+      integer :: participating
+      integer :: rank
+      integer(int64) :: high_count
+      integer(int64) :: local_count
+      integer(int64) :: low_count
+      logical :: found
+      real(wp) :: avg_calls
+      real(wp) :: avg_incl
+      real(wp) :: avg_pct
+      real(wp) :: avg_self
+      real(wp) :: expected_avg
+      real(wp) :: imbalance
+      real(wp) :: max_incl
+      real(wp) :: min_incl
+
+      rank = this%getProcessRank()
+      flags = 0
+      low_count = huge(0_int64) - 8192_int64
+      high_count = huge(0_int64) - 4096_int64
+      if (rank == 0) then
+         local_count = low_count
+      else
+         local_count = high_count
+      end if
+      expected_avg = 0.5_wp*(real(low_count, wp) + real(high_count, wp))
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("union-wide-report", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 3.0_wp + real(rank, wp)
+      call timer%stop("union-wide-report", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("union-wide-report", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_test_set_call_count(timer, id_hot, 1, local_count, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) call delete_if_exists(report_path)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_union_summary(report_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         printed = read_file_text(report_path)
+         if (index(printed, 'Sparse MPI union summary') > 0) flags(1) = 1
+         if (index(printed, '********') == 0) flags(2) = 1
+         found = union_report_row_values(printed, 'union-wide-report', participating, missing, min_incl, min_rank, &
+                                         avg_incl, max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct)
+         if (found) flags(3) = 1
+         if (participating == 2) flags(4) = 1
+         if (missing == 0) flags(5) = 1
+         if (avg_calls > 0.0_wp) flags(6) = 1
+         if (real_rel_close(avg_calls, expected_avg)) flags(7) = 1
+         call delete_if_exists(report_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
+      @assertEqual(1, flags(7))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_write_summary_formats_int64_call_count_average
 
    @test
    subroutine test_mpi_union_write_summary_reports_sparse_participation(this)
@@ -2236,11 +2487,13 @@ contains
       character(len=:), allocatable :: csv_text
       character(len=:), allocatable :: entry_line
       character(len=:), allocatable :: header
+      character(len=:), allocatable :: summary_line
       character(len=*), parameter :: csv_path = 'test_mpi_summary_int64_call_extrema_export.csv'
       character(len=32) :: expected_max_text
       character(len=32) :: expected_min_text
       integer :: avg_call_count_col
-      integer :: flags(6)
+      integer :: flags(8)
+      integer :: format_version_col
       integer :: id_hot
       integer :: ierr
       integer :: max_call_count_col
@@ -2285,7 +2538,9 @@ contains
          if (csv_record_count(csv_text) == 3) flags(1) = 1
 
          header = csv_line_at(csv_text, 1)
+         summary_line = csv_line_at(csv_text, 2)
          entry_line = csv_line_at(csv_text, 3)
+         format_version_col = csv_column_index(header, 'format_version')
          min_call_count_col = csv_column_index(header, 'min_call_count')
          avg_call_count_col = csv_column_index(header, 'avg_call_count')
          max_call_count_col = csv_column_index(header, 'max_call_count')
@@ -2295,6 +2550,8 @@ contains
          if (csv_text_field_equals(entry_line, max_call_count_col, trim(expected_max_text))) flags(4) = 1
          if (min_call_count_col > 0) flags(5) = 1
          if (max_call_count_col > 0) flags(6) = 1
+         if (csv_text_field_equals(summary_line, format_version_col, '2')) flags(7) = 1
+         if (csv_text_field_equals(entry_line, format_version_col, '2')) flags(8) = 1
 
          call delete_if_exists(csv_path)
       end if
@@ -2308,6 +2565,8 @@ contains
       @assertEqual(1, flags(4))
       @assertEqual(1, flags(5))
       @assertEqual(1, flags(6))
+      @assertEqual(1, flags(7))
+      @assertEqual(1, flags(8))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -2901,6 +3160,75 @@ contains
 
       matches = abs(actual - expected) < 1.0e-12_wp
    end function real_close
+
+   logical function real_rel_close(actual, expected) result(matches)
+      real(wp), intent(in) :: actual
+      real(wp), intent(in) :: expected
+      real(wp) :: diff
+      real(wp) :: tolerance
+
+      diff = abs(actual - expected)
+      tolerance = max(1.0e-12_wp, abs(expected)*1.0e-12_wp)
+      matches = diff < tolerance
+   end function real_rel_close
+
+   logical function mpi_report_row_values(text, timer_name, min_incl, min_rank, avg_incl, max_incl, max_rank, &
+                                          imbalance, avg_self, avg_calls, avg_pct) result(found)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: timer_name
+      real(wp), intent(out) :: min_incl
+      integer, intent(out) :: min_rank
+      real(wp), intent(out) :: avg_incl
+      real(wp), intent(out) :: max_incl
+      integer, intent(out) :: max_rank
+      real(wp), intent(out) :: imbalance
+      real(wp), intent(out) :: avg_self
+      real(wp), intent(out) :: avg_calls
+      real(wp), intent(out) :: avg_pct
+      character(len=:), allocatable :: line
+      character(len=128) :: row_name
+      integer :: io
+      integer :: line_end
+      integer :: line_start
+      integer :: next_newline
+
+      found = .false.
+      min_incl = -1.0_wp
+      min_rank = -1
+      avg_incl = -1.0_wp
+      max_incl = -1.0_wp
+      max_rank = -1
+      imbalance = -1.0_wp
+      avg_self = -1.0_wp
+      avg_calls = -1.0_wp
+      avg_pct = -1.0_wp
+
+      line_start = 1
+      do while (line_start <= len(text))
+         next_newline = index(text(line_start:), new_line('a'))
+         if (next_newline <= 0) then
+            line_end = len(text)
+         else
+            line_end = line_start + next_newline - 2
+         end if
+
+         if (line_end >= line_start) then
+            line = text(line_start:line_end)
+            if (index(line, trim(timer_name)) > 0) then
+               row_name = ''
+               read (line, *, iostat=io) row_name, min_incl, min_rank, avg_incl, max_incl, max_rank, &
+                  imbalance, avg_self, avg_calls, avg_pct
+               if ((io == 0) .and. (trim(row_name) == trim(timer_name))) then
+                  found = .true.
+                  return
+               end if
+            end if
+         end if
+
+         if (next_newline <= 0) exit
+         line_start = line_end + 2
+      end do
+   end function mpi_report_row_values
 
    logical function union_report_row_values(text, timer_name, participating, missing, min_incl, min_rank, &
                                             avg_incl, max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct) &

@@ -940,22 +940,22 @@ contains
       integer, intent(out), optional :: ierr
 
       if (.not. self%initialized) then
-         if (present(ierr)) ierr = FTIMER_ERR_NOT_INIT
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer test_set_call_count before init")
          return
       end if
 
       if ((segment_id < 1) .or. (segment_id > self%num_segments)) then
-         if (present(ierr)) ierr = FTIMER_ERR_UNKNOWN
+         call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer test_set_call_count with unknown segment id")
          return
       end if
 
       if (.not. allocated(self%segments(segment_id)%call_count)) then
-         if (present(ierr)) ierr = FTIMER_ERR_UNKNOWN
+         call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer test_set_call_count before context allocation")
          return
       end if
 
       if ((context_id < 1) .or. (context_id > size(self%segments(segment_id)%call_count))) then
-         if (present(ierr)) ierr = FTIMER_ERR_UNKNOWN
+         call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer test_set_call_count with unknown context id")
          return
       end if
 

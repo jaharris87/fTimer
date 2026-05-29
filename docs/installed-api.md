@@ -2,7 +2,7 @@
 
 Stable source-level modules: `ftimer`, `ftimer_core`, `ftimer_types`.
 
-Pre-1.0 CMake package version compatibility is limited to the same minor release line. A `0.1.z` package can satisfy `find_package(fTimer 0.1 CONFIG REQUIRED)` and compatible `0.1.x` requests, but different `0.x` minor lines are not considered compatible. This package does not promise all-`0.x` source or compiler-module compatibility.
+Pre-1.0 CMake package version compatibility is limited to the same minor release line. A `0.2.z` package can satisfy `find_package(fTimer 0.2 CONFIG REQUIRED)` and compatible `0.2.x` requests, but different `0.x` minor lines are not considered compatible. This package does not promise all-`0.x` source or compiler-module compatibility. The `0.2` package line is the compatibility boundary for the production-readiness call-count widening: stable summary/result call-count fields are `integer(int64)` on this line.
 
 The supported source-level import surface is intentionally narrow:
 
