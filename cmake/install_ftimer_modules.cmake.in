@@ -6,11 +6,10 @@
 
 set(ftimer_install_includedir "@CMAKE_INSTALL_INCLUDEDIR@")
 if(IS_ABSOLUTE "${ftimer_install_includedir}")
-  set(ftimer_install_module_dir "$ENV{DESTDIR}${ftimer_install_includedir}/ftimer")
+  set(ftimer_install_module_dir "${ftimer_install_includedir}/ftimer")
 else()
-  set(ftimer_install_module_dir "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${ftimer_install_includedir}/ftimer")
+  set(ftimer_install_module_dir "${CMAKE_INSTALL_PREFIX}/${ftimer_install_includedir}/ftimer")
 endif()
-file(MAKE_DIRECTORY "${ftimer_install_module_dir}")
 
 set(ftimer_installed_module_artifact_names
   ftimer
