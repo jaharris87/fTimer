@@ -10,8 +10,116 @@ The supported source-level import surface is intentionally narrow:
 - `use ftimer_core` for `type(ftimer_t)` and its OOP methods
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
-Installed implementation module artifacts: `ftimer_clock.mod`, `ftimer_summary.mod`, `ftimer_mpi.mod`.
+The checked module-level public-symbol boundary for those modules is
+`tests/public_symbol_allowlist.txt`. Any module-level public symbol added to
+`src/ftimer.F90`, `src/ftimer_core.F90`, or `src/ftimer_types.F90` must be added
+there intentionally and documented here as either stable API, unstable
+public-by-necessity API, or test-only API. The allowlist check intentionally
+requires default-private modules and standalone `public :: name` declarations so
+new module-level exports cannot bypass the checked boundary through implicit
+visibility or declaration attributes.
 
-Those implementation module files may be present in the installed include tree because Fortran consumers need a coherent compiler module artifact set when they import the supported modules above. They are not stable import targets, and their installed visibility does not promote the corresponding source modules into supported API. Downstream code should not import `ftimer_clock`, `ftimer_summary`, or `ftimer_mpi` directly unless it is deliberately accepting implementation-detail coupling.
+## Stable user API
 
-The exact installed module artifact set is curated and smoke-tested. Extra compiler-specific companion artifacts should be added only when a validated compiler requires them for downstream package consumption, and each such exception should be documented explicitly.
+Stable public symbols in `ftimer`:
+
+- `ftimer_guard_t`
+- `ftimer_init`
+- `ftimer_finalize`
+- `ftimer_start`
+- `ftimer_stop`
+- `ftimer_scope`
+- `ftimer_start_id`
+- `ftimer_stop_id`
+- `ftimer_lookup`
+- `ftimer_reset`
+- `ftimer_get_summary`
+- `ftimer_mpi_summary`
+- `ftimer_mpi_union_summary`
+- `ftimer_print_summary`
+- `ftimer_write_summary`
+- `ftimer_write_summary_csv`
+- `ftimer_print_mpi_summary`
+- `ftimer_write_mpi_summary`
+- `ftimer_write_mpi_summary_csv`
+- `ftimer_print_mpi_union_summary`
+- `ftimer_write_mpi_union_summary`
+- `ftimer_default_instance`
+
+Stable public symbols in `ftimer_core`:
+
+- `ftimer_t`
+
+Stable public symbols in `ftimer_types`:
+
+- `FTIMER_SUCCESS`
+- `FTIMER_ERR_NOT_INIT`
+- `FTIMER_ERR_NOT_IMPLEMENTED`
+- `FTIMER_ERR_UNKNOWN`
+- `FTIMER_ERR_ACTIVE`
+- `FTIMER_ERR_MISMATCH`
+- `FTIMER_ERR_MPI_INCON`
+- `FTIMER_ERR_IO`
+- `FTIMER_ERR_INVALID_NAME`
+- `FTIMER_NAME_LEN`
+- `FTIMER_MISMATCH_STRICT`
+- `FTIMER_MISMATCH_WARN`
+- `FTIMER_MISMATCH_REPAIR`
+- `FTIMER_EVENT_START`
+- `FTIMER_EVENT_STOP`
+- `wp`
+- `ftimer_metadata_t`
+- `ftimer_summary_entry_t`
+- `ftimer_summary_t`
+- `ftimer_mpi_summary_entry_t`
+- `ftimer_mpi_summary_t`
+- `ftimer_mpi_union_summary_entry_t`
+- `ftimer_mpi_union_summary_t`
+- `ftimer_clock_func`
+- `ftimer_hook_proc`
+
+## Unstable public-by-necessity symbols
+
+The following names are visible from stable modules because current Fortran
+module layering requires helper modules to share implementation storage or
+because the procedural scoped guard delegates exact activation ownership to the
+OOP core. They are not part of the stable downstream contract and may change,
+move, narrow, or disappear before a future compatibility boundary:
+
+- `ftimer_call_stack_t`
+- `ftimer_context_list_t`
+- `ftimer_segment_t`
+- `ftimer_internal_start_scope_activation`
+- `ftimer_internal_stop_scope_activation`
+
+Downstream application code should not import or declare those names unless it
+is deliberately coupling to fTimer internals. Supported user code should use
+`ftimer_scope()` or explicit `start`/`stop` instead of the internal scoped
+activation hooks, and should use summary result types instead of the runtime
+storage types.
+
+## Test-only public symbols
+
+The following names are public only in `FTIMER_BUILD_TESTS` helper builds and
+are never installed as stable API:
+
+- `ftimer_test_get_state`
+- `ftimer_test_state_t`
+
+## Installed implementation artifacts
+
+Installed implementation module artifacts: `ftimer_clock.mod`,
+`ftimer_summary.mod`, `ftimer_mpi.mod`.
+
+Those implementation module files may be present in the installed include tree
+because Fortran consumers need a coherent compiler module artifact set when they
+import the supported modules above. They are not stable import targets, and
+their installed visibility does not promote the corresponding source modules
+into supported API. Downstream code should not import `ftimer_clock`,
+`ftimer_summary`, or `ftimer_mpi` directly unless it is deliberately accepting
+implementation-detail coupling.
+
+The exact installed module artifact set is curated and smoke-tested. Extra
+compiler-specific companion artifacts should be added only when a validated
+compiler requires them for downstream package consumption, and each such
+exception should be documented explicitly.
