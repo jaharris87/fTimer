@@ -1,5 +1,5 @@
 submodule(ftimer_core) ftimer_core_summary_bindings
-   use, intrinsic :: iso_fortran_env, only: error_unit, int64, iostat_end, output_unit
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64, output_unit
    use ftimer_clock, only: ftimer_date_string
    use ftimer_mpi, only: build_mpi_summary, build_mpi_union_summary, check_mpi_summary_prereqs, &
                          get_mpi_summary_comm_info
@@ -1170,14 +1170,17 @@ contains
       integer, intent(out) :: status
       character(len=*), intent(out) :: iomsg
       character(len=:), allocatable :: expected_header
+      character(len=:), allocatable :: file_text
+      character(len=:), allocatable :: header_line
       character(len=:), allocatable :: record_text
-      character(len=2048) :: first_line
-      character(len=1) :: last_char
-      character(len=2048) :: physical_line
       integer :: file_size
       integer :: file_unit
+      integer :: header_end
+      integer :: i
       integer :: io
+      integer :: record_start
       logical :: exists
+      logical :: in_quotes
 
       include_header = .true.
       status = FTIMER_SUCCESS
@@ -1191,62 +1194,7 @@ contains
       if (file_size <= 0) return
 
       expected_header = csv_header_line()
-      first_line = ''
-      last_char = ''
-
-      open (newunit=file_unit, file=filename, status='old', action='read', iostat=io, iomsg=iomsg)
-      if (io /= 0) then
-         status = FTIMER_ERR_IO
-         return
-      end if
-
-      read (file_unit, '(a)', iostat=io, iomsg=iomsg) first_line
-      if (io /= 0) then
-         close (file_unit)
-         status = FTIMER_ERR_IO
-         return
-      end if
-
-      if (trim(first_line) /= expected_header) then
-         close (file_unit)
-         status = FTIMER_ERR_IO
-         iomsg = 'existing CSV header does not match fTimer CSV format_version 2'
-         return
-      end if
-
-      record_text = ''
-      do
-         read (file_unit, '(a)', iostat=io, iomsg=iomsg) physical_line
-         if (io == iostat_end) exit
-         if (io /= 0) then
-            close (file_unit)
-            status = FTIMER_ERR_IO
-            return
-         end if
-
-         if (len(record_text) <= 0) then
-            record_text = trim(physical_line)
-         else
-            record_text = record_text//new_line('a')//trim(physical_line)
-         end if
-
-         if (.not. csv_record_is_complete(record_text)) cycle
-
-         if (.not. csv_record_has_format_version(record_text, FTIMER_CSV_FORMAT_VERSION)) then
-            close (file_unit)
-            status = FTIMER_ERR_IO
-            iomsg = 'existing CSV records do not match fTimer CSV format_version 2'
-            return
-         end if
-         record_text = ''
-      end do
-      close (file_unit)
-
-      if (len(record_text) > 0) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing CSV records contain an unterminated quoted field'
-         return
-      end if
+      allocate (character(len=file_size) :: file_text)
 
       open (newunit=file_unit, file=filename, status='old', access='stream', form='unformatted', &
             action='read', iostat=io, iomsg=iomsg)
@@ -1255,16 +1203,62 @@ contains
          return
       end if
 
-      read (file_unit, pos=file_size, iostat=io, iomsg=iomsg) last_char
+      read (file_unit, iostat=io, iomsg=iomsg) file_text
       close (file_unit)
       if (io /= 0) then
          status = FTIMER_ERR_IO
          return
       end if
 
-      if (last_char /= new_line('a')) then
+      if (file_text(file_size:file_size) /= new_line('a')) then
          status = FTIMER_ERR_IO
          iomsg = 'existing CSV append target does not end with a newline'
+         return
+      end if
+
+      header_end = index(file_text, new_line('a'))
+      if (header_end <= 1) then
+         header_line = ''
+      else
+         header_line = file_text(1:header_end - 1)
+      end if
+
+      if (trim(header_line) /= expected_header) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing CSV header does not match fTimer CSV format_version 2'
+         return
+      end if
+
+      in_quotes = .false.
+      record_start = header_end + 1
+      i = record_start
+      do while (i <= file_size)
+         if (file_text(i:i) == '"') then
+            if (in_quotes .and. (i < file_size) .and. (file_text(i + 1:i + 1) == '"')) then
+               i = i + 1
+            else
+               in_quotes = .not. in_quotes
+            end if
+         else if ((file_text(i:i) == new_line('a')) .and. (.not. in_quotes)) then
+            if (i > record_start) then
+               record_text = file_text(record_start:i - 1)
+            else
+               record_text = ''
+            end if
+
+            if (.not. csv_record_has_format_version(record_text, FTIMER_CSV_FORMAT_VERSION)) then
+               status = FTIMER_ERR_IO
+               iomsg = 'existing CSV records do not match fTimer CSV format_version 2'
+               return
+            end if
+            record_start = i + 1
+         end if
+         i = i + 1
+      end do
+
+      if (in_quotes) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing CSV records contain an unterminated quoted field'
          return
       end if
 
@@ -1290,28 +1284,6 @@ contains
          matches = line(expected_len + 1:expected_len + 1) == ','
       end if
    end function csv_record_has_format_version
-
-   logical function csv_record_is_complete(line) result(matches)
-      character(len=*), intent(in) :: line
-      integer :: i
-      integer :: text_len
-      logical :: in_quotes
-
-      in_quotes = .false.
-      text_len = len_trim(line)
-      i = 1
-      do while (i <= text_len)
-         if (line(i:i) == '"') then
-            if (in_quotes .and. (i < text_len) .and. (line(i + 1:i + 1) == '"')) then
-               i = i + 1
-            else
-               in_quotes = .not. in_quotes
-            end if
-         end if
-         i = i + 1
-      end do
-      matches = .not. in_quotes
-   end function csv_record_is_complete
 
    function csv_header_line() result(header)
       character(len=:), allocatable :: header

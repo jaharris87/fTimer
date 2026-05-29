@@ -240,7 +240,7 @@ contains
       @assertEqual(1, summary%num_entries)
       min_count_matches = summary%entries(1)%min_call_count == low_count
       max_count_matches = summary%entries(1)%max_call_count == high_count
-      avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
+      avg_count_matches = real_spacing_close(summary%entries(1)%avg_call_count, expected_avg)
       avg_count_positive = summary%entries(1)%avg_call_count > 0.0_wp
       avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, high_count)
       @assertTrue(min_count_matches)
@@ -291,7 +291,7 @@ contains
       @assertEqual(1, summary%num_entries)
       min_count_matches = summary%entries(1)%min_call_count == boundary_count
       max_count_matches = summary%entries(1)%max_call_count == boundary_count
-      avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
+      avg_count_matches = real_spacing_close(summary%entries(1)%avg_call_count, expected_avg)
       avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, &
                                                                    boundary_count)
       @assertTrue(min_count_matches)
@@ -400,7 +400,7 @@ contains
       @assertEqual(2, summary%entries(1)%participating_rank_count)
       min_count_matches = summary%entries(1)%min_call_count == low_count
       max_count_matches = summary%entries(1)%max_call_count == high_count
-      avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
+      avg_count_matches = real_spacing_close(summary%entries(1)%avg_call_count, expected_avg)
       avg_count_positive = summary%entries(1)%avg_call_count > 0.0_wp
       avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, high_count)
       @assertTrue(min_count_matches)
@@ -452,7 +452,7 @@ contains
       @assertEqual(2, summary%entries(1)%participating_rank_count)
       min_count_matches = summary%entries(1)%min_call_count == boundary_count
       max_count_matches = summary%entries(1)%max_call_count == boundary_count
-      avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
+      avg_count_matches = real_spacing_close(summary%entries(1)%avg_call_count, expected_avg)
       avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, &
                                                                    boundary_count)
       @assertTrue(min_count_matches)
@@ -1234,7 +1234,7 @@ contains
                                        max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct)
          if (found) flags(3) = 1
          if (avg_calls > 0.0_wp) flags(4) = 1
-         if (real_rel_close(avg_calls, expected_avg)) flags(5) = 1
+         if (real_spacing_close(avg_calls, expected_avg)) flags(5) = 1
          if (max_rank == 1) flags(6) = 1
          call delete_if_exists(report_path)
       end if
@@ -1325,7 +1325,7 @@ contains
          if (participating == 2) flags(4) = 1
          if (missing == 0) flags(5) = 1
          if (avg_calls > 0.0_wp) flags(6) = 1
-         if (real_rel_close(avg_calls, expected_avg)) flags(7) = 1
+         if (real_spacing_close(avg_calls, expected_avg)) flags(7) = 1
          call delete_if_exists(report_path)
       end if
 
@@ -2656,7 +2656,7 @@ contains
          max_call_count_col = csv_column_index(header, 'max_call_count')
 
          if (csv_text_field_equals(entry_line, min_call_count_col, trim(expected_min_text))) flags(2) = 1
-         if (csv_decimal_field_not_above_int64(entry_line, avg_call_count_col, base_count + 1_int64)) flags(3) = 1
+         if (csv_real_field_not_above_int64(entry_line, avg_call_count_col, base_count + 1_int64)) flags(3) = 1
          if (csv_text_field_equals(entry_line, max_call_count_col, trim(expected_max_text))) flags(4) = 1
          if (min_call_count_col > 0) flags(5) = 1
          if (max_call_count_col > 0) flags(6) = 1
@@ -2669,7 +2669,7 @@ contains
          if (avg_io == 0) flags(11) = 1
          if ((avg_io == 0) .and. (avg_count_value > 0.0_wp)) flags(12) = 1
          if ((avg_io == 0) .and. &
-             real_rel_close(avg_count_value, real(huge(0_int64) - 1023_int64, wp))) flags(13) = 1
+             real_spacing_close(avg_count_value, real(huge(0_int64) - 1023_int64, wp))) flags(13) = 1
 
          call delete_if_exists(csv_path)
       end if
@@ -3295,6 +3295,17 @@ contains
       matches = diff < tolerance
    end function real_rel_close
 
+   logical function real_spacing_close(actual, expected) result(matches)
+      real(wp), intent(in) :: actual
+      real(wp), intent(in) :: expected
+      real(wp) :: diff
+      real(wp) :: tolerance
+
+      diff = abs(actual - expected)
+      tolerance = max(1.0e-12_wp, spacing(expected)*0.25_wp)
+      matches = diff <= tolerance
+   end function real_spacing_close
+
    logical function fixed_decimal_real_not_above_int64(value, limit) result(matches)
       real(wp), intent(in) :: value
       integer(int64), intent(in) :: limit
@@ -3304,15 +3315,23 @@ contains
       matches = decimal_field_not_above_int64(value_text, limit)
    end function fixed_decimal_real_not_above_int64
 
-   logical function csv_decimal_field_not_above_int64(line, column, limit) result(matches)
+   logical function csv_real_field_not_above_int64(line, column, limit) result(matches)
       character(len=*), intent(in) :: line
       integer, intent(in) :: column
       integer(int64), intent(in) :: limit
       character(len=:), allocatable :: field_text
+      integer :: io
+      real(wp) :: value
 
       field_text = csv_field_value(line, column)
-      matches = decimal_field_not_above_int64(field_text, limit)
-   end function csv_decimal_field_not_above_int64
+      read (field_text, *, iostat=io) value
+      if (io /= 0) then
+         matches = .false.
+         return
+      end if
+
+      matches = fixed_decimal_real_not_above_int64(value, limit)
+   end function csv_real_field_not_above_int64
 
    logical function decimal_field_not_above_int64(field_text, limit) result(matches)
       character(len=*), intent(in) :: field_text

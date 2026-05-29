@@ -463,6 +463,38 @@ contains
    end subroutine test_write_summary_csv_appends_after_quoted_metadata_newline
 
    @test
+   subroutine test_write_summary_csv_appends_after_long_quoted_metadata()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=*), parameter :: path = 'phase3_summary_append_long_metadata.csv'
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      integer :: ierr
+      logical :: long_metadata_written
+
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      metadata(1)%key = 'Notes'
+      metadata(1)%value = repeat('x', 3000)
+
+      call timer%write_summary_csv(path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      csv_text = read_file_text(path)
+      header = csv_line_at(csv_text, 1)
+      long_metadata_written = index(csv_text, repeat('x', 3000)) > 0
+      @assertTrue(long_metadata_written)
+      @assertEqual(1, count_csv_header_records(csv_text, header))
+
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_appends_after_long_quoted_metadata
+
+   @test
    subroutine test_write_summary_csv_rejects_mismatched_append_header()
       type(ftimer_t) :: timer
       type(ftimer_summary_t) :: summary
