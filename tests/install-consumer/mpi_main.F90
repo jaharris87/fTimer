@@ -17,6 +17,9 @@ program ftimer_installed_mpi_consumer
    call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
    if (ierr /= MPI_SUCCESS) error stop 2
 
+   ! MPI-enabled fTimer must run after MPI_Init and before MPI_Finalize. The
+   ! communicator captured here is a non-owning handle kept valid through all
+   ! summaries, reports, and fTimer finalization below.
    call ftimer_init(comm=MPI_COMM_WORLD, ierr=ierr)
    if (ierr /= 0) error stop 3
 

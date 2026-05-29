@@ -181,8 +181,11 @@ This disabled-facade behavior is an application integration contract, not an alt
 
 ## MPI Guarantees
 
+- MPI-enabled fTimer must be used after `MPI_Init` and before `MPI_Finalize`
 - `mpi_summary()` is collective over the communicator captured by `init`
 - Omitting `comm` at `init` means `mpi_summary()` uses `MPI_COMM_WORLD`
+- `init(comm=...)` stores a non-owning communicator handle; fTimer does not duplicate or free caller-provided communicators
+- Callers that pass a subcommunicator must keep it valid until all fTimer MPI summaries, MPI reports, `finalize()`, or `init()` reinitialization that may use that communicator are complete
 - All ranks in that communicator must enter `mpi_summary()` with fully stopped timers
 - Unlike local summaries, MPI summaries are final stopped-run summaries only; active timers return `FTIMER_ERR_ACTIVE`
 - The primary MPI interface path is `mpi_f08` with `type(MPI_Comm)` communicator handles captured at `init`
@@ -205,6 +208,22 @@ Suppose ranks 0-1 initialize a timer with one communicator split and later call 
 This is not like descriptor inconsistency within one communicator, where every participant can still enter the same collective and the library can fail the MPI summary cleanly after a preflight mismatch. Once ranks have already diverged onto different communicators, `mpi_summary()` has no safe second rendezvous it can use to discover the mistake without risking the same deadlock it is trying to avoid. The practical failure mode is a hang, not `FTIMER_ERR_MPI_INCON`.
 
 The supported pattern is simple: capture one communicator consistently at `init`, then have that same participant set enter `mpi_summary()` together.
+
+### MPI lifecycle and communicator ownership
+
+In `FTIMER_USE_MPI=ON` builds, the build-default clock calls `MPI_Wtime()`
+and the MPI summary/report entry points use MPI collectives. The supported
+runtime lifetime is therefore after `MPI_Init` and before `MPI_Finalize`.
+Calling MPI-enabled fTimer before initialization or after finalization is
+outside the current contract. There is not currently a separate
+all-entry-point runtime guard for that misuse.
+
+The communicator captured by `init(comm=...)` is a borrowed handle. fTimer does
+not call `MPI_Comm_dup`, take ownership, or call `MPI_Comm_free` for that
+communicator. Applications that split `MPI_COMM_WORLD` should keep each
+subcommunicator alive until every fTimer operation that may consult it is done:
+strict or sparse MPI summaries, MPI report writers, `finalize()`, or an
+`init()` call that reinitializes the same timer object/default instance.
 
 ## MPI Summary Contract
 

@@ -15,6 +15,10 @@ program mpi_example
    call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
    call MPI_Comm_size(MPI_COMM_WORLD, nprocs, ierr)
 
+   ! MPI-enabled fTimer uses MPI_Wtime and MPI collectives, so initialize and
+   ! finalize it inside the MPI lifetime. The captured communicator is a
+   ! non-owning handle; keep it valid until fTimer summaries/reports/finalize
+   ! are complete.
    call ftimer_init(comm=MPI_COMM_WORLD, ierr=ierr)
 
    ! This measures each rank's local wall-clock interval. Add explicit
