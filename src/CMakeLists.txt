@@ -28,6 +28,7 @@ if(FTIMER_USE_MPI)
 endif()
 
 if(FTIMER_USE_OPENMP)
+  target_compile_definitions(ftimer PUBLIC FTIMER_USE_OPENMP)
   target_link_libraries(ftimer PUBLIC OpenMP::OpenMP_Fortran)
 endif()
 
@@ -50,6 +51,7 @@ if(FTIMER_BUILD_TESTS)
   endif()
 
   if(FTIMER_USE_OPENMP)
+    target_compile_definitions(ftimer_test PUBLIC FTIMER_USE_OPENMP)
     target_link_libraries(ftimer_test PUBLIC OpenMP::OpenMP_Fortran)
   endif()
 

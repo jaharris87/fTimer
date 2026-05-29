@@ -334,6 +334,7 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - Local summary `node_id` values are not a cross-run identity contract. Treat them as explicit links inside one produced summary object, not as durable ids across separate runs or independently produced summaries.
 - All ranks that participate in `mpi_summary()` must agree on the communicator captured by `init`. If would-be participants diverge onto different communicators, the library cannot safely discover that mistake after the split; the practical failure mode is a hang, not a clean local fallback.
 - `FTIMER_USE_OPENMP=ON` enables only limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
+- `FTIMER_USE_OPENMP` is the source-level switch for that carve-out; global OpenMP compiler flags alone do not enable the guards when the option is `OFF`.
 - The OpenMP path does not make fTimer thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.
 - Future real hybrid MPI+OpenMP timing is deferred pending concrete adopter demand; see [`docs/openmp-hybrid-strategy-decision.md`](docs/openmp-hybrid-strategy-decision.md).
 - `on_event` remains a lightweight intra-run hook, not a serious profiler-backend integration contract with stable semantic timer identity.
