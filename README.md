@@ -145,9 +145,11 @@ cmake --build my_app/build
 
 The supported downstream contract is the installed package export. New adopters should not need to infer the intended consumption model from the test suite.
 
+Pre-1.0 CMake package compatibility is intentionally limited to the same minor release line. For example, a `0.1.z` install may satisfy `find_package(fTimer 0.1 CONFIG REQUIRED)` or an older compatible `0.1.x` request, but it will not satisfy a `0.0.x`, `0.2.x`, or later-minor request. Versionless `find_package(fTimer CONFIG REQUIRED)` remains available for consumers that deliberately accept whichever installed fTimer package appears on `CMAKE_PREFIX_PATH`.
+
 The downstream example under [`tests/install-consumer/`](tests/install-consumer/) is also part of the smoke path. It shows the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer`, `use ftimer_types`, scoped timing, and summary retrieval from an installed prefix.
 
-The supported source-level module surface is intentionally narrow: `ftimer`, `ftimer_core`, and `ftimer_types`. The installed include tree is a curated compiler module artifact set and currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so consumers get a coherent Fortran module set. Those implementation modules are not stable import targets. The installed package includes `share/doc/fTimer/installed-api.md` with the same stability contract and `share/doc/fTimer/LICENSE` with the BSD terms. The smoke tests verify the exact module artifact set and installed documentation artifacts.
+The supported source-level module surface is intentionally narrow: `ftimer`, `ftimer_core`, and `ftimer_types`. Their module-level public symbols are checked against `tests/public_symbol_allowlist.txt`; visible implementation helpers are documented as unstable rather than implied stable API. The installed include tree is a curated compiler module artifact set and currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so consumers get a coherent Fortran module set. Those implementation modules are not stable import targets. The installed package includes `share/doc/fTimer/installed-api.md` with the same stability contract and `share/doc/fTimer/LICENSE` with the BSD terms. The smoke tests verify the exact module artifact set and installed documentation artifacts.
 
 ## Compile-Out / No-Op Instrumentation Pattern
 
@@ -199,8 +201,11 @@ The public API supports two styles:
 
 - Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_scope`, `ftimer_guard_t`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_mpi_union_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, `ftimer_print_mpi_union_summary`, `ftimer_write_mpi_union_summary`, and `ftimer_default_instance`
 - OOP API through `type(ftimer_t)` in `ftimer_core`, including the explicit configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`
+- Shared stable types, constants, and callback/clock interfaces from `ftimer_types`, including the summary/result types and `FTIMER_*` status, event, and mismatch constants
 
 New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock or callback configuration on a specific timer object. Procedural callers that need those advanced controls can use `ftimer_default_instance%...` explicitly.
+
+Some implementation-detail symbols are publicly visible from stable modules because current Fortran module layering requires them: `ftimer_call_stack_t`, `ftimer_context_list_t`, `ftimer_segment_t`, `ftimer_internal_start_scope_activation`, and `ftimer_internal_stop_scope_activation`. They are unstable public-by-necessity names, not supported downstream API. User code should avoid importing them and should rely on `ftimer_scope()`, explicit start/stop calls, and the structured summary result types instead. Test-only helper exports such as `ftimer_test_get_state` and `ftimer_test_state_t` are confined to `FTIMER_BUILD_TESTS` helper builds.
 
 Operational notes:
 
@@ -334,6 +339,7 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - Local summary `node_id` values are not a cross-run identity contract. Treat them as explicit links inside one produced summary object, not as durable ids across separate runs or independently produced summaries.
 - All ranks that participate in `mpi_summary()` must agree on the communicator captured by `init`. If would-be participants diverge onto different communicators, the library cannot safely discover that mistake after the split; the practical failure mode is a hang, not a clean local fallback.
 - `FTIMER_USE_OPENMP=ON` enables only limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
+- `FTIMER_USE_OPENMP` is the source-level switch for that carve-out; global OpenMP compiler flags alone do not enable the guards when the option is `OFF`.
 - The OpenMP path does not make fTimer thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.
 - Future real hybrid MPI+OpenMP timing is deferred pending concrete adopter demand; see [`docs/openmp-hybrid-strategy-decision.md`](docs/openmp-hybrid-strategy-decision.md).
 - `on_event` remains a lightweight intra-run hook, not a serious profiler-backend integration contract with stable semantic timer identity.
