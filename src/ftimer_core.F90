@@ -18,6 +18,7 @@ module ftimer_core
    public :: ftimer_internal_stop_scope_activation
 #ifdef FTIMER_BUILD_TESTS
    public :: ftimer_test_get_state
+   public :: ftimer_test_set_call_count
    public :: ftimer_test_state_t
 #endif
 
@@ -600,7 +601,7 @@ contains
       now = self%wtime()
       if (needs_init_wtime_rebase(self)) self%init_wtime = now
       self%segments(id)%start_time(ctx) = now
-      self%segments(id)%call_count(ctx) = self%segments(id)%call_count(ctx) + 1
+      self%segments(id)%call_count(ctx) = self%segments(id)%call_count(ctx) + 1_int64
       self%segments(id)%is_running(ctx) = .true.
 
       if (associated(self%on_event)) then
@@ -752,7 +753,7 @@ contains
          if (allocated(self%segments(i)%time)) self%segments(i)%time = 0.0_wp
          if (allocated(self%segments(i)%start_time)) self%segments(i)%start_time = 0.0_wp
          if (allocated(self%segments(i)%is_running)) self%segments(i)%is_running = .false.
-         if (allocated(self%segments(i)%call_count)) self%segments(i)%call_count = 0
+         if (allocated(self%segments(i)%call_count)) self%segments(i)%call_count = 0_int64
       end do
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       if (allocated(self%call_stack%activation_tokens)) deallocate (self%call_stack%activation_tokens)
@@ -931,6 +932,37 @@ contains
       end if
    end subroutine ftimer_test_get_state
 
+   subroutine ftimer_test_set_call_count(self, segment_id, context_id, call_count, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: segment_id
+      integer, intent(in) :: context_id
+      integer(int64), intent(in) :: call_count
+      integer, intent(out), optional :: ierr
+
+      if (.not. self%initialized) then
+         if (present(ierr)) ierr = FTIMER_ERR_NOT_INIT
+         return
+      end if
+
+      if ((segment_id < 1) .or. (segment_id > self%num_segments)) then
+         if (present(ierr)) ierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      if (.not. allocated(self%segments(segment_id)%call_count)) then
+         if (present(ierr)) ierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      if ((context_id < 1) .or. (context_id > size(self%segments(segment_id)%call_count))) then
+         if (present(ierr)) ierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      self%segments(segment_id)%call_count(context_id) = call_count
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine ftimer_test_set_call_count
+
 #endif
 
    subroutine clear_runtime_state(self, keep_hooks)
@@ -982,7 +1014,7 @@ contains
       integer, intent(in) :: required_size
       integer :: new_size
       integer :: old_size
-      integer, allocatable :: new_counts(:)
+      integer(int64), allocatable :: new_counts(:)
       logical, allocatable :: new_running(:)
       real(wp), allocatable :: new_start_times(:)
       real(wp), allocatable :: new_times(:)
@@ -1007,7 +1039,7 @@ contains
       new_times = 0.0_wp
       new_start_times = 0.0_wp
       new_running = .false.
-      new_counts = 0
+      new_counts = 0_int64
 
       if (old_size > 0) then
          new_times(1:old_size) = segment%time

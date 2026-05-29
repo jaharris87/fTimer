@@ -1,4 +1,5 @@
 module ftimer_summary
+   use, intrinsic :: iso_fortran_env, only: int64
    use ftimer_types, only: ftimer_call_stack_t, ftimer_metadata_t, ftimer_mpi_summary_entry_t, &
                            ftimer_mpi_summary_t, ftimer_mpi_union_summary_entry_t, &
                            ftimer_mpi_union_summary_t, ftimer_segment_t, ftimer_summary_entry_t, &
@@ -43,9 +44,11 @@ contains
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
       character(len=64) :: fmt
+      character(len=:), allocatable :: header_suffix
       character(len=:), allocatable :: line
       character(len=:), allocatable :: padded
       character(len=8) :: active_value
+      integer :: call_width
       integer :: i
       integer :: key_width
       integer :: line_width
@@ -57,7 +60,8 @@ contains
       key_width = metadata_key_width(metadata)
       key_width = max(key_width, len('Active timers'))
       name_width = summary_name_width(summary)
-      line_width = summary_line_width(name_width, has_active_entries)
+      call_width = summary_call_count_width(summary)
+      line_width = summary_line_width(name_width, has_active_entries, call_width)
       allocate (character(len=line_width) :: line)
 
       write (line, '(f0.6)') summary%total_time
@@ -83,18 +87,18 @@ contains
       call append_line(text, '')
       call set_padded_text(padded, 'Timer name', name_width)
       line = repeat(' ', len(line))
+      header_suffix = summary_header_suffix(has_active_entries, call_width)
       if (has_active_entries) then
-         line(1:name_width + len('  Inclusive (s)     Self (s)    Calls   % Total  Active')) = &
-            padded(1:name_width)//'  Inclusive (s)     Self (s)    Calls   % Total  Active'
+         line(1:name_width + len(header_suffix)) = padded(1:name_width)//header_suffix
       else
-         line(1:name_width + len('  Inclusive (s)     Self (s)    Calls   % Total')) = &
-            padded(1:name_width)//'  Inclusive (s)     Self (s)    Calls   % Total'
+         line(1:name_width + len(header_suffix)) = padded(1:name_width)//header_suffix
       end if
       call append_line(text, trim(line))
       call append_line(text, repeat('-', len_trim(line)))
 
       if (has_active_entries) then
-         write (fmt, '("(a",i0,",2x,f12.6,2x,f12.6,2x,i8,2x,f8.2,2x,a)")') name_width
+         write (fmt, '("(a",i0,",2x,f12.6,2x,f12.6,2x,i",i0,",2x,f8.2,2x,a)")') &
+            name_width, call_width
          do i = 1, summary%num_entries
             call set_padded_text(padded, display_name(summary%entries(i)), name_width)
             write (line, fmt) padded(1:name_width), summary%entries(i)%inclusive_time, &
@@ -103,7 +107,8 @@ contains
             call append_line(text, trim(line))
          end do
       else
-         write (fmt, '("(a",i0,",2x,f12.6,2x,f12.6,2x,i8,2x,f8.2)")') name_width
+         write (fmt, '("(a",i0,",2x,f12.6,2x,f12.6,2x,i",i0,",2x,f8.2)")') &
+            name_width, call_width
          do i = 1, summary%num_entries
             call set_padded_text(padded, display_name(summary%entries(i)), name_width)
             write (line, fmt) padded(1:name_width), summary%entries(i)%inclusive_time, &
@@ -117,13 +122,12 @@ contains
       type(ftimer_mpi_summary_t), intent(in) :: summary
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
-      character(len=*), parameter :: mpi_header_suffix = &
-                                     '  Min Incl (s)  Min Rank  Avg Incl (s)  Max Incl (s)  Max Rank'// &
-                                     '   Imb.  Avg Self (s)    Avg Calls    Avg %'
       character(len=128) :: fmt
+      character(len=:), allocatable :: header_suffix
       character(len=64) :: value_line
       character(len=:), allocatable :: line
       character(len=:), allocatable :: padded
+      integer :: avg_call_width
       integer :: i
       integer :: key_width
       integer :: line_width
@@ -183,17 +187,19 @@ contains
 
       call append_line(text, '')
       name_width = mpi_summary_name_width(summary)
-      line_width = mpi_summary_line_width(name_width)
+      avg_call_width = mpi_avg_call_count_width(summary)
+      line_width = mpi_summary_line_width(name_width, avg_call_width)
       allocate (character(len=line_width) :: line)
 
       call set_padded_text(padded, 'Timer name', name_width)
       line = repeat(' ', len(line))
-      line(1:name_width + len(mpi_header_suffix)) = padded(1:name_width)//mpi_header_suffix
+      header_suffix = mpi_header_suffix(avg_call_width)
+      line(1:name_width + len(header_suffix)) = padded(1:name_width)//header_suffix
       call append_line(text, trim(line))
       call append_line(text, repeat('-', len_trim(line)))
 
-      write (fmt, '("(a",i0,",2x,f12.6,2x,i8,2x,f12.6,2x,f12.6,2x,i8,2x,f6.3,2x,f12.6,2x,f10.3,2x,f8.2)")') &
-         name_width
+      write (fmt, '("(a",i0,",2x,f12.6,2x,i8,2x,f12.6,2x,f12.6,2x,i8,2x,f6.3,2x,f12.6,2x,f",i0,".3,2x,f8.2)")') &
+         name_width, avg_call_width
       do i = 1, summary%num_entries
          call set_padded_text(padded, display_mpi_name(summary%entries(i)), name_width)
          write (line, fmt) padded(1:name_width), summary%entries(i)%min_inclusive_time, &
@@ -209,13 +215,12 @@ contains
       type(ftimer_mpi_union_summary_t), intent(in) :: summary
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
-      character(len=*), parameter :: mpi_union_header_suffix = &
-                                     '  Participating  Missing  Min Incl (s)  Min Rank  Avg Incl (s)'// &
-                                     '  Max Incl (s)  Max Rank   Imb.  Avg Self (s)    Avg Calls    Avg %'
       character(len=128) :: fmt
+      character(len=:), allocatable :: header_suffix
       character(len=64) :: value_line
       character(len=:), allocatable :: line
       character(len=:), allocatable :: padded
+      integer :: avg_call_width
       integer :: i
       integer :: key_width
       integer :: line_width
@@ -280,17 +285,19 @@ contains
 
       call append_line(text, '')
       name_width = mpi_union_summary_name_width(summary)
-      line_width = name_width + 160
+      avg_call_width = mpi_union_avg_call_count_width(summary)
+      line_width = mpi_union_summary_line_width(name_width, avg_call_width)
       allocate (character(len=line_width) :: line)
 
       call set_padded_text(padded, 'Timer name', name_width)
       line = repeat(' ', len(line))
-      line(1:name_width + len(mpi_union_header_suffix)) = padded(1:name_width)//mpi_union_header_suffix
+      header_suffix = mpi_union_header_suffix(avg_call_width)
+      line(1:name_width + len(header_suffix)) = padded(1:name_width)//header_suffix
       call append_line(text, trim(line))
       call append_line(text, repeat('-', len_trim(line)))
 
-      write (fmt, '("(a",i0,",2x,i13,2x,i7,2x,f12.6,2x,i8,2x,f12.6,2x,f12.6,2x,i8,2x,f6.3,2x,f12.6,2x,f10.3,2x,f8.2)")') &
-         name_width
+      write (fmt, '("(a",i0,",2x,i13,2x,i7,2x,f12.6,2x,i8,2x,f12.6,2x,f12.6,2x,i8,2x,f6.3,2x,f12.6,2x,f",i0,".3,2x,f8.2)")') &
+         name_width, avg_call_width
       do i = 1, summary%num_entries
          call set_padded_text(padded, display_mpi_union_name(summary%entries(i)), name_width)
          missing_rank_count = summary%num_ranks - summary%entries(i)%participating_rank_count
@@ -337,7 +344,7 @@ contains
       integer, allocatable :: child_sum_entry(:)
       integer, allocatable :: entry_stack(:)
       integer, allocatable :: included_order(:)
-      integer, allocatable :: node_call_count(:)
+      integer(int64), allocatable :: node_call_count(:)
       integer, allocatable :: node_ctx(:)
       integer, allocatable :: node_depth(:)
       integer, allocatable :: node_segment(:)
@@ -657,11 +664,11 @@ contains
       if ((clamped < 0.0_wp) .and. (abs(clamped) <= tolerance)) clamped = 0.0_wp
    end function clamp_self_time
 
-   integer function call_count_for_context(segment, ctx) result(count)
+   integer(int64) function call_count_for_context(segment, ctx) result(count)
       type(ftimer_segment_t), intent(in) :: segment
       integer, intent(in) :: ctx
 
-      count = 0
+      count = 0_int64
       if (.not. allocated(segment%call_count)) return
       if (ctx > size(segment%call_count)) return
       count = segment%call_count(ctx)
@@ -773,22 +780,153 @@ contains
       if (copy_len > 0) padded(1:copy_len) = text(1:copy_len)
    end subroutine set_padded_text
 
-   integer function summary_line_width(name_width, show_active) result(width)
+   subroutine set_right_padded_text(padded, text, width)
+      character(len=:), allocatable, intent(out) :: padded
+      character(len=*), intent(in) :: text
+      integer, intent(in) :: width
+      integer :: copy_len
+      integer :: offset
+
+      allocate (character(len=width) :: padded)
+      padded = repeat(' ', width)
+      copy_len = min(width, len_trim(text))
+      if (copy_len <= 0) return
+
+      offset = width - copy_len
+      padded(offset + 1:width) = text(1:copy_len)
+   end subroutine set_right_padded_text
+
+   integer function summary_line_width(name_width, show_active, call_width) result(width)
       integer, intent(in) :: name_width
+      integer, intent(in) :: call_width
       logical, intent(in) :: show_active
 
       if (show_active) then
-         width = name_width + 56
+         width = name_width + 56 + max(0, call_width - 8)
       else
-         width = name_width + 48
+         width = name_width + 48 + max(0, call_width - 8)
       end if
    end function summary_line_width
 
-   integer function mpi_summary_line_width(name_width) result(width)
+   integer function mpi_summary_line_width(name_width, avg_call_width) result(width)
       integer, intent(in) :: name_width
+      integer, intent(in) :: avg_call_width
 
-      width = name_width + 117
+      width = name_width + 117 + max(0, avg_call_width - 10)
    end function mpi_summary_line_width
+
+   integer function mpi_union_summary_line_width(name_width, avg_call_width) result(width)
+      integer, intent(in) :: name_width
+      integer, intent(in) :: avg_call_width
+
+      width = name_width + 160 + max(0, avg_call_width - 10)
+   end function mpi_union_summary_line_width
+
+   function summary_header_suffix(show_active, call_width) result(suffix)
+      logical, intent(in) :: show_active
+      integer, intent(in) :: call_width
+      character(len=:), allocatable :: suffix
+      character(len=:), allocatable :: call_header
+
+      if (show_active) then
+         if (call_width == 8) then
+            suffix = '  Inclusive (s)     Self (s)    Calls   % Total  Active'
+            return
+         end if
+
+         call set_right_padded_text(call_header, 'Calls', call_width)
+         suffix = '  Inclusive (s)     Self (s)  '//call_header//'  % Total  Active'
+      else
+         if (call_width == 8) then
+            suffix = '  Inclusive (s)     Self (s)    Calls   % Total'
+            return
+         end if
+
+         call set_right_padded_text(call_header, 'Calls', call_width)
+         suffix = '  Inclusive (s)     Self (s)  '//call_header//'  % Total'
+      end if
+   end function summary_header_suffix
+
+   function mpi_header_suffix(avg_call_width) result(suffix)
+      integer, intent(in) :: avg_call_width
+      character(len=:), allocatable :: suffix
+      character(len=:), allocatable :: avg_call_header
+
+      if (avg_call_width == 10) then
+         suffix = '  Min Incl (s)  Min Rank  Avg Incl (s)  Max Incl (s)  Max Rank'// &
+                  '   Imb.  Avg Self (s)    Avg Calls    Avg %'
+         return
+      end if
+
+      call set_right_padded_text(avg_call_header, 'Avg Calls', avg_call_width)
+      suffix = '  Min Incl (s)  Min Rank  Avg Incl (s)  Max Incl (s)  Max Rank'// &
+               '   Imb.  Avg Self (s)  '//avg_call_header//'  Avg %'
+   end function mpi_header_suffix
+
+   function mpi_union_header_suffix(avg_call_width) result(suffix)
+      integer, intent(in) :: avg_call_width
+      character(len=:), allocatable :: suffix
+      character(len=:), allocatable :: avg_call_header
+
+      if (avg_call_width == 10) then
+         suffix = '  Participating  Missing  Min Incl (s)  Min Rank  Avg Incl (s)'// &
+                  '  Max Incl (s)  Max Rank   Imb.  Avg Self (s)    Avg Calls    Avg %'
+         return
+      end if
+
+      call set_right_padded_text(avg_call_header, 'Avg Calls', avg_call_width)
+      suffix = '  Participating  Missing  Min Incl (s)  Min Rank  Avg Incl (s)'// &
+               '  Max Incl (s)  Max Rank   Imb.  Avg Self (s)  '//avg_call_header//'  Avg %'
+   end function mpi_union_header_suffix
+
+   integer function summary_call_count_width(summary) result(width)
+      type(ftimer_summary_t), intent(in) :: summary
+      integer :: i
+
+      width = 8
+      do i = 1, summary%num_entries
+         width = max(width, int64_text_width(summary%entries(i)%call_count))
+      end do
+   end function summary_call_count_width
+
+   integer function mpi_avg_call_count_width(summary) result(width)
+      type(ftimer_mpi_summary_t), intent(in) :: summary
+      integer :: i
+
+      width = 10
+      do i = 1, summary%num_entries
+         width = max(width, real_fixed_text_width(summary%entries(i)%avg_call_count, 3))
+      end do
+   end function mpi_avg_call_count_width
+
+   integer function mpi_union_avg_call_count_width(summary) result(width)
+      type(ftimer_mpi_union_summary_t), intent(in) :: summary
+      integer :: i
+
+      width = 10
+      do i = 1, summary%num_entries
+         width = max(width, real_fixed_text_width(summary%entries(i)%avg_call_count, 3))
+      end do
+   end function mpi_union_avg_call_count_width
+
+   integer function int64_text_width(value) result(width)
+      integer(int64), intent(in) :: value
+      character(len=32) :: buffer
+
+      write (buffer, '(i0)') value
+      width = len_trim(buffer)
+   end function int64_text_width
+
+   integer function real_fixed_text_width(value, decimals) result(width)
+      real(wp), intent(in) :: value
+      integer, intent(in) :: decimals
+      character(len=16) :: fmt
+      character(len=64) :: buffer
+
+      write (fmt, '("(f0.",i0,")")') decimals
+      write (buffer, fmt) value
+      width = len_trim(buffer)
+   end function real_fixed_text_width
 
    integer function summary_name_width(summary) result(width)
       type(ftimer_summary_t), intent(in) :: summary

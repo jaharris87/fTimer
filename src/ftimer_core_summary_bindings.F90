@@ -1,5 +1,5 @@
 submodule(ftimer_core) ftimer_core_summary_bindings
-   use, intrinsic :: iso_fortran_env, only: error_unit, output_unit
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64, output_unit
    use ftimer_clock, only: ftimer_date_string
    use ftimer_mpi, only: build_mpi_summary, build_mpi_union_summary, check_mpi_summary_prereqs, &
                          get_mpi_summary_comm_info
@@ -868,7 +868,7 @@ contains
       call append_csv_field(row, summary_entry_name(entry))
       call append_csv_field(row, real_csv_text(entry%inclusive_time))
       call append_csv_field(row, real_csv_text(entry%self_time))
-      call append_csv_field(row, integer_csv_text(entry%call_count))
+      call append_csv_field(row, int64_csv_text(entry%call_count))
       call append_csv_field(row, real_csv_text(entry%avg_time))
       call append_csv_field(row, real_csv_text(entry%pct_time))
       call append_csv_field(row, logical_csv_text(entry%is_active))
@@ -898,9 +898,9 @@ contains
       call append_csv_field(row, real_csv_text(entry%avg_self_time))
       call append_csv_field(row, real_csv_text(entry%max_self_time))
       call append_csv_field(row, real_csv_text(entry%self_imbalance))
-      call append_csv_field(row, integer_csv_text(entry%min_call_count))
+      call append_csv_field(row, int64_csv_text(entry%min_call_count))
       call append_csv_field(row, real_csv_text(entry%avg_call_count))
-      call append_csv_field(row, integer_csv_text(entry%max_call_count))
+      call append_csv_field(row, int64_csv_text(entry%max_call_count))
       call append_csv_field(row, real_csv_text(entry%min_pct_time))
       call append_csv_field(row, real_csv_text(entry%avg_pct_time))
       call append_csv_field(row, real_csv_text(entry%max_pct_time))
@@ -960,6 +960,15 @@ contains
       write (buffer, '(i0)') value
       text = trim(buffer)
    end function integer_csv_text
+
+   function int64_csv_text(value) result(text)
+      integer(int64), intent(in) :: value
+      character(len=:), allocatable :: text
+      character(len=32) :: buffer
+
+      write (buffer, '(i0)') value
+      text = trim(buffer)
+   end function int64_csv_text
 
    function real_csv_text(value) result(text)
       real(wp), intent(in) :: value

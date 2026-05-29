@@ -1,9 +1,10 @@
 module test_file_output
    use pfunit
-   use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_ERR_IO, FTIMER_SUCCESS, ftimer_metadata_t, ftimer_summary_t, wp
+   use, intrinsic :: iso_fortran_env, only: int64
+   use ftimer_core, only: ftimer_t, ftimer_test_set_call_count, ftimer_test_state_t
+   use ftimer_types, only: FTIMER_ERR_IO, FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_metadata_t, ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, csv_column_index, csv_field_value, csv_line_at, csv_record_count, &
-                           fake_time, read_file_text
+                           fake_time, find_context_idx, read_file_text, snapshot_timer
    implicit none
 
 contains
@@ -240,6 +241,63 @@ contains
       open (newunit=unit, file=path, status='old', iostat=io)
       if (io == 0) close (unit, status='delete')
    end subroutine test_write_summary_csv_emits_parseable_records
+
+   @test
+   subroutine test_write_summary_csv_preserves_int64_call_count()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      character(len=*), parameter :: path = 'phase3_summary_int64_count_export.csv'
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: field_text
+      character(len=:), allocatable :: header
+      character(len=32) :: expected_count_text
+      integer :: call_count_col
+      integer :: ctx
+      integer :: id_hot
+      integer :: ierr
+      integer :: io
+      integer :: unit
+      integer(int64) :: big_count
+      logical :: field_matches
+
+      call delete_if_exists(path)
+      big_count = int(huge(0), int64) + 5_int64
+      write (expected_count_text, '(i0)') big_count
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp
+      call timer%stop("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_hot, root_stack)
+
+      call ftimer_test_set_call_count(timer, id_hot, ctx, big_count, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      csv_text = read_file_text(path)
+      header = csv_line_at(csv_text, 1)
+      entry_line = csv_line_at(csv_text, 3)
+      call_count_col = csv_column_index(header, 'call_count')
+      field_text = csv_field_value(entry_line, call_count_col)
+      field_matches = field_text == trim(expected_count_text)
+      @assertTrue(field_matches)
+
+      open (newunit=unit, file=path, status='old', iostat=io)
+      if (io == 0) close (unit, status='delete')
+   end subroutine test_write_summary_csv_preserves_int64_call_count
 
    @test
    subroutine test_write_summary_csv_exports_active_snapshot()

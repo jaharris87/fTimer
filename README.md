@@ -205,7 +205,7 @@ The public API supports two styles:
 
 New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock or callback configuration on a specific timer object. Procedural callers that need those advanced controls can use `ftimer_default_instance%...` explicitly.
 
-Some implementation-detail symbols are publicly visible from stable modules because current Fortran module layering requires them: `ftimer_call_stack_t`, `ftimer_context_list_t`, `ftimer_segment_t`, `ftimer_internal_start_scope_activation`, and `ftimer_internal_stop_scope_activation`. They are unstable public-by-necessity names, not supported downstream API. User code should avoid importing them and should rely on `ftimer_scope()`, explicit start/stop calls, and the structured summary result types instead. Test-only helper exports such as `ftimer_test_get_state` and `ftimer_test_state_t` are confined to `FTIMER_BUILD_TESTS` helper builds.
+Some implementation-detail symbols are publicly visible from stable modules because current Fortran module layering requires them: `ftimer_call_stack_t`, `ftimer_context_list_t`, `ftimer_segment_t`, `ftimer_internal_start_scope_activation`, and `ftimer_internal_stop_scope_activation`. They are unstable public-by-necessity names, not supported downstream API. User code should avoid importing them and should rely on `ftimer_scope()`, explicit start/stop calls, and the structured summary result types instead. Test-only helper exports such as `ftimer_test_get_state`, `ftimer_test_set_call_count`, and `ftimer_test_state_t` are confined to `FTIMER_BUILD_TESTS` helper builds.
 
 Operational notes:
 
@@ -259,7 +259,7 @@ Each CSV starts with one header row followed by typed records:
 - `record_type=metadata` carries caller-supplied metadata as `key`/`value`.
 - `record_type=entry` carries one timer node per row.
 
-Common columns include `summary_kind`, `node_id`, `parent_id`, `depth`, and `name`. Local entry rows populate `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. MPI entry rows populate the reduced fields from `ftimer_mpi_summary_t`, including min/avg/max inclusive and self time, call count extrema, rank-local percent extrema, imbalance fields, and inclusive-time extrema ranks.
+Common columns include `summary_kind`, `node_id`, `parent_id`, `depth`, and `name`. Local entry rows populate `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. MPI entry rows populate the reduced fields from `ftimer_mpi_summary_t`, including min/avg/max inclusive and self time, call count extrema, rank-local percent extrema, imbalance fields, and inclusive-time extrema ranks. Local `call_count` and MPI call-count extrema are `integer(int64)` values and are emitted as decimal text without narrowing to default integer.
 
 Appending to an existing non-empty CSV requires the existing first row to match the fTimer CSV format-version-1 header and the target to end with a newline; mismatched headers or unterminated final records are rejected instead of mixing schemas silently. CSV text fields emit the same trimmed timer names and metadata key/value text used by fTimer reports, with standard CSV quoting. They are not spreadsheet-formula-sanitized, so treat CSV opened in spreadsheet software as data from the generating program.
 

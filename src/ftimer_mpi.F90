@@ -192,18 +192,17 @@ contains
       integer :: rank
       type(MPI_Datatype) :: mpi_int64_type
       type(MPI_Datatype) :: mpi_wp_type
-      integer, allocatable :: local_calls(:)
       integer, allocatable :: local_entry_to_canonical(:)
       integer, allocatable :: local_max_inclusive_ranks(:)
       integer, allocatable :: local_min_inclusive_ranks(:)
       integer, allocatable :: local_node_to_entry(:)
       integer, allocatable :: max_inclusive_ranks(:)
-      integer, allocatable :: max_calls(:)
       integer, allocatable :: min_inclusive_ranks(:)
-      integer, allocatable :: min_calls(:)
       integer, allocatable :: mismatch_flags(:)
       integer, allocatable :: permutation(:)
-      integer(int64), allocatable :: local_sum_calls(:)
+      integer(int64), allocatable :: local_calls(:)
+      integer(int64), allocatable :: max_calls(:)
+      integer(int64), allocatable :: min_calls(:)
       integer(int64), allocatable :: sum_calls(:)
       integer(int64) :: local_hashes(2)
       integer(int64) :: reference_hashes(2)
@@ -358,7 +357,6 @@ contains
       allocate (max_pct(entry_count))
       allocate (sum_pct(entry_count))
       allocate (local_calls(entry_count))
-      allocate (local_sum_calls(entry_count))
       allocate (min_calls(entry_count))
       allocate (max_calls(entry_count))
       allocate (sum_calls(entry_count))
@@ -372,7 +370,6 @@ contains
          local_inclusive(i) = local_summary%entries(local_idx)%inclusive_time
          local_self(i) = local_summary%entries(local_idx)%self_time
          local_calls(i) = local_summary%entries(local_idx)%call_count
-         local_sum_calls(i) = int(local_calls(i), int64)
          local_pct(i) = local_summary%entries(local_idx)%pct_time
       end do
 
@@ -462,21 +459,21 @@ contains
          return
       end if
 
-      call ftimer_mpi_allreduce(local_calls, min_calls, entry_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_calls, min_calls, entry_count, mpi_int64_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call ftimer_mpi_allreduce(local_calls, max_calls, entry_count, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_calls, max_calls, entry_count, mpi_int64_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call ftimer_mpi_allreduce(local_sum_calls, sum_calls, entry_count, mpi_int64_type, MPI_SUM, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_calls, sum_calls, entry_count, mpi_int64_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
@@ -581,19 +578,19 @@ contains
       character(len=:), allocatable :: entry_name
       character(len=:), allocatable :: parent_descriptor
       character(len=:), allocatable :: union_descriptors(:)
-      integer, allocatable :: local_calls_max(:)
-      integer, allocatable :: local_calls_min(:)
       integer, allocatable :: local_max_inclusive_ranks(:)
       integer, allocatable :: local_min_inclusive_ranks(:)
       integer, allocatable :: local_present(:)
       integer, allocatable :: local_to_union(:)
-      integer, allocatable :: max_calls(:)
       integer, allocatable :: max_inclusive_ranks(:)
-      integer, allocatable :: min_calls(:)
       integer, allocatable :: min_inclusive_ranks(:)
       integer, allocatable :: participating_counts(:)
       integer, allocatable :: permutation(:)
+      integer(int64), allocatable :: local_calls_max(:)
+      integer(int64), allocatable :: local_calls_min(:)
       integer(int64), allocatable :: local_sum_calls(:)
+      integer(int64), allocatable :: max_calls(:)
+      integer(int64), allocatable :: min_calls(:)
       integer(int64), allocatable :: sum_calls(:)
       real(wp) :: avg_total_time
       real(wp) :: max_total_time
@@ -763,8 +760,8 @@ contains
       local_pct_min = huge(1.0_wp)
       local_pct_max = -huge(1.0_wp)
       local_pct_sum = 0.0_wp
-      local_calls_min = huge(0)
-      local_calls_max = -huge(0)
+      local_calls_min = huge(0_int64)
+      local_calls_max = -huge(0_int64)
       local_sum_calls = 0_int64
 
       do i = 1, entry_count
@@ -885,14 +882,14 @@ contains
          return
       end if
 
-      call ftimer_mpi_allreduce(local_calls_min, min_calls, union_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_calls_min, min_calls, union_count, mpi_int64_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_union_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call ftimer_mpi_allreduce(local_calls_max, max_calls, union_count, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_calls_max, max_calls, union_count, mpi_int64_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_union_summary(summary)
          status = FTIMER_ERR_UNKNOWN

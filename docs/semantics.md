@@ -169,12 +169,12 @@ This disabled-facade behavior is an application integration contract, not an alt
 - `summary%has_active_timers` is true when at least one returned entry was active at the snapshot timestamp
 - `summary%entries` remain in preorder so current formatted-report traversal and existing depth-oriented consumers keep working
 - Each entry retains `name` and `depth`, exposes explicit tree linkage through `node_id` and `parent_id`, and exposes `is_active` for that timer context at the snapshot timestamp
-- `call_count` remains the count of user-visible `start` calls for that exact timer context. Repair-mode internal continuations can therefore appear as active entries with `is_active = .true.` and `call_count = 0`; that is not a hidden user call.
+- `call_count` remains the count of user-visible `start` calls for that exact timer context. It is stored and exported as `integer(int64)` so hot-loop instrumentation is not limited to the default integer range. Repair-mode internal continuations can therefore appear as active entries with `is_active = .true.` and `call_count = 0`; that is not a hidden user call.
 - `node_id` is unique and stable only within one produced summary object
 - `parent_id` refers to another entry's `node_id`; roots use `parent_id = 0`
 - Current `main` does not promise that local summary node ids remain stable across separate runs or across independently produced summary objects
 - `print_summary()` and `write_summary()` format the same local snapshot data. When any returned entry is active, formatted reports add active-state information and reserve the `Active timers` metadata key for the built-in snapshot status line. A formatted local report whose `Active timers` field is `yes` is an interim snapshot, not a final stopped-run report.
-- `write_summary_csv()` exports the same local snapshot data in CSV format version `1`. It writes one header row, a `record_type=summary` row, zero or more `record_type=metadata` rows, and one `record_type=entry` row per summary entry. Entry rows include `node_id`, `parent_id`, `depth`, `name`, `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`.
+- `write_summary_csv()` exports the same local snapshot data in CSV format version `1`. It writes one header row, a `record_type=summary` row, zero or more `record_type=metadata` rows, and one `record_type=entry` row per summary entry. Entry rows include `node_id`, `parent_id`, `depth`, `name`, `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. Integer count fields are emitted as decimal text without narrowing to default integer.
 - CSV `append=.true.` appends records to the target file and omits the header when the existing file is non-empty. Non-empty append targets must begin with the fTimer CSV format-version-1 header and end with a newline; mismatched headers or unterminated final records are rejected with `FTIMER_ERR_IO` instead of silently mixing schemas.
 - CSV text fields emit the same trimmed timer names and metadata key/value text used by fTimer reports, with standard CSV quoting. They are not spreadsheet-formula-sanitized.
 - A caller that requires a final local report should stop all timers first and verify `summary%has_active_timers == .false.`
@@ -210,7 +210,7 @@ The supported pattern is simple: capture one communicator consistently at `init`
 
 `mpi_summary()` returns a distinct `ftimer_mpi_summary_t` instead of reusing the local `ftimer_summary_t` shape.
 
-- `ftimer_mpi_summary_t` contains communicator-wide totals (`min_total_time`, `avg_total_time`, `max_total_time`, `min_total_time_rank`, `max_total_time_rank`, `total_time_imbalance`) plus per-entry communicator-wide statistics (`min_*`, `avg_*`, `max_*`) for inclusive time, self time, call count, and `% Total`.
+- `ftimer_mpi_summary_t` contains communicator-wide totals (`min_total_time`, `avg_total_time`, `max_total_time`, `min_total_time_rank`, `max_total_time_rank`, `total_time_imbalance`) plus per-entry communicator-wide statistics (`min_*`, `avg_*`, `max_*`) for inclusive time, self time, call count, and `% Total`. `min_call_count` and `max_call_count` are `integer(int64)` fields; `avg_call_count` remains `real(wp)`.
 - MPI summary entries also expose `min_inclusive_time_rank` and `max_inclusive_time_rank` as communicator-local ranks for the inclusive-time extrema; ties resolve to the lowest rank that attains the extremum.
 - Successful `mpi_summary()` calls populate the same global MPI result on every participating rank.
 - `ftimer_mpi_summary_t` entries retain `name`, `depth`, `node_id`, and `parent_id`, so MPI summaries keep the explicit-tree data model instead of collapsing to flat rows.
@@ -227,7 +227,7 @@ The supported pattern is simple: capture one communicator consistently at `init`
 - Per-entry `participating_rank_count` records how many communicator ranks materialized that descriptor. Missing rank count is derived as `num_ranks - participating_rank_count` and is not stored redundantly.
 - Descriptors are materialized from the local summary emitted on each rank. Lookup-only timer definitions do not count as present unless a future issue adds a first-class registration contract.
 - A materialized present zero-call entry is participating and contributes zero calls plus its recorded time values to participating-rank statistics. An absent rank contributes only to the derived missing-rank count.
-- Entry min/avg/max time, call-count, percent, and imbalance fields are defined over participating ranks only. Absent ranks are not zero-filled.
+- Entry min/avg/max time, call-count, percent, and imbalance fields are defined over participating ranks only. Absent ranks are not zero-filled. Sparse `min_call_count` and `max_call_count` are `integer(int64)` fields; `avg_call_count` remains `real(wp)`.
 - No all-rank zero-filled or amortized entry fields are part of the initial result model. If such a view is added later, it must be explicitly named as all-rank or amortized.
 - The sparse API keeps the same init-captured communicator model as strict MPI summaries. The primary path is `mpi_f08` `type(MPI_Comm)`; transitional integer communicator capture remains only through `init` until #187 removes it.
 - The current implementation builds the descriptor union and structured sparse result. Sparse text reports are available through explicit union report entry points; sparse CSV export remains deferred to #194 because it needs a versioned schema decision for participation fields.

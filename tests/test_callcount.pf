@@ -1,7 +1,9 @@
 module test_callcount
    use pfunit
-   use ftimer_core, only: ftimer_t, ftimer_test_state_t
-   use ftimer_types, only: FTIMER_SUCCESS, ftimer_call_stack_t, wp
+   use, intrinsic :: iso_fortran_env, only: int64
+   use ftimer_core, only: ftimer_t, ftimer_test_set_call_count, ftimer_test_state_t
+   use ftimer_summary, only: format_summary
+   use ftimer_types, only: FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, build_stack, fake_time, find_context_idx, snapshot_timer
    implicit none
 
@@ -79,5 +81,68 @@ contains
       @assertEqual(1, count_a)
       @assertEqual(2, count_b)
    end subroutine test_call_counts_are_tracked_per_context
+
+   @test
+   subroutine test_call_counts_preserve_int64_range_in_runtime_summary()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_summary_t) :: summary
+      type(ftimer_call_stack_t) :: root_stack
+      character(len=:), allocatable :: report_text
+      character(len=32) :: expected_count_text
+      integer :: ierr
+      integer :: id_hot
+      integer :: ctx
+      integer(int64) :: big_count
+      integer(int64) :: stored_count
+      integer(int64) :: summary_count
+      logical :: avg_time_matches
+      logical :: formatted_count_matches
+      logical :: formatted_count_not_starred
+      logical :: runtime_count_matches
+      logical :: summary_count_matches
+
+      big_count = int(huge(0), int64) + 5_int64
+      write (expected_count_text, '(i0)') big_count
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 10.0_wp
+      call timer%stop("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_hot, root_stack)
+
+      call ftimer_test_set_call_count(timer, id_hot, ctx, big_count, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      stored_count = state%segments(id_hot)%call_count(ctx)
+      runtime_count_matches = stored_count == big_count
+      @assertTrue(runtime_count_matches)
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, summary%num_entries)
+
+      summary_count = summary%entries(1)%call_count
+      summary_count_matches = summary_count == big_count
+      avg_time_matches = abs(summary%entries(1)%avg_time - 10.0_wp/real(big_count, wp)) < 1.0e-18_wp
+      @assertTrue(summary_count_matches)
+      @assertTrue(avg_time_matches)
+
+      call format_summary(summary, report_text)
+      formatted_count_matches = index(report_text, trim(expected_count_text)) > 0
+      formatted_count_not_starred = index(report_text, '********') == 0
+      @assertTrue(formatted_count_matches)
+      @assertTrue(formatted_count_not_starred)
+   end subroutine test_call_counts_preserve_int64_range_in_runtime_summary
 
 end module test_callcount

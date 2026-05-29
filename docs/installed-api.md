@@ -104,6 +104,7 @@ The following names are public only in `FTIMER_BUILD_TESTS` helper builds and
 are never installed as stable API:
 
 - `ftimer_test_get_state`
+- `ftimer_test_set_call_count`
 - `ftimer_test_state_t`
 
 ## Installed implementation artifacts
