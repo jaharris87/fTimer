@@ -6,6 +6,7 @@ set(consumer_source_dir "${REPO_ROOT}/tests/install-consumer")
 set(test_name "${TEST_NAME}")
 set(installed_module_dir "${install_prefix}/include/ftimer")
 set(installed_api_note_path "${install_prefix}/share/doc/fTimer/installed-api.md")
+set(installed_license_path "${install_prefix}/share/doc/fTimer/LICENSE")
 
 if(test_name STREQUAL "")
   set(test_name "ftimer_installed_package_consumer")
@@ -318,6 +319,20 @@ file(READ "${installed_api_note_path}" installed_api_note)
 if(NOT installed_api_note STREQUAL expected_installed_api_note)
   message(FATAL_ERROR
     "Installed API stability note does not match docs/installed-api.md."
+  )
+endif()
+
+if(NOT EXISTS "${installed_license_path}")
+  message(FATAL_ERROR
+    "Installed BSD license was not found at '${installed_license_path}'."
+  )
+endif()
+
+file(READ "${REPO_ROOT}/LICENSE" expected_license)
+file(READ "${installed_license_path}" installed_license)
+if(NOT installed_license STREQUAL expected_license)
+  message(FATAL_ERROR
+    "Installed BSD license does not match LICENSE."
   )
 endif()
 
