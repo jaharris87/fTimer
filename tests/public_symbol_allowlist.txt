@@ -1,0 +1,62 @@
+# module|symbol|stability
+#
+# This file is the checked source-level public-symbol boundary for the stable
+# modules that downstream users may import. Use:
+# - stable: supported source-level API
+# - unstable: public only because current module layering requires it
+# - test-only: public only in FTIMER_BUILD_TESTS helper builds
+ftimer|ftimer_guard_t|stable
+ftimer|ftimer_init|stable
+ftimer|ftimer_finalize|stable
+ftimer|ftimer_start|stable
+ftimer|ftimer_stop|stable
+ftimer|ftimer_scope|stable
+ftimer|ftimer_start_id|stable
+ftimer|ftimer_stop_id|stable
+ftimer|ftimer_lookup|stable
+ftimer|ftimer_reset|stable
+ftimer|ftimer_get_summary|stable
+ftimer|ftimer_mpi_summary|stable
+ftimer|ftimer_mpi_union_summary|stable
+ftimer|ftimer_print_summary|stable
+ftimer|ftimer_write_summary|stable
+ftimer|ftimer_write_summary_csv|stable
+ftimer|ftimer_print_mpi_summary|stable
+ftimer|ftimer_write_mpi_summary|stable
+ftimer|ftimer_write_mpi_summary_csv|stable
+ftimer|ftimer_print_mpi_union_summary|stable
+ftimer|ftimer_write_mpi_union_summary|stable
+ftimer|ftimer_default_instance|stable
+ftimer_core|ftimer_t|stable
+ftimer_core|ftimer_internal_start_scope_activation|unstable
+ftimer_core|ftimer_internal_stop_scope_activation|unstable
+ftimer_core|ftimer_test_get_state|test-only
+ftimer_core|ftimer_test_state_t|test-only
+ftimer_types|FTIMER_SUCCESS|stable
+ftimer_types|FTIMER_ERR_NOT_INIT|stable
+ftimer_types|FTIMER_ERR_NOT_IMPLEMENTED|stable
+ftimer_types|FTIMER_ERR_UNKNOWN|stable
+ftimer_types|FTIMER_ERR_ACTIVE|stable
+ftimer_types|FTIMER_ERR_MISMATCH|stable
+ftimer_types|FTIMER_ERR_MPI_INCON|stable
+ftimer_types|FTIMER_ERR_IO|stable
+ftimer_types|FTIMER_ERR_INVALID_NAME|stable
+ftimer_types|FTIMER_NAME_LEN|stable
+ftimer_types|FTIMER_MISMATCH_STRICT|stable
+ftimer_types|FTIMER_MISMATCH_WARN|stable
+ftimer_types|FTIMER_MISMATCH_REPAIR|stable
+ftimer_types|FTIMER_EVENT_START|stable
+ftimer_types|FTIMER_EVENT_STOP|stable
+ftimer_types|wp|stable
+ftimer_types|ftimer_metadata_t|stable
+ftimer_types|ftimer_summary_entry_t|stable
+ftimer_types|ftimer_summary_t|stable
+ftimer_types|ftimer_mpi_summary_entry_t|stable
+ftimer_types|ftimer_mpi_summary_t|stable
+ftimer_types|ftimer_mpi_union_summary_entry_t|stable
+ftimer_types|ftimer_mpi_union_summary_t|stable
+ftimer_types|ftimer_call_stack_t|unstable
+ftimer_types|ftimer_context_list_t|unstable
+ftimer_types|ftimer_segment_t|unstable
+ftimer_types|ftimer_clock_func|stable
+ftimer_types|ftimer_hook_proc|stable

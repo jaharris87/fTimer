@@ -39,6 +39,12 @@ add_test(NAME ftimer_init_contract_docs
     -P ${CMAKE_CURRENT_SOURCE_DIR}/check_init_contract_docs.cmake
 )
 
+add_test(NAME ftimer_public_symbol_allowlist
+  COMMAND ${CMAKE_COMMAND}
+    -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/check_public_symbol_allowlist.cmake
+)
+
 if(FTIMER_BUILD_SMOKE_TESTS)
   ftimer_add_installed_consumer_test(
     ftimer_installed_package_consumer

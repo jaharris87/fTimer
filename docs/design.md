@@ -148,7 +148,7 @@ The public surface on current `main` is split between:
 - the OOP API through `type(ftimer_t)` from `use ftimer_core`
 - shared types and constants from `use ftimer_types`
 
-The supported source-level module surface is intentionally limited to those three modules. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md`, and the installed-consumer smoke test checks that this note matches the artifact contract.
+The supported source-level module surface is intentionally limited to those three modules. Their module-level public symbols are checked against `tests/public_symbol_allowlist.txt` so runtime storage helpers are not accidentally promoted into the stable downstream contract. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md`, and the installed-consumer smoke test checks that this note matches the artifact contract.
 
 The currently exported procedural entry points are:
 
@@ -183,7 +183,7 @@ Important current-state API notes:
 - Repairing stop mismatches remains an explicit `mismatch_mode` decision; omitted `ierr` alone is not a recovery mode.
 - Name-based `start`/`stop` remains the default user path. `lookup()` plus `start_id()`/`stop_id()` is documented as an optional cached-id hot path rather than a separate primary workflow.
 - `ftimer_scope()` and `ftimer_guard_t` provide a small default-instance scoped guard for lexical blocks. There is no current OOP scoped guard API; that parity question is deferred separately.
-- `ftimer_core` exposes low-level scoped-activation helpers only so the procedural `ftimer` module can implement exact activation ownership without duplicating start/stop internals. They are implementation hooks, not a supported downstream API; callers should use `ftimer_scope()` or explicit `start`/`stop`.
+- `ftimer_core` exposes low-level scoped-activation helpers only so the procedural `ftimer` module can implement exact activation ownership without duplicating start/stop internals. `ftimer_types` also exposes runtime storage types that helper modules currently need to share. These names are unstable public-by-necessity internals, not a supported downstream API: `ftimer_internal_start_scope_activation`, `ftimer_internal_stop_scope_activation`, `ftimer_call_stack_t`, `ftimer_context_list_t`, and `ftimer_segment_t`. Callers should use `ftimer_scope()` or explicit `start`/`stop`, and should inspect structured summary result types instead of runtime storage.
 - `get_summary()` is the local structured summary path.
 - `ftimer_summary_t` entries now retain `name`/`depth` and also expose `node_id`/`parent_id` links that are stable only within one produced summary object.
 - `print_summary()` and `write_summary()` format local report text.
