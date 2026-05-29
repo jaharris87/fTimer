@@ -19,6 +19,7 @@ Implemented capabilities include:
 - structured local summaries plus formatted local report output and CSV export
 - procedural wrappers over an OOP core
 - MPI-reduced global summary fields on every participating rank after a descriptor-hash preflight
+- sparse MPI union summaries plus explicit sparse text reports
 - limited OpenMP master-thread-only timer guards
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
@@ -80,7 +81,7 @@ ftimer_core.F90
      └─ summary/report bindings implemented in ftimer_core_summary_bindings.F90
 
 ftimer_summary.F90
-  └─ local structured summary building plus text formatting
+  └─ local structured summary building plus local/MPI text formatting
 
 ftimer_mpi.F90
   └─ MPI descriptor preflight and reduced summary fields
@@ -112,7 +113,7 @@ The CMake source order reflects the real dependency order:
 
 `ftimer_core_summary_bindings.F90` is the submodule-backed binding layer that connects `ftimer_t` to local summary generation, formatted reporting, CSV export formatting, and file-output entry points without collapsing all summary logic into the core module body.
 
-`ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, and self-time computation are assembled for local reporting.
+`ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, self-time computation, and strict/sparse MPI text formatting are assembled for reporting.
 
 `ftimer_mpi.F90` is an internal MPI summary helper module. It adds cross-rank behavior on top of local summaries, uses communicator-wide preflight collectives to verify that all ranks agree on the timer descriptor set for strict summaries, and then populates reduced MPI fields only where that contract allows. It also owns the sparse/union descriptor builder, which gathers a canonical descriptor union and reduces participation-aware entry statistics without weakening strict `mpi_summary()`.
 
@@ -170,6 +171,8 @@ The currently exported procedural entry points are:
 - `ftimer_print_mpi_summary`
 - `ftimer_write_mpi_summary`
 - `ftimer_write_mpi_summary_csv`
+- `ftimer_print_mpi_union_summary`
+- `ftimer_write_mpi_union_summary`
 - `ftimer_default_instance`
 
 Important current-state API notes:
@@ -187,8 +190,10 @@ Important current-state API notes:
 - `write_summary_csv()` exports local summaries in the versioned CSV record format for non-Fortran tooling.
 - `mpi_summary()` returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
 - `mpi_union_summary()` is the separate opt-in sparse/union MPI API. Its public result model is `ftimer_mpi_union_summary_t`; entry statistics are defined over participating ranks while communicator total-time fields remain all-rank reductions.
-- `print_mpi_summary()` and `write_mpi_summary()` are the first-class communicator-level MPI reporting paths.
-- `write_mpi_summary_csv()` exports the full reduced MPI summary fields as the same versioned CSV record format from communicator root.
+- `print_mpi_summary()` and `write_mpi_summary()` are the first-class strict communicator-level MPI reporting paths; they still build `ftimer_mpi_summary_t` and preserve descriptor-inconsistency failures.
+- `write_mpi_summary_csv()` exports the full reduced strict MPI summary fields as the same versioned CSV record format from communicator root.
+- `print_mpi_union_summary()` and `write_mpi_union_summary()` are the explicit sparse/union MPI text reporting paths. They build `ftimer_mpi_union_summary_t`, report per-entry `Participating` and derived `Missing` counts, and keep participating-rank statistics clearly labeled.
+- Sparse CSV export is intentionally not part of the current public surface; #194 tracks that schema work, and consumers use `mpi_union_summary()` directly for machine-readable sparse data today.
 - `set_clock()` / `clear_clock()` and `set_callback()` / `clear_callback()` are the supported configuration entry points; direct mutation of raw runtime internals is no longer part of the public contract.
 - `on_event` remains a lightweight intra-run hook; the current public surface does not promise stable semantic timer identity for external-profiler integrations.
 - `ftimer_types` owns `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, `ftimer_metadata_t`, and mismatch constants.

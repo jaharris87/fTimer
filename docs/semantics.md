@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the procedural `ftimer_scope` scoped guard, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results.
+Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the procedural `ftimer_scope` scoped guard, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -230,18 +230,25 @@ The supported pattern is simple: capture one communicator consistently at `init`
 - Entry min/avg/max time, call-count, percent, and imbalance fields are defined over participating ranks only. Absent ranks are not zero-filled.
 - No all-rank zero-filled or amortized entry fields are part of the initial result model. If such a view is added later, it must be explicitly named as all-rank or amortized.
 - The sparse API keeps the same init-captured communicator model as strict MPI summaries. The primary path is `mpi_f08` `type(MPI_Comm)`; transitional integer communicator capture remains only through `init` until #187 removes it.
-- The current implementation builds the descriptor union and structured sparse result. Sparse text and CSV report output are deferred to #171.
+- The current implementation builds the descriptor union and structured sparse result. Sparse text reports are available through explicit union report entry points; sparse CSV export remains deferred to #194 because it needs a versioned schema decision for participation fields.
 
 ## MPI Reporting Contract
 
-- `print_mpi_summary()` and `write_mpi_summary()` are the first-class text reporting paths for `ftimer_mpi_summary_t`
-- `write_mpi_summary_csv()` is the first-class machine-readable reporting path for `ftimer_mpi_summary_t`
+- `print_mpi_summary()` and `write_mpi_summary()` are the first-class strict text reporting paths for `ftimer_mpi_summary_t`
+- `write_mpi_summary_csv()` is the first-class machine-readable strict reporting path for `ftimer_mpi_summary_t`
 - They are collective over the communicator captured by `init`, just like `mpi_summary()`
-- They build the same global MPI summary object that `mpi_summary()` returns
+- They build the same global MPI summary object that `mpi_summary()` returns, so non-identical descriptor trees still fail with `FTIMER_ERR_MPI_INCON`
 - They emit one communicator-level report from rank 0; non-root participants take part in the collective build and then return success without duplicating output
 - The default MPI text report is an abbreviated view of `ftimer_mpi_summary_t`, not a serialization of every structured field. It prints communicator totals plus per-entry min/avg/max inclusive time, inclusive-time extrema ranks, inclusive imbalance, average self time, average call count, and `Avg %`; use `mpi_summary()` directly for min/max self time, self imbalance, min/max call count, min/max rank-local `% Total`, and explicit `node_id`/`parent_id` tree links.
 - The MPI CSV export uses CSV format version `1` with `summary_kind=mpi`. It emits summary and metadata rows plus one entry row per MPI summary entry, including explicit tree links and all reduced fields from `ftimer_mpi_summary_t`.
 - In the MPI text report, `Avg %` is `avg_pct_time`: the arithmetic mean of each rank's local `% Total` for that timer. It is not recomputed as `100*avg_inclusive_time/avg_total_time`, because rank-local denominator differences are part of the reported statistic.
+- `print_mpi_union_summary()` and `write_mpi_union_summary()` are the explicit sparse/union text reporting paths for `ftimer_mpi_union_summary_t`; the procedural wrappers are `ftimer_print_mpi_union_summary()` and `ftimer_write_mpi_union_summary()`.
+- Sparse union reports are collective over the init communicator, build the same participation-aware object as `mpi_union_summary()`, and emit one rank-0 report. They do not weaken `print_mpi_summary()` or `write_mpi_summary()`.
+- In non-MPI builds, sparse union report APIs return `FTIMER_ERR_NOT_IMPLEMENTED` before formatting or writing output. File-output calls do not create or replace report files on that path.
+- Sparse union reports print `Participating` and `Missing` columns for each entry. `Missing` is derived as `summary%num_ranks - participating_rank_count`.
+- Sparse union per-entry min/avg/max, imbalance, average self time, average call count, and `Avg %` are over participating ranks only. Missing ranks are not zero-filled, and the report labels this explicitly.
+- A descriptor is present for sparse reporting when it is materialized by that rank's local summary. A present zero-elapsed timer with a real start/stop contributes to `Participating` and call-count statistics; lookup-only names still are not a sparse registration contract.
+- Sparse CSV export is not part of the current API; it is tracked separately in #194. Consumers that need machine-readable sparse data should call `mpi_union_summary()` / `ftimer_mpi_union_summary()` and consume `ftimer_mpi_union_summary_t` directly.
 
 ## Name Validation Error Contract
 

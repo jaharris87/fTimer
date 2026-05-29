@@ -1,12 +1,15 @@
 module ftimer_summary
    use ftimer_types, only: ftimer_call_stack_t, ftimer_metadata_t, ftimer_mpi_summary_entry_t, &
-                           ftimer_mpi_summary_t, ftimer_segment_t, ftimer_summary_entry_t, ftimer_summary_t, wp
+                           ftimer_mpi_summary_t, ftimer_mpi_union_summary_entry_t, &
+                           ftimer_mpi_union_summary_t, ftimer_segment_t, ftimer_summary_entry_t, &
+                           ftimer_summary_t, wp
    implicit none
    private
 
    public :: build_summary
    public :: format_summary
    public :: format_mpi_summary
+   public :: format_mpi_union_summary
    public :: ftimer_summary_status
 
 contains
@@ -201,6 +204,104 @@ contains
          call append_line(text, trim(line))
       end do
    end subroutine format_mpi_summary
+
+   subroutine format_mpi_union_summary(summary, text, metadata)
+      type(ftimer_mpi_union_summary_t), intent(in) :: summary
+      character(len=:), allocatable, intent(out) :: text
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      character(len=*), parameter :: mpi_union_header_suffix = &
+                                     '  Participating  Missing  Min Incl (s)  Min Rank  Avg Incl (s)'// &
+                                     '  Max Incl (s)  Max Rank   Imb.  Avg Self (s)    Avg Calls    Avg %'
+      character(len=128) :: fmt
+      character(len=64) :: value_line
+      character(len=:), allocatable :: line
+      character(len=:), allocatable :: padded
+      integer :: i
+      integer :: key_width
+      integer :: line_width
+      integer :: missing_rank_count
+      integer :: name_width
+
+      text = ''
+      call append_line(text, 'Sparse MPI union summary')
+
+      key_width = metadata_key_width(metadata)
+      key_width = max(key_width, len('MPI ranks'))
+      key_width = max(key_width, len('Min total time (s)'))
+      key_width = max(key_width, len('Avg total time (s)'))
+      key_width = max(key_width, len('Max total time (s)'))
+      key_width = max(key_width, len('Min total rank'))
+      key_width = max(key_width, len('Max total rank'))
+      key_width = max(key_width, len('Total imbalance'))
+
+      call set_padded_text(padded, 'MPI ranks', key_width)
+      write (value_line, '(i0)') summary%num_ranks
+      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+
+      write (value_line, '(f0.6)') summary%min_total_time
+      call set_padded_text(padded, 'Min total time (s)', key_width)
+      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+
+      write (value_line, '(f0.6)') summary%avg_total_time
+      call set_padded_text(padded, 'Avg total time (s)', key_width)
+      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+
+      write (value_line, '(f0.6)') summary%max_total_time
+      call set_padded_text(padded, 'Max total time (s)', key_width)
+      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+
+      write (value_line, '(i0)') summary%min_total_time_rank
+      call set_padded_text(padded, 'Min total rank', key_width)
+      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+
+      write (value_line, '(i0)') summary%max_total_time_rank
+      call set_padded_text(padded, 'Max total rank', key_width)
+      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+
+      write (value_line, '(f0.6)') summary%total_time_imbalance
+      call set_padded_text(padded, 'Total imbalance', key_width)
+      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+
+      if (present(metadata)) then
+         do i = 1, size(metadata)
+            if (metadata_key_len(metadata(i)) <= 0) cycle
+            call set_padded_text(padded, metadata_key_text(metadata(i)), key_width)
+            call append_line(text, padded(1:key_width)//' : '//metadata_value_text(metadata(i)))
+         end do
+      end if
+
+      call append_line(text, '')
+      call append_line(text, 'Report note: sparse entry min/avg/max fields are over participating ranks only; '// &
+                       'missing ranks are not zero-filled.')
+      call append_line(text, 'Missing ranks = MPI ranks - Participating; absent ranks do not contribute '// &
+                       'zero-call or zero-time samples.')
+      call append_line(text, 'Avg % is the arithmetic mean of participating rank-local % Total values, '// &
+                       'not 100*Avg Incl/Avg total time.')
+
+      call append_line(text, '')
+      name_width = mpi_union_summary_name_width(summary)
+      line_width = name_width + 160
+      allocate (character(len=line_width) :: line)
+
+      call set_padded_text(padded, 'Timer name', name_width)
+      line = repeat(' ', len(line))
+      line(1:name_width + len(mpi_union_header_suffix)) = padded(1:name_width)//mpi_union_header_suffix
+      call append_line(text, trim(line))
+      call append_line(text, repeat('-', len_trim(line)))
+
+      write (fmt, '("(a",i0,",2x,i13,2x,i7,2x,f12.6,2x,i8,2x,f12.6,2x,f12.6,2x,i8,2x,f6.3,2x,f12.6,2x,f10.3,2x,f8.2)")') &
+         name_width
+      do i = 1, summary%num_entries
+         call set_padded_text(padded, display_mpi_union_name(summary%entries(i)), name_width)
+         missing_rank_count = summary%num_ranks - summary%entries(i)%participating_rank_count
+         write (line, fmt) padded(1:name_width), summary%entries(i)%participating_rank_count, missing_rank_count, &
+            summary%entries(i)%min_inclusive_time, summary%entries(i)%min_inclusive_time_rank, &
+            summary%entries(i)%avg_inclusive_time, summary%entries(i)%max_inclusive_time, &
+            summary%entries(i)%max_inclusive_time_rank, summary%entries(i)%inclusive_imbalance, &
+            summary%entries(i)%avg_self_time, summary%entries(i)%avg_call_count, summary%entries(i)%avg_pct_time
+         call append_line(text, trim(line))
+      end do
+   end subroutine format_mpi_union_summary
 
    function ftimer_summary_status(summary) result(status)
       type(ftimer_summary_t), intent(in) :: summary
@@ -713,6 +814,18 @@ contains
       end do
    end function mpi_summary_name_width
 
+   integer function mpi_union_summary_name_width(summary) result(width)
+      type(ftimer_mpi_union_summary_t), intent(in) :: summary
+      character(len=:), allocatable :: name
+      integer :: i
+
+      width = len('Timer name')
+      do i = 1, summary%num_entries
+         name = display_mpi_union_name(summary%entries(i))
+         width = max(width, len(name))
+      end do
+   end function mpi_union_summary_name_width
+
    function display_mpi_name(entry) result(name)
       type(ftimer_mpi_summary_entry_t), intent(in) :: entry
       character(len=:), allocatable :: name
@@ -721,6 +834,15 @@ contains
       escaped_name = escaped_summary_name(mpi_summary_entry_name(entry))
       name = repeat(' ', 2*entry%depth)//escaped_name
    end function display_mpi_name
+
+   function display_mpi_union_name(entry) result(name)
+      type(ftimer_mpi_union_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: name
+      character(len=:), allocatable :: escaped_name
+
+      escaped_name = escaped_summary_name(mpi_union_summary_entry_name(entry))
+      name = repeat(' ', 2*entry%depth)//escaped_name
+   end function display_mpi_union_name
 
    function summary_entry_name(entry) result(name)
       type(ftimer_summary_entry_t), intent(in) :: entry
@@ -743,6 +865,17 @@ contains
          name = ''
       end if
    end function mpi_summary_entry_name
+
+   function mpi_union_summary_entry_name(entry) result(name)
+      type(ftimer_mpi_union_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: name
+
+      if (allocated(entry%name)) then
+         name = entry%name
+      else
+         name = ''
+      end if
+   end function mpi_union_summary_entry_name
 
    integer function metadata_key_len(item) result(width)
       type(ftimer_metadata_t), intent(in) :: item

@@ -19,6 +19,7 @@ Issue #169 chooses the public shape for that follow-up:
 - Sparse MPI summaries use a separate opt-in API: `mpi_union_summary()` on `type(ftimer_t)` and `ftimer_mpi_union_summary()` for the procedural default instance.
 - Sparse MPI summaries use a distinct result type: `ftimer_mpi_union_summary_t` with `ftimer_mpi_union_summary_entry_t` entries. The strict `ftimer_mpi_summary_t` shape is not extended with sparse-only fields.
 - #170 implements the descriptor-union builder for the structured result. `mpi_union_summary()` now preserves the same stopped-timer, communicator, datatype-validation, no-local-fallback, and `ierr`/stderr preconditions as the strict MPI summary path, then returns a participation-aware sparse result.
+- #171 adds sparse text reports through `print_mpi_union_summary()` / `write_mpi_union_summary()` and the procedural `ftimer_print_mpi_union_summary()` / `ftimer_write_mpi_union_summary()` wrappers. These report APIs are explicit opt-in paths over `ftimer_mpi_union_summary_t`; strict `print_mpi_summary()` / `write_mpi_summary()` remain strict.
 
 ## Evidence
 
@@ -74,4 +75,4 @@ The sparse API follows the same `mpi_f08` primary contract as strict MPI summari
 
 Issue #149 did not implement sparse summaries. It recorded the decision and created the split implementation issues.
 
-The follow-up work should not weaken the existing descriptor preflight for `mpi_summary()`, change strict summary averages, add barriers, or require every future report format to expose every sparse field. Sparse text and CSV report output remain deferred to #171.
+The follow-up work should not weaken the existing descriptor preflight for `mpi_summary()`, change strict summary averages, add barriers, or require every future report format to expose every sparse field. Sparse text reporting is implemented as an explicit union-report path. Sparse CSV export remains a non-goal for the current slice and is tracked in #194 because the CSV schema needs explicit participation/missing-rank columns instead of overloading the strict `summary_kind=mpi` rows.
