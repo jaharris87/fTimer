@@ -1170,9 +1170,10 @@ contains
       integer, intent(out) :: status
       character(len=*), intent(out) :: iomsg
       character(len=:), allocatable :: expected_header
+      character(len=:), allocatable :: record_text
       character(len=2048) :: first_line
       character(len=1) :: last_char
-      character(len=2048) :: record_line
+      character(len=2048) :: physical_line
       integer :: file_size
       integer :: file_unit
       integer :: io
@@ -1213,8 +1214,9 @@ contains
          return
       end if
 
+      record_text = ''
       do
-         read (file_unit, '(a)', iostat=io, iomsg=iomsg) record_line
+         read (file_unit, '(a)', iostat=io, iomsg=iomsg) physical_line
          if (io == iostat_end) exit
          if (io /= 0) then
             close (file_unit)
@@ -1222,14 +1224,29 @@ contains
             return
          end if
 
-         if (.not. csv_record_has_format_version(record_line, FTIMER_CSV_FORMAT_VERSION)) then
+         if (len(record_text) <= 0) then
+            record_text = trim(physical_line)
+         else
+            record_text = record_text//new_line('a')//trim(physical_line)
+         end if
+
+         if (.not. csv_record_is_complete(record_text)) cycle
+
+         if (.not. csv_record_has_format_version(record_text, FTIMER_CSV_FORMAT_VERSION)) then
             close (file_unit)
             status = FTIMER_ERR_IO
             iomsg = 'existing CSV records do not match fTimer CSV format_version 2'
             return
          end if
+         record_text = ''
       end do
       close (file_unit)
+
+      if (len(record_text) > 0) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing CSV records contain an unterminated quoted field'
+         return
+      end if
 
       open (newunit=file_unit, file=filename, status='old', access='stream', form='unformatted', &
             action='read', iostat=io, iomsg=iomsg)
@@ -1273,6 +1290,28 @@ contains
          matches = line(expected_len + 1:expected_len + 1) == ','
       end if
    end function csv_record_has_format_version
+
+   logical function csv_record_is_complete(line) result(matches)
+      character(len=*), intent(in) :: line
+      integer :: i
+      integer :: text_len
+      logical :: in_quotes
+
+      in_quotes = .false.
+      text_len = len_trim(line)
+      i = 1
+      do while (i <= text_len)
+         if (line(i:i) == '"') then
+            if (in_quotes .and. (i < text_len) .and. (line(i + 1:i + 1) == '"')) then
+               i = i + 1
+            else
+               in_quotes = .not. in_quotes
+            end if
+         end if
+         i = i + 1
+      end do
+      matches = .not. in_quotes
+   end function csv_record_is_complete
 
    function csv_header_line() result(header)
       character(len=:), allocatable :: header
