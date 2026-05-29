@@ -9,7 +9,7 @@ module test_mpi_summary
                       MPI_F08_SUM => MPI_SUM
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
                      ftimer_mpi_union_summary, ftimer_print_mpi_summary, ftimer_start, ftimer_stop, &
-                     ftimer_write_mpi_union_summary
+                     ftimer_print_mpi_union_summary, ftimer_write_mpi_union_summary
    use ftimer_core, only: ftimer_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MPI_INCON, FTIMER_NAME_LEN, &
                            FTIMER_SUCCESS, ftimer_metadata_t, ftimer_mpi_summary_t, &
@@ -1002,6 +1002,63 @@ contains
    end subroutine test_mpi_union_write_summary_reports_sparse_participation
 
    @test
+   subroutine test_mpi_union_write_summary_replaces_existing_file(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: printed
+      character(len=*), parameter :: report_path = 'test_mpi_union_replace_report.txt'
+      integer :: flags(3)
+      integer :: ierr
+      integer :: io
+      integer :: rank
+      integer :: unit
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_common_plus_sparse_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         open (newunit=unit, file=report_path, status='replace', action='write', iostat=io)
+         @assertEqual(0, io)
+         write (unit, '(a)', iostat=io) 'stale sentinel'
+         @assertEqual(0, io)
+         close (unit)
+      end if
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_union_summary(report_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         printed = read_file_text(report_path)
+         if (index(printed, 'stale sentinel') == 0) flags(1) = 1
+         if (count_lines_with_prefix(printed, 'Sparse MPI union summary') == 1) flags(2) = 1
+         if (index(printed, 'rank_zero') > 0) flags(3) = 1
+         call delete_if_exists(report_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_write_summary_replaces_existing_file
+
+   @test
    subroutine test_mpi_union_print_summary_counts_zero_elapsed_present_timer(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
@@ -1184,6 +1241,44 @@ contains
    end subroutine test_mpi_union_report_apis_reject_active_timers
 
    @test
+   subroutine test_mpi_union_print_summary_syncs_io_error(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      integer :: ierr
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+      integer :: rank
+
+      rank = this%getProcessRank()
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_common_plus_sparse_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) then
+         call timer%print_mpi_union_summary(unit=-9876, ierr=ierr)
+      else
+         call timer%print_mpi_union_summary(ierr=ierr)
+      end if
+      @assertEqual(FTIMER_ERR_IO, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_IO, min_err)
+      @assertEqual(FTIMER_ERR_IO, max_err)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_print_summary_syncs_io_error
+
+   @test
    subroutine test_mpi_union_write_summary_preserves_nested_same_name_display(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
@@ -1300,6 +1395,88 @@ contains
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_proc_union_write_forwards_append_metadata
+
+   @test
+   subroutine test_proc_union_print_emits_sparse_report(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=:), allocatable :: printed
+      character(len=*), parameter :: print_path = 'test_mpi_union_procedural_print_report.txt'
+      integer :: flags(8)
+      integer :: ierr
+      integer :: max_rank
+      integer :: min_rank
+      integer :: missing
+      integer :: participating
+      integer :: rank
+      integer :: unit
+      logical :: found
+      real(wp) :: avg_calls
+      real(wp) :: avg_incl
+      real(wp) :: avg_pct
+      real(wp) :: avg_self
+      real(wp) :: imbalance
+      real(wp) :: max_incl
+      real(wp) :: min_incl
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      fake_time = 0.0_wp
+      call ftimer_default_instance%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call build_common_plus_sparse_timers_procedural(rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      metadata(1)%key = 'Mode'
+      metadata(1)%value = 'procedural-print'
+
+      if (rank == 0) then
+         call delete_if_exists(print_path)
+         open (newunit=unit, file=print_path, status='replace', action='write', iostat=ierr)
+         @assertEqual(0, ierr)
+         call ftimer_print_mpi_union_summary(unit=unit, metadata=metadata, ierr=ierr)
+         close (unit)
+      else
+         call ftimer_print_mpi_union_summary(metadata=metadata, ierr=ierr)
+      end if
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         printed = read_file_text(print_path)
+         if (index(printed, 'Sparse MPI union summary') > 0) flags(1) = 1
+         if (index(printed, 'Mode') > 0) flags(2) = 1
+         if (index(printed, 'procedural-print') > 0) flags(3) = 1
+         if (index(printed, 'Participating') > 0) flags(4) = 1
+         if (index(printed, 'Missing') > 0) flags(5) = 1
+         found = union_report_row_values(printed, 'rank_zero', participating, missing, min_incl, min_rank, &
+                                         avg_incl, max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct)
+         if (found) flags(6) = 1
+         if (participating == 1) flags(7) = 1
+         if (missing == 1) flags(8) = 1
+         call delete_if_exists(print_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
+      @assertEqual(1, flags(7))
+      @assertEqual(1, flags(8))
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_proc_union_print_emits_sparse_report
 
    @test
    subroutine test_procedural_mpi_union_write_summary_matches_oop_report(this)
