@@ -39,8 +39,9 @@ download identity and cache identity together when updating pinned tools.
   - Compute `PFUNIT_SHA256` from the release archive before merging the update,
     for example by downloading the intended `pFUnit-vX.Y.Z.tar` release asset
     from `Goddard-Fortran-Ecosystem/pFUnit` and running `sha256sum`.
-  - The pFUnit cache key includes both version and SHA. Changing either value
-    intentionally creates a new cache lineage.
+  - The pFUnit cache key includes the runner/compiler/MPI/CMake identity, the
+    pFUnit version, and the archive SHA. Changing the toolchain image, version,
+    or SHA intentionally creates a new cache lineage.
 - fprettify:
   - Update `.github/constraints/lint.txt` when changing the lint tool version.
   - Keep the CI install command constraint-based so `pip` cannot float to a
