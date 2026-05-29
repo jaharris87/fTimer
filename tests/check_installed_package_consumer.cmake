@@ -475,16 +475,18 @@ if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   endif()
 endif()
 
-execute_process(
-  COMMAND "${consumer_executable}"
-  WORKING_DIRECTORY "${consumer_build_dir}"
-  RESULT_VARIABLE consumer_run_result
-)
-if(NOT consumer_run_result EQUAL 0)
-  message(FATAL_ERROR "Installed-package consumer executable exited with a nonzero status.")
-endif()
-
+# Plain consumers do not call MPI_Init; MPI-enabled installed checks use the
+# MPI-aware consumers below.
 if(NOT TEST_ENABLE_MPI)
+  execute_process(
+    COMMAND "${consumer_executable}"
+    WORKING_DIRECTORY "${consumer_build_dir}"
+    RESULT_VARIABLE consumer_run_result
+  )
+  if(NOT consumer_run_result EQUAL 0)
+    message(FATAL_ERROR "Installed-package consumer executable exited with a nonzero status.")
+  endif()
+
   execute_process(
     COMMAND "${oop_consumer_executable}"
     WORKING_DIRECTORY "${consumer_build_dir}"

@@ -103,7 +103,7 @@ Total time (s) : <nonnegative elapsed time>
 
 Timer name  Inclusive (s)     Self (s)    Calls   % Total
 ---------------------------------------------------------
-work         <nonnegative>   <nonnegative>       1   <nonzero>
+work         <nonnegative>   <nonnegative>       1   <nonnegative>
 ```
 
 The exact timings vary by machine and compiler, but a successful run should show:
