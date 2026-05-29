@@ -139,7 +139,10 @@ function(ftimer_check_package_version_request probe_name requested_version expec
   set(version_probe_cmake [=[
 cmake_minimum_required(VERSION 3.16)
 project(ftimer_package_version_probe LANGUAGES Fortran)
-find_package(fTimer @requested_version@ CONFIG REQUIRED)
+find_package(fTimer @requested_version@ CONFIG REQUIRED
+  PATHS "@prefix_path@"
+  NO_DEFAULT_PATH
+)
 ]=])
 
   string(CONFIGURE "${version_probe_cmake}" version_probe_cmake_configured @ONLY)
