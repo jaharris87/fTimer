@@ -7,10 +7,11 @@ module test_mpi_summary_4pe
                       MPI_F08_Comm_split => MPI_Comm_split, MPI_F08_INTEGER => MPI_INTEGER, &
                       MPI_F08_MAX => MPI_MAX, MPI_F08_MIN => MPI_MIN, MPI_F08_SUCCESS => MPI_SUCCESS, &
                       MPI_F08_SUM => MPI_SUM
-   use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_start, ftimer_stop
+   use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
+                     ftimer_mpi_union_summary, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_SUCCESS, ftimer_mpi_summary_t, wp
-   use test_support, only: attach_mock_clock, fake_time
+   use ftimer_types, only: FTIMER_SUCCESS, ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, wp
+   use test_support, only: attach_mock_clock, fake_time, mock_clock
    implicit none
 
    @testcase(npes=[4])
@@ -227,6 +228,117 @@ contains
    end subroutine test_transitional_integer_comm_supports_split_communicators
 
    @test
+   subroutine test_mpi_union_summary_reduces_one_rank_and_subset_timers(this)
+      class(mpi_summary_4pe_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_union_summary_t) :: summary
+      integer :: even_idx
+      integer :: ierr
+      integer :: rank
+      integer :: single_idx
+
+      rank = this%getProcessRank()
+      fake_time = 0.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call build_sparse_union_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_union_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      even_idx = union_entry_index(summary, 'even_only')
+      single_idx = union_entry_index(summary, 'rank_three')
+
+      @assertEqual(4, summary%num_ranks)
+      @assertEqual(2, summary%num_entries)
+      @assertTrue(even_idx > 0)
+      @assertTrue(single_idx > 0)
+      call assert_real_close(summary%min_total_time, 8.0_wp)
+      call assert_real_close(summary%avg_total_time, 8.0_wp)
+      call assert_real_close(summary%max_total_time, 8.0_wp)
+      @assertEqual(0, summary%min_total_time_rank)
+      @assertEqual(0, summary%max_total_time_rank)
+
+      @assertEqual(2, summary%entries(even_idx)%participating_rank_count)
+      call assert_real_close(summary%entries(even_idx)%min_inclusive_time, 4.0_wp)
+      call assert_real_close(summary%entries(even_idx)%avg_inclusive_time, 5.0_wp)
+      call assert_real_close(summary%entries(even_idx)%max_inclusive_time, 6.0_wp)
+      @assertEqual(0, summary%entries(even_idx)%min_inclusive_time_rank)
+      @assertEqual(2, summary%entries(even_idx)%max_inclusive_time_rank)
+      call assert_real_close(summary%entries(even_idx)%avg_pct_time, 62.5_wp)
+
+      @assertEqual(1, summary%entries(single_idx)%participating_rank_count)
+      call assert_real_close(summary%entries(single_idx)%min_inclusive_time, 7.0_wp)
+      call assert_real_close(summary%entries(single_idx)%avg_inclusive_time, 7.0_wp)
+      call assert_real_close(summary%entries(single_idx)%max_inclusive_time, 7.0_wp)
+      @assertEqual(3, summary%entries(single_idx)%min_inclusive_time_rank)
+      @assertEqual(3, summary%entries(single_idx)%max_inclusive_time_rank)
+      call assert_real_close(summary%entries(single_idx)%avg_pct_time, 87.5_wp)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_summary_reduces_one_rank_and_subset_timers
+
+   @test
+   subroutine test_proc_mpi_union_summary_mixes_common_sparse_timers(this)
+      class(mpi_summary_4pe_case), intent(inout) :: this
+      type(ftimer_mpi_union_summary_t) :: summary
+      integer :: common_idx
+      integer :: ierr
+      integer :: rank
+      integer :: sparse_idx
+
+      rank = this%getProcessRank()
+      fake_time = 0.0_wp
+      call ftimer_default_instance%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call build_common_plus_rank_three_timer_procedural(rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_mpi_union_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      common_idx = union_entry_index(summary, 'common')
+      sparse_idx = union_entry_index(summary, 'rank_three')
+
+      @assertEqual(4, summary%num_ranks)
+      @assertEqual(2, summary%num_entries)
+      @assertTrue(common_idx > 0)
+      @assertTrue(sparse_idx > 0)
+      call assert_real_close(summary%min_total_time, 4.0_wp)
+      call assert_real_close(summary%avg_total_time, 4.75_wp)
+      call assert_real_close(summary%max_total_time, 7.0_wp)
+      @assertEqual(0, summary%min_total_time_rank)
+      @assertEqual(3, summary%max_total_time_rank)
+
+      @assertEqual(4, summary%entries(common_idx)%participating_rank_count)
+      call assert_real_close(summary%entries(common_idx)%min_inclusive_time, 4.0_wp)
+      call assert_real_close(summary%entries(common_idx)%avg_inclusive_time, 4.0_wp)
+      call assert_real_close(summary%entries(common_idx)%max_inclusive_time, 4.0_wp)
+      @assertEqual(0, summary%entries(common_idx)%min_inclusive_time_rank)
+      @assertEqual(0, summary%entries(common_idx)%max_inclusive_time_rank)
+      call assert_real_close(summary%entries(common_idx)%avg_pct_time, 0.25_wp*(300.0_wp + 100.0_wp*4.0_wp/7.0_wp))
+
+      @assertEqual(1, summary%entries(sparse_idx)%participating_rank_count)
+      call assert_real_close(summary%entries(sparse_idx)%min_inclusive_time, 3.0_wp)
+      call assert_real_close(summary%entries(sparse_idx)%avg_inclusive_time, 3.0_wp)
+      call assert_real_close(summary%entries(sparse_idx)%max_inclusive_time, 3.0_wp)
+      @assertEqual(3, summary%entries(sparse_idx)%min_inclusive_time_rank)
+      @assertEqual(3, summary%entries(sparse_idx)%max_inclusive_time_rank)
+      call assert_real_close(summary%entries(sparse_idx)%avg_pct_time, 100.0_wp*3.0_wp/7.0_wp)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_proc_mpi_union_summary_mixes_common_sparse_timers
+
+   @test
    subroutine test_mpi_summary_reinit_omitted_comm_resets_to_world(this)
       class(mpi_summary_4pe_case), intent(inout) :: this
       type(ftimer_t) :: timer
@@ -378,6 +490,70 @@ contains
       fake_time = 4.0_wp + real(color, wp) + 2.0_wp*real(subrank, wp)
       call ftimer_stop("work", ierr=ierr)
    end subroutine build_split_comm_timer_procedural
+
+   subroutine build_sparse_union_timers(timer, rank, ierr)
+      class(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+
+      ierr = FTIMER_SUCCESS
+      if (mod(rank, 2) == 0) then
+         fake_time = 0.0_wp
+         call timer%start("even_only", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 4.0_wp + real(rank, wp)
+         call timer%stop("even_only", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+      end if
+
+      if (rank == 3) then
+         fake_time = 0.0_wp
+         call timer%start("rank_three", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 7.0_wp
+         call timer%stop("rank_three", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+      end if
+
+      fake_time = 8.0_wp
+   end subroutine build_sparse_union_timers
+
+   subroutine build_common_plus_rank_three_timer_procedural(rank, ierr)
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+
+      fake_time = 0.0_wp
+      call ftimer_start("common", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      fake_time = 4.0_wp
+      call ftimer_stop("common", ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) return
+
+      if (rank == 3) then
+         call ftimer_start("rank_three", ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) return
+
+         fake_time = 7.0_wp
+         call ftimer_stop("rank_three", ierr=ierr)
+      end if
+   end subroutine build_common_plus_rank_three_timer_procedural
+
+   integer function union_entry_index(summary, name) result(idx)
+      type(ftimer_mpi_union_summary_t), intent(in) :: summary
+      character(len=*), intent(in) :: name
+      integer :: i
+
+      idx = 0
+      do i = 1, summary%num_entries
+         if (trim(summary%entries(i)%name) == name) then
+            idx = i
+            return
+         end if
+      end do
+   end function union_entry_index
 
    subroutine assert_split_work_summary(summary, color)
       type(ftimer_mpi_summary_t), intent(in) :: summary

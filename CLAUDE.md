@@ -70,7 +70,7 @@ ftimer.F90  (procedural wrappers + default global instance)
         ├─► ftimer_types.F90   (derived types, kinds, constants, enums, summary types, callback interface)
         ├─► ftimer_clock.F90   (injectable wall-clock: MPI_Wtime vs system_clock)
         ├─► ftimer_summary.F90 (structured summary building + text formatting)
-        ├─► ftimer_mpi.F90    (strict MPI reductions + sparse/union API skeleton)
+        ├─► ftimer_mpi.F90    (strict MPI reductions + sparse/union descriptor reductions)
         └─► ftimer_core_summary_bindings.F90 (summary/report/CSV file-output bindings)
 ```
 
@@ -128,7 +128,7 @@ The call stack state CHANGES between start and stop — this is the most common 
 
 ## Development Workflow
 
-Current `main` is in Phase 6. The shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, sparse/union MPI API/data-model skeletons, and limited OpenMP master-thread guards are implemented.
+Current `main` is in Phase 6. The shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, sparse/union MPI descriptor summaries, and limited OpenMP master-thread guards are implemented.
 
 During Phase 6, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: preserve procedural-wrapper parity with the OOP core unless a tracked issue explicitly defers parity, keep MPI summary behavior correct and explicit, preserve the limited master-thread-only OpenMP guard model, and keep current-state docs/examples honest. Do not pull fuller post-Phase-6 design work or broader OpenMP support forward.
 
@@ -240,7 +240,7 @@ The native Codex trigger comments are intentionally posted as single-line `@code
 
 ## Configuration
 
-- **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` can populate cross-rank fields. The supported path is an MPI wrapper compiler such as `mpifort`; configure now fails early if the active compiler cannot compile a minimal `mpi_f08` probe against the discovered MPI toolchain. When OFF, `mpi_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` and leaves the summary local-only.
+- **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` / `mpi_union_summary()` can populate cross-rank fields. The supported path is an MPI wrapper compiler such as `mpifort`; configure now fails early if the active compiler cannot compile a minimal `mpi_f08` probe against the discovered MPI toolchain. When OFF, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI result objects; they do not fall back to local summaries.
 - **`FTIMER_USE_OPENMP`** (CMake option, default OFF): Enables the Phase 6 `!$omp master` guards around the guarded `ftimer_core` entry points. This is limited master-thread-only protection, not full thread safety. The documented/supported build path is GNU Fortran (`gfortran`).
 - **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the current smoke-test baseline, including install/export consumer verification and the script-driven build-contract regression checks when their toolchain prerequisites are available.
 - **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables the pFUnit-backed behavioral and MPI test suites.

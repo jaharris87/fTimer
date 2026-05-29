@@ -6,7 +6,7 @@ Issue #149 asked whether fTimer should support MPI summaries for timer descripto
 
 ## Decision
 
-Sparse/union MPI summaries are planned, but only as an explicit opt-in MPI summary path. The existing strict `mpi_summary()` contract stays unchanged: it requires identical descriptor trees on all participating ranks and returns `FTIMER_ERR_MPI_INCON` when timer descriptors differ.
+Sparse/union MPI summaries are implemented as an explicit opt-in MPI summary path. The existing strict `mpi_summary()` contract stays unchanged: it requires identical descriptor trees on all participating ranks and returns `FTIMER_ERR_MPI_INCON` when timer descriptors differ.
 
 Follow-up work is split into:
 
@@ -18,7 +18,7 @@ Issue #169 chooses the public shape for that follow-up:
 
 - Sparse MPI summaries use a separate opt-in API: `mpi_union_summary()` on `type(ftimer_t)` and `ftimer_mpi_union_summary()` for the procedural default instance.
 - Sparse MPI summaries use a distinct result type: `ftimer_mpi_union_summary_t` with `ftimer_mpi_union_summary_entry_t` entries. The strict `ftimer_mpi_summary_t` shape is not extended with sparse-only fields.
-- The #169 API skeleton is public and compile-checked, but the descriptor-union builder is still deferred to #170. Until that builder lands, `mpi_union_summary()` returns `FTIMER_ERR_NOT_IMPLEMENTED` after preserving the same stopped-timer, communicator, datatype-validation, no-local-fallback, and `ierr`/stderr preconditions as the strict MPI summary path.
+- #170 implements the descriptor-union builder for the structured result. `mpi_union_summary()` now preserves the same stopped-timer, communicator, datatype-validation, no-local-fallback, and `ierr`/stderr preconditions as the strict MPI summary path, then returns a participation-aware sparse result.
 
 ## Evidence
 
@@ -43,7 +43,7 @@ Rank-conditional work is common in MPI applications: I/O ranks, restart paths, o
 
 Rejecting non-identical descriptor trees is still the right default. It prevents silent wrong reductions when ranks accidentally create different timer trees or when array indices would otherwise align unrelated timers. A sparse mode is valuable only if it makes absence explicit and keeps the strict path available for users who want identical-tree validation.
 
-## Planned Sparse Semantics
+## Sparse Semantics
 
 The sparse path should keep these inherited MPI contracts:
 
@@ -66,12 +66,12 @@ The sparse path should differ from strict `mpi_summary()` in these ways:
 - Initial per-entry rank-attributed extrema should preserve parity with the current strict MPI result by covering inclusive-time extrema; additional rank-attributed extrema for self time, call count, or percent time should wait for a concrete consumer need.
 - Communicator total-time fields remain all-rank fields because every rank has a local summary window even when some entries are sparse.
 
-The first sparse implementation should not provide an implicit zero-filled compatibility mode. Zero filling makes absence too easy to confuse with real zero work. If an all-rank amortized view is added later, it should be explicitly named and derived from participation-aware data rather than replacing participating-rank statistics. No all-rank zero-filled fields are part of the #169 result type.
+The first sparse implementation does not provide an implicit zero-filled compatibility mode. Zero filling makes absence too easy to confuse with real zero work. If an all-rank amortized view is added later, it should be explicitly named and derived from participation-aware data rather than replacing participating-rank statistics. No all-rank zero-filled fields are part of the current result type.
 
 The sparse API follows the same `mpi_f08` primary contract as strict MPI summaries: communicator choice is captured at `init` as `type(MPI_Comm)` on the validated path, with legacy integer communicator capture remaining only as transitional compatibility until #187 removes it. No sparse API overload is added for per-call communicator selection, so #187 does not need to change the sparse summary entry point.
 
 ## Non-Goals
 
-Issue #149 does not implement sparse summaries. It records the decision and creates the split implementation issues.
+Issue #149 did not implement sparse summaries. It recorded the decision and created the split implementation issues.
 
-The follow-up work should not weaken the existing descriptor preflight for `mpi_summary()`, change strict summary averages, add barriers, or require every future report format to expose every sparse field.
+The follow-up work should not weaken the existing descriptor preflight for `mpi_summary()`, change strict summary averages, add barriers, or require every future report format to expose every sparse field. Sparse text and CSV report output remain deferred to #171.

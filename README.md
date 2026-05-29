@@ -25,7 +25,7 @@ fTimer fits best when you want timing behavior you can trust:
 - local summaries are live snapshots: active timers are included explicitly and marked in the data model/report output
 - local summary entries retain formatter-friendly preorder `name`/`depth` data and also expose explicit `node_id`/`parent_id` tree links
 - pure-MPI reductions return a distinct `ftimer_mpi_summary_t` with globally meaningful fields on every participating rank
-- a sparse/union MPI API and result model are defined for future rank-conditional summaries; the builder is deferred and currently returns `FTIMER_ERR_NOT_IMPLEMENTED`
+- rank-conditional MPI reductions are available through the opt-in sparse/union `mpi_union_summary()` API and `ftimer_mpi_union_summary_t`
 - an injectable clock supports deterministic tests and controlled benchmarking
 - optional callback hooks let in-process code observe normal timer start/stop events during a run
 
@@ -224,7 +224,7 @@ Operational notes:
 - `mpi_summary()` and `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init`.
 - A successful MPI reduction returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
 - The MPI result includes communicator-local rank attribution for total-time extrema and per-entry inclusive-time extrema. Ties resolve to the lowest rank that attains the extremum.
-- Sparse/union MPI summaries are reserved for the separate `mpi_union_summary()` / `ftimer_mpi_union_summary()` API and `ftimer_mpi_union_summary_t` result type. The API shape and result fields are public, but the descriptor-union builder is deferred to #170 and currently returns `FTIMER_ERR_NOT_IMPLEMENTED`.
+- Sparse/union MPI summaries use the separate `mpi_union_summary()` / `ftimer_mpi_union_summary()` API and `ftimer_mpi_union_summary_t` result type. This opt-in path builds a canonical descriptor union across ranks instead of weakening strict `mpi_summary()`.
 - `ftimer_mpi_union_summary_t` keeps communicator total-time fields as all-rank statistics. Each entry records `participating_rank_count`; missing rank count is derived as `num_ranks - participating_rank_count`, and entry min/avg/max statistics are defined over participating ranks only.
 - Sparse entries are materialized from descriptors emitted by each rank's local summary. Lookup-only timer definitions are not a first-class sparse-registration contract, absent ranks are not zero-filled, and no all-rank amortized compatibility fields are included in the initial result model.
 - Sparse text and CSV reporting entry points are deferred to #171; current MPI report functions remain strict-summary report paths.
@@ -327,7 +327,7 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - MPI summary reductions select MPI datatypes with `MPI_Type_match_size` for fTimer's actual `real(wp)` and `integer(int64)` storage sizes instead of assuming fixed `MPI_DOUBLE_PRECISION`, `MPI_2DOUBLE_PRECISION`, or `MPI_INTEGER8` mappings. The compile-time MPI probe validates that this API is available through the `mpi_f08` path; if the API exists but no matching runtime datatype can be returned, `mpi_summary()` temporarily requests MPI error returns for the datatype lookup, fails with `FTIMER_ERR_UNKNOWN`, and leaves the MPI result empty.
 - `mpi_summary()` now returns a distinct `ftimer_mpi_summary_t`; it does not fall back to a local `ftimer_summary_t` on MPI-disabled or MPI-error paths. Call `get_summary()` separately if you need local data in those cases.
 - Descriptor-preflight failures inside one communicator now report the disagreeing communicator-local ranks in the omitted-`ierr` diagnostic path when possible.
-- Rank-conditional timer reductions are not supported by the current strict `mpi_summary()` API. Sparse/union MPI summaries are defined as the separate opt-in `mpi_union_summary()` / `ftimer_mpi_union_summary()` API with `ftimer_mpi_union_summary_t`; the descriptor-union builder is deferred to #170. See [`docs/mpi-sparse-summary-decision.md`](docs/mpi-sparse-summary-decision.md).
+- Rank-conditional timer reductions are not supported by the strict `mpi_summary()` API. Use the separate opt-in `mpi_union_summary()` / `ftimer_mpi_union_summary()` API with `ftimer_mpi_union_summary_t` for sparse descriptor-union reductions. See [`docs/mpi-sparse-summary-decision.md`](docs/mpi-sparse-summary-decision.md).
 - Local summary `node_id` values are not a cross-run identity contract. Treat them as explicit links inside one produced summary object, not as durable ids across separate runs or independently produced summaries.
 - All ranks that participate in `mpi_summary()` must agree on the communicator captured by `init`. If would-be participants diverge onto different communicators, the library cannot safely discover that mistake after the split; the practical failure mode is a hang, not a clean local fallback.
 - `FTIMER_USE_OPENMP=ON` enables only limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.

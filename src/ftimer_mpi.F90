@@ -557,12 +557,66 @@ contains
 #ifdef FTIMER_USE_MPI
       type(MPI_Comm) :: active_comm
       integer :: all_datatypes_ready
+      integer :: entry_count
       integer :: datatypes_ready
+      integer :: i
+      integer :: local_descriptor_count
+      integer :: local_idx
+      integer :: local_max_descriptor_len
+      integer :: local_max_total_rank
+      integer :: local_min_total_rank
+      integer :: max_descriptor_count
+      integer :: max_descriptor_len
+      integer :: max_total_time_rank
+      integer :: min_total_time_rank
       integer :: mpierr
       integer :: nprocs
+      integer :: parent_id
       integer :: rank
+      integer :: union_count
+      integer :: union_idx
       type(MPI_Datatype) :: mpi_int64_type
       type(MPI_Datatype) :: mpi_wp_type
+      character(len=:), allocatable :: descriptors(:)
+      character(len=:), allocatable :: entry_name
+      character(len=:), allocatable :: parent_descriptor
+      character(len=:), allocatable :: union_descriptors(:)
+      integer, allocatable :: local_calls_max(:)
+      integer, allocatable :: local_calls_min(:)
+      integer, allocatable :: local_max_inclusive_ranks(:)
+      integer, allocatable :: local_min_inclusive_ranks(:)
+      integer, allocatable :: local_present(:)
+      integer, allocatable :: local_to_union(:)
+      integer, allocatable :: max_calls(:)
+      integer, allocatable :: max_inclusive_ranks(:)
+      integer, allocatable :: min_calls(:)
+      integer, allocatable :: min_inclusive_ranks(:)
+      integer, allocatable :: participating_counts(:)
+      integer, allocatable :: permutation(:)
+      integer(int64), allocatable :: local_sum_calls(:)
+      integer(int64), allocatable :: sum_calls(:)
+      real(wp) :: avg_total_time
+      real(wp) :: max_total_time
+      real(wp) :: min_total_time
+      real(wp) :: sum_total_time
+      real(wp), allocatable :: local_inclusive_max(:)
+      real(wp), allocatable :: local_inclusive_min(:)
+      real(wp), allocatable :: local_inclusive_sum(:)
+      real(wp), allocatable :: local_pct_max(:)
+      real(wp), allocatable :: local_pct_min(:)
+      real(wp), allocatable :: local_pct_sum(:)
+      real(wp), allocatable :: local_self_max(:)
+      real(wp), allocatable :: local_self_min(:)
+      real(wp), allocatable :: local_self_sum(:)
+      real(wp), allocatable :: max_inclusive(:)
+      real(wp), allocatable :: max_pct(:)
+      real(wp), allocatable :: max_self(:)
+      real(wp), allocatable :: min_inclusive(:)
+      real(wp), allocatable :: min_pct(:)
+      real(wp), allocatable :: min_self(:)
+      real(wp), allocatable :: sum_inclusive(:)
+      real(wp), allocatable :: sum_pct(:)
+      real(wp), allocatable :: sum_self(:)
 
       call clear_mpi_union_summary(summary)
       if (present(diagnostic)) diagnostic = ''
@@ -587,9 +641,305 @@ contains
          return
       end if
 
-      if (present(diagnostic)) diagnostic = &
-         "ftimer mpi_union_summary descriptor-union builder is not implemented yet"
-      status = FTIMER_ERR_NOT_IMPLEMENTED
+      call ftimer_mpi_allreduce(local_summary%total_time, min_total_time, 1, mpi_wp_type, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_summary%total_time, max_total_time, 1, mpi_wp_type, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_summary%total_time, sum_total_time, 1, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      local_min_total_rank = huge(local_min_total_rank)
+      if (local_summary%total_time == min_total_time) local_min_total_rank = rank
+      call ftimer_mpi_allreduce(local_min_total_rank, min_total_time_rank, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      local_max_total_rank = huge(local_max_total_rank)
+      if (local_summary%total_time == max_total_time) local_max_total_rank = rank
+      call ftimer_mpi_allreduce(local_max_total_rank, max_total_time_rank, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      entry_count = local_summary%num_entries
+      call build_descriptor_order(local_summary, descriptors, permutation)
+
+      local_descriptor_count = size(permutation)
+      local_max_descriptor_len = 1
+      do i = 1, local_descriptor_count
+         local_max_descriptor_len = max(local_max_descriptor_len, len_trim(descriptors(permutation(i))))
+      end do
+
+      call ftimer_mpi_allreduce(local_descriptor_count, max_descriptor_count, 1, MPI_INTEGER, MPI_MAX, &
+                                active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_max_descriptor_len, max_descriptor_len, 1, MPI_INTEGER, MPI_MAX, &
+                                active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call build_union_descriptor_list(descriptors, permutation, max_descriptor_count, max_descriptor_len, &
+                                       nprocs, active_comm, union_descriptors, union_count, local_to_union, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      avg_total_time = sum_total_time/real(nprocs, wp)
+      summary%num_ranks = nprocs
+      summary%num_entries = union_count
+      summary%min_total_time = min_total_time
+      summary%max_total_time = max_total_time
+      summary%avg_total_time = avg_total_time
+      summary%min_total_time_rank = min_total_time_rank
+      summary%max_total_time_rank = max_total_time_rank
+      summary%total_time_imbalance = compute_imbalance(max_total_time, avg_total_time)
+
+      if (union_count <= 0) then
+         allocate (summary%entries(0))
+         status = FTIMER_SUCCESS
+         return
+      end if
+
+      allocate (local_present(union_count))
+      allocate (participating_counts(union_count))
+      allocate (local_inclusive_min(union_count))
+      allocate (local_inclusive_max(union_count))
+      allocate (local_inclusive_sum(union_count))
+      allocate (min_inclusive(union_count))
+      allocate (max_inclusive(union_count))
+      allocate (sum_inclusive(union_count))
+      allocate (local_self_min(union_count))
+      allocate (local_self_max(union_count))
+      allocate (local_self_sum(union_count))
+      allocate (min_self(union_count))
+      allocate (max_self(union_count))
+      allocate (sum_self(union_count))
+      allocate (local_pct_min(union_count))
+      allocate (local_pct_max(union_count))
+      allocate (local_pct_sum(union_count))
+      allocate (min_pct(union_count))
+      allocate (max_pct(union_count))
+      allocate (sum_pct(union_count))
+      allocate (local_calls_min(union_count))
+      allocate (local_calls_max(union_count))
+      allocate (local_sum_calls(union_count))
+      allocate (min_calls(union_count))
+      allocate (max_calls(union_count))
+      allocate (sum_calls(union_count))
+      allocate (local_min_inclusive_ranks(union_count))
+      allocate (local_max_inclusive_ranks(union_count))
+      allocate (min_inclusive_ranks(union_count))
+      allocate (max_inclusive_ranks(union_count))
+
+      local_present = 0
+      local_inclusive_min = huge(1.0_wp)
+      local_inclusive_max = -huge(1.0_wp)
+      local_inclusive_sum = 0.0_wp
+      local_self_min = huge(1.0_wp)
+      local_self_max = -huge(1.0_wp)
+      local_self_sum = 0.0_wp
+      local_pct_min = huge(1.0_wp)
+      local_pct_max = -huge(1.0_wp)
+      local_pct_sum = 0.0_wp
+      local_calls_min = huge(0)
+      local_calls_max = -huge(0)
+      local_sum_calls = 0_int64
+
+      do i = 1, entry_count
+         union_idx = local_to_union(i)
+         if (union_idx <= 0) cycle
+         local_idx = permutation(i)
+         local_present(union_idx) = 1
+         local_inclusive_min(union_idx) = local_summary%entries(local_idx)%inclusive_time
+         local_inclusive_max(union_idx) = local_summary%entries(local_idx)%inclusive_time
+         local_inclusive_sum(union_idx) = local_summary%entries(local_idx)%inclusive_time
+         local_self_min(union_idx) = local_summary%entries(local_idx)%self_time
+         local_self_max(union_idx) = local_summary%entries(local_idx)%self_time
+         local_self_sum(union_idx) = local_summary%entries(local_idx)%self_time
+         local_pct_min(union_idx) = local_summary%entries(local_idx)%pct_time
+         local_pct_max(union_idx) = local_summary%entries(local_idx)%pct_time
+         local_pct_sum(union_idx) = local_summary%entries(local_idx)%pct_time
+         local_calls_min(union_idx) = local_summary%entries(local_idx)%call_count
+         local_calls_max(union_idx) = local_summary%entries(local_idx)%call_count
+         local_sum_calls(union_idx) = int(local_summary%entries(local_idx)%call_count, int64)
+      end do
+
+      call ftimer_mpi_allreduce(local_present, participating_counts, union_count, MPI_INTEGER, MPI_SUM, &
+                                active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_inclusive_min, min_inclusive, union_count, mpi_wp_type, MPI_MIN, &
+                                active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_inclusive_max, max_inclusive, union_count, mpi_wp_type, MPI_MAX, &
+                                active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      local_min_inclusive_ranks = huge(0)
+      local_max_inclusive_ranks = huge(0)
+      do i = 1, union_count
+         if ((local_present(i) == 1) .and. (local_inclusive_min(i) == min_inclusive(i))) &
+            local_min_inclusive_ranks(i) = rank
+         if ((local_present(i) == 1) .and. (local_inclusive_max(i) == max_inclusive(i))) &
+            local_max_inclusive_ranks(i) = rank
+      end do
+
+      call ftimer_mpi_allreduce(local_min_inclusive_ranks, min_inclusive_ranks, union_count, MPI_INTEGER, &
+                                MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_max_inclusive_ranks, max_inclusive_ranks, union_count, MPI_INTEGER, &
+                                MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_inclusive_sum, sum_inclusive, union_count, mpi_wp_type, MPI_SUM, &
+                                active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_self_min, min_self, union_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_self_max, max_self, union_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_self_sum, sum_self, union_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_pct_min, min_pct, union_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_pct_max, max_pct, union_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_pct_sum, sum_pct, union_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_calls_min, min_calls, union_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_calls_max, max_calls, union_count, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      call ftimer_mpi_allreduce(local_sum_calls, sum_calls, union_count, mpi_int64_type, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call clear_mpi_union_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      allocate (summary%entries(union_count))
+      do i = 1, union_count
+         call decode_descriptor_metadata(union_descriptors(i), entry_name, parent_descriptor, summary%entries(i)%depth)
+         parent_id = 0
+         if (len_trim(parent_descriptor) > 0) parent_id = find_descriptor_index(union_descriptors, union_count, &
+                                                                                parent_descriptor)
+
+         summary%entries(i)%name = entry_name
+         summary%entries(i)%node_id = i
+         summary%entries(i)%parent_id = parent_id
+         summary%entries(i)%participating_rank_count = participating_counts(i)
+
+         if (participating_counts(i) > 0) then
+            summary%entries(i)%min_inclusive_time = min_inclusive(i)
+            summary%entries(i)%max_inclusive_time = max_inclusive(i)
+            summary%entries(i)%avg_inclusive_time = sum_inclusive(i)/real(participating_counts(i), wp)
+            summary%entries(i)%min_inclusive_time_rank = min_inclusive_ranks(i)
+            summary%entries(i)%max_inclusive_time_rank = max_inclusive_ranks(i)
+            summary%entries(i)%inclusive_imbalance = compute_imbalance(max_inclusive(i), &
+                                                                       summary%entries(i)%avg_inclusive_time)
+            summary%entries(i)%min_self_time = min_self(i)
+            summary%entries(i)%max_self_time = max_self(i)
+            summary%entries(i)%avg_self_time = sum_self(i)/real(participating_counts(i), wp)
+            summary%entries(i)%self_imbalance = compute_imbalance(max_self(i), summary%entries(i)%avg_self_time)
+            summary%entries(i)%min_call_count = min_calls(i)
+            summary%entries(i)%max_call_count = max_calls(i)
+            summary%entries(i)%avg_call_count = real(sum_calls(i), wp)/real(participating_counts(i), wp)
+            summary%entries(i)%min_pct_time = min_pct(i)
+            summary%entries(i)%max_pct_time = max_pct(i)
+            summary%entries(i)%avg_pct_time = sum_pct(i)/real(participating_counts(i), wp)
+         end if
+      end do
+
+      status = FTIMER_SUCCESS
 #else
       call clear_mpi_union_summary(summary)
       if (present(diagnostic)) diagnostic = ''
@@ -626,6 +976,242 @@ contains
    end subroutine clear_mpi_union_summary
 
 #ifdef FTIMER_USE_MPI
+   logical function checked_multiply_int(lhs, rhs, product) result(ok)
+      integer, intent(in) :: lhs
+      integer, intent(in) :: rhs
+      integer, intent(out) :: product
+      integer(int64) :: wide_product
+
+      ok = .false.
+      product = 0
+      if ((lhs < 0) .or. (rhs < 0)) return
+
+      wide_product = int(lhs, int64)*int(rhs, int64)
+      if (wide_product > int(huge(product), int64)) return
+
+      product = int(wide_product)
+      ok = .true.
+   end function checked_multiply_int
+
+   subroutine build_union_descriptor_list(descriptors, permutation, max_descriptor_count, max_descriptor_len, &
+                                          nprocs, active_comm, union_descriptors, union_count, local_to_union, mpierr)
+      character(len=*), intent(in) :: descriptors(:)
+      integer, intent(in) :: permutation(:)
+      integer, intent(in) :: max_descriptor_count
+      integer, intent(in) :: max_descriptor_len
+      integer, intent(in) :: nprocs
+      type(MPI_Comm), intent(in) :: active_comm
+      character(len=:), allocatable, intent(out) :: union_descriptors(:)
+      integer, intent(out) :: union_count
+      integer, allocatable, intent(out) :: local_to_union(:)
+      integer, intent(out) :: mpierr
+      character(len=max_descriptor_len) :: descriptor_value
+      character(len=1), allocatable :: all_descriptor_chars(:)
+      character(len=1), allocatable :: local_descriptor_chars(:)
+      integer :: char_count
+      integer :: descriptor_len
+      integer :: i
+      integer :: j
+      integer :: local_idx
+      integer :: offset
+      integer :: rank_slot
+      integer :: slot
+      integer :: union_capacity
+      integer, allocatable :: all_descriptor_lengths(:)
+      integer, allocatable :: local_descriptor_lengths(:)
+
+      allocate (local_to_union(size(permutation)))
+      local_to_union = 0
+      union_count = 0
+      mpierr = MPI_SUCCESS
+
+      if (max_descriptor_count <= 0) then
+         allocate (character(len=1) :: union_descriptors(0))
+         return
+      end if
+
+      if (.not. checked_multiply_int(max_descriptor_count, nprocs, union_capacity)) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      if (.not. checked_multiply_int(max_descriptor_count, max_descriptor_len, char_count)) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      allocate (character(len=max_descriptor_len) :: union_descriptors(union_capacity))
+      union_descriptors = ''
+
+      allocate (local_descriptor_lengths(max_descriptor_count))
+      allocate (all_descriptor_lengths(union_capacity))
+      local_descriptor_lengths = 0
+
+      if (.not. checked_multiply_int(char_count, nprocs, union_capacity)) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      allocate (local_descriptor_chars(char_count))
+      allocate (all_descriptor_chars(union_capacity))
+      local_descriptor_chars = ' '
+
+      do i = 1, size(permutation)
+         local_idx = permutation(i)
+         descriptor_len = len_trim(descriptors(local_idx))
+         local_descriptor_lengths(i) = descriptor_len
+         offset = (i - 1)*max_descriptor_len
+         do j = 1, descriptor_len
+            local_descriptor_chars(offset + j) = descriptors(local_idx) (j:j)
+         end do
+      end do
+
+      call MPI_Allgather(local_descriptor_lengths, max_descriptor_count, MPI_INTEGER, &
+                         all_descriptor_lengths, max_descriptor_count, MPI_INTEGER, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) return
+
+      call MPI_Allgather(local_descriptor_chars, char_count, MPI_CHARACTER, &
+                         all_descriptor_chars, char_count, MPI_CHARACTER, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) return
+
+      do rank_slot = 1, nprocs
+         do slot = 1, max_descriptor_count
+            descriptor_len = all_descriptor_lengths((rank_slot - 1)*max_descriptor_count + slot)
+            if (descriptor_len <= 0) cycle
+
+            descriptor_value = ''
+            offset = ((rank_slot - 1)*char_count) + (slot - 1)*max_descriptor_len
+            do j = 1, descriptor_len
+               descriptor_value(j:j) = all_descriptor_chars(offset + j)
+            end do
+            call add_union_descriptor(descriptor_value, union_descriptors, union_count)
+         end do
+      end do
+
+      do i = 1, size(permutation)
+         local_to_union(i) = find_descriptor_index(union_descriptors, union_count, descriptors(permutation(i)))
+      end do
+   end subroutine build_union_descriptor_list
+
+   subroutine add_union_descriptor(descriptor, union_descriptors, union_count)
+      character(len=*), intent(in) :: descriptor
+      character(len=*), intent(inout) :: union_descriptors(:)
+      integer, intent(inout) :: union_count
+      integer :: insert_pos
+      integer :: j
+
+      insert_pos = union_count + 1
+      do j = 1, union_count
+         if (descriptor == union_descriptors(j)) return
+         if (descriptor < union_descriptors(j)) then
+            insert_pos = j
+            exit
+         end if
+      end do
+
+      union_count = union_count + 1
+      do j = union_count, insert_pos + 1, -1
+         union_descriptors(j) = union_descriptors(j - 1)
+      end do
+      union_descriptors(insert_pos) = descriptor
+   end subroutine add_union_descriptor
+
+   integer function find_descriptor_index(descriptors, descriptor_count, descriptor) result(index_value)
+      character(len=*), intent(in) :: descriptors(:)
+      integer, intent(in) :: descriptor_count
+      character(len=*), intent(in) :: descriptor
+      integer :: i
+
+      index_value = 0
+      do i = 1, descriptor_count
+         if (descriptors(i) == descriptor) then
+            index_value = i
+            return
+         end if
+      end do
+   end function find_descriptor_index
+
+   subroutine decode_descriptor_metadata(descriptor, name, parent_descriptor, depth)
+      character(len=*), intent(in) :: descriptor
+      character(len=:), allocatable, intent(out) :: name
+      character(len=:), allocatable, intent(out) :: parent_descriptor
+      integer, intent(out) :: depth
+      integer :: component_count
+      integer :: component_start
+      integer :: last_component_start
+      integer :: last_name_len
+      integer :: last_name_start
+      integer :: name_len
+      integer :: name_start
+      integer :: next_pos
+      integer :: pos
+      integer :: text_len
+
+      name = ''
+      parent_descriptor = ''
+      depth = 0
+      text_len = len_trim(descriptor)
+      pos = 1
+      component_count = 0
+      last_component_start = 1
+      last_name_start = 1
+      last_name_len = 0
+
+      do while (pos <= text_len)
+         component_start = pos
+         if (.not. parse_descriptor_component(descriptor, pos, text_len, name_start, name_len, next_pos)) then
+            name = ''
+            parent_descriptor = ''
+            depth = 0
+            return
+         end if
+
+         component_count = component_count + 1
+         last_component_start = component_start
+         last_name_start = name_start
+         last_name_len = name_len
+         pos = next_pos
+      end do
+
+      depth = max(component_count - 1, 0)
+      if (last_name_len > 0) name = descriptor(last_name_start:last_name_start + last_name_len - 1)
+      if (last_component_start > 1) parent_descriptor = descriptor(1:last_component_start - 1)
+   end subroutine decode_descriptor_metadata
+
+   logical function parse_descriptor_component(descriptor, start_pos, text_len, name_start, name_len, &
+                                               next_pos) result(is_valid)
+      character(len=*), intent(in) :: descriptor
+      integer, intent(in) :: start_pos
+      integer, intent(in) :: text_len
+      integer, intent(out) :: name_start
+      integer, intent(out) :: name_len
+      integer, intent(out) :: next_pos
+      integer :: colon_offset
+      integer :: colon_pos
+      integer :: io
+
+      is_valid = .false.
+      name_start = start_pos
+      name_len = 0
+      next_pos = start_pos
+      if (start_pos > text_len) return
+
+      colon_offset = index(descriptor(start_pos:text_len), ':')
+      if (colon_offset <= 0) return
+
+      colon_pos = start_pos + colon_offset - 1
+      if (colon_pos <= start_pos) return
+      read (descriptor(start_pos:colon_pos - 1), *, iostat=io) name_len
+      if (io /= 0) return
+      if (name_len < 0) return
+
+      name_start = colon_pos + 1
+      next_pos = name_start + name_len
+      if (next_pos - 1 > text_len) return
+
+      is_valid = .true.
+   end function parse_descriptor_component
+
    subroutine resolve_mpi_summary_datatypes(mpi_wp_type, mpi_int64_type, status, diagnostic)
       type(MPI_Datatype), intent(out) :: mpi_wp_type
       type(MPI_Datatype), intent(out) :: mpi_int64_type

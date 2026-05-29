@@ -114,7 +114,7 @@ The CMake source order reflects the real dependency order:
 
 `ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, and self-time computation are assembled for local reporting.
 
-`ftimer_mpi.F90` is an internal MPI summary helper module. It adds cross-rank behavior on top of local summaries, uses communicator-wide preflight collectives to verify that all ranks agree on the timer descriptor set, and then populates reduced MPI fields only where that contract allows. It also owns the #169 sparse/union API skeleton so the future descriptor-union builder can share the same communicator and datatype-validation contracts without weakening strict `mpi_summary()`.
+`ftimer_mpi.F90` is an internal MPI summary helper module. It adds cross-rank behavior on top of local summaries, uses communicator-wide preflight collectives to verify that all ranks agree on the timer descriptor set for strict summaries, and then populates reduced MPI fields only where that contract allows. It also owns the sparse/union descriptor builder, which gathers a canonical descriptor union and reduces participation-aware entry statistics without weakening strict `mpi_summary()`.
 
 `ftimer.F90` exposes the procedural API by forwarding to the default saved `ftimer_t` instance. Shared types and constants still come from `ftimer_types`; they are not re-exported from `ftimer`.
 
@@ -131,7 +131,7 @@ The current implementation is organized around a few design choices that show up
 - Per-segment context selection remains fully context-sensitive, but it now uses a per-segment parent-stack index in steady state instead of rescanning the known parent-stack variants for that timer on every hit.
 - Callback hooks are lightweight intra-run hooks for normal start/stop events only; internal mismatch repair transitions must stay invisible to callback consumers, and current `main` does not define a stronger profiler-backend identity contract.
 - MPI summary-field reductions are descriptor-validated first, and reduced cross-rank fields are valid only in the documented result shape. The validation itself uses MPI collectives over the init communicator before any timer-data reduction assumes matching canonical entries.
-- Sparse/union MPI summaries are a separate opt-in result shape. They will build a descriptor union with participation-aware entry statistics; the current code intentionally stops at the public API and data model pending #170.
+- Sparse/union MPI summaries are a separate opt-in result shape. They build a descriptor union with participation-aware entry statistics while preserving strict-summary descriptor validation for `mpi_summary()`.
 - MPI timed regions are rank-local wall-clock intervals unless the caller adds
   synchronization; `mpi_summary()` reduces the recorded intervals but does not
   imply phase-entry or phase-exit barriers.
@@ -186,7 +186,7 @@ Important current-state API notes:
 - `print_summary()` and `write_summary()` format local report text.
 - `write_summary_csv()` exports local summaries in the versioned CSV record format for non-Fortran tooling.
 - `mpi_summary()` returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
-- `mpi_union_summary()` is the separate opt-in sparse/union MPI API. Its public result model is `ftimer_mpi_union_summary_t`; the descriptor-union builder is deferred to #170 and the current skeleton returns `FTIMER_ERR_NOT_IMPLEMENTED` after the same prerequisite checks used by MPI summaries.
+- `mpi_union_summary()` is the separate opt-in sparse/union MPI API. Its public result model is `ftimer_mpi_union_summary_t`; entry statistics are defined over participating ranks while communicator total-time fields remain all-rank reductions.
 - `print_mpi_summary()` and `write_mpi_summary()` are the first-class communicator-level MPI reporting paths.
 - `write_mpi_summary_csv()` exports the full reduced MPI summary fields as the same versioned CSV record format from communicator root.
 - `set_clock()` / `clear_clock()` and `set_callback()` / `clear_callback()` are the supported configuration entry points; direct mutation of raw runtime internals is no longer part of the public contract.
