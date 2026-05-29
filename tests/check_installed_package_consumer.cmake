@@ -484,13 +484,15 @@ if(NOT consumer_run_result EQUAL 0)
   message(FATAL_ERROR "Installed-package consumer executable exited with a nonzero status.")
 endif()
 
-execute_process(
-  COMMAND "${oop_consumer_executable}"
-  WORKING_DIRECTORY "${consumer_build_dir}"
-  RESULT_VARIABLE oop_consumer_run_result
-)
-if(NOT oop_consumer_run_result EQUAL 0)
-  message(FATAL_ERROR "Installed-package OOP consumer executable exited with a nonzero status.")
+if(NOT TEST_ENABLE_MPI)
+  execute_process(
+    COMMAND "${oop_consumer_executable}"
+    WORKING_DIRECTORY "${consumer_build_dir}"
+    RESULT_VARIABLE oop_consumer_run_result
+  )
+  if(NOT oop_consumer_run_result EQUAL 0)
+    message(FATAL_ERROR "Installed-package OOP consumer executable exited with a nonzero status.")
+  endif()
 endif()
 
 if(TEST_ENABLE_MPI)
