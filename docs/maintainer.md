@@ -28,6 +28,28 @@ This document routes to phase-specific workflow docs. Shared coding-agent contex
   - blocks direct pushes and force pushes
   - requires conversation resolution
 
+## CI Dependency Pins
+
+CI treats third-party tooling as part of the release trust boundary. Keep the
+download identity and cache identity together when updating pinned tools.
+
+- pFUnit:
+  - Update `PFUNIT_VERSION`, `PFUNIT_ARCHIVE_URL`, and `PFUNIT_SHA256` together
+    in `.github/workflows/ci.yml`.
+  - Compute `PFUNIT_SHA256` from the release archive before merging the update,
+    for example by downloading the intended `pFUnit-vX.Y.Z.tar` release asset
+    from `Goddard-Fortran-Ecosystem/pFUnit` and running `sha256sum`.
+  - The pFUnit cache key includes both version and SHA. Changing either value
+    intentionally creates a new cache lineage.
+- fprettify:
+  - Update `.github/constraints/lint.txt` when changing the lint tool version.
+  - Keep the CI install command constraint-based so `pip` cannot float to a
+    newer formatter during release validation.
+- Validation:
+  - Run `git diff --check` after dependency pin updates.
+  - Let GitHub CI exercise the verified pFUnit download path and the pinned
+    lint install path before treating a release-boundary PR as ready.
+
 ## Workflow Phases
 
 Use the workflow docs below for phase-specific operating procedures. Load only the phase you need.

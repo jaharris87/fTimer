@@ -1,0 +1,2 @@
+# CI lint tool pins. Keep exact versions and update docs/maintainer.md when changing.
+fprettify==0.3.7
