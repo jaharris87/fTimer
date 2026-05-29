@@ -145,6 +145,8 @@ cmake --build my_app/build
 
 The supported downstream contract is the installed package export. New adopters should not need to infer the intended consumption model from the test suite.
 
+Pre-1.0 CMake package compatibility is intentionally limited to the same minor release line. For example, a `0.1.z` install may satisfy `find_package(fTimer 0.1 CONFIG REQUIRED)` or an older compatible `0.1.x` request, but it will not satisfy a `0.0.x`, `0.2.x`, or later-minor request. Versionless `find_package(fTimer CONFIG REQUIRED)` remains available for consumers that deliberately accept whichever installed fTimer package appears on `CMAKE_PREFIX_PATH`.
+
 The downstream example under [`tests/install-consumer/`](tests/install-consumer/) is also part of the smoke path. It shows the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer`, `use ftimer_types`, scoped timing, and summary retrieval from an installed prefix.
 
 The supported source-level module surface is intentionally narrow: `ftimer`, `ftimer_core`, and `ftimer_types`. The installed include tree is a curated compiler module artifact set and currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so consumers get a coherent Fortran module set. Those implementation modules are not stable import targets. The installed package includes `share/doc/fTimer/installed-api.md` with the same stability contract, and the smoke tests verify both the exact artifact set and that installed note.
