@@ -22,6 +22,9 @@ program ftimer_installed_legacy_mpi_consumer
 
    accumulator = 0.0
 
+   ! MPI-enabled fTimer must run inside the MPI lifetime. Communicators passed
+   ! to init are non-owning handles, so each one stays valid until every fTimer
+   ! summary/report/finalize operation that may use it is complete.
    call timer%init(comm=MPI_COMM_WORLD, ierr=ierr)
    if (ierr /= 0) error stop 3
    call run_oop_work(timer, "legacy_oop_world", rank, ierr)
@@ -38,6 +41,7 @@ program ftimer_installed_legacy_mpi_consumer
    call MPI_Comm_rank(subcomm, subrank, ierr)
    if (ierr /= MPI_SUCCESS) error stop 10
 
+   ! The split communicator is still owned by this consumer; fTimer borrows it.
    call timer%init(comm=subcomm, ierr=ierr)
    if (ierr /= 0) error stop 11
    call run_oop_work(timer, "legacy_oop_split", rank, ierr)
@@ -63,6 +67,7 @@ program ftimer_installed_legacy_mpi_consumer
    call ftimer_finalize(ierr=ierr)
    if (ierr /= 0) error stop 23
 
+   ! Free the borrowed subcommunicator only after fTimer no longer needs it.
    call MPI_Comm_free(subcomm, ierr)
    if (ierr /= MPI_SUCCESS) error stop 24
 
