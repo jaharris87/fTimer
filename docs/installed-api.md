@@ -2,6 +2,8 @@
 
 Stable source-level modules: `ftimer`, `ftimer_core`, `ftimer_types`.
 
+Pre-1.0 CMake package version compatibility is limited to the same minor release line. A `0.1.z` package can satisfy `find_package(fTimer 0.1 CONFIG REQUIRED)` and compatible `0.1.x` requests, but different `0.x` minor lines are not considered compatible. This package does not promise all-`0.x` source or compiler-module compatibility.
+
 The supported source-level import surface is intentionally narrow:
 
 - `use ftimer` for the procedural API and default timer instance

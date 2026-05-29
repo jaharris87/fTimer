@@ -82,6 +82,8 @@ option(FTIMER_BUILD_SMOKE_TESTS "Build Phase 0 smoke tests" ON)
 option(FTIMER_BUILD_EXAMPLES "Build example programs" ON)
 option(FTIMER_BUILD_BENCH "Build performance measurement harness" OFF)
 
+set(FTIMER_PACKAGE_VERSION_COMPATIBILITY SameMinorVersion)
+
 set(FTIMER_PUBLIC_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/ftimer")
 set(FTIMER_TEST_LIBRARY_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/testlib")
 set(FTIMER_TEST_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/tests")
@@ -189,7 +191,7 @@ configure_package_config_file(
 write_basic_package_version_file(
   ${CMAKE_CURRENT_BINARY_DIR}/fTimerConfigVersion.cmake
   VERSION ${PROJECT_VERSION}
-  COMPATIBILITY SameMajorVersion
+  COMPATIBILITY ${FTIMER_PACKAGE_VERSION_COMPATIBILITY}
 )
 
 install(FILES
