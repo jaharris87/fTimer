@@ -4,12 +4,42 @@ set(install_prefix "${TEST_BINARY_DIR}/prefix")
 set(consumer_build_dir "${TEST_BINARY_DIR}/consumer-build")
 set(consumer_source_dir "${REPO_ROOT}/tests/install-consumer")
 set(test_name "${TEST_NAME}")
-set(installed_module_dir "${install_prefix}/include/ftimer")
 set(installed_api_note_path "${install_prefix}/share/doc/fTimer/installed-api.md")
 set(installed_license_path "${install_prefix}/share/doc/fTimer/LICENSE")
 
+if(DEFINED TEST_INSTALL_INCLUDEDIR AND NOT TEST_INSTALL_INCLUDEDIR STREQUAL "")
+  set(test_install_includedir "${TEST_INSTALL_INCLUDEDIR}")
+else()
+  set(test_install_includedir "include")
+endif()
+
+if(IS_ABSOLUTE "${test_install_includedir}")
+  set(installed_module_dir "${test_install_includedir}/ftimer")
+  set(misinstalled_prefixed_module_dir
+    "${install_prefix}${test_install_includedir}/ftimer"
+  )
+else()
+  set(installed_module_dir "${install_prefix}/${test_install_includedir}/ftimer")
+  set(misinstalled_prefixed_module_dir "")
+endif()
+
 if(test_name STREQUAL "")
   set(test_name "ftimer_installed_package_consumer")
+endif()
+
+if(TEST_CLEAN_INSTALL_INCLUDEDIR AND IS_ABSOLUTE "${test_install_includedir}")
+  get_filename_component(clean_install_includedir "${test_install_includedir}" ABSOLUTE)
+  if(clean_install_includedir STREQUAL "/" OR clean_install_includedir STREQUAL "")
+    message(FATAL_ERROR
+      "Refusing to clean unsafe TEST_INSTALL_INCLUDEDIR path '${test_install_includedir}'."
+    )
+  endif()
+  if(NOT clean_install_includedir MATCHES "/ftimer-absolute-includedir/")
+    message(FATAL_ERROR
+      "Refusing to clean TEST_INSTALL_INCLUDEDIR path outside the test-owned absolute include root: '${test_install_includedir}'."
+    )
+  endif()
+  file(REMOVE_RECURSE "${clean_install_includedir}")
 endif()
 
 if(DEFINED TEST_REQUIRED_COMPILER_NAMES AND NOT TEST_REQUIRED_COMPILER_NAMES STREQUAL "")
@@ -35,6 +65,7 @@ set(configure_args
   -B "${TEST_BINARY_DIR}/producer-build"
   -G "${CMAKE_GENERATOR}"
   -DCMAKE_INSTALL_PREFIX=${install_prefix}
+  -DCMAKE_INSTALL_INCLUDEDIR=${test_install_includedir}
   -DFTIMER_BUILD_SMOKE_TESTS=OFF
   -DFTIMER_BUILD_TESTS=OFF
   -DFTIMER_BUILD_EXAMPLES=OFF
@@ -306,6 +337,19 @@ if(NOT installed_module_artifact_names STREQUAL expected_installed_module_artifa
     "Expected: ${expected_installed_module_artifacts_text}\n"
     "Actual: ${installed_module_artifact_names_text}"
   )
+endif()
+
+if(NOT misinstalled_prefixed_module_dir STREQUAL ""
+    AND EXISTS "${misinstalled_prefixed_module_dir}")
+  file(GLOB misinstalled_module_artifact_paths
+    LIST_DIRECTORIES FALSE
+    "${misinstalled_prefixed_module_dir}/*.mod"
+  )
+  if(misinstalled_module_artifact_paths)
+    message(FATAL_ERROR
+      "Absolute CMAKE_INSTALL_INCLUDEDIR module artifacts were installed under the prefix-joined path '${misinstalled_prefixed_module_dir}'."
+    )
+  endif()
 endif()
 
 if(NOT EXISTS "${installed_api_note_path}")

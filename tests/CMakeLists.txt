@@ -7,8 +7,8 @@ if(FTIMER_BUILD_SMOKE_TESTS)
 endif()
 
 function(ftimer_add_installed_consumer_test test_name test_binary_dir)
-  set(options ENABLE_MPI ENABLE_OPENMP)
-  set(oneValueArgs REQUIRED_COMPILER_NAMES)
+  set(options CLEAN_INSTALL_INCLUDEDIR ENABLE_MPI ENABLE_OPENMP)
+  set(oneValueArgs INSTALL_INCLUDEDIR REQUIRED_COMPILER_NAMES)
   cmake_parse_arguments(FTIMER_CONSUMER "${options}" "${oneValueArgs}" "" ${ARGN})
 
   add_test(NAME ${test_name}
@@ -22,6 +22,8 @@ function(ftimer_add_installed_consumer_test test_name test_binary_dir)
       -DTEST_BUILD_TYPE=${CMAKE_BUILD_TYPE}
       "-DTEST_CONFIG=$<CONFIG>"
       -DTEST_REQUIRED_COMPILER_NAMES=${FTIMER_CONSUMER_REQUIRED_COMPILER_NAMES}
+      -DTEST_INSTALL_INCLUDEDIR=${FTIMER_CONSUMER_INSTALL_INCLUDEDIR}
+      -DTEST_CLEAN_INSTALL_INCLUDEDIR=${FTIMER_CONSUMER_CLEAN_INSTALL_INCLUDEDIR}
       -DTEST_ENABLE_MPI=${FTIMER_CONSUMER_ENABLE_MPI}
       -DTEST_ENABLE_OPENMP=${FTIMER_CONSUMER_ENABLE_OPENMP}
       -DTEST_EXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
@@ -51,9 +53,23 @@ add_test(NAME ftimer_public_symbol_allowlist
 )
 
 if(FTIMER_BUILD_SMOKE_TESTS)
+  get_filename_component(
+    ftimer_absolute_includedir_test_root
+    "${CMAKE_CURRENT_BINARY_DIR}/../../../ftimer-absolute-includedir"
+    ABSOLUTE
+  )
+
   ftimer_add_installed_consumer_test(
     ftimer_installed_package_consumer
     ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer
+  )
+
+  ftimer_add_installed_consumer_test(
+    ftimer_installed_package_consumer_absolute_includedir
+    ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer_absolute_includedir
+    INSTALL_INCLUDEDIR
+      ${ftimer_absolute_includedir_test_root}/installed_package_consumer_absolute_includedir/include
+    CLEAN_INSTALL_INCLUDEDIR
   )
 
   ftimer_add_installed_consumer_test(
