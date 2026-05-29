@@ -201,9 +201,13 @@ contains
 
       id = 0
       activation_token = 0_int64
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call start_scope_activation_impl(self, name, id, activation_token, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine ftimer_internal_start_scope_activation
 
    integer function ftimer_internal_stop_scope_activation(self, id, activation_token, ierr) result(status)
@@ -213,9 +217,13 @@ contains
       integer, intent(out), optional :: ierr
 
       status = FTIMER_ERR_ACTIVE
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       status = stop_scope_activation_impl(self, id, activation_token, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end function ftimer_internal_stop_scope_activation
 
    subroutine init_with_integer_comm(self, comm, mismatch_mode, ierr)
@@ -227,9 +235,13 @@ contains
       ! Contract: ierr is last to eliminate the positional intent(out) trap.
       ! A single positional integer still binds to the transitional legacy
       ! communicator path, not ierr. Keywords are recommended for readability.
+#ifdef FTIMER_USE_OPENMP
       !$omp master
+#endif
       call init_impl(self, ierr=ierr, legacy_comm=comm, mismatch_mode=mismatch_mode)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine init_with_integer_comm
 
 #ifdef FTIMER_USE_MPI
@@ -239,9 +251,13 @@ contains
       integer, intent(in), optional :: mismatch_mode
       integer, intent(out), optional :: ierr
 
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call init_impl(self, ierr=ierr, comm=comm, mismatch_mode=mismatch_mode)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine init_with_mpi_comm
 #endif
 
@@ -311,9 +327,13 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
 
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call finalize_impl(self, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine finalize
 
    subroutine finalize_impl(self, ierr)
@@ -340,9 +360,13 @@ contains
       procedure(ftimer_clock_func) :: clock
       integer, intent(out), optional :: ierr
 
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call set_clock_impl(self, clock, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine set_clock
 
    subroutine set_clock_impl(self, clock, ierr)
@@ -363,9 +387,13 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
 
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call clear_clock_impl(self, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine clear_clock
 
    subroutine clear_clock_impl(self, ierr)
@@ -388,9 +416,13 @@ contains
       type(c_ptr), intent(in), optional :: user_data
       integer, intent(out), optional :: ierr
 
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call set_callback_impl(self, on_event, user_data=user_data, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine set_callback
 
    subroutine set_callback_impl(self, on_event, user_data, ierr)
@@ -418,9 +450,13 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
 
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call clear_callback_impl(self, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine clear_callback
 
    subroutine clear_callback_impl(self, ierr)
@@ -441,9 +477,13 @@ contains
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
 
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call start_impl(self, name, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine start
 
    subroutine start_impl(self, name, ierr, activation_token)
@@ -478,9 +518,13 @@ contains
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
 
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call stop_impl(self, name, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine stop
 
    subroutine stop_impl(self, name, ierr)
@@ -518,9 +562,13 @@ contains
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
 
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call start_id_impl(self, id, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine start_id
 
    subroutine start_id_impl(self, id, ierr, activation_token)
@@ -568,9 +616,13 @@ contains
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
 
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call stop_id_impl(self, id, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine stop_id
 
    subroutine stop_id_impl(self, id, ierr)
@@ -635,9 +687,13 @@ contains
       integer, intent(out), optional :: ierr
 
       id = 0
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       id = lookup_impl(self, name, ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end function lookup
 
    integer function lookup_impl(self, name, ierr) result(id)
@@ -668,9 +724,13 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
 
+#ifdef FTIMER_USE_OPENMP
 !$omp master
+#endif
       call reset_impl(self, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
 !$omp end master
+#endif
    end subroutine reset
 
    subroutine reset_impl(self, ierr)

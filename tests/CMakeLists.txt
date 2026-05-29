@@ -74,6 +74,18 @@ if(FTIMER_BUILD_SMOKE_TESTS)
       -DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/make_wrapper_contracts
       -P ${CMAKE_CURRENT_SOURCE_DIR}/check_make_wrapper_contracts.cmake
   )
+
+  add_test(NAME ftimer_openmp_option_off_ignores_global_flags
+    COMMAND ${CMAKE_COMMAND}
+      -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+      -DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/openmp_option_off_global_flags
+      -DCMAKE_GENERATOR=${CMAKE_GENERATOR}
+      -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+      -DTEST_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+      "-DTEST_CONFIG=$<CONFIG>"
+      -DTEST_EXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_option_off_global_flags.cmake
+  )
 endif()
 
 if(FTIMER_BUILD_TESTS)
