@@ -4,12 +4,59 @@ set(install_prefix "${TEST_BINARY_DIR}/prefix")
 set(consumer_build_dir "${TEST_BINARY_DIR}/consumer-build")
 set(consumer_source_dir "${REPO_ROOT}/tests/install-consumer")
 set(test_name "${TEST_NAME}")
-set(installed_module_dir "${install_prefix}/include/ftimer")
-set(installed_api_note_path "${install_prefix}/share/doc/fTimer/installed-api.md")
-set(installed_license_path "${install_prefix}/share/doc/fTimer/LICENSE")
+
+if(DEFINED TEST_INSTALL_INCLUDEDIR AND NOT TEST_INSTALL_INCLUDEDIR STREQUAL "")
+  set(test_install_includedir "${TEST_INSTALL_INCLUDEDIR}")
+else()
+  set(test_install_includedir "include")
+endif()
+
+if(TEST_USE_DESTDIR)
+  set(test_destdir "${TEST_BINARY_DIR}/destdir")
+  set(effective_install_prefix "${test_destdir}${install_prefix}")
+else()
+  set(test_destdir "")
+  set(effective_install_prefix "${install_prefix}")
+endif()
+
+set(installed_api_note_path "${effective_install_prefix}/share/doc/fTimer/installed-api.md")
+set(installed_license_path "${effective_install_prefix}/share/doc/fTimer/LICENSE")
+
+set(misinstalled_module_dirs)
+if(IS_ABSOLUTE "${test_install_includedir}")
+  if(TEST_USE_DESTDIR)
+    set(installed_module_dir "${test_destdir}${test_install_includedir}/ftimer")
+    list(APPEND misinstalled_module_dirs
+      "${test_install_includedir}/ftimer"
+      "${test_destdir}${install_prefix}${test_install_includedir}/ftimer"
+    )
+  else()
+    set(installed_module_dir "${test_install_includedir}/ftimer")
+    list(APPEND misinstalled_module_dirs
+      "${install_prefix}${test_install_includedir}/ftimer"
+    )
+  endif()
+else()
+  set(installed_module_dir "${effective_install_prefix}/${test_install_includedir}/ftimer")
+endif()
 
 if(test_name STREQUAL "")
   set(test_name "ftimer_installed_package_consumer")
+endif()
+
+if(TEST_CLEAN_INSTALL_INCLUDEDIR AND IS_ABSOLUTE "${test_install_includedir}")
+  get_filename_component(clean_install_includedir "${test_install_includedir}" ABSOLUTE)
+  if(clean_install_includedir STREQUAL "/" OR clean_install_includedir STREQUAL "")
+    message(FATAL_ERROR
+      "Refusing to clean unsafe TEST_INSTALL_INCLUDEDIR path '${test_install_includedir}'."
+    )
+  endif()
+  if(NOT clean_install_includedir MATCHES "ftimer-absolute-includedir-[0-9a-f]+")
+    message(FATAL_ERROR
+      "Refusing to clean TEST_INSTALL_INCLUDEDIR path outside the test-owned absolute include root: '${test_install_includedir}'."
+    )
+  endif()
+  file(REMOVE_RECURSE "${clean_install_includedir}")
 endif()
 
 if(DEFINED TEST_REQUIRED_COMPILER_NAMES AND NOT TEST_REQUIRED_COMPILER_NAMES STREQUAL "")
@@ -35,6 +82,7 @@ set(configure_args
   -B "${TEST_BINARY_DIR}/producer-build"
   -G "${CMAKE_GENERATOR}"
   -DCMAKE_INSTALL_PREFIX=${install_prefix}
+  -DCMAKE_INSTALL_INCLUDEDIR=${test_install_includedir}
   -DFTIMER_BUILD_SMOKE_TESTS=OFF
   -DFTIMER_BUILD_TESTS=OFF
   -DFTIMER_BUILD_EXAMPLES=OFF
@@ -91,12 +139,98 @@ if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   list(APPEND producer_install_args --config "${TEST_CONFIG}")
 endif()
 
+if(TEST_USE_DESTDIR)
+  set(producer_install_command
+    "${CMAKE_COMMAND}" -E env "DESTDIR=${test_destdir}" "${CMAKE_COMMAND}" ${producer_install_args}
+  )
+else()
+  set(producer_install_command "${CMAKE_COMMAND}" ${producer_install_args})
+endif()
+
 execute_process(
-  COMMAND "${CMAKE_COMMAND}" ${producer_install_args}
+  COMMAND ${producer_install_command}
   RESULT_VARIABLE producer_install_result
 )
 if(NOT producer_install_result EQUAL 0)
   message(FATAL_ERROR "Failed to install the producer package.")
+endif()
+
+function(ftimer_verify_installed_artifacts)
+  set(expected_installed_module_artifacts
+    ftimer.mod
+    ftimer_clock.mod
+    ftimer_core.mod
+    ftimer_mpi.mod
+    ftimer_summary.mod
+    ftimer_types.mod
+  )
+
+  file(GLOB installed_module_artifact_paths LIST_DIRECTORIES FALSE "${installed_module_dir}/*")
+  set(installed_module_artifact_names)
+  foreach(installed_module_artifact_path IN LISTS installed_module_artifact_paths)
+    get_filename_component(installed_module_artifact_name "${installed_module_artifact_path}" NAME)
+    list(APPEND installed_module_artifact_names "${installed_module_artifact_name}")
+  endforeach()
+
+  list(SORT expected_installed_module_artifacts)
+  list(SORT installed_module_artifact_names)
+
+  if(NOT installed_module_artifact_names STREQUAL expected_installed_module_artifacts)
+    list(JOIN expected_installed_module_artifacts ", " expected_installed_module_artifacts_text)
+    list(JOIN installed_module_artifact_names ", " installed_module_artifact_names_text)
+    message(FATAL_ERROR
+      "Installed module artifact set mismatch.\n"
+      "Expected: ${expected_installed_module_artifacts_text}\n"
+      "Actual: ${installed_module_artifact_names_text}"
+    )
+  endif()
+
+  foreach(misinstalled_module_dir IN LISTS misinstalled_module_dirs)
+    if(EXISTS "${misinstalled_module_dir}")
+      file(GLOB misinstalled_module_artifact_paths
+        LIST_DIRECTORIES FALSE
+        "${misinstalled_module_dir}/*.mod"
+      )
+      if(misinstalled_module_artifact_paths)
+        message(FATAL_ERROR
+          "Absolute CMAKE_INSTALL_INCLUDEDIR module artifacts were installed under an unexpected path '${misinstalled_module_dir}'."
+        )
+      endif()
+    endif()
+  endforeach()
+
+  if(NOT EXISTS "${installed_api_note_path}")
+    message(FATAL_ERROR
+      "Installed API stability note was not found at '${installed_api_note_path}'."
+    )
+  endif()
+
+  file(READ "${REPO_ROOT}/docs/installed-api.md" expected_installed_api_note)
+  file(READ "${installed_api_note_path}" installed_api_note)
+  if(NOT installed_api_note STREQUAL expected_installed_api_note)
+    message(FATAL_ERROR
+      "Installed API stability note does not match docs/installed-api.md."
+    )
+  endif()
+
+  if(NOT EXISTS "${installed_license_path}")
+    message(FATAL_ERROR
+      "Installed BSD license was not found at '${installed_license_path}'."
+    )
+  endif()
+
+  file(READ "${REPO_ROOT}/LICENSE" expected_license)
+  file(READ "${installed_license_path}" installed_license)
+  if(NOT installed_license STREQUAL expected_license)
+    message(FATAL_ERROR
+      "Installed BSD license does not match LICENSE."
+    )
+  endif()
+endfunction()
+
+if(TEST_INSTALL_ONLY)
+  ftimer_verify_installed_artifacts()
+  return()
 endif()
 
 if(NOT DEFINED TEST_PACKAGE_VERSION OR TEST_PACKAGE_VERSION STREQUAL "")
@@ -279,62 +413,7 @@ ftimer_check_package_version_request(
   "${future_minor_prefix}"
 )
 
-set(expected_installed_module_artifacts
-  ftimer.mod
-  ftimer_clock.mod
-  ftimer_core.mod
-  ftimer_mpi.mod
-  ftimer_summary.mod
-  ftimer_types.mod
-)
-
-file(GLOB installed_module_artifact_paths LIST_DIRECTORIES FALSE "${installed_module_dir}/*")
-set(installed_module_artifact_names)
-foreach(installed_module_artifact_path IN LISTS installed_module_artifact_paths)
-  get_filename_component(installed_module_artifact_name "${installed_module_artifact_path}" NAME)
-  list(APPEND installed_module_artifact_names "${installed_module_artifact_name}")
-endforeach()
-
-list(SORT expected_installed_module_artifacts)
-list(SORT installed_module_artifact_names)
-
-if(NOT installed_module_artifact_names STREQUAL expected_installed_module_artifacts)
-  list(JOIN expected_installed_module_artifacts ", " expected_installed_module_artifacts_text)
-  list(JOIN installed_module_artifact_names ", " installed_module_artifact_names_text)
-  message(FATAL_ERROR
-    "Installed module artifact set mismatch.\n"
-    "Expected: ${expected_installed_module_artifacts_text}\n"
-    "Actual: ${installed_module_artifact_names_text}"
-  )
-endif()
-
-if(NOT EXISTS "${installed_api_note_path}")
-  message(FATAL_ERROR
-    "Installed API stability note was not found at '${installed_api_note_path}'."
-  )
-endif()
-
-file(READ "${REPO_ROOT}/docs/installed-api.md" expected_installed_api_note)
-file(READ "${installed_api_note_path}" installed_api_note)
-if(NOT installed_api_note STREQUAL expected_installed_api_note)
-  message(FATAL_ERROR
-    "Installed API stability note does not match docs/installed-api.md."
-  )
-endif()
-
-if(NOT EXISTS "${installed_license_path}")
-  message(FATAL_ERROR
-    "Installed BSD license was not found at '${installed_license_path}'."
-  )
-endif()
-
-file(READ "${REPO_ROOT}/LICENSE" expected_license)
-file(READ "${installed_license_path}" installed_license)
-if(NOT installed_license STREQUAL expected_license)
-  message(FATAL_ERROR
-    "Installed BSD license does not match LICENSE."
-  )
-endif()
+ftimer_verify_installed_artifacts()
 
 set(consumer_configure_args
   -S "${consumer_source_dir}"

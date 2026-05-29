@@ -7,8 +7,14 @@ if(FTIMER_BUILD_SMOKE_TESTS)
 endif()
 
 function(ftimer_add_installed_consumer_test test_name test_binary_dir)
-  set(options ENABLE_MPI ENABLE_OPENMP)
-  set(oneValueArgs REQUIRED_COMPILER_NAMES)
+  set(options
+    CLEAN_INSTALL_INCLUDEDIR
+    ENABLE_MPI
+    ENABLE_OPENMP
+    INSTALL_ONLY
+    USE_DESTDIR
+  )
+  set(oneValueArgs INSTALL_INCLUDEDIR REQUIRED_COMPILER_NAMES)
   cmake_parse_arguments(FTIMER_CONSUMER "${options}" "${oneValueArgs}" "" ${ARGN})
 
   add_test(NAME ${test_name}
@@ -22,6 +28,10 @@ function(ftimer_add_installed_consumer_test test_name test_binary_dir)
       -DTEST_BUILD_TYPE=${CMAKE_BUILD_TYPE}
       "-DTEST_CONFIG=$<CONFIG>"
       -DTEST_REQUIRED_COMPILER_NAMES=${FTIMER_CONSUMER_REQUIRED_COMPILER_NAMES}
+      -DTEST_INSTALL_INCLUDEDIR=${FTIMER_CONSUMER_INSTALL_INCLUDEDIR}
+      -DTEST_CLEAN_INSTALL_INCLUDEDIR=${FTIMER_CONSUMER_CLEAN_INSTALL_INCLUDEDIR}
+      -DTEST_INSTALL_ONLY=${FTIMER_CONSUMER_INSTALL_ONLY}
+      -DTEST_USE_DESTDIR=${FTIMER_CONSUMER_USE_DESTDIR}
       -DTEST_ENABLE_MPI=${FTIMER_CONSUMER_ENABLE_MPI}
       -DTEST_ENABLE_OPENMP=${FTIMER_CONSUMER_ENABLE_OPENMP}
       -DTEST_EXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
@@ -57,9 +67,47 @@ add_test(NAME ftimer_public_symbol_allowlist
 )
 
 if(FTIMER_BUILD_SMOKE_TESTS)
+  if(DEFINED ENV{TMPDIR} AND NOT "$ENV{TMPDIR}" STREQUAL "")
+    set(ftimer_absolute_includedir_base "$ENV{TMPDIR}")
+  elseif(DEFINED ENV{TEMP} AND NOT "$ENV{TEMP}" STREQUAL "")
+    set(ftimer_absolute_includedir_base "$ENV{TEMP}")
+  elseif(UNIX)
+    set(ftimer_absolute_includedir_base "/tmp")
+  else()
+    set(ftimer_absolute_includedir_base "${CMAKE_CURRENT_BINARY_DIR}")
+  endif()
+  get_filename_component(
+    ftimer_absolute_includedir_base
+    "${ftimer_absolute_includedir_base}"
+    ABSOLUTE
+  )
+  string(SHA256 ftimer_absolute_includedir_hash "${CMAKE_CURRENT_BINARY_DIR}")
+  string(SUBSTRING "${ftimer_absolute_includedir_hash}" 0 12 ftimer_absolute_includedir_hash)
+  set(ftimer_absolute_includedir_test_root
+    "${ftimer_absolute_includedir_base}/ftimer-absolute-includedir-${ftimer_absolute_includedir_hash}"
+  )
+
   ftimer_add_installed_consumer_test(
     ftimer_installed_package_consumer
     ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer
+  )
+
+  ftimer_add_installed_consumer_test(
+    ftimer_installed_package_consumer_absolute_includedir
+    ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer_absolute_includedir
+    INSTALL_INCLUDEDIR
+      ${ftimer_absolute_includedir_test_root}/installed_package_consumer_absolute_includedir/include
+    CLEAN_INSTALL_INCLUDEDIR
+  )
+
+  ftimer_add_installed_consumer_test(
+    ftimer_absolute_includedir_destdir_install
+    ${CMAKE_CURRENT_BINARY_DIR}/absolute_includedir_destdir_install
+    INSTALL_INCLUDEDIR
+      ${ftimer_absolute_includedir_test_root}/absolute_includedir_destdir_install/include
+    CLEAN_INSTALL_INCLUDEDIR
+    INSTALL_ONLY
+    USE_DESTDIR
   )
 
   ftimer_add_installed_consumer_test(
