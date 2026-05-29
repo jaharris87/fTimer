@@ -288,7 +288,7 @@ contains
       logical :: field_matches
 
       call delete_if_exists(path)
-      big_count = int(huge(0), int64) + 5_int64
+      big_count = huge(0_int64) - 1_int64
       write (expected_count_text, '(i0)') big_count
 
       call timer%init(ierr=ierr)

@@ -202,14 +202,17 @@ contains
       integer(int64) :: high_count
       integer(int64) :: local_count
       integer(int64) :: low_count
+      logical :: avg_count_matches
       logical :: avg_count_not_above_max
       logical :: avg_count_positive
       logical :: max_count_matches
       logical :: min_count_matches
+      real(wp) :: expected_avg
 
       rank = this%getProcessRank()
       low_count = huge(0_int64) - 1024_int64
       high_count = huge(0_int64) - 512_int64
+      expected_avg = real(huge(0_int64) - 2047_int64, wp)
       if (rank == 0) then
          local_count = low_count
       else
@@ -237,10 +240,12 @@ contains
       @assertEqual(1, summary%num_entries)
       min_count_matches = summary%entries(1)%min_call_count == low_count
       max_count_matches = summary%entries(1)%max_call_count == high_count
+      avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
       avg_count_positive = summary%entries(1)%avg_call_count > 0.0_wp
       avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, high_count)
       @assertTrue(min_count_matches)
       @assertTrue(max_count_matches)
+      @assertTrue(avg_count_matches)
       @assertTrue(avg_count_positive)
       @assertTrue(avg_count_not_above_max)
 
@@ -256,11 +261,14 @@ contains
       integer :: id_hot
       integer :: ierr
       integer(int64) :: boundary_count
+      logical :: avg_count_matches
       logical :: avg_count_not_above_max
       logical :: max_count_matches
       logical :: min_count_matches
+      real(wp) :: expected_avg
 
       boundary_count = huge(0_int64)
+      expected_avg = real(huge(0_int64) - 1023_int64, wp)
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -283,10 +291,12 @@ contains
       @assertEqual(1, summary%num_entries)
       min_count_matches = summary%entries(1)%min_call_count == boundary_count
       max_count_matches = summary%entries(1)%max_call_count == boundary_count
+      avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
       avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, &
                                                                    boundary_count)
       @assertTrue(min_count_matches)
       @assertTrue(max_count_matches)
+      @assertTrue(avg_count_matches)
       @assertTrue(avg_count_not_above_max)
 
       call timer%finalize(ierr=ierr)
@@ -351,14 +361,17 @@ contains
       integer(int64) :: high_count
       integer(int64) :: local_count
       integer(int64) :: low_count
+      logical :: avg_count_matches
       logical :: avg_count_not_above_max
       logical :: avg_count_positive
       logical :: max_count_matches
       logical :: min_count_matches
+      real(wp) :: expected_avg
 
       rank = this%getProcessRank()
       low_count = huge(0_int64) - 2048_int64
       high_count = huge(0_int64) - 1024_int64
+      expected_avg = real(huge(0_int64) - 2047_int64, wp)
       if (rank == 0) then
          local_count = low_count
       else
@@ -387,10 +400,12 @@ contains
       @assertEqual(2, summary%entries(1)%participating_rank_count)
       min_count_matches = summary%entries(1)%min_call_count == low_count
       max_count_matches = summary%entries(1)%max_call_count == high_count
+      avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
       avg_count_positive = summary%entries(1)%avg_call_count > 0.0_wp
       avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, high_count)
       @assertTrue(min_count_matches)
       @assertTrue(max_count_matches)
+      @assertTrue(avg_count_matches)
       @assertTrue(avg_count_positive)
       @assertTrue(avg_count_not_above_max)
 
@@ -406,11 +421,14 @@ contains
       integer :: id_hot
       integer :: ierr
       integer(int64) :: boundary_count
+      logical :: avg_count_matches
       logical :: avg_count_not_above_max
       logical :: max_count_matches
       logical :: min_count_matches
+      real(wp) :: expected_avg
 
       boundary_count = huge(0_int64)
+      expected_avg = real(huge(0_int64) - 1023_int64, wp)
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -434,10 +452,12 @@ contains
       @assertEqual(2, summary%entries(1)%participating_rank_count)
       min_count_matches = summary%entries(1)%min_call_count == boundary_count
       max_count_matches = summary%entries(1)%max_call_count == boundary_count
+      avg_count_matches = real_rel_close(summary%entries(1)%avg_call_count, expected_avg)
       avg_count_not_above_max = fixed_decimal_real_not_above_int64(summary%entries(1)%avg_call_count, &
                                                                    boundary_count)
       @assertTrue(min_count_matches)
       @assertTrue(max_count_matches)
+      @assertTrue(avg_count_matches)
       @assertTrue(avg_count_not_above_max)
 
       call timer%finalize(ierr=ierr)
