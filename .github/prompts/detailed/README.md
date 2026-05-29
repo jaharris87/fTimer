@@ -9,6 +9,10 @@ This directory is the authoritative inventory for the long-form review prompt li
 - Use the detailed prompts in this directory for manual fallback reviews or deeper repository-health reviews that are not wired to PR labels by default.
 - Do not paste a detailed prompt into a PR unless you are intentionally using the documented fallback flow.
 
+## Manual Fallback Publication Contract
+
+When a detailed prompt is used for manual fallback review, the coordinating thread must preserve the complete reviewer response in PR comments before posting dispositions or coverage markers. It may post one PR comment per role or one combined PR comment for several roles, but every reviewer body must appear in full with its role heading, the reviewed PR head SHA identified in the comment trail, and any explicit "no findings" outcome. Disposition summaries and coverage markers are separate workflow artifacts and cannot replace the reviewer-body record.
+
 ## Prompt Catalog
 
 ### Fallback versions of the PR-triggered reviews

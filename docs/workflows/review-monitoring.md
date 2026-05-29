@@ -59,14 +59,14 @@ Fallback procedure:
 3. Instruct each subagent to inspect the current PR diff and relevant surrounding files without relying on prior review comments or the implementer's context.
 4. Ask each manual fallback review to use the exact heading from the matching detailed prompt for that role.
    Common examples include `## Software Review`, `## Methodology Review`, `## Red Team Review`, `## Docs / Contract Review`, and `## Test Quality Review`.
-5. Post the subagent review output to the PR as comments, or post a durable summary that names the subagent-backed roles, records every finding, and links or quotes enough detail for later audit.
-6. Add a short PR comment explaining why fallback review was used and that fresh-context subagents, not same-session self-review, covered the affected roles.
+5. Post the complete output from each fallback subagent to the PR before any coordinating-thread disposition or coverage marker. This may be one PR comment per role or one combined PR comment for several roles, but the comment trail must clearly separate the roles, identify the reviewed PR head SHA, and preserve each reviewer body in full, including explicit "no findings" outcomes. Do not replace the reviewer bodies with summaries, excerpts, or disposition-only notes.
+6. Add or include a short PR note explaining why fallback review was used and that fresh-context subagents, not same-session self-review, covered the affected roles.
 7. Handle every finding exactly as in the normal workflow: agree and fix, disagree with evidence, or defer with reason.
-8. When fallback findings lead to fixes, push the fixes, rerun relevant validation, and launch focused fresh-context follow-up subagent reviews for the affected roles before posting coverage markers for the new head SHA.
-9. Post one coverage marker comment per active review role on the current head SHA. Do not combine multiple hidden coverage tokens into one PR comment; the coverage checker reads one marker per comment.
+8. When fallback findings lead to fixes, push the fixes, rerun relevant validation, and launch focused fresh-context follow-up subagent reviews for the affected roles. Any push changes the PR head SHA; do not post manual-fallback coverage for a role until the PR comments contain a complete fallback reviewer body or complete follow-up reviewer body for the exact head SHA being covered. If the affected role set is unclear after a push, rerun all active fallback roles.
+9. Post one coverage marker comment per active review role on the current head SHA only after the matching full reviewer body for that head SHA is visible in PR comments. Do not combine multiple hidden coverage tokens into one PR comment; the coverage checker reads one marker per comment.
 10. Resolve all related review threads or PR discussion threads before merge.
 
-The subagent requirement is a human-audited workflow rule. The `Codex Review Coverage` check still validates only trusted marker comments with the existing `source=manual-fallback` token; it does not currently prove that a marker came from a subagent-backed process. Make the subagent trail visible in PR comments so maintainers can audit it.
+The subagent requirement is a human-audited workflow rule. The `Codex Review Coverage` check still validates only trusted marker comments with the existing `source=manual-fallback` token; it does not currently prove that a marker came from a subagent-backed process. Make the full subagent review bodies visible in PR comments so maintainers can audit the fallback trail. A later disposition summary may summarize what happened, but it is not a substitute for recording the complete fallback reviewer output.
 
 This fallback does not replace required CI, required PR checks, or the normal Codex-label workflow when native Codex review is available.
 
