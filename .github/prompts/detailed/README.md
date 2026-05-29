@@ -11,7 +11,11 @@ This directory is the authoritative inventory for the long-form review prompt li
 
 ## Manual Fallback Publication Contract
 
-When a detailed prompt is used for manual fallback review, the coordinating thread must preserve the complete reviewer response in PR comments before posting dispositions or coverage markers. It may post one PR comment per role or one combined PR comment for several roles, but every reviewer body must appear in full with its role heading, the reviewed PR head SHA identified in the comment trail, and any explicit "no findings" outcome. Disposition summaries and coverage markers are separate workflow artifacts and cannot replace the reviewer-body record.
+When a detailed prompt is used for manual fallback review, the coordinating thread must preserve the complete reviewer response in PR comments before applying or pushing fixes, before posting dispositions, and before posting coverage markers. It may post one PR comment per role or one combined PR comment for several roles, but every reviewer body must appear in full with its role heading, the reviewed PR head SHA identified in the comment trail, and any explicit "no findings" outcome.
+
+Finding-producing fallback bodies are required for every review wave and head SHA, including heads later superseded by fix commits. A final clean current-head review proves the fix was rechecked, but it does not preserve the evidence for the earlier finding. Disposition summaries and coverage markers are separate workflow artifacts and cannot replace any reviewer-body record.
+
+Use the manual fallback review record template from `docs/workflows/review-monitoring.md`, including the `codex-manual-fallback-review` hidden marker, so later audit tooling can distinguish reviewer-body records from dispositions and coverage markers.
 
 ## Prompt Catalog
 

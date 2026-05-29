@@ -266,6 +266,26 @@ jobs:
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
 
+          audit_helper="/tmp/codex-manual-fallback-audit.py"
+          if gh api "repos/${{ github.repository }}/contents/scripts/check_manual_fallback_audit.py?ref=${base_sha}" \
+            | jq -r '.content' \
+            | tr -d '\n' \
+            | base64 --decode \
+            > "$audit_helper"; then
+            python3 "$audit_helper" \
+              --comments-json /tmp/codex-coverage-comments.json \
+              --head-sha "$head_sha" \
+              --summary-file "$GITHUB_STEP_SUMMARY" \
+              --github-warning-format
+          else
+            cat >>"$GITHUB_STEP_SUMMARY" <<EOF
+
+          ### Manual fallback audit warnings
+
+          - Skipped: audit helper is not available in the PR base revision.
+          EOF
+          fi
+
           if [ "$(jq '.missing_auto | length' /tmp/codex-coverage-state.json)" -gt 0 ] || \
              [ "$(jq '.stale_auto | length' /tmp/codex-coverage-state.json)" -gt 0 ]; then
             echo "Automatic review labels are out of sync with the current PR diff."
