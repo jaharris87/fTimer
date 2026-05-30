@@ -31,6 +31,7 @@ ftimer_core|ftimer_t|stable
 ftimer_core|ftimer_internal_start_scope_activation|unstable
 ftimer_core|ftimer_internal_stop_scope_activation|unstable
 ftimer_core|ftimer_test_get_state|test-only
+ftimer_core|ftimer_test_set_call_count|test-only
 ftimer_core|ftimer_test_state_t|test-only
 ftimer_types|FTIMER_SUCCESS|stable
 ftimer_types|FTIMER_ERR_NOT_INIT|stable

@@ -1,9 +1,16 @@
 module test_callcount
+   use, intrinsic :: iso_c_binding, only: c_ptr
    use pfunit
-   use ftimer_core, only: ftimer_t, ftimer_test_state_t
-   use ftimer_types, only: FTIMER_SUCCESS, ftimer_call_stack_t, wp
-   use test_support, only: attach_mock_clock, build_stack, fake_time, find_context_idx, snapshot_timer
+   use, intrinsic :: iso_fortran_env, only: int64
+   use ftimer_core, only: ftimer_t, ftimer_test_set_call_count, ftimer_test_state_t
+   use ftimer_summary, only: format_summary
+   use ftimer_types, only: FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, ftimer_call_stack_t, &
+                           ftimer_summary_t, wp
+   use test_support, only: attach_mock_clock, begin_stderr_capture, build_stack, csv_line_at, end_stderr_capture, &
+                           fake_time, find_context_idx, snapshot_timer
    implicit none
+
+   integer, save :: overflow_callback_count = 0
 
 contains
 
@@ -79,5 +86,505 @@ contains
       @assertEqual(1, count_a)
       @assertEqual(2, count_b)
    end subroutine test_call_counts_are_tracked_per_context
+
+   @test
+   subroutine test_call_counts_preserve_int64_range_in_runtime_summary()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_summary_t) :: summary
+      type(ftimer_call_stack_t) :: root_stack
+      character(len=:), allocatable :: header_line
+      character(len=:), allocatable :: report_text
+      character(len=:), allocatable :: row_line
+      character(len=:), allocatable :: separator_line
+      character(len=32) :: expected_count_text
+      integer :: calls_header_right
+      integer :: calls_header_pos
+      integer :: count_row_right
+      integer :: count_row_pos
+      integer :: pct_header_pos
+      integer :: ierr
+      integer :: id_hot
+      integer :: ctx
+      integer(int64) :: big_count
+      integer(int64) :: stored_count
+      integer(int64) :: summary_count
+      logical :: avg_time_matches
+      logical :: formatted_count_matches
+      logical :: formatted_count_not_starred
+      logical :: runtime_count_matches
+      logical :: row_count_aligned
+      logical :: separator_matches_header
+      logical :: summary_count_matches
+
+      big_count = huge(0_int64) - 1_int64
+      write (expected_count_text, '(i0)') big_count
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 10.0_wp
+      call timer%stop("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_hot, root_stack)
+
+      call ftimer_test_set_call_count(timer, id_hot, ctx, big_count, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      stored_count = state%segments(id_hot)%call_count(ctx)
+      runtime_count_matches = stored_count == big_count
+      @assertTrue(runtime_count_matches)
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, summary%num_entries)
+
+      summary_count = summary%entries(1)%call_count
+      summary_count_matches = summary_count == big_count
+      avg_time_matches = abs(summary%entries(1)%avg_time - 10.0_wp/real(big_count, wp)) < 1.0e-18_wp
+      @assertTrue(summary_count_matches)
+      @assertTrue(avg_time_matches)
+
+      call format_summary(summary, report_text)
+      header_line = csv_line_at(report_text, 3)
+      separator_line = csv_line_at(report_text, 4)
+      row_line = csv_line_at(report_text, 5)
+      calls_header_pos = index(header_line, 'Calls')
+      pct_header_pos = index(header_line, '% Total')
+      count_row_pos = index(row_line, trim(expected_count_text))
+      calls_header_right = calls_header_pos + len('Calls') - 1
+      count_row_right = count_row_pos + len_trim(expected_count_text) - 1
+      formatted_count_matches = count_row_pos > 0
+      formatted_count_not_starred = index(report_text, '********') == 0
+      separator_matches_header = len_trim(separator_line) == len_trim(header_line)
+      row_count_aligned = (calls_header_pos > 0) .and. (count_row_pos > 0) .and. &
+                          (count_row_pos < pct_header_pos) .and. (count_row_right == calls_header_right)
+      @assertTrue(formatted_count_matches)
+      @assertTrue(formatted_count_not_starred)
+      @assertTrue(separator_matches_header)
+      @assertTrue(row_count_aligned)
+   end subroutine test_call_counts_preserve_int64_range_in_runtime_summary
+
+   @test
+   subroutine test_real_start_increments_past_default_integer_range()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_summary_t) :: summary
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: id_hot
+      integer :: ierr
+      integer(int64) :: boundary_count
+      integer(int64) :: expected_count
+      integer(int64) :: stored_count
+      logical :: runtime_count_matches
+      logical :: summary_count_matches
+
+      boundary_count = int(huge(0), int64)
+      expected_count = boundary_count + 1_int64
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_hot, root_stack)
+      call ftimer_test_set_call_count(timer, id_hot, ctx, boundary_count, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 2.0_wp
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 3.0_wp
+      call timer%stop("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      stored_count = state%segments(id_hot)%call_count(ctx)
+      runtime_count_matches = stored_count == expected_count
+      @assertTrue(runtime_count_matches)
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      summary_count_matches = summary%entries(1)%call_count == expected_count
+      @assertTrue(summary_count_matches)
+   end subroutine test_real_start_increments_past_default_integer_range
+
+   @test
+   subroutine test_real_start_reaches_int64_max_then_rejects_next_start()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: id_hot
+      integer :: ierr
+      integer(int64) :: stored_count
+      logical :: count_at_max
+      logical :: count_unchanged
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_hot, root_stack)
+      call ftimer_test_set_call_count(timer, id_hot, ctx, huge(0_int64) - 1_int64, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 2.0_wp
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 3.0_wp
+      call timer%stop("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      stored_count = state%segments(id_hot)%call_count(ctx)
+      count_at_max = stored_count == huge(0_int64)
+      @assertTrue(count_at_max)
+
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+
+      call snapshot_timer(timer, state)
+      stored_count = state%segments(id_hot)%call_count(ctx)
+      count_unchanged = stored_count == huge(0_int64)
+      @assertTrue(count_unchanged)
+      @assertEqual(0, state%call_stack%depth)
+   end subroutine test_real_start_reaches_int64_max_then_rejects_next_start
+
+   @test
+   subroutine test_start_id_reaches_int64_max_then_rejects_next_start()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: id_hot
+      integer :: ierr
+      integer(int64) :: stored_count
+      logical :: count_at_max
+      logical :: count_unchanged
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      id_hot = timer%lookup("hot_id", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%start_id(id_hot, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop_id(id_hot, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_hot, root_stack)
+      call ftimer_test_set_call_count(timer, id_hot, ctx, huge(0_int64) - 1_int64, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 2.0_wp
+      call timer%start_id(id_hot, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 3.0_wp
+      call timer%stop_id(id_hot, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      stored_count = state%segments(id_hot)%call_count(ctx)
+      count_at_max = stored_count == huge(0_int64)
+      @assertTrue(count_at_max)
+
+      call timer%start_id(id_hot, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+
+      call snapshot_timer(timer, state)
+      stored_count = state%segments(id_hot)%call_count(ctx)
+      count_unchanged = stored_count == huge(0_int64)
+      @assertTrue(count_unchanged)
+      @assertEqual(0, state%call_stack%depth)
+   end subroutine test_start_id_reaches_int64_max_then_rejects_next_start
+
+   @test
+   subroutine test_start_rejects_int64_call_count_overflow()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: id_hot
+      integer :: ierr
+      integer(int64) :: stored_count
+      logical :: count_unchanged
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_hot, root_stack)
+      call ftimer_test_set_call_count(timer, id_hot, ctx, huge(0_int64), ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+
+      call snapshot_timer(timer, state)
+      stored_count = state%segments(id_hot)%call_count(ctx)
+      count_unchanged = stored_count == huge(0_int64)
+      @assertTrue(count_unchanged)
+      @assertEqual(0, state%call_stack%depth)
+   end subroutine test_start_rejects_int64_call_count_overflow
+
+   @test
+   subroutine test_start_overflow_without_ierr_warns_and_preserves_state()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      character(len=*), parameter :: stderr_path = 'call_count_overflow_stderr.txt'
+      character(len=:), allocatable :: captured
+      integer :: capture_ierr
+      integer :: ctx
+      integer :: id_hot
+      integer :: ierr
+      integer :: saved_fd
+      integer(int64) :: stored_count
+      logical :: count_unchanged
+      logical :: warning_emitted
+
+      overflow_callback_count = 0
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      fake_time = 0.0_wp
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_hot, root_stack)
+      call ftimer_test_set_call_count(timer, id_hot, ctx, huge(0_int64), ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%set_callback(record_overflow_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call begin_stderr_capture(stderr_path, saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start("hot")
+      call end_stderr_capture(stderr_path, saved_fd, captured, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      warning_emitted = index(captured, 'ftimer start call count overflow') > 0
+      @assertTrue(warning_emitted)
+
+      call snapshot_timer(timer, state)
+      stored_count = state%segments(id_hot)%call_count(ctx)
+      count_unchanged = stored_count == huge(0_int64)
+      @assertTrue(count_unchanged)
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(0, overflow_callback_count)
+   end subroutine test_start_overflow_without_ierr_warns_and_preserves_state
+
+   @test
+   subroutine test_active_snapshot_formats_int64_call_count_layout()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_summary_t) :: summary
+      type(ftimer_call_stack_t) :: root_stack
+      character(len=:), allocatable :: header_line
+      character(len=:), allocatable :: report_text
+      character(len=:), allocatable :: row_line
+      character(len=:), allocatable :: separator_line
+      character(len=32) :: expected_count_text
+      integer :: active_header_pos
+      integer :: active_row_pos
+      integer :: calls_header_right
+      integer :: calls_header_pos
+      integer :: count_row_right
+      integer :: count_row_pos
+      integer :: pct_header_pos
+      integer :: ctx
+      integer :: id_hot
+      integer :: ierr
+      integer(int64) :: big_count
+      logical :: active_column_aligned
+      logical :: count_column_aligned
+      logical :: has_active_snapshot
+      logical :: no_starred_columns
+      logical :: separator_matches_header
+
+      big_count = huge(0_int64) - 1_int64
+      write (expected_count_text, '(i0)') big_count
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      fake_time = 0.0_wp
+      call timer%start("active-hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("active-hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_hot, root_stack)
+      call ftimer_test_set_call_count(timer, id_hot, ctx, big_count, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 2.0_wp
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      has_active_snapshot = summary%has_active_timers
+      @assertTrue(has_active_snapshot)
+
+      call format_summary(summary, report_text)
+      header_line = csv_line_at(report_text, 5)
+      separator_line = csv_line_at(report_text, 6)
+      row_line = csv_line_at(report_text, 7)
+      calls_header_pos = index(header_line, 'Calls')
+      active_header_pos = index(header_line, 'Active')
+      pct_header_pos = index(header_line, '% Total')
+      count_row_pos = index(row_line, trim(expected_count_text))
+      active_row_pos = index(row_line, 'yes')
+      calls_header_right = calls_header_pos + len('Calls') - 1
+      count_row_right = count_row_pos + len_trim(expected_count_text) - 1
+      count_column_aligned = (calls_header_pos > 0) .and. (count_row_pos > 0) .and. &
+                             (count_row_pos < pct_header_pos) .and. (count_row_right == calls_header_right)
+      active_column_aligned = (active_header_pos > 0) .and. (active_row_pos >= active_header_pos)
+      no_starred_columns = index(report_text, '********') == 0
+      separator_matches_header = len_trim(separator_line) == len_trim(header_line)
+
+      @assertTrue(count_column_aligned)
+      @assertTrue(active_column_aligned)
+      @assertTrue(no_starred_columns)
+      @assertTrue(separator_matches_header)
+
+      fake_time = 3.0_wp
+      call timer%stop("active-hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_active_snapshot_formats_int64_call_count_layout
+
+   @test
+   subroutine test_test_set_call_count_ierr_paths_are_silent_and_stable()
+      type(ftimer_t) :: timer
+      type(ftimer_t) :: uninitialized_timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      character(len=*), parameter :: stderr_path = 'test_set_call_count_ierr_stderr.txt'
+      character(len=:), allocatable :: captured
+      integer :: capture_ierr
+      integer :: context_count
+      integer :: id_known
+      integer :: ierr
+      integer :: saved_fd
+      integer(int64) :: stored_count
+      logical :: count_unchanged
+      logical :: stderr_silent
+
+      call begin_stderr_capture(stderr_path, saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call ftimer_test_set_call_count(uninitialized_timer, 1, 1, 1_int64, ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_test_set_call_count(timer, 1, 1, 1_int64, ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+
+      id_known = timer%lookup("known", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_test_set_call_count(timer, id_known, 1, 1_int64, ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+
+      call timer%start("known", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop("known", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      context_count = state%segments(id_known)%contexts%count
+      @assertTrue(context_count < size(state%segments(id_known)%call_count))
+      call ftimer_test_set_call_count(timer, id_known, context_count + 1, 99_int64, ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+
+      call snapshot_timer(timer, state)
+      stored_count = state%segments(id_known)%call_count(find_context_idx(state, id_known, root_stack))
+      count_unchanged = stored_count == 1_int64
+      @assertTrue(count_unchanged)
+
+      call end_stderr_capture(stderr_path, saved_fd, captured, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      stderr_silent = len_trim(captured) == 0
+      @assertTrue(stderr_silent)
+   end subroutine test_test_set_call_count_ierr_paths_are_silent_and_stable
+
+   @test
+   subroutine test_test_set_call_count_warns_without_ierr_on_setup_error()
+      type(ftimer_t) :: timer
+      character(len=*), parameter :: stderr_path = 'test_set_call_count_stderr.txt'
+      character(len=:), allocatable :: captured
+      integer :: capture_ierr
+      integer :: saved_fd
+      logical :: warning_emitted
+
+      call begin_stderr_capture(stderr_path, saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call ftimer_test_set_call_count(timer, 1, 1, 1_int64)
+
+      call end_stderr_capture(stderr_path, saved_fd, captured, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      warning_emitted = index(captured, 'ftimer test_set_call_count before init') > 0
+      @assertTrue(warning_emitted)
+   end subroutine test_test_set_call_count_warns_without_ierr_on_setup_error
+
+   subroutine record_overflow_callback(timer_id, context_idx, event, timestamp, user_data)
+      integer, intent(in) :: timer_id
+      integer, intent(in) :: context_idx
+      integer, intent(in) :: event
+      real(wp), intent(in) :: timestamp
+      type(c_ptr), intent(in) :: user_data
+
+      overflow_callback_count = overflow_callback_count + 1
+   end subroutine record_overflow_callback
 
 end module test_callcount

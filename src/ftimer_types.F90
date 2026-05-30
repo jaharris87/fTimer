@@ -68,7 +68,7 @@ module ftimer_types
       integer :: depth = 0
       real(wp) :: inclusive_time = 0.0_wp
       real(wp) :: self_time = 0.0_wp
-      integer :: call_count = 0
+      integer(int64) :: call_count = 0_int64
       real(wp) :: avg_time = 0.0_wp
       real(wp) :: pct_time = 0.0_wp
       ! Stable only within one produced summary object. Root nodes use parent_id = 0.
@@ -97,8 +97,8 @@ module ftimer_types
       real(wp) :: max_self_time = 0.0_wp
       real(wp) :: avg_self_time = 0.0_wp
       real(wp) :: self_imbalance = 1.0_wp
-      integer :: min_call_count = 0
-      integer :: max_call_count = 0
+      integer(int64) :: min_call_count = 0_int64
+      integer(int64) :: max_call_count = 0_int64
       real(wp) :: avg_call_count = 0.0_wp
       real(wp) :: min_pct_time = 0.0_wp
       real(wp) :: max_pct_time = 0.0_wp
@@ -136,8 +136,8 @@ module ftimer_types
       real(wp) :: max_self_time = 0.0_wp
       real(wp) :: avg_self_time = 0.0_wp
       real(wp) :: self_imbalance = 1.0_wp
-      integer :: min_call_count = 0
-      integer :: max_call_count = 0
+      integer(int64) :: min_call_count = 0_int64
+      integer(int64) :: max_call_count = 0_int64
       real(wp) :: avg_call_count = 0.0_wp
       real(wp) :: min_pct_time = 0.0_wp
       real(wp) :: max_pct_time = 0.0_wp
@@ -187,7 +187,7 @@ module ftimer_types
       real(wp), allocatable :: time(:)
       real(wp), allocatable :: start_time(:)
       logical, allocatable :: is_running(:)
-      integer, allocatable :: call_count(:)
+      integer(int64), allocatable :: call_count(:)
       type(ftimer_context_list_t) :: contexts
    end type ftimer_segment_t
 

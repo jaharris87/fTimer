@@ -1,5 +1,5 @@
 submodule(ftimer_core) ftimer_core_summary_bindings
-   use, intrinsic :: iso_fortran_env, only: error_unit, output_unit
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64, iostat_end, output_unit
    use ftimer_clock, only: ftimer_date_string
    use ftimer_mpi, only: build_mpi_summary, build_mpi_union_summary, check_mpi_summary_prereqs, &
                          get_mpi_summary_comm_info
@@ -11,6 +11,8 @@ submodule(ftimer_core) ftimer_core_summary_bindings
    use mpi_f08, only: MPI_Bcast, MPI_CHARACTER, MPI_INTEGER, MPI_SUCCESS
 #endif
    implicit none
+
+   character(len=*), parameter :: FTIMER_CSV_FORMAT_VERSION = '2'
 
 contains
 
@@ -868,7 +870,7 @@ contains
       call append_csv_field(row, summary_entry_name(entry))
       call append_csv_field(row, real_csv_text(entry%inclusive_time))
       call append_csv_field(row, real_csv_text(entry%self_time))
-      call append_csv_field(row, integer_csv_text(entry%call_count))
+      call append_csv_field(row, int64_csv_text(entry%call_count))
       call append_csv_field(row, real_csv_text(entry%avg_time))
       call append_csv_field(row, real_csv_text(entry%pct_time))
       call append_csv_field(row, logical_csv_text(entry%is_active))
@@ -898,9 +900,9 @@ contains
       call append_csv_field(row, real_csv_text(entry%avg_self_time))
       call append_csv_field(row, real_csv_text(entry%max_self_time))
       call append_csv_field(row, real_csv_text(entry%self_imbalance))
-      call append_csv_field(row, integer_csv_text(entry%min_call_count))
+      call append_csv_field(row, int64_csv_text(entry%min_call_count))
       call append_csv_field(row, real_csv_text(entry%avg_call_count))
-      call append_csv_field(row, integer_csv_text(entry%max_call_count))
+      call append_csv_field(row, int64_csv_text(entry%max_call_count))
       call append_csv_field(row, real_csv_text(entry%min_pct_time))
       call append_csv_field(row, real_csv_text(entry%avg_pct_time))
       call append_csv_field(row, real_csv_text(entry%max_pct_time))
@@ -913,7 +915,7 @@ contains
       character(len=*), intent(in) :: record_type
 
       row = ''
-      call append_csv_field(row, '1')
+      call append_csv_field(row, FTIMER_CSV_FORMAT_VERSION)
       call append_csv_field(row, summary_kind)
       call append_csv_field(row, record_type)
    end subroutine begin_csv_row
@@ -960,6 +962,15 @@ contains
       write (buffer, '(i0)') value
       text = trim(buffer)
    end function integer_csv_text
+
+   function int64_csv_text(value) result(text)
+      integer(int64), intent(in) :: value
+      character(len=:), allocatable :: text
+      character(len=32) :: buffer
+
+      write (buffer, '(i0)') value
+      text = trim(buffer)
+   end function int64_csv_text
 
    function real_csv_text(value) result(text)
       real(wp), intent(in) :: value
@@ -1158,13 +1169,24 @@ contains
       logical, intent(out) :: include_header
       integer, intent(out) :: status
       character(len=*), intent(out) :: iomsg
+      character(len=1) :: ch
       character(len=:), allocatable :: expected_header
-      character(len=2048) :: first_line
-      character(len=1) :: last_char
-      integer :: file_size
+      character(len=:), allocatable :: header_line
+      character(len=:), allocatable :: record_text
+      integer :: expected_field_count
       integer :: file_unit
       integer :: io
+      integer :: record_field_count
+      integer :: record_prefix_limit
+      character(len=1) :: last_char
       logical :: exists
+      logical :: after_quoted_field
+      logical :: field_has_content
+      logical :: in_quotes
+      logical :: pending_record_cr
+      logical :: pending_quote
+      logical :: reading_header
+      logical :: saw_any_char
 
       include_header = .true.
       status = FTIMER_SUCCESS
@@ -1172,27 +1194,23 @@ contains
       if (.not. append_mode) return
 
       exists = .false.
-      file_size = 0
-      inquire (file=filename, exist=exists, size=file_size)
+      inquire (file=filename, exist=exists)
       if (.not. exists) return
-      if (file_size <= 0) return
 
       expected_header = csv_header_line()
-      first_line = ''
+      expected_field_count = csv_field_count(expected_header)
+      record_prefix_limit = 64
+      header_line = ''
+      record_text = ''
+      record_field_count = 1
       last_char = ''
-
-      open (newunit=file_unit, file=filename, status='old', action='read', iostat=io, iomsg=iomsg)
-      if (io /= 0) then
-         status = FTIMER_ERR_IO
-         return
-      end if
-
-      read (file_unit, '(a)', iostat=io, iomsg=iomsg) first_line
-      close (file_unit)
-      if (io /= 0) then
-         status = FTIMER_ERR_IO
-         return
-      end if
+      reading_header = .true.
+      after_quoted_field = .false.
+      field_has_content = .false.
+      in_quotes = .false.
+      pending_record_cr = .false.
+      pending_quote = .false.
+      saw_any_char = .false.
 
       open (newunit=file_unit, file=filename, status='old', access='stream', form='unformatted', &
             action='read', iostat=io, iomsg=iomsg)
@@ -1201,12 +1219,118 @@ contains
          return
       end if
 
-      read (file_unit, pos=file_size, iostat=io, iomsg=iomsg) last_char
+      do
+         read (file_unit, iostat=io, iomsg=iomsg) ch
+         if (io == iostat_end) exit
+         if (io /= 0) then
+            close (file_unit)
+            status = FTIMER_ERR_IO
+            return
+         end if
+
+         last_char = ch
+         saw_any_char = .true.
+
+         if (reading_header) then
+            if (ch == new_line('a')) then
+               reading_header = .false.
+               call strip_trailing_carriage_return(header_line)
+               if ((len(header_line) /= len(expected_header)) .or. (header_line /= expected_header)) then
+                  close (file_unit)
+                  status = FTIMER_ERR_IO
+                  iomsg = 'existing CSV header does not match fTimer CSV format_version 2'
+                  return
+               end if
+            else
+               if (len(header_line) >= len(expected_header) + 1) then
+                  close (file_unit)
+                  status = FTIMER_ERR_IO
+                  iomsg = 'existing CSV header does not match fTimer CSV format_version 2'
+                  return
+               end if
+               header_line = header_line//ch
+            end if
+            cycle
+         end if
+
+         if (pending_record_cr) then
+            if (ch /= new_line('a')) then
+               close (file_unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing CSV records contain a bare carriage return'
+               return
+            end if
+            pending_record_cr = .false.
+         end if
+
+         if (pending_quote) then
+            if (ch == '"') then
+               pending_quote = .false.
+               call append_limited_csv_record_prefix(record_text, ch, record_prefix_limit)
+               cycle
+            end if
+            in_quotes = .false.
+            pending_quote = .false.
+            after_quoted_field = .true.
+         end if
+
+         if ((ch == achar(13)) .and. (.not. in_quotes)) then
+            pending_record_cr = .true.
+            cycle
+         end if
+
+         if (after_quoted_field) then
+            if ((ch /= ',') .and. (ch /= new_line('a'))) then
+               close (file_unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing CSV records contain malformed quoted fields'
+               return
+            end if
+         end if
+
+         if ((ch == new_line('a')) .and. (.not. in_quotes)) then
+            call strip_trailing_carriage_return(record_text)
+            if ((record_field_count /= expected_field_count) .or. (.not. csv_record_has_valid_prefix(record_text))) then
+               close (file_unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing CSV records do not match fTimer CSV format_version 2'
+               return
+            end if
+            record_text = ''
+            record_field_count = 1
+            after_quoted_field = .false.
+            field_has_content = .false.
+            cycle
+         end if
+
+         call append_limited_csv_record_prefix(record_text, ch, record_prefix_limit)
+
+         if ((ch == ',') .and. (.not. in_quotes)) then
+            record_field_count = record_field_count + 1
+            if (after_quoted_field) after_quoted_field = .false.
+            field_has_content = .false.
+            cycle
+         end if
+
+         if (ch == '"') then
+            if (in_quotes) then
+               pending_quote = .true.
+            else if (field_has_content) then
+               close (file_unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing CSV records contain malformed quoted fields'
+               return
+            else
+               in_quotes = .true.
+               after_quoted_field = .false.
+            end if
+         else if (.not. in_quotes) then
+            field_has_content = .true.
+         end if
+      end do
       close (file_unit)
-      if (io /= 0) then
-         status = FTIMER_ERR_IO
-         return
-      end if
+
+      if (.not. saw_any_char) return
 
       if (last_char /= new_line('a')) then
          status = FTIMER_ERR_IO
@@ -1214,14 +1338,74 @@ contains
          return
       end if
 
-      if (trim(first_line) /= expected_header) then
+      if (in_quotes) then
          status = FTIMER_ERR_IO
-         iomsg = 'existing CSV header does not match fTimer CSV format_version 1'
+         iomsg = 'existing CSV records contain an unterminated quoted field'
+         return
+      end if
+
+      if (pending_record_cr) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing CSV records contain a bare carriage return'
          return
       end if
 
       include_header = .false.
    end subroutine get_csv_header_mode
+
+   subroutine append_limited_csv_record_prefix(record_text, ch, prefix_limit)
+      character(len=:), allocatable, intent(inout) :: record_text
+      character(len=1), intent(in) :: ch
+      integer, intent(in) :: prefix_limit
+
+      if (len(record_text) >= prefix_limit) return
+      record_text = record_text//ch
+   end subroutine append_limited_csv_record_prefix
+
+   subroutine strip_trailing_carriage_return(text)
+      character(len=:), allocatable, intent(inout) :: text
+      integer :: text_len
+
+      text_len = len(text)
+      if (text_len <= 0) return
+      if (text(text_len:text_len) == achar(13)) text = text(:text_len - 1)
+   end subroutine strip_trailing_carriage_return
+
+   integer function csv_field_count(line) result(count)
+      character(len=*), intent(in) :: line
+      integer :: i
+      logical :: in_quotes
+
+      count = 1
+      in_quotes = .false.
+      do i = 1, len_trim(line)
+         if (line(i:i) == '"') then
+            in_quotes = .not. in_quotes
+         else if ((line(i:i) == ',') .and. (.not. in_quotes)) then
+            count = count + 1
+         end if
+      end do
+   end function csv_field_count
+
+   logical function csv_record_has_valid_prefix(line) result(matches)
+      character(len=*), intent(in) :: line
+
+      matches = starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","local","summary",') .or. &
+                starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","local","metadata",') .or. &
+                starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","local","entry",') .or. &
+                starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","mpi","summary",') .or. &
+                starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","mpi","metadata",') .or. &
+                starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","mpi","entry",')
+   end function csv_record_has_valid_prefix
+
+   logical function starts_with(text, prefix) result(matches)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: prefix
+
+      matches = .false.
+      if (len_trim(text) < len(prefix)) return
+      matches = text(1:len(prefix)) == prefix
+   end function starts_with
 
    function csv_header_line() result(header)
       character(len=:), allocatable :: header

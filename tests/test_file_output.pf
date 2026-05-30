@@ -1,9 +1,10 @@
 module test_file_output
    use pfunit
-   use ftimer_core, only: ftimer_t
-   use ftimer_types, only: FTIMER_ERR_IO, FTIMER_SUCCESS, ftimer_metadata_t, ftimer_summary_t, wp
+   use, intrinsic :: iso_fortran_env, only: int64
+   use ftimer_core, only: ftimer_t, ftimer_test_set_call_count, ftimer_test_state_t
+   use ftimer_types, only: FTIMER_ERR_IO, FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_metadata_t, ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, csv_column_index, csv_field_value, csv_line_at, csv_record_count, &
-                           fake_time, read_file_text
+                           fake_time, find_context_idx, read_file_text, snapshot_timer
    implicit none
 
 contains
@@ -96,13 +97,17 @@ contains
       character(len=:), allocatable :: field_text
       character(len=:), allocatable :: header
       character(len=:), allocatable :: metadata_line
+      character(len=:), allocatable :: record_line
       character(len=:), allocatable :: summary_line
       integer :: avg_col
       integer :: call_count_col
       integer :: depth_col
+      integer :: format_version_col
+      integer :: header_field_count
       integer :: ierr
       integer :: inclusive_col
       integer :: is_active_col
+      integer :: line_idx
       integer :: name_col
       integer :: node_col
       integer :: parent_col
@@ -113,6 +118,8 @@ contains
       integer :: total_col
       integer :: unit
       integer :: io
+      logical :: all_field_counts_match
+      logical :: all_versions_match
       logical :: kind_matches
       logical :: metadata_value_matches
       logical :: record_type_matches
@@ -158,6 +165,7 @@ contains
       child_line = csv_line_at(csv_text, 5)
 
       record_type_col = csv_column_index(header, 'record_type')
+      format_version_col = csv_column_index(header, 'format_version')
       total_col = csv_column_index(header, 'total_time')
       node_col = csv_column_index(header, 'node_id')
       parent_col = csv_column_index(header, 'parent_id')
@@ -170,14 +178,28 @@ contains
       pct_col = csv_column_index(header, 'pct_time')
       is_active_col = csv_column_index(header, 'is_active')
 
+      @assertTrue(format_version_col > 0)
       @assertTrue(record_type_col > 0)
       @assertTrue(node_col > 0)
       @assertTrue(parent_col > 0)
       @assertTrue(inclusive_col > 0)
       @assertTrue(self_col > 0)
 
+      header_field_count = csv_field_count_local(header)
+      all_versions_match = .true.
+      all_field_counts_match = .true.
+      do line_idx = 2, record_count
+         record_line = csv_line_at(csv_text, line_idx)
+         all_versions_match = all_versions_match .and. (csv_field_value(record_line, format_version_col) == '2')
+         all_field_counts_match = all_field_counts_match .and. (csv_field_count_local(record_line) == header_field_count)
+      end do
+      @assertTrue(all_versions_match)
+      @assertTrue(all_field_counts_match)
+
       record_type_matches = csv_field_value(summary_line, record_type_col) == 'summary'
       @assertTrue(record_type_matches)
+      field_text = csv_field_value(summary_line, format_version_col)
+      @assertEqual('2', field_text)
       field_text = csv_field_value(summary_line, total_col)
       read (field_text, *) total_time
       call assert_real_close(total_time, 8.0_wp)
@@ -191,6 +213,8 @@ contains
       kind_matches = csv_field_value(entry_line, csv_column_index(header, 'summary_kind')) == 'local'
       @assertTrue(record_type_matches)
       @assertTrue(kind_matches)
+      field_text = csv_field_value(entry_line, format_version_col)
+      @assertEqual('2', field_text)
       field_text = csv_field_value(entry_line, node_col)
       @assertEqual('1', field_text)
       field_text = csv_field_value(entry_line, parent_col)
@@ -240,6 +264,71 @@ contains
       open (newunit=unit, file=path, status='old', iostat=io)
       if (io == 0) close (unit, status='delete')
    end subroutine test_write_summary_csv_emits_parseable_records
+
+   @test
+   subroutine test_write_summary_csv_preserves_int64_call_count()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      character(len=*), parameter :: path = 'phase3_summary_int64_count_export.csv'
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: field_text
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: summary_line
+      character(len=32) :: expected_count_text
+      integer :: call_count_col
+      integer :: ctx
+      integer :: format_version_col
+      integer :: id_hot
+      integer :: ierr
+      integer :: io
+      integer :: unit
+      integer(int64) :: big_count
+      logical :: field_matches
+
+      call delete_if_exists(path)
+      big_count = huge(0_int64) - 1_int64
+      write (expected_count_text, '(i0)') big_count
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp
+      call timer%stop("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_hot = timer%lookup("hot", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call snapshot_timer(timer, state)
+      ctx = find_context_idx(state, id_hot, root_stack)
+
+      call ftimer_test_set_call_count(timer, id_hot, ctx, big_count, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      csv_text = read_file_text(path)
+      header = csv_line_at(csv_text, 1)
+      summary_line = csv_line_at(csv_text, 2)
+      entry_line = csv_line_at(csv_text, 3)
+      format_version_col = csv_column_index(header, 'format_version')
+      call_count_col = csv_column_index(header, 'call_count')
+      field_text = csv_field_value(summary_line, format_version_col)
+      @assertEqual('2', field_text)
+      field_text = csv_field_value(entry_line, format_version_col)
+      @assertEqual('2', field_text)
+      field_text = csv_field_value(entry_line, call_count_col)
+      field_matches = field_text == trim(expected_count_text)
+      @assertTrue(field_matches)
+
+      open (newunit=unit, file=path, status='old', iostat=io)
+      if (io == 0) close (unit, status='delete')
+   end subroutine test_write_summary_csv_preserves_int64_call_count
 
    @test
    subroutine test_write_summary_csv_exports_active_snapshot()
@@ -301,6 +390,7 @@ contains
    subroutine test_write_summary_csv_append_header_modes()
       type(ftimer_t) :: timer
       type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: crlf_path = 'phase3_summary_append_crlf_csv.csv'
       character(len=*), parameter :: missing_path = 'phase3_summary_append_csv.csv'
       character(len=*), parameter :: empty_path = 'phase3_summary_append_empty_csv.csv'
       character(len=:), allocatable :: csv_text
@@ -312,6 +402,7 @@ contains
 
       call delete_if_exists(missing_path)
       call delete_if_exists(empty_path)
+      call delete_if_exists(crlf_path)
       call build_single_timer_summary(timer, summary, ierr)
 
       call timer%write_summary_csv(missing_path, append=.true., ierr=ierr)
@@ -337,15 +428,250 @@ contains
       header = csv_line_at(csv_text, 1)
       @assertEqual(1, count_csv_header_records(csv_text, header))
 
+      call timer%write_summary_csv(crlf_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call rewrite_lf_text_as_crlf(crlf_path)
+      call timer%write_summary_csv(crlf_path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(crlf_path)
+      record_count = csv_logical_record_count(csv_text)
+      @assertEqual(5, record_count)
+
       call delete_if_exists(missing_path)
       call delete_if_exists(empty_path)
+      call delete_if_exists(crlf_path)
    end subroutine test_write_summary_csv_append_header_modes
+
+   @test
+   subroutine test_write_summary_csv_appends_after_quoted_metadata_newline()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=*), parameter :: path = 'phase3_summary_append_multiline_metadata.csv'
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: appended_entry_line
+      character(len=:), allocatable :: appended_summary_line
+      character(len=:), allocatable :: metadata_line
+      integer :: ierr
+      integer :: record_type_col
+      integer :: logical_record_count
+      logical :: metadata_newline_written
+      logical :: appended_records_present
+
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      metadata(1)%key = 'Notes'
+      metadata(1)%value = 'alpha'//new_line('a')//'beta'
+
+      call timer%write_summary_csv(path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      csv_text = read_file_text(path)
+      header = csv_line_at(csv_text, 1)
+      record_type_col = csv_column_index(header, 'record_type')
+      logical_record_count = csv_logical_record_count(csv_text)
+      metadata_line = csv_logical_record_at(csv_text, 3)
+      appended_summary_line = csv_logical_record_at(csv_text, 5)
+      appended_entry_line = csv_logical_record_at(csv_text, 6)
+      metadata_newline_written = index(csv_text, 'alpha'//new_line('a')//'beta') > 0
+      appended_records_present = csv_field_value(metadata_line, record_type_col) == 'metadata'
+      appended_records_present = appended_records_present .and. &
+                                 (csv_field_value(appended_summary_line, record_type_col) == 'summary')
+      appended_records_present = appended_records_present .and. &
+                                 (csv_field_value(appended_entry_line, record_type_col) == 'entry')
+      @assertTrue(metadata_newline_written)
+      @assertEqual(6, logical_record_count)
+      @assertTrue(appended_records_present)
+      @assertEqual(1, count_csv_header_records(csv_text, header))
+
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_appends_after_quoted_metadata_newline
+
+   @test
+   subroutine test_write_summary_csv_appends_after_escaped_quote_metadata()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=*), parameter :: path = 'phase3_summary_append_escaped_quote_metadata.csv'
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: appended_entry_line
+      character(len=:), allocatable :: appended_summary_line
+      character(len=:), allocatable :: metadata_line
+      integer :: ierr
+      integer :: key_col
+      integer :: logical_record_count
+      integer :: record_type_col
+      integer :: value_col
+      logical :: appended_records_present
+      logical :: metadata_values_preserved
+
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      metadata(1)%key = 'Quote'
+      metadata(1)%value = 'alpha, "beta"'
+
+      call timer%write_summary_csv(path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      csv_text = read_file_text(path)
+      header = csv_line_at(csv_text, 1)
+      record_type_col = csv_column_index(header, 'record_type')
+      key_col = csv_column_index(header, 'key')
+      value_col = csv_column_index(header, 'value')
+      logical_record_count = csv_logical_record_count(csv_text)
+      metadata_line = csv_logical_record_at(csv_text, 3)
+      appended_summary_line = csv_logical_record_at(csv_text, 5)
+      appended_entry_line = csv_logical_record_at(csv_text, 6)
+      metadata_values_preserved = csv_field_value(metadata_line, key_col) == 'Quote'
+      metadata_values_preserved = metadata_values_preserved .and. &
+                                  (csv_field_value(metadata_line, value_col) == 'alpha, "beta"')
+      appended_records_present = csv_field_value(metadata_line, record_type_col) == 'metadata'
+      appended_records_present = appended_records_present .and. &
+                                 (csv_field_value(appended_summary_line, record_type_col) == 'summary')
+      appended_records_present = appended_records_present .and. &
+                                 (csv_field_value(appended_entry_line, record_type_col) == 'entry')
+      @assertTrue(metadata_values_preserved)
+      @assertEqual(6, logical_record_count)
+      @assertTrue(appended_records_present)
+      @assertEqual(1, count_csv_header_records(csv_text, header))
+
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_appends_after_escaped_quote_metadata
+
+   @test
+   subroutine test_write_summary_csv_appends_after_long_quoted_metadata()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=*), parameter :: path = 'phase3_summary_append_long_metadata.csv'
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: appended_entry_line
+      character(len=:), allocatable :: appended_summary_line
+      character(len=:), allocatable :: metadata_line
+      integer :: ierr
+      integer :: record_type_col
+      integer :: logical_record_count
+      logical :: appended_records_present
+      logical :: long_metadata_written
+
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      metadata(1)%key = 'Notes'
+      metadata(1)%value = repeat('x', 3000)
+
+      call timer%write_summary_csv(path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      csv_text = read_file_text(path)
+      header = csv_line_at(csv_text, 1)
+      record_type_col = csv_column_index(header, 'record_type')
+      logical_record_count = csv_logical_record_count(csv_text)
+      metadata_line = csv_logical_record_at(csv_text, 3)
+      appended_summary_line = csv_logical_record_at(csv_text, 5)
+      appended_entry_line = csv_logical_record_at(csv_text, 6)
+      long_metadata_written = index(csv_text, repeat('x', 3000)) > 0
+      appended_records_present = csv_field_value(metadata_line, record_type_col) == 'metadata'
+      appended_records_present = appended_records_present .and. &
+                                 (csv_field_value(appended_summary_line, record_type_col) == 'summary')
+      appended_records_present = appended_records_present .and. &
+                                 (csv_field_value(appended_entry_line, record_type_col) == 'entry')
+      @assertTrue(long_metadata_written)
+      @assertEqual(6, logical_record_count)
+      @assertTrue(appended_records_present)
+      @assertEqual(1, count_csv_header_records(csv_text, header))
+
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_appends_after_long_quoted_metadata
+
+   @test
+   subroutine test_write_csv_rejects_bad_after_multiline_meta()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=*), parameter :: path = 'phase3_summary_bad_after_multiline_metadata.csv'
+      character(len=:), allocatable :: before_text
+      integer :: ierr
+      integer :: io
+      integer :: unit
+
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      metadata(1)%key = 'Notes'
+      metadata(1)%value = 'alpha'//new_line('a')//'beta'
+
+      call timer%write_summary_csv(path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      open (newunit=unit, file=path, status='old', action='write', position='append', iostat=io)
+      @assertEqual(0, io)
+      write (unit, '(a)') '"1","local","entry"'
+      close (unit)
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(path)
+   end subroutine test_write_csv_rejects_bad_after_multiline_meta
+
+   @test
+   subroutine test_write_csv_rejects_bad_after_long_meta()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=*), parameter :: path = 'phase3_summary_bad_after_long_metadata.csv'
+      character(len=:), allocatable :: before_text
+      integer :: ierr
+      integer :: io
+      integer :: unit
+
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      metadata(1)%key = 'Notes'
+      metadata(1)%value = repeat('x', 3000)
+
+      call timer%write_summary_csv(path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      open (newunit=unit, file=path, status='old', action='write', position='append', iostat=io)
+      @assertEqual(0, io)
+      write (unit, '(a)') '"1","local","entry"'
+      close (unit)
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(path)
+   end subroutine test_write_csv_rejects_bad_after_long_meta
 
    @test
    subroutine test_write_summary_csv_rejects_mismatched_append_header()
       type(ftimer_t) :: timer
       type(ftimer_summary_t) :: summary
       character(len=*), parameter :: path = 'phase3_summary_bad_append_header.csv'
+      character(len=:), allocatable :: before_text
       integer :: ierr
       integer :: io
       integer :: unit
@@ -357,12 +683,422 @@ contains
       @assertEqual(0, io)
       write (unit, '(a)') 'wrong,header'
       close (unit)
+      call capture_raw_file_text(path, before_text)
 
       call timer%write_summary_csv(path, append=.true., ierr=ierr)
       @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
 
       call delete_if_exists(path)
    end subroutine test_write_summary_csv_rejects_mismatched_append_header
+
+   @test
+   subroutine test_write_summary_csv_rejects_bare_cr_in_header()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_header_cr_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_header_cr_append.csv'
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      integer :: ierr
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+      entry_line = csv_line_at(csv_text, 3)
+
+      call write_raw_text(path, trim(header)//achar(13)//'junk'//new_line('a')//trim(entry_line)//new_line('a'))
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_bare_cr_in_header
+
+   @test
+   subroutine test_write_summary_csv_rejects_trailing_blank_in_header()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_header_blank_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_header_blank_append.csv'
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      integer :: ierr
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+      entry_line = csv_line_at(csv_text, 3)
+
+      call write_raw_text(path, trim(header)//' '//new_line('a')//trim(entry_line)//new_line('a'))
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_trailing_blank_in_header
+
+   @test
+   subroutine test_write_summary_csv_rejects_prior_format_version_append()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_v2_header_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_prior_version_append.csv'
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      integer :: ierr
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      csv_text = replace_csv_record_format_version(csv_text, 3, '1')
+      call write_raw_text(path, csv_text)
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_prior_format_version_append
+
+   @test
+   subroutine test_write_summary_csv_rejects_short_v2_append_record()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_short_v2_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_short_v2_append.csv'
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      integer :: ierr
+      integer :: io
+      integer :: unit
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+
+      open (newunit=unit, file=path, status='replace', action='write', iostat=io)
+      @assertEqual(0, io)
+      write (unit, '(a)') trim(header)
+      write (unit, '(a)') '"2","local","summary",'
+      close (unit)
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_short_v2_append_record
+
+   @test
+   subroutine test_write_summary_csv_rejects_quoted_field_junk()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_quote_junk_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_quote_junk_append.csv'
+      character(len=:), allocatable :: bad_line
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      integer :: ierr
+      integer :: io
+      integer :: quote_pos
+      integer :: unit
+      logical :: found_timer_name
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+      entry_line = csv_line_at(csv_text, 3)
+      quote_pos = index(entry_line, '"A"')
+      found_timer_name = quote_pos > 0
+      @assertTrue(found_timer_name)
+      bad_line = entry_line(:quote_pos + 2)//'junk'//entry_line(quote_pos + 3:)
+
+      open (newunit=unit, file=path, status='replace', action='write', iostat=io)
+      @assertEqual(0, io)
+      write (unit, '(a)') trim(header)
+      write (unit, '(a)') trim(bad_line)
+      close (unit)
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_quoted_field_junk
+
+   @test
+   subroutine test_write_summary_csv_rejects_quote_in_unquoted_field()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_unquoted_quote_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_unquoted_quote_append.csv'
+      character(len=:), allocatable :: bad_line
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      integer :: comma_pos
+      integer :: ierr
+      integer :: io
+      integer :: unit
+      logical :: found_entry_payload
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+      entry_line = csv_line_at(csv_text, 3)
+      comma_pos = index(entry_line, '"A",')
+      found_entry_payload = comma_pos > 0
+      @assertTrue(found_entry_payload)
+      bad_line = entry_line(:comma_pos + 3)//'bad"quote"'//entry_line(comma_pos + 4:)
+
+      open (newunit=unit, file=path, status='replace', action='write', iostat=io)
+      @assertEqual(0, io)
+      write (unit, '(a)') trim(header)
+      write (unit, '(a)') trim(bad_line)
+      close (unit)
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_quote_in_unquoted_field
+
+   @test
+   subroutine test_write_summary_csv_rejects_bare_cr_in_unquoted_field()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_unquoted_cr_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_unquoted_cr_append.csv'
+      character(len=*), parameter :: node_fields = ',"1","0","0","A",'
+      character(len=:), allocatable :: bad_line
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      integer :: ierr
+      integer :: node_pos
+      logical :: found_node_fields
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+      entry_line = csv_line_at(csv_text, 3)
+      node_pos = index(entry_line, node_fields)
+      found_node_fields = node_pos > 0
+      @assertTrue(found_node_fields)
+      bad_line = entry_line(:node_pos)//'1'//achar(13)//'2'//entry_line(node_pos + 4:)
+
+      call write_raw_text(path, trim(header)//new_line('a')//bad_line//new_line('a'))
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_bare_cr_in_unquoted_field
+
+   @test
+   subroutine test_write_summary_csv_rejects_bare_cr_after_quoted_field()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_quoted_cr_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_quoted_cr_append.csv'
+      character(len=*), parameter :: timer_name_field = '"A",'
+      character(len=:), allocatable :: bad_line
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      integer :: ierr
+      integer :: quote_pos
+      logical :: found_timer_name
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+      entry_line = csv_line_at(csv_text, 3)
+      quote_pos = index(entry_line, timer_name_field)
+      found_timer_name = quote_pos > 0
+      @assertTrue(found_timer_name)
+      bad_line = entry_line(:quote_pos + 2)//achar(13)//entry_line(quote_pos + 3:)
+
+      call write_raw_text(path, trim(header)//new_line('a')//bad_line//new_line('a'))
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_bare_cr_after_quoted_field
+
+   @test
+   subroutine test_write_summary_csv_rejects_unknown_v2_record_type()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_bad_v2_type_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_bad_v2_type_append.csv'
+      character(len=*), parameter :: valid_prefix = '"2","local","entry"'
+      character(len=*), parameter :: bad_prefix = '"2","local","bogus"'
+      character(len=:), allocatable :: bad_line
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      integer :: ierr
+      integer :: io
+      integer :: unit
+      logical :: prefix_matches
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+      entry_line = csv_line_at(csv_text, 3)
+      prefix_matches = entry_line(:len(valid_prefix)) == valid_prefix
+      @assertTrue(prefix_matches)
+      bad_line = bad_prefix//entry_line(len(valid_prefix) + 1:)
+
+      open (newunit=unit, file=path, status='replace', action='write', iostat=io)
+      @assertEqual(0, io)
+      write (unit, '(a)') trim(header)
+      write (unit, '(a)') trim(bad_line)
+      close (unit)
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_unknown_v2_record_type
+
+   @test
+   subroutine test_write_summary_csv_rejects_unknown_v2_summary_kind()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_bad_v2_kind_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_bad_v2_kind_append.csv'
+      character(len=*), parameter :: valid_prefix = '"2","local","entry"'
+      character(len=*), parameter :: bad_prefix = '"2","bogus","entry"'
+      character(len=:), allocatable :: bad_line
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      integer :: ierr
+      integer :: io
+      integer :: unit
+      logical :: prefix_matches
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+      entry_line = csv_line_at(csv_text, 3)
+      prefix_matches = entry_line(:len(valid_prefix)) == valid_prefix
+      @assertTrue(prefix_matches)
+      bad_line = bad_prefix//entry_line(len(valid_prefix) + 1:)
+
+      open (newunit=unit, file=path, status='replace', action='write', iostat=io)
+      @assertEqual(0, io)
+      write (unit, '(a)') trim(header)
+      write (unit, '(a)') trim(bad_line)
+      close (unit)
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_unknown_v2_summary_kind
 
    @test
    subroutine test_write_summary_csv_rejects_unterminated_append_target()
@@ -370,6 +1106,7 @@ contains
       type(ftimer_summary_t) :: summary
       character(len=*), parameter :: source_path = 'phase3_summary_header_source.csv'
       character(len=*), parameter :: path = 'phase3_summary_unterminated_append.csv'
+      character(len=:), allocatable :: before_text
       character(len=:), allocatable :: csv_text
       character(len=:), allocatable :: header
       integer :: ierr
@@ -385,12 +1122,52 @@ contains
       header = csv_line_at(csv_text, 1)
 
       call write_raw_text_without_newline(path, header)
+      call capture_raw_file_text(path, before_text)
       call timer%write_summary_csv(path, append=.true., ierr=ierr)
       @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
 
       call delete_if_exists(source_path)
       call delete_if_exists(path)
    end subroutine test_write_summary_csv_rejects_unterminated_append_target
+
+   @test
+   subroutine test_write_csv_rejects_unterminated_quote_record()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_quote_header_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_unterminated_quote_append.csv'
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      integer :: ierr
+      integer :: io
+      integer :: unit
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+
+      open (newunit=unit, file=path, status='replace', action='write', iostat=io)
+      @assertEqual(0, io)
+      write (unit, '(a)') trim(header)
+      write (unit, '(a)') '"2","local","metadata","Notes","unterminated'
+      close (unit)
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_csv_rejects_unterminated_quote_record
 
    subroutine build_single_timer_summary(timer, summary, ierr)
       type(ftimer_t), intent(out) :: timer
@@ -429,6 +1206,100 @@ contains
       close (unit)
    end subroutine write_raw_text_without_newline
 
+   subroutine write_raw_text(path, text)
+      character(len=*), intent(in) :: path
+      character(len=*), intent(in) :: text
+      integer :: io
+      integer :: unit
+
+      open (newunit=unit, file=path, status='replace', access='stream', form='unformatted', &
+            action='write', iostat=io)
+      @assertEqual(0, io)
+      write (unit, iostat=io) text
+      @assertEqual(0, io)
+      close (unit, iostat=io)
+      @assertEqual(0, io)
+   end subroutine write_raw_text
+
+   subroutine rewrite_lf_text_as_crlf(path)
+      character(len=*), intent(in) :: path
+      character(len=:), allocatable :: text
+      integer :: i
+      integer :: io
+      integer :: unit
+
+      text = read_file_text(path)
+
+      open (newunit=unit, file=path, status='replace', access='stream', form='unformatted', &
+            action='write', iostat=io)
+      @assertEqual(0, io)
+      do i = 1, len(text)
+         if (text(i:i) == new_line('a')) then
+            write (unit, iostat=io) achar(13)//new_line('a')
+         else
+            write (unit, iostat=io) text(i:i)
+         end if
+         @assertEqual(0, io)
+      end do
+      close (unit, iostat=io)
+      @assertEqual(0, io)
+   end subroutine rewrite_lf_text_as_crlf
+
+   subroutine capture_raw_file_text(path, text)
+      character(len=*), intent(in) :: path
+      character(len=:), allocatable, intent(out) :: text
+      integer :: file_size
+      integer :: io
+      integer :: unit
+      logical :: exists
+
+      inquire (file=path, exist=exists, size=file_size)
+      @assertTrue(exists)
+
+      if (file_size <= 0) then
+         text = ''
+         return
+      end if
+
+      allocate (character(len=file_size) :: text)
+      open (newunit=unit, file=path, status='old', access='stream', form='unformatted', &
+            action='read', iostat=io)
+      @assertEqual(0, io)
+      read (unit, iostat=io) text
+      @assertEqual(0, io)
+      close (unit, iostat=io)
+      @assertEqual(0, io)
+   end subroutine capture_raw_file_text
+
+   subroutine assert_raw_file_unchanged(path, expected)
+      character(len=*), intent(in) :: path
+      character(len=*), intent(in) :: expected
+      character(len=:), allocatable :: actual
+      logical :: unchanged
+
+      call capture_raw_file_text(path, actual)
+      unchanged = actual == expected
+      @assertTrue(unchanged)
+   end subroutine assert_raw_file_unchanged
+
+   function replace_csv_record_format_version(text, record_index, version) result(updated)
+      character(len=*), intent(in) :: text
+      integer, intent(in) :: record_index
+      character(len=*), intent(in) :: version
+      character(len=:), allocatable :: line
+      character(len=:), allocatable :: updated
+      integer :: i
+
+      updated = ''
+      do i = 1, csv_record_count(text)
+         line = csv_line_at(text, i)
+         if ((i == record_index) .and. (len(line) >= 4)) then
+            line = '"'//version//'"'//line(4:)
+         end if
+         updated = updated//line//new_line('a')
+      end do
+   end function replace_csv_record_format_version
+
    function expected_single_timer_output(summary) result(text)
       type(ftimer_summary_t), intent(in) :: summary
       character(len=:), allocatable :: text
@@ -450,6 +1321,67 @@ contains
       @assertTrue(diff < 1.0e-12_wp)
    end subroutine assert_real_close
 
+   integer function csv_logical_record_count(text) result(count)
+      character(len=*), intent(in) :: text
+      integer :: i
+      logical :: in_quotes
+
+      count = 0
+      in_quotes = .false.
+      i = 1
+      do while (i <= len(text))
+         if (text(i:i) == '"') then
+            if (in_quotes .and. (i < len(text)) .and. (text(i + 1:i + 1) == '"')) then
+               i = i + 1
+            else
+               in_quotes = .not. in_quotes
+            end if
+         else if ((text(i:i) == new_line('a')) .and. (.not. in_quotes)) then
+            count = count + 1
+         end if
+         i = i + 1
+      end do
+
+      if ((len(text) > 0) .and. (text(len(text):len(text)) /= new_line('a'))) count = count + 1
+   end function csv_logical_record_count
+
+   function csv_logical_record_at(text, target_record) result(record)
+      character(len=*), intent(in) :: text
+      integer, intent(in) :: target_record
+      character(len=:), allocatable :: record
+      integer :: current_record
+      integer :: i
+      integer :: record_start
+      logical :: in_quotes
+
+      record = ''
+      if (target_record <= 0) return
+
+      current_record = 1
+      record_start = 1
+      in_quotes = .false.
+      i = 1
+      do while (i <= len(text))
+         if (text(i:i) == '"') then
+            if (in_quotes .and. (i < len(text)) .and. (text(i + 1:i + 1) == '"')) then
+               i = i + 1
+            else
+               in_quotes = .not. in_quotes
+            end if
+         else if ((text(i:i) == new_line('a')) .and. (.not. in_quotes)) then
+            if (current_record == target_record) then
+               if (i > record_start) record = text(record_start:i - 1)
+               return
+            end if
+            current_record = current_record + 1
+            record_start = i + 1
+         end if
+         i = i + 1
+      end do
+
+      if (current_record == target_record) record = text(record_start:)
+   end function csv_logical_record_at
+
    integer function count_csv_header_records(text, header) result(count)
       character(len=*), intent(in) :: text
       character(len=*), intent(in) :: header
@@ -462,5 +1394,29 @@ contains
          if (line == header) count = count + 1
       end do
    end function count_csv_header_records
+
+   integer function csv_field_count_local(line) result(count)
+      character(len=*), intent(in) :: line
+      integer :: i
+      integer :: text_len
+      logical :: in_quotes
+
+      count = 1
+      in_quotes = .false.
+      text_len = len_trim(line)
+      i = 1
+      do while (i <= text_len)
+         if (line(i:i) == '"') then
+            if (in_quotes .and. (i < text_len) .and. (line(i + 1:i + 1) == '"')) then
+               i = i + 1
+            else
+               in_quotes = .not. in_quotes
+            end if
+         else if ((line(i:i) == ',') .and. (.not. in_quotes)) then
+            count = count + 1
+         end if
+         i = i + 1
+      end do
+   end function csv_field_count_local
 
 end module test_file_output

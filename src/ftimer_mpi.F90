@@ -192,19 +192,17 @@ contains
       integer :: rank
       type(MPI_Datatype) :: mpi_int64_type
       type(MPI_Datatype) :: mpi_wp_type
-      integer, allocatable :: local_calls(:)
       integer, allocatable :: local_entry_to_canonical(:)
       integer, allocatable :: local_max_inclusive_ranks(:)
       integer, allocatable :: local_min_inclusive_ranks(:)
       integer, allocatable :: local_node_to_entry(:)
       integer, allocatable :: max_inclusive_ranks(:)
-      integer, allocatable :: max_calls(:)
       integer, allocatable :: min_inclusive_ranks(:)
-      integer, allocatable :: min_calls(:)
       integer, allocatable :: mismatch_flags(:)
       integer, allocatable :: permutation(:)
-      integer(int64), allocatable :: local_sum_calls(:)
-      integer(int64), allocatable :: sum_calls(:)
+      integer(int64), allocatable :: local_calls(:)
+      integer(int64), allocatable :: max_calls(:)
+      integer(int64), allocatable :: min_calls(:)
       integer(int64) :: local_hashes(2)
       integer(int64) :: reference_hashes(2)
       integer :: any_hash_mismatch
@@ -214,6 +212,7 @@ contains
       real(wp) :: min_total_time
       real(wp) :: sum_total_time
       real(wp), allocatable :: local_inclusive(:)
+      real(wp), allocatable :: local_call_avg(:)
       real(wp), allocatable :: local_pct(:)
       real(wp), allocatable :: local_self(:)
       real(wp), allocatable :: max_inclusive(:)
@@ -222,6 +221,7 @@ contains
       real(wp), allocatable :: min_inclusive(:)
       real(wp), allocatable :: min_pct(:)
       real(wp), allocatable :: min_self(:)
+      real(wp), allocatable :: sum_call_avg(:)
       real(wp), allocatable :: sum_inclusive(:)
       real(wp), allocatable :: sum_pct(:)
       real(wp), allocatable :: sum_self(:)
@@ -358,10 +358,10 @@ contains
       allocate (max_pct(entry_count))
       allocate (sum_pct(entry_count))
       allocate (local_calls(entry_count))
-      allocate (local_sum_calls(entry_count))
       allocate (min_calls(entry_count))
       allocate (max_calls(entry_count))
-      allocate (sum_calls(entry_count))
+      allocate (local_call_avg(entry_count))
+      allocate (sum_call_avg(entry_count))
       allocate (local_min_inclusive_ranks(entry_count))
       allocate (local_max_inclusive_ranks(entry_count))
       allocate (min_inclusive_ranks(entry_count))
@@ -372,7 +372,7 @@ contains
          local_inclusive(i) = local_summary%entries(local_idx)%inclusive_time
          local_self(i) = local_summary%entries(local_idx)%self_time
          local_calls(i) = local_summary%entries(local_idx)%call_count
-         local_sum_calls(i) = int(local_calls(i), int64)
+         local_call_avg(i) = 0.0_wp
          local_pct(i) = local_summary%entries(local_idx)%pct_time
       end do
 
@@ -462,21 +462,25 @@ contains
          return
       end if
 
-      call ftimer_mpi_allreduce(local_calls, min_calls, entry_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_calls, min_calls, entry_count, mpi_int64_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call ftimer_mpi_allreduce(local_calls, max_calls, entry_count, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      do i = 1, entry_count
+         local_call_avg(i) = real(local_calls(i) - min_calls(i), wp)
+      end do
+
+      call ftimer_mpi_allreduce(local_calls, max_calls, entry_count, mpi_int64_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call ftimer_mpi_allreduce(local_sum_calls, sum_calls, entry_count, mpi_int64_type, MPI_SUM, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_call_avg, sum_call_avg, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_summary(summary)
          status = FTIMER_ERR_UNKNOWN
@@ -530,7 +534,8 @@ contains
          summary%entries(i)%self_imbalance = compute_imbalance(max_self(i), summary%entries(i)%avg_self_time)
          summary%entries(i)%min_call_count = min_calls(i)
          summary%entries(i)%max_call_count = max_calls(i)
-         summary%entries(i)%avg_call_count = real(sum_calls(i), wp)/real(nprocs, wp)
+         summary%entries(i)%avg_call_count = bounded_call_count_average(sum_call_avg(i), nprocs, min_calls(i), &
+                                                                        max_calls(i))
          summary%entries(i)%min_pct_time = min_pct(i)
          summary%entries(i)%max_pct_time = max_pct(i)
          summary%entries(i)%avg_pct_time = sum_pct(i)/real(nprocs, wp)
@@ -581,24 +586,23 @@ contains
       character(len=:), allocatable :: entry_name
       character(len=:), allocatable :: parent_descriptor
       character(len=:), allocatable :: union_descriptors(:)
-      integer, allocatable :: local_calls_max(:)
-      integer, allocatable :: local_calls_min(:)
       integer, allocatable :: local_max_inclusive_ranks(:)
       integer, allocatable :: local_min_inclusive_ranks(:)
       integer, allocatable :: local_present(:)
       integer, allocatable :: local_to_union(:)
-      integer, allocatable :: max_calls(:)
       integer, allocatable :: max_inclusive_ranks(:)
-      integer, allocatable :: min_calls(:)
       integer, allocatable :: min_inclusive_ranks(:)
       integer, allocatable :: participating_counts(:)
       integer, allocatable :: permutation(:)
-      integer(int64), allocatable :: local_sum_calls(:)
-      integer(int64), allocatable :: sum_calls(:)
+      integer(int64), allocatable :: local_calls_max(:)
+      integer(int64), allocatable :: local_calls_min(:)
+      integer(int64), allocatable :: max_calls(:)
+      integer(int64), allocatable :: min_calls(:)
       real(wp) :: avg_total_time
       real(wp) :: max_total_time
       real(wp) :: min_total_time
       real(wp) :: sum_total_time
+      real(wp), allocatable :: local_avg_calls(:)
       real(wp), allocatable :: local_inclusive_max(:)
       real(wp), allocatable :: local_inclusive_min(:)
       real(wp), allocatable :: local_inclusive_sum(:)
@@ -614,6 +618,7 @@ contains
       real(wp), allocatable :: min_inclusive(:)
       real(wp), allocatable :: min_pct(:)
       real(wp), allocatable :: min_self(:)
+      real(wp), allocatable :: sum_avg_calls(:)
       real(wp), allocatable :: sum_inclusive(:)
       real(wp), allocatable :: sum_pct(:)
       real(wp), allocatable :: sum_self(:)
@@ -744,10 +749,10 @@ contains
       allocate (sum_pct(union_count))
       allocate (local_calls_min(union_count))
       allocate (local_calls_max(union_count))
-      allocate (local_sum_calls(union_count))
       allocate (min_calls(union_count))
       allocate (max_calls(union_count))
-      allocate (sum_calls(union_count))
+      allocate (local_avg_calls(union_count))
+      allocate (sum_avg_calls(union_count))
       allocate (local_min_inclusive_ranks(union_count))
       allocate (local_max_inclusive_ranks(union_count))
       allocate (min_inclusive_ranks(union_count))
@@ -763,9 +768,9 @@ contains
       local_pct_min = huge(1.0_wp)
       local_pct_max = -huge(1.0_wp)
       local_pct_sum = 0.0_wp
-      local_calls_min = huge(0)
-      local_calls_max = -huge(0)
-      local_sum_calls = 0_int64
+      local_calls_min = huge(0_int64)
+      local_calls_max = -huge(0_int64)
+      local_avg_calls = 0.0_wp
 
       do i = 1, entry_count
          union_idx = local_to_union(i)
@@ -783,7 +788,6 @@ contains
          local_pct_sum(union_idx) = local_summary%entries(local_idx)%pct_time
          local_calls_min(union_idx) = local_summary%entries(local_idx)%call_count
          local_calls_max(union_idx) = local_summary%entries(local_idx)%call_count
-         local_sum_calls(union_idx) = int(local_summary%entries(local_idx)%call_count, int64)
       end do
 
       call ftimer_mpi_allreduce(local_present, participating_counts, union_count, MPI_INTEGER, MPI_SUM, &
@@ -885,21 +889,25 @@ contains
          return
       end if
 
-      call ftimer_mpi_allreduce(local_calls_min, min_calls, union_count, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_calls_min, min_calls, union_count, mpi_int64_type, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_union_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call ftimer_mpi_allreduce(local_calls_max, max_calls, union_count, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      do i = 1, union_count
+         if (local_present(i) == 1) local_avg_calls(i) = real(local_calls_max(i) - min_calls(i), wp)
+      end do
+
+      call ftimer_mpi_allreduce(local_calls_max, max_calls, union_count, mpi_int64_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_union_summary(summary)
          status = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      call ftimer_mpi_allreduce(local_sum_calls, sum_calls, union_count, mpi_int64_type, MPI_SUM, active_comm, mpierr)
+      call ftimer_mpi_allreduce(local_avg_calls, sum_avg_calls, union_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_union_summary(summary)
          status = FTIMER_ERR_UNKNOWN
@@ -932,7 +940,8 @@ contains
             summary%entries(i)%self_imbalance = compute_imbalance(max_self(i), summary%entries(i)%avg_self_time)
             summary%entries(i)%min_call_count = min_calls(i)
             summary%entries(i)%max_call_count = max_calls(i)
-            summary%entries(i)%avg_call_count = real(sum_calls(i), wp)/real(participating_counts(i), wp)
+            summary%entries(i)%avg_call_count = bounded_call_count_average(sum_avg_calls(i), participating_counts(i), &
+                                                                           min_calls(i), max_calls(i))
             summary%entries(i)%min_pct_time = min_pct(i)
             summary%entries(i)%max_pct_time = max_pct(i)
             summary%entries(i)%avg_pct_time = sum_pct(i)/real(participating_counts(i), wp)
@@ -1750,5 +1759,25 @@ contains
 
       imbalance = max_time/avg_time
    end function compute_imbalance
+
+   real(wp) function bounded_call_count_average(sum_delta, denominator, min_count, max_count) result(value)
+      real(wp), intent(in) :: sum_delta
+      integer, intent(in) :: denominator
+      integer(int64), intent(in) :: min_count
+      integer(int64), intent(in) :: max_count
+      real(wp) :: min_value
+      real(wp) :: max_value
+
+      if (denominator <= 0) then
+         value = 0.0_wp
+         return
+      end if
+
+      min_value = real(min_count, wp)
+      max_value = real(max_count, wp)
+      value = min_value + sum_delta/real(denominator, wp)
+      if (value < min_value) value = min_value
+      if (value > max_value) value = max_value
+   end function bounded_call_count_average
 
 end module ftimer_mpi

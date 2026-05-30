@@ -145,7 +145,7 @@ cmake --build my_app/build
 
 The supported downstream contract is the installed package export. New adopters should not need to infer the intended consumption model from the test suite.
 
-Pre-1.0 CMake package compatibility is intentionally limited to the same minor release line. For example, a `0.1.z` install may satisfy `find_package(fTimer 0.1 CONFIG REQUIRED)` or an older compatible `0.1.x` request, but it will not satisfy a `0.0.x`, `0.2.x`, or later-minor request. Versionless `find_package(fTimer CONFIG REQUIRED)` remains available for consumers that deliberately accept whichever installed fTimer package appears on `CMAKE_PREFIX_PATH`.
+Pre-1.0 CMake package compatibility is intentionally limited to the same minor release line. For example, a `0.2.z` install may satisfy `find_package(fTimer 0.2 CONFIG REQUIRED)` or an older compatible `0.2.x` request, but it will not satisfy a `0.1.x`, `0.3.x`, or later-minor request. Versionless `find_package(fTimer CONFIG REQUIRED)` remains available for consumers that deliberately accept whichever installed fTimer package appears on `CMAKE_PREFIX_PATH`. The `0.2` package line is the first line whose stable summary/result types expose local `call_count` and MPI `min_call_count`/`max_call_count` fields as `integer(int64)`; MPI `avg_call_count` remains `real(wp)`.
 
 The downstream example under [`tests/install-consumer/`](tests/install-consumer/) is also part of the smoke path. It shows the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer`, `use ftimer_types`, scoped timing, and summary retrieval from an installed prefix.
 
@@ -205,7 +205,7 @@ The public API supports two styles:
 
 New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock or callback configuration on a specific timer object. Procedural callers that need those advanced controls can use `ftimer_default_instance%...` explicitly.
 
-Some implementation-detail symbols are publicly visible from stable modules because current Fortran module layering requires them: `ftimer_call_stack_t`, `ftimer_context_list_t`, `ftimer_segment_t`, `ftimer_internal_start_scope_activation`, and `ftimer_internal_stop_scope_activation`. They are unstable public-by-necessity names, not supported downstream API. User code should avoid importing them and should rely on `ftimer_scope()`, explicit start/stop calls, and the structured summary result types instead. Test-only helper exports such as `ftimer_test_get_state` and `ftimer_test_state_t` are confined to `FTIMER_BUILD_TESTS` helper builds.
+Some implementation-detail symbols are publicly visible from stable modules because current Fortran module layering requires them: `ftimer_call_stack_t`, `ftimer_context_list_t`, `ftimer_segment_t`, `ftimer_internal_start_scope_activation`, and `ftimer_internal_stop_scope_activation`. They are unstable public-by-necessity names, not supported downstream API. User code should avoid importing them and should rely on `ftimer_scope()`, explicit start/stop calls, and the structured summary result types instead. Test-only helper exports such as `ftimer_test_get_state`, `ftimer_test_set_call_count`, and `ftimer_test_state_t` are confined to `FTIMER_BUILD_TESTS` helper builds.
 
 Operational notes:
 
@@ -227,10 +227,12 @@ Operational notes:
 - `get_summary()`, `print_summary()`, and `write_summary()` are local-only summary/reporting paths.
 - `get_summary()`, `print_summary()`, and `write_summary()` are live snapshot APIs. They include active local timer contexts through the snapshot timestamp without stopping them, and mark that state with `summary%has_active_timers`, each entry's `is_active`, and, when active entries exist, the formatted report's `Active timers`/`Active` fields. For a final local report, stop all timers first and verify `summary%has_active_timers == .false.`.
 - Local summary entries retain preorder formatting compatibility and now expose explicit tree structure through `node_id` and `parent_id`. `node_id` values are stable only within one produced summary object, and roots use `parent_id = 0`.
+- Local summary `call_count` fields are signed-64-bit counts. If a timer context ever reaches the signed-64-bit maximum, the next `start` fails with `FTIMER_ERR_UNKNOWN` or the normal omitted-`ierr` warning path rather than wrapping the count.
 - `write_summary_csv()` and `ftimer_write_summary_csv()` export local summaries as stable CSV records for dashboards, CI comparisons, plotting, and archives. The text report remains human-facing; consumers should use the CSV or structured Fortran summary rather than scraping fixed-width report output.
 - `mpi_summary()` and `ftimer_mpi_summary()` require `FTIMER_USE_MPI=ON`, a fully stopped timer set, and collective agreement on the communicator captured by `init`.
 - A successful MPI reduction returns a distinct `ftimer_mpi_summary_t` whose fields are globally meaningful on every participating rank.
 - The MPI result includes communicator-local rank attribution for total-time extrema and per-entry inclusive-time extrema. Ties resolve to the lowest rank that attains the extremum.
+- MPI call-count extrema remain exact `integer(int64)` fields. `avg_call_count` remains `real(wp)` and is computed without integer-sum overflow by reducing exact `integer(int64)` extrema first, then averaging nonnegative deltas from the exact minimum count. The final average is clamped to the representable `real(wp)` conversions of the exact min/max counts. Because `real(wp)` cannot represent every signed-64-bit integer exactly, a near-limit average may differ from the exact integer average by representable real rounding.
 - Sparse/union MPI summaries use the separate `mpi_union_summary()` / `ftimer_mpi_union_summary()` API and `ftimer_mpi_union_summary_t` result type. This opt-in path builds a canonical descriptor union across ranks instead of weakening strict `mpi_summary()`.
 - `ftimer_mpi_union_summary_t` keeps communicator total-time fields as all-rank statistics. Each entry records `participating_rank_count`; missing rank count is derived as `num_ranks - participating_rank_count`, and entry min/avg/max statistics are defined over participating ranks only.
 - Sparse entries are materialized from descriptors emitted by each rank's local summary. Lookup-only timer definitions are not a first-class sparse-registration contract, absent ranks are not zero-filled, and no all-rank amortized compatibility fields are included in the initial result model.
@@ -253,7 +255,7 @@ Operational notes:
 
 ## CSV Export
 
-The first stable machine-readable export format is CSV, chosen because fTimer summaries are snapshot tables rather than event streams. The schema is versioned by the `format_version` column and currently uses version `1`.
+The first stable machine-readable export format is CSV, chosen because fTimer summaries are snapshot tables rather than event streams. The schema is versioned by the `format_version` column and currently uses version `2`.
 
 Each CSV starts with one header row followed by typed records:
 
@@ -261,9 +263,9 @@ Each CSV starts with one header row followed by typed records:
 - `record_type=metadata` carries caller-supplied metadata as `key`/`value`.
 - `record_type=entry` carries one timer node per row.
 
-Common columns include `summary_kind`, `node_id`, `parent_id`, `depth`, and `name`. Local entry rows populate `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. MPI entry rows populate the reduced fields from `ftimer_mpi_summary_t`, including min/avg/max inclusive and self time, call count extrema, rank-local percent extrema, imbalance fields, and inclusive-time extrema ranks.
+Common columns include `summary_kind`, `node_id`, `parent_id`, `depth`, and `name`. Local entry rows populate `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. MPI entry rows populate the reduced fields from `ftimer_mpi_summary_t`, including min/avg/max inclusive and self time, call count extrema, rank-local percent extrema, imbalance fields, and inclusive-time extrema ranks. Local `call_count` and MPI `min_call_count`/`max_call_count` are `integer(int64)` values and are emitted as decimal text without narrowing to default integer. MPI `avg_call_count` remains a real-valued CSV field. CSV format version `2` is the compatibility signal for those widened integer count ranges; consumers should parse local `call_count` and MPI call-count extrema fields as at least signed 64-bit decimal integers.
 
-Appending to an existing non-empty CSV requires the existing first row to match the fTimer CSV format-version-1 header and the target to end with a newline; mismatched headers or unterminated final records are rejected instead of mixing schemas silently. CSV text fields emit the same trimmed timer names and metadata key/value text used by fTimer reports, with standard CSV quoting. They are not spreadsheet-formula-sanitized, so treat CSV opened in spreadsheet software as data from the generating program.
+Appending to an existing non-empty CSV requires the existing first row to match the fTimer CSV format-version-2 header, existing rows to be well-formed CSV logical records with the exact v2 header field count and recognized `summary_kind`/`record_type` combinations, and the target to end with a newline; mismatched headers, older-format records, malformed v2 record shape or quote placement, or unterminated final records are rejected instead of mixing schemas silently. Append validation is a schema-shape and CSV-syntax guard for existing files, not a semantic reparse of every numeric, logical, or timing payload field already present. CSV text fields emit the same trimmed timer names and metadata key/value text used by fTimer reports, with standard CSV quoting. They are not spreadsheet-formula-sanitized, so treat CSV opened in spreadsheet software as data from the generating program.
 
 Example:
 
