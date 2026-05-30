@@ -1,0 +1,65 @@
+name: Feature request
+description: Propose a bounded fTimer improvement.
+title: "Feature: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for concrete improvements.
+        If the main need is deciding product/API direction, use the strategic question template instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow
+      description: What user workflow is blocked or painful today?
+      placeholder: I want to use fTimer for ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest behavior, API, documentation, or tooling change that would help.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or different designs have you considered?
+    validations:
+      required: false
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope boundaries
+      description: What should this request include, and what should it not include?
+      placeholder: |
+        In scope:
+        - ...
+        Out of scope:
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Suggested validation
+      description: What test, example, docs update, or smoke-path evidence would prove this is done?
+    validations:
+      required: false
+
+  - type: textarea
+    id: related_context
+    attributes:
+      label: Related context
+      description: Link related issues, PRs, code paths, adopter needs, or documentation.
+    validations:
+      required: false
