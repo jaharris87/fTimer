@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+env:
+  PFUNIT_VERSION: v4.16.0
+  PFUNIT_SHA256: 314381ff08dc99e87a4da5862501053d112babaf73244b1c04b77065d3fd3091
+  PFUNIT_ARCHIVE_URL: https://github.com/Goddard-Fortran-Ecosystem/pFUnit/releases/download/v4.16.0/pFUnit-v4.16.0.tar
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -99,18 +104,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
+      - name: Capture pFUnit cache identity
+        id: pfunit-identity
+        run: |
+          {
+            cat /etc/os-release
+            uname -a
+            gfortran --version
+            mpifort --version
+            mpirun --version
+            cmake --version
+          } > /tmp/pfunit-cache-identity.txt
+          identity="$(sha256sum /tmp/pfunit-cache-identity.txt | cut -d ' ' -f1)"
+          echo "key=$identity" >> "$GITHUB_OUTPUT"
+
       - name: Cache pFUnit
         uses: actions/cache@v4
         id: pfunit-cache
         with:
           path: /opt/pfunit
-          key: pfunit-${{ runner.os }}-gfortran-openmpi-v4.16.0
+          key: pfunit-${{ runner.os }}-${{ steps.pfunit-identity.outputs.key }}-${{ env.PFUNIT_VERSION }}-${{ env.PFUNIT_SHA256 }}
 
       - name: Build pFUnit
         if: steps.pfunit-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p /tmp/pfunit-src
-          curl -fsSL https://github.com/Goddard-Fortran-Ecosystem/pFUnit/releases/download/v4.16.0/pFUnit-v4.16.0.tar | tar x --strip-components=1 -C /tmp/pfunit-src
+          curl -fsSL "$PFUNIT_ARCHIVE_URL" -o /tmp/pfunit.tar
+          printf '%s  %s\n' "$PFUNIT_SHA256" /tmp/pfunit.tar | sha256sum -c -
+          tar -xf /tmp/pfunit.tar --strip-components=1 -C /tmp/pfunit-src
           FC=mpifort cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit -DMPI=YES
           cmake --build /tmp/pfunit-build -j$(nproc)
           cmake --install /tmp/pfunit-build
@@ -139,18 +160,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
+      - name: Capture pFUnit cache identity
+        id: pfunit-identity
+        run: |
+          {
+            cat /etc/os-release
+            uname -a
+            gfortran --version
+            mpifort --version
+            mpirun --version
+            cmake --version
+          } > /tmp/pfunit-cache-identity.txt
+          identity="$(sha256sum /tmp/pfunit-cache-identity.txt | cut -d ' ' -f1)"
+          echo "key=$identity" >> "$GITHUB_OUTPUT"
+
       - name: Cache pFUnit
         uses: actions/cache@v4
         id: pfunit-cache
         with:
           path: /opt/pfunit
-          key: pfunit-${{ runner.os }}-gfortran-openmpi-v4.16.0
+          key: pfunit-${{ runner.os }}-${{ steps.pfunit-identity.outputs.key }}-${{ env.PFUNIT_VERSION }}-${{ env.PFUNIT_SHA256 }}
 
       - name: Build pFUnit
         if: steps.pfunit-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p /tmp/pfunit-src
-          curl -fsSL https://github.com/Goddard-Fortran-Ecosystem/pFUnit/releases/download/v4.16.0/pFUnit-v4.16.0.tar | tar x --strip-components=1 -C /tmp/pfunit-src
+          curl -fsSL "$PFUNIT_ARCHIVE_URL" -o /tmp/pfunit.tar
+          printf '%s  %s\n' "$PFUNIT_SHA256" /tmp/pfunit.tar | sha256sum -c -
+          tar -xf /tmp/pfunit.tar --strip-components=1 -C /tmp/pfunit-src
           FC=mpifort cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit -DMPI=YES
           cmake --build /tmp/pfunit-build -j$(nproc)
           cmake --install /tmp/pfunit-build
@@ -215,18 +252,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
+      - name: Capture pFUnit cache identity
+        id: pfunit-identity
+        run: |
+          {
+            cat /etc/os-release
+            uname -a
+            gfortran --version
+            mpifort --version
+            mpirun --version
+            cmake --version
+          } > /tmp/pfunit-cache-identity.txt
+          identity="$(sha256sum /tmp/pfunit-cache-identity.txt | cut -d ' ' -f1)"
+          echo "key=$identity" >> "$GITHUB_OUTPUT"
+
       - name: Cache pFUnit
         uses: actions/cache@v4
         id: pfunit-cache
         with:
           path: /opt/pfunit
-          key: pfunit-${{ runner.os }}-gfortran-openmpi-v4.16.0
+          key: pfunit-${{ runner.os }}-${{ steps.pfunit-identity.outputs.key }}-${{ env.PFUNIT_VERSION }}-${{ env.PFUNIT_SHA256 }}
 
       - name: Build pFUnit
         if: steps.pfunit-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p /tmp/pfunit-src
-          curl -fsSL https://github.com/Goddard-Fortran-Ecosystem/pFUnit/releases/download/v4.16.0/pFUnit-v4.16.0.tar | tar x --strip-components=1 -C /tmp/pfunit-src
+          curl -fsSL "$PFUNIT_ARCHIVE_URL" -o /tmp/pfunit.tar
+          printf '%s  %s\n' "$PFUNIT_SHA256" /tmp/pfunit.tar | sha256sum -c -
+          tar -xf /tmp/pfunit.tar --strip-components=1 -C /tmp/pfunit-src
           FC=mpifort cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit -DMPI=YES
           cmake --build /tmp/pfunit-build -j$(nproc)
           cmake --install /tmp/pfunit-build
@@ -265,7 +318,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install fprettify
-        run: pip install fprettify
+        run: python3 -m pip install --constraint .github/constraints/lint.txt fprettify
 
       - name: Check formatting
         run: |
