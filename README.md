@@ -99,18 +99,18 @@ You should see output shaped like this:
 
 ```text
 Recorded timers: 1
-Total time (s) : <small positive number>
+Total time (s) : <nonnegative elapsed time>
 
 Timer name  Inclusive (s)     Self (s)    Calls   % Total
 ---------------------------------------------------------
-work            <positive>      <positive>       1   <nonzero>
+work         <nonnegative>   <nonnegative>       1   <nonnegative>
 ```
 
 The exact timings vary by machine and compiler, but a successful run should show:
 
 - one recorded timer
-- a positive total time
-- a `work` row with one call and positive inclusive/self time
+- a nonnegative total time, usually positive on typical runs
+- a `work` row with one call and nonnegative inclusive/self time
 
 This is the default happy path for first-time evaluation. It exercises the library build, links an example program, and produces believable summary output without requiring MPI or pFUnit.
 
