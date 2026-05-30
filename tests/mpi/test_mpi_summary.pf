@@ -1336,6 +1336,44 @@ contains
    end subroutine test_mpi_print_summary_emits_global_report
 
    @test
+   subroutine test_mpi_print_summary_syncs_io_error(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      integer :: ierr
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+      integer :: rank
+
+      rank = this%getProcessRank()
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_nested_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) then
+         call timer%print_mpi_summary(unit=-9876, ierr=ierr)
+      else
+         call timer%print_mpi_summary(ierr=ierr)
+      end if
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      @assertEqual(FTIMER_ERR_IO, min_err)
+      @assertEqual(FTIMER_ERR_IO, max_err)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_print_summary_syncs_io_error
+
+   @test
    subroutine test_mpi_write_summary_formats_int64_call_count_average(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
