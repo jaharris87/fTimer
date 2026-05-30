@@ -1171,18 +1171,19 @@ contains
       character(len=*), intent(out) :: iomsg
       character(len=1) :: ch
       character(len=:), allocatable :: expected_header
-      character(len=:), allocatable :: expected_version
       character(len=:), allocatable :: header_line
       character(len=:), allocatable :: record_text
-      integer :: file_size
+      integer :: expected_field_count
       integer :: file_unit
       integer :: io
+      integer :: record_field_count
       integer :: record_prefix_limit
       character(len=1) :: last_char
       logical :: exists
       logical :: in_quotes
       logical :: pending_quote
       logical :: reading_header
+      logical :: saw_any_char
 
       include_header = .true.
       status = FTIMER_SUCCESS
@@ -1190,20 +1191,20 @@ contains
       if (.not. append_mode) return
 
       exists = .false.
-      file_size = 0
-      inquire (file=filename, exist=exists, size=file_size)
+      inquire (file=filename, exist=exists)
       if (.not. exists) return
-      if (file_size <= 0) return
 
       expected_header = csv_header_line()
-      expected_version = '"'//FTIMER_CSV_FORMAT_VERSION//'"'
-      record_prefix_limit = len(expected_version) + 1
+      expected_field_count = csv_field_count(expected_header)
+      record_prefix_limit = 64
       header_line = ''
       record_text = ''
+      record_field_count = 1
       last_char = ''
       reading_header = .true.
       in_quotes = .false.
       pending_quote = .false.
+      saw_any_char = .false.
 
       open (newunit=file_unit, file=filename, status='old', access='stream', form='unformatted', &
             action='read', iostat=io, iomsg=iomsg)
@@ -1222,6 +1223,7 @@ contains
          end if
 
          last_char = ch
+         saw_any_char = .true.
 
          if (reading_header) then
             if (ch == new_line('a')) then
@@ -1251,17 +1253,20 @@ contains
 
          if ((ch == new_line('a')) .and. (.not. in_quotes)) then
             call strip_trailing_carriage_return(record_text)
-            if (.not. csv_record_has_format_version(record_text, FTIMER_CSV_FORMAT_VERSION)) then
+            if ((record_field_count /= expected_field_count) .or. (.not. csv_record_has_valid_prefix(record_text))) then
                close (file_unit)
                status = FTIMER_ERR_IO
                iomsg = 'existing CSV records do not match fTimer CSV format_version 2'
                return
             end if
             record_text = ''
+            record_field_count = 1
             cycle
          end if
 
          call append_limited_csv_record_prefix(record_text, ch, record_prefix_limit)
+
+         if ((ch == ',') .and. (.not. in_quotes)) record_field_count = record_field_count + 1
 
          if (ch == '"') then
             if (in_quotes) then
@@ -1272,6 +1277,8 @@ contains
          end if
       end do
       close (file_unit)
+
+      if (.not. saw_any_char) return
 
       if (last_char /= new_line('a')) then
          status = FTIMER_ERR_IO
@@ -1306,25 +1313,41 @@ contains
       if (text(text_len:text_len) == achar(13)) text = text(:text_len - 1)
    end subroutine strip_trailing_carriage_return
 
-   logical function csv_record_has_format_version(line, version) result(matches)
+   integer function csv_field_count(line) result(count)
       character(len=*), intent(in) :: line
-      character(len=*), intent(in) :: version
-      character(len=:), allocatable :: expected
-      integer :: expected_len
-      integer :: trimmed_len
+      integer :: i
+      logical :: in_quotes
 
-      expected = '"'//version//'"'
-      expected_len = len(expected)
-      trimmed_len = len_trim(line)
+      count = 1
+      in_quotes = .false.
+      do i = 1, len_trim(line)
+         if (line(i:i) == '"') then
+            in_quotes = .not. in_quotes
+         else if ((line(i:i) == ',') .and. (.not. in_quotes)) then
+            count = count + 1
+         end if
+      end do
+   end function csv_field_count
+
+   logical function csv_record_has_valid_prefix(line) result(matches)
+      character(len=*), intent(in) :: line
+
+      matches = starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","local","summary",') .or. &
+                starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","local","metadata",') .or. &
+                starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","local","entry",') .or. &
+                starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","mpi","summary",') .or. &
+                starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","mpi","metadata",') .or. &
+                starts_with(line, '"'//FTIMER_CSV_FORMAT_VERSION//'","mpi","entry",')
+   end function csv_record_has_valid_prefix
+
+   logical function starts_with(text, prefix) result(matches)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: prefix
+
       matches = .false.
-      if (trimmed_len < expected_len) return
-      if (line(1:expected_len) /= expected) return
-      if (trimmed_len == expected_len) then
-         matches = .true.
-      else
-         matches = line(expected_len + 1:expected_len + 1) == ','
-      end if
-   end function csv_record_has_format_version
+      if (len_trim(text) < len(prefix)) return
+      matches = text(1:len(prefix)) == prefix
+   end function starts_with
 
    function csv_header_line() result(header)
       character(len=:), allocatable :: header
