@@ -707,7 +707,7 @@ contains
       character(len=:), allocatable :: procedural_text
       character(len=*), parameter :: oop_path = 'test_mpi_summary_oop_csv_parity.csv'
       character(len=*), parameter :: procedural_path = 'test_mpi_summary_procedural_csv_parity.csv'
-      integer :: flags(19)
+      integer :: flags(21)
       integer :: format_col
       integer :: ierr
       integer :: id_outer
@@ -808,6 +808,10 @@ contains
          if (csv_line_at(procedural_text, 8) == csv_line_at(oop_text, 8)) flags(17) = 1
          if (csv_line_at(procedural_text, 9) == csv_line_at(oop_text, 9)) flags(18) = 1
          if (csv_column_index(procedural_header, 'max_pct_time') > 0) flags(19) = 1
+         if (csv_mpi_summary_records_match(csv_line_at(procedural_text, 2), csv_line_at(oop_text, 2), &
+                                           procedural_header)) flags(20) = 1
+         if (csv_mpi_summary_records_match(csv_line_at(procedural_text, 6), csv_line_at(oop_text, 6), &
+                                           procedural_header)) flags(21) = 1
          call delete_if_exists(oop_path)
          call delete_if_exists(procedural_path)
       end if
@@ -834,6 +838,8 @@ contains
       @assertEqual(1, flags(17))
       @assertEqual(1, flags(18))
       @assertEqual(1, flags(19))
+      @assertEqual(1, flags(20))
+      @assertEqual(1, flags(21))
 
       call oop_timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -4609,6 +4615,63 @@ contains
       actual = csv_field_value(line, column)
       matches = actual == expected
    end function csv_text_field_equals
+
+   logical function csv_fields_match(lhs, rhs, column) result(matches)
+      character(len=*), intent(in) :: lhs
+      character(len=*), intent(in) :: rhs
+      integer, intent(in) :: column
+
+      matches = .false.
+      if (column <= 0) return
+      matches = csv_field_value(lhs, column) == csv_field_value(rhs, column)
+   end function csv_fields_match
+
+   logical function csv_mpi_summary_records_match(lhs, rhs, header) result(matches)
+      character(len=*), intent(in) :: lhs
+      character(len=*), intent(in) :: rhs
+      character(len=*), intent(in) :: header
+      integer :: avg_total_col
+      integer :: format_col
+      integer :: has_active_col
+      integer :: max_total_col
+      integer :: max_total_rank_col
+      integer :: min_total_col
+      integer :: min_total_rank_col
+      integer :: num_entries_col
+      integer :: num_ranks_col
+      integer :: record_type_col
+      integer :: summary_kind_col
+      integer :: total_imbalance_col
+
+      matches = .false.
+      format_col = csv_column_index(header, 'format_version')
+      summary_kind_col = csv_column_index(header, 'summary_kind')
+      record_type_col = csv_column_index(header, 'record_type')
+      num_entries_col = csv_column_index(header, 'num_entries')
+      has_active_col = csv_column_index(header, 'has_active_timers')
+      num_ranks_col = csv_column_index(header, 'num_ranks')
+      min_total_col = csv_column_index(header, 'min_total_time')
+      avg_total_col = csv_column_index(header, 'avg_total_time')
+      max_total_col = csv_column_index(header, 'max_total_time')
+      min_total_rank_col = csv_column_index(header, 'min_total_time_rank')
+      max_total_rank_col = csv_column_index(header, 'max_total_time_rank')
+      total_imbalance_col = csv_column_index(header, 'total_time_imbalance')
+
+      if (.not. csv_fields_match(lhs, rhs, format_col)) return
+      if (.not. csv_fields_match(lhs, rhs, summary_kind_col)) return
+      if (.not. csv_fields_match(lhs, rhs, record_type_col)) return
+      if (.not. csv_fields_match(lhs, rhs, num_entries_col)) return
+      if (.not. csv_fields_match(lhs, rhs, has_active_col)) return
+      if (.not. csv_fields_match(lhs, rhs, num_ranks_col)) return
+      if (.not. csv_fields_match(lhs, rhs, min_total_col)) return
+      if (.not. csv_fields_match(lhs, rhs, avg_total_col)) return
+      if (.not. csv_fields_match(lhs, rhs, max_total_col)) return
+      if (.not. csv_fields_match(lhs, rhs, min_total_rank_col)) return
+      if (.not. csv_fields_match(lhs, rhs, max_total_rank_col)) return
+      if (.not. csv_fields_match(lhs, rhs, total_imbalance_col)) return
+
+      matches = .true.
+   end function csv_mpi_summary_records_match
 
    logical function csv_real_field_close(line, column, expected) result(matches)
       character(len=*), intent(in) :: line
