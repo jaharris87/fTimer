@@ -97,19 +97,24 @@ PR and rely on the corresponding required CI job before tagging.
 
 ## Artifact Policy
 
-A normal fTimer release publishes:
+A normal fTimer GitHub release publishes:
 
 - the signed or annotated Git tag,
 - the GitHub release notes,
-- GitHub-generated source archives,
-- the source tree's `LICENSE`,
-- installable CMake package files produced from source,
+- GitHub-generated source archives that include the source tree's `LICENSE`.
+
+The released source must continue to produce these install-tree outputs through
+the documented CMake install path:
+
+- installable CMake package config/version files,
+- compiler module artifacts needed by the supported installed package contract,
 - installed documentation under `share/doc/fTimer/`, including
   `installed-api.md` and `LICENSE`.
 
-Do not attach binary packages, compiler module bundles, benchmark data, or
-generated reports to a release unless a release issue explicitly adds that
-artifact type and records how it was built, validated, and licensed.
+Do not attach binary packages, generated install trees, compiler module bundles,
+benchmark data, or generated reports to a GitHub release unless a release issue
+explicitly adds that artifact type and records how it was built, validated, and
+licensed.
 
 ## License Expectations
 
@@ -156,7 +161,8 @@ patch release over silently rewriting a public tag.
 
 After publishing:
 
-- Watch new bug, support, and security-contact issues for release regressions.
+- Watch new bug reports and support requests for release regressions.
+- Route security-sensitive contact requests through `SECURITY.md`.
 - Label confirmed release regressions with `post-release`; add
   `release-blocker` only when the issue blocks the next release or patch.
 - Update the release umbrella or milestone with any deferred follow-up state.

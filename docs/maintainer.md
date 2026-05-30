@@ -21,6 +21,17 @@ This document routes to phase-specific workflow docs. Shared coding-agent contex
   - `codex-pragmatic-design-review`
   - `codex-adoptability-review`
   - `codex-completion-audit-review`
+- Create or verify the ordinary issue-triage labels used by the issue templates,
+  release checklist, and contributor intake docs:
+  - `bug`
+  - `enhancement`
+  - `documentation`
+  - `question`
+  - `strategic-question`
+  - `improvement-issue`
+  - `release-audit`
+  - `release-blocker`
+  - `post-release`
 - Add a repository secret named `CODEX_TRIGGER_PAT` for the review-trigger workflow.
 - Configure a `main` ruleset that:
   - requires pull requests before merge
