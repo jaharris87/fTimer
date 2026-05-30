@@ -113,9 +113,14 @@ contains
       integer :: ierr
       integer :: rank
       integer :: subrank
-      integer(int64) :: boundary_count
+      integer(int64) :: expected_avg_count
+      integer(int64) :: high_count
+      integer(int64) :: low_count
+      integer(int64) :: rank_count
       logical :: strict_avg_bounded
+      logical :: strict_avg_matches
       logical :: union_avg_bounded
+      logical :: union_avg_matches
 
       rank = this%getProcessRank()
       if (rank < 3) then
@@ -131,7 +136,10 @@ contains
          call MPI_F08_Comm_rank(subcomm, subrank, ierr)
          @assertEqual(MPI_F08_SUCCESS, ierr)
 
-         boundary_count = huge(0_int64) - 6143_int64
+         low_count = huge(0_int64) - 32767_int64
+         expected_avg_count = huge(0_int64) - 24575_int64
+         high_count = huge(0_int64) - 16383_int64
+         rank_count = low_count + int(subrank, int64)*8192_int64
 
          call timer%init(comm=subcomm, ierr=ierr)
          @assertEqual(FTIMER_SUCCESS, ierr)
@@ -145,29 +153,35 @@ contains
 
          id_hot = timer%lookup("odd-wide-count", ierr=ierr)
          @assertEqual(FTIMER_SUCCESS, ierr)
-         call ftimer_test_set_call_count(timer, id_hot, 1, boundary_count, ierr)
+         call ftimer_test_set_call_count(timer, id_hot, 1, rank_count, ierr)
          @assertEqual(FTIMER_SUCCESS, ierr)
 
          call timer%mpi_summary(summary, ierr=ierr)
          @assertEqual(FTIMER_SUCCESS, ierr)
          @assertEqual(3, summary%num_ranks)
          @assertEqual(1, summary%num_entries)
-         @assertEqual(boundary_count, summary%entries(1)%min_call_count)
-         @assertEqual(boundary_count, summary%entries(1)%max_call_count)
-         strict_avg_bounded = summary%entries(1)%avg_call_count <= real(boundary_count, wp)
+         @assertEqual(low_count, summary%entries(1)%min_call_count)
+         @assertEqual(high_count, summary%entries(1)%max_call_count)
+         strict_avg_bounded = summary%entries(1)%avg_call_count <= real(high_count, wp)
+         strict_avg_bounded = strict_avg_bounded .and. &
+                              (summary%entries(1)%avg_call_count >= real(low_count, wp))
+         strict_avg_matches = summary%entries(1)%avg_call_count == real(expected_avg_count, wp)
          @assertTrue(strict_avg_bounded)
-         call assert_real_close(summary%entries(1)%avg_call_count, real(boundary_count, wp))
+         @assertTrue(strict_avg_matches)
 
          call timer%mpi_union_summary(union_summary, ierr=ierr)
          @assertEqual(FTIMER_SUCCESS, ierr)
          @assertEqual(3, union_summary%num_ranks)
          @assertEqual(1, union_summary%num_entries)
          @assertEqual(3, union_summary%entries(1)%participating_rank_count)
-         @assertEqual(boundary_count, union_summary%entries(1)%min_call_count)
-         @assertEqual(boundary_count, union_summary%entries(1)%max_call_count)
-         union_avg_bounded = union_summary%entries(1)%avg_call_count <= real(boundary_count, wp)
+         @assertEqual(low_count, union_summary%entries(1)%min_call_count)
+         @assertEqual(high_count, union_summary%entries(1)%max_call_count)
+         union_avg_bounded = union_summary%entries(1)%avg_call_count <= real(high_count, wp)
+         union_avg_bounded = union_avg_bounded .and. &
+                             (union_summary%entries(1)%avg_call_count >= real(low_count, wp))
+         union_avg_matches = union_summary%entries(1)%avg_call_count == real(expected_avg_count, wp)
          @assertTrue(union_avg_bounded)
-         call assert_real_close(union_summary%entries(1)%avg_call_count, real(boundary_count, wp))
+         @assertTrue(union_avg_matches)
 
          call timer%finalize(ierr=ierr)
          @assertEqual(FTIMER_SUCCESS, ierr)

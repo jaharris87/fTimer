@@ -530,7 +530,8 @@ contains
          summary%entries(i)%self_imbalance = compute_imbalance(max_self(i), summary%entries(i)%avg_self_time)
          summary%entries(i)%min_call_count = min_calls(i)
          summary%entries(i)%max_call_count = max_calls(i)
-         summary%entries(i)%avg_call_count = bounded_call_count_average(sum_call_avg(i), nprocs, max_calls(i))
+         summary%entries(i)%avg_call_count = bounded_call_count_average(sum_call_avg(i), nprocs, min_calls(i), &
+                                                                        max_calls(i))
          summary%entries(i)%min_pct_time = min_pct(i)
          summary%entries(i)%max_pct_time = max_pct(i)
          summary%entries(i)%avg_pct_time = sum_pct(i)/real(nprocs, wp)
@@ -933,7 +934,7 @@ contains
             summary%entries(i)%min_call_count = min_calls(i)
             summary%entries(i)%max_call_count = max_calls(i)
             summary%entries(i)%avg_call_count = bounded_call_count_average(sum_avg_calls(i), participating_counts(i), &
-                                                                           max_calls(i))
+                                                                           min_calls(i), max_calls(i))
             summary%entries(i)%min_pct_time = min_pct(i)
             summary%entries(i)%max_pct_time = max_pct(i)
             summary%entries(i)%avg_pct_time = sum_pct(i)/real(participating_counts(i), wp)
@@ -1788,10 +1789,12 @@ contains
       value = real(floored_count, wp)
    end function call_count_average_operand
 
-   real(wp) function bounded_call_count_average(sum_count, denominator, max_count) result(value)
+   real(wp) function bounded_call_count_average(sum_count, denominator, min_count, max_count) result(value)
       real(wp), intent(in) :: sum_count
       integer, intent(in) :: denominator
+      integer(int64), intent(in) :: min_count
       integer(int64), intent(in) :: max_count
+      real(wp) :: min_value
       real(wp) :: max_value
 
       if (denominator <= 0) then
@@ -1800,7 +1803,9 @@ contains
       end if
 
       value = sum_count/real(denominator, wp)
+      min_value = call_count_average_operand(min_count)
       max_value = call_count_average_operand(max_count)
+      if (value < min_value) value = min_value
       if (value > max_value) value = max_value
    end function bounded_call_count_average
 
