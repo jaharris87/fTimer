@@ -8,7 +8,8 @@ module test_edge_cases
                            ftimer_call_stack_t, ftimer_summary_t, wp
    use, intrinsic :: iso_fortran_env, only: error_unit
    use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time, &
-                           find_context_idx, mock_clock, read_unit_text, scaled_mock_clock, snapshot_timer
+                           find_context_idx, mock_clock, read_unit_text, reset_mock_clock_state, &
+                           scaled_mock_clock, snapshot_timer
    implicit none
 
    integer, save :: lifecycle_callback_count = 0
@@ -133,6 +134,7 @@ contains
       logical :: rebased_between_defaults
       logical :: summary_total_in_default_window
 
+      call reset_mock_clock_state()
       fake_time = 7.0_wp
       call timer%set_clock(mock_clock, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -178,6 +180,7 @@ contains
       type(ftimer_summary_t) :: summary
       integer :: ierr
 
+      call reset_mock_clock_state()
       fake_time = 7.0_wp
       call timer%set_clock(mock_clock, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -203,6 +206,7 @@ contains
       call timer%init(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
+      call reset_mock_clock_state()
       fake_time = 100.0_wp
       call timer%set_clock(mock_clock, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -216,6 +220,51 @@ contains
    end subroutine test_set_clock_after_init_rebases_empty_summary_window
 
    @test
+   subroutine test_set_clock_after_lookup_rebases_summary_window()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: id
+      integer :: id_again
+      integer :: ierr
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id = timer%lookup("planned", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call reset_mock_clock_state()
+      fake_time = 200.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_again = timer%lookup("planned", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(id, id_again)
+
+      fake_time = 204.0_wp
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(4.0_wp, summary%total_time)
+      @assertEqual(0, summary%num_entries)
+
+      fake_time = 205.0_wp
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 208.0_wp
+      call timer%stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 210.0_wp
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(10.0_wp, summary%total_time)
+      @assertEqual(1, summary%num_entries)
+      @assertEqual(3.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(30.0_wp, summary%entries(1)%pct_time)
+   end subroutine test_set_clock_after_lookup_rebases_summary_window
+
+   @test
    subroutine test_first_start_preserves_custom_clock_summary_window()
       type(ftimer_t) :: timer
       type(ftimer_summary_t) :: summary
@@ -224,6 +273,7 @@ contains
       call timer%init(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
+      call reset_mock_clock_state()
       fake_time = 10.0_wp
       call timer%set_clock(mock_clock, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -256,6 +306,7 @@ contains
       call timer%init(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
+      call reset_mock_clock_state()
       fake_time = 30.0_wp
       call timer%set_clock(mock_clock, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
