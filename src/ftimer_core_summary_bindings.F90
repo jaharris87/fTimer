@@ -194,9 +194,12 @@ contains
    module procedure print_mpi_summary
    type(ftimer_mpi_summary_t) :: summary
    character(len=:), allocatable :: text
+   character(len=256) :: collective_message
    character(len=256) :: diagnostic
    character(len=256) :: iomsg
+   integer :: collective_status
    integer :: io
+   integer :: mpierr
    integer :: nprocs
    integer :: out_unit
    integer :: rank
@@ -237,17 +240,35 @@ contains
       return
    end if
 
-   if (rank /= 0) then
-      if (present(ierr)) ierr = FTIMER_SUCCESS
+   collective_status = FTIMER_SUCCESS
+   collective_message = ''
+   if (rank == 0) then
+      out_unit = output_unit
+      if (present(unit)) out_unit = unit
+
+      call write_text_block(out_unit, text, io, iomsg)
+      if (io /= 0) then
+         collective_status = FTIMER_ERR_IO
+         collective_message = "ftimer print_mpi_summary write failed: "//trim(iomsg)
+      end if
+   end if
+
+#ifdef FTIMER_USE_MPI
+   call MPI_Bcast(collective_status, 1, MPI_INTEGER, 0, active_comm, mpierr)
+   if (mpierr /= MPI_SUCCESS) then
+      call report_summary_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer print_mpi_summary status sync failed")
       return
    end if
 
-   out_unit = output_unit
-   if (present(unit)) out_unit = unit
+   call MPI_Bcast(collective_message, len(collective_message), MPI_CHARACTER, 0, active_comm, mpierr)
+   if (mpierr /= MPI_SUCCESS) then
+      call report_summary_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer print_mpi_summary message sync failed")
+      return
+   end if
+#endif
 
-   call write_text_block(out_unit, text, io, iomsg)
-   if (io /= 0) then
-      call report_summary_status(ierr, FTIMER_ERR_IO, "ftimer print_mpi_summary write failed: "//trim(iomsg))
+   if (collective_status /= FTIMER_SUCCESS) then
+      call report_summary_status(ierr, collective_status, trim(collective_message))
       return
    end if
 

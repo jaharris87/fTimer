@@ -257,7 +257,8 @@ strict or sparse MPI summaries, MPI report writers, `finalize()`, or an
 - `write_mpi_summary_csv()` is the first-class machine-readable strict reporting path for `ftimer_mpi_summary_t`
 - They are collective over the communicator captured by `init`, just like `mpi_summary()`
 - They build the same global MPI summary object that `mpi_summary()` returns, so non-identical descriptor trees still fail with `FTIMER_ERR_MPI_INCON`
-- They emit one communicator-level report from rank 0; non-root participants take part in the collective build and then return success without duplicating output
+- They emit one communicator-level report from rank 0; non-root participants take part in the collective build and return the same final status without duplicating output
+- Root output failures are synchronized to all participants as `FTIMER_ERR_IO`
 - The default MPI text report is an abbreviated view of `ftimer_mpi_summary_t`, not a serialization of every structured field. It prints communicator totals plus per-entry min/avg/max inclusive time, inclusive-time extrema ranks, inclusive imbalance, average self time, average call count, and `Avg %`; use `mpi_summary()` directly for min/max self time, self imbalance, min/max call count, min/max rank-local `% Total`, and explicit `node_id`/`parent_id` tree links.
 - The MPI CSV export uses CSV format version `2` with `summary_kind=mpi`. It emits summary and metadata rows plus one entry row per MPI summary entry, including explicit tree links and all reduced fields from `ftimer_mpi_summary_t`.
 - In the MPI text report, `Avg %` is `avg_pct_time`: the arithmetic mean of each rank's local `% Total` for that timer. It is not recomputed as `100*avg_inclusive_time/avg_total_time`, because rank-local denominator differences are part of the reported statistic.
