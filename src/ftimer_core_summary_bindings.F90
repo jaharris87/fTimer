@@ -1235,7 +1235,7 @@ contains
             if (ch == new_line('a')) then
                reading_header = .false.
                call strip_trailing_carriage_return(header_line)
-               if (trim(header_line) /= expected_header) then
+               if ((len(header_line) /= len(expected_header)) .or. (header_line /= expected_header)) then
                   close (file_unit)
                   status = FTIMER_ERR_IO
                   iomsg = 'existing CSV header does not match fTimer CSV format_version 2'
