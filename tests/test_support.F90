@@ -90,9 +90,10 @@ contains
       class(ftimer_t), intent(inout) :: timer
       integer :: ierr
 
+      call reset_mock_clock_state()
       call timer%set_clock(mock_clock, ierr=ierr)
       if (ierr /= FTIMER_SUCCESS) error stop 1
-      call reset_mock_clock_state()
+      mock_clock_call_count = 0
    end subroutine attach_mock_clock
 
    subroutine attach_scripted_mock_clock(timer, values)
@@ -100,9 +101,10 @@ contains
       real(wp), intent(in) :: values(:)
       integer :: ierr
 
+      call reset_mock_clock_state()
       call timer%set_clock(mock_clock, ierr=ierr)
       if (ierr /= FTIMER_SUCCESS) error stop 1
-      call reset_mock_clock_state()
+      mock_clock_call_count = 0
       use_scripted_times = .true.
       allocate (scripted_times(size(values)))
       scripted_times = values

@@ -4,7 +4,7 @@ module test_file_output
    use ftimer_core, only: ftimer_t, ftimer_test_set_call_count, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_IO, FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_metadata_t, ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, csv_column_index, csv_field_value, csv_line_at, csv_record_count, &
-                           fake_time, find_context_idx, read_file_text, snapshot_timer
+                           fake_time, find_context_idx, mock_clock, read_file_text, snapshot_timer
    implicit none
 
 contains
@@ -264,6 +264,50 @@ contains
       open (newunit=unit, file=path, status='old', iostat=io)
       if (io == 0) close (unit, status='delete')
    end subroutine test_write_summary_csv_emits_parseable_records
+
+   @test
+   subroutine test_write_summary_csv_after_set_clock_uses_custom_clock_window()
+      type(ftimer_t) :: timer
+      character(len=*), parameter :: path = 'phase3_summary_custom_clock_empty.csv'
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: field_text
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: summary_line
+      integer :: ierr
+      integer :: record_count
+      integer :: total_col
+      integer :: unit
+      integer :: io
+      real(wp) :: total_time
+
+      call delete_if_exists(path)
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 50.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 56.0_wp
+      call timer%write_summary_csv(path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      csv_text = read_file_text(path)
+      record_count = csv_record_count(csv_text)
+      @assertEqual(2, record_count)
+
+      header = csv_line_at(csv_text, 1)
+      summary_line = csv_line_at(csv_text, 2)
+      total_col = csv_column_index(header, 'total_time')
+
+      field_text = csv_field_value(summary_line, total_col)
+      read (field_text, *) total_time
+      call assert_real_close(total_time, 6.0_wp)
+
+      open (newunit=unit, file=path, status='old', iostat=io)
+      if (io == 0) close (unit, status='delete')
+   end subroutine test_write_summary_csv_after_set_clock_uses_custom_clock_window
 
    @test
    subroutine test_write_summary_csv_preserves_int64_call_count()

@@ -149,6 +149,10 @@ This disabled-facade behavior is an application integration contract, not an alt
 - Configure custom clocks through `set_clock()` and restore the build-default wall clock through `clear_clock()`
 - Direct mutation of raw runtime clock internals is not part of the supported API contract
 - Clock configuration is allowed before `init()` or before a run records timing data
+- When a clock is configured before `init()`, the next `init()` starts the local summary window in that clock's epoch
+- When `set_clock()` or `clear_clock()` succeeds after `init()` but before any timing data exists, it immediately restarts the local summary window in the newly selected clock's epoch
+- The first subsequent `start()` does not rebase the summary window; idle time between the successful clock change and the first start is included in `summary%total_time` and `% Total` denominators
+- Empty local summaries, formatted reports, and CSV exports after a successful no-data clock change use the newly selected clock epoch and do not serialize mixed-epoch total times
 - Once a run has recorded timing data, `set_clock()` and `clear_clock()` return `FTIMER_ERR_ACTIVE` (or warn to stderr when `ierr` is omitted) and leave state unchanged
 - `reset()`, `init()`, and `finalize()` all provide clean lifecycle boundaries after which a different clock may be configured
 

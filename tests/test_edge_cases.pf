@@ -156,6 +156,106 @@ contains
    end subroutine test_clear_clock_rebases_init_wtime_before_timing
 
    @test
+   subroutine test_set_clock_before_init_summary_window_starts_at_init()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+
+      fake_time = 7.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 9.0_wp
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 12.0_wp
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(3.0_wp, summary%total_time)
+      @assertEqual(0, summary%num_entries)
+   end subroutine test_set_clock_before_init_summary_window_starts_at_init
+
+   @test
+   subroutine test_set_clock_after_init_rebases_empty_summary_window()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 100.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 104.0_wp
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(4.0_wp, summary%total_time)
+      @assertEqual(0, summary%num_entries)
+   end subroutine test_set_clock_after_init_rebases_empty_summary_window
+
+   @test
+   subroutine test_first_start_preserves_custom_clock_summary_window()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 10.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 15.0_wp
+      call timer%start("work", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 18.0_wp
+      call timer%stop("work", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 20.0_wp
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(10.0_wp, summary%total_time)
+      @assertEqual(3.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(30.0_wp, summary%entries(1)%pct_time)
+   end subroutine test_first_start_preserves_custom_clock_summary_window
+
+   @test
+   subroutine test_print_summary_after_set_clock_uses_custom_clock_window()
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: text
+      integer :: ierr
+      integer :: unit
+      logical :: total_line_matches
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 30.0_wp
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      open (newunit=unit, status='scratch', action='readwrite')
+      fake_time = 34.0_wp
+      call timer%print_summary(unit=unit, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      text = read_unit_text(unit)
+      close (unit)
+      total_line_matches = index(text, 'Total time (s) : 4.000000') > 0
+
+      @assertTrue(total_line_matches)
+   end subroutine test_print_summary_after_set_clock_uses_custom_clock_window
+
+   @test
    subroutine test_finalize_with_active_timer_returns_active()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: state
