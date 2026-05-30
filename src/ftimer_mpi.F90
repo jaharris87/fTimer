@@ -372,7 +372,7 @@ contains
          local_inclusive(i) = local_summary%entries(local_idx)%inclusive_time
          local_self(i) = local_summary%entries(local_idx)%self_time
          local_calls(i) = local_summary%entries(local_idx)%call_count
-         local_call_avg(i) = call_count_average_operand(local_summary%entries(local_idx)%call_count)
+         local_call_avg(i) = 0.0_wp
          local_pct(i) = local_summary%entries(local_idx)%pct_time
       end do
 
@@ -468,6 +468,10 @@ contains
          status = FTIMER_ERR_UNKNOWN
          return
       end if
+
+      do i = 1, entry_count
+         local_call_avg(i) = real(local_calls(i) - min_calls(i), wp)
+      end do
 
       call ftimer_mpi_allreduce(local_calls, max_calls, entry_count, mpi_int64_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
@@ -784,7 +788,6 @@ contains
          local_pct_sum(union_idx) = local_summary%entries(local_idx)%pct_time
          local_calls_min(union_idx) = local_summary%entries(local_idx)%call_count
          local_calls_max(union_idx) = local_summary%entries(local_idx)%call_count
-         local_avg_calls(union_idx) = call_count_average_operand(local_summary%entries(local_idx)%call_count)
       end do
 
       call ftimer_mpi_allreduce(local_present, participating_counts, union_count, MPI_INTEGER, MPI_SUM, &
@@ -892,6 +895,10 @@ contains
          status = FTIMER_ERR_UNKNOWN
          return
       end if
+
+      do i = 1, union_count
+         if (local_present(i) == 1) local_avg_calls(i) = real(local_calls_max(i) - min_calls(i), wp)
+      end do
 
       call ftimer_mpi_allreduce(local_calls_max, max_calls, union_count, mpi_int64_type, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
@@ -1753,44 +1760,8 @@ contains
       imbalance = max_time/avg_time
    end function compute_imbalance
 
-   real(wp) function call_count_average_operand(count) result(value)
-      integer(int64), intent(in) :: count
-      integer :: exponent
-      integer :: i
-      integer :: spacing_power
-      integer(int64) :: floored_count
-      integer(int64) :: scaled
-      integer(int64) :: spacing
-
-      if (count <= 0_int64) then
-         value = 0.0_wp
-         return
-      end if
-
-      scaled = count
-      exponent = 0
-      do while (scaled >= 2_int64)
-         scaled = scaled/2_int64
-         exponent = exponent + 1
-      end do
-
-      spacing_power = exponent - digits(1.0_wp) + 1
-      if (spacing_power <= 0) then
-         value = real(count, wp)
-         return
-      end if
-
-      spacing = 1_int64
-      do i = 1, spacing_power
-         spacing = spacing*2_int64
-      end do
-
-      floored_count = count - modulo(count, spacing)
-      value = real(floored_count, wp)
-   end function call_count_average_operand
-
-   real(wp) function bounded_call_count_average(sum_count, denominator, min_count, max_count) result(value)
-      real(wp), intent(in) :: sum_count
+   real(wp) function bounded_call_count_average(sum_delta, denominator, min_count, max_count) result(value)
+      real(wp), intent(in) :: sum_delta
       integer, intent(in) :: denominator
       integer(int64), intent(in) :: min_count
       integer(int64), intent(in) :: max_count
@@ -1802,9 +1773,9 @@ contains
          return
       end if
 
-      value = sum_count/real(denominator, wp)
-      min_value = call_count_average_operand(min_count)
-      max_value = call_count_average_operand(max_count)
+      min_value = real(min_count, wp)
+      max_value = real(max_count, wp)
+      value = min_value + sum_delta/real(denominator, wp)
       if (value < min_value) value = min_value
       if (value > max_value) value = max_value
    end function bounded_call_count_average

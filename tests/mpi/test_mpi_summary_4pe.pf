@@ -192,6 +192,78 @@ contains
    end subroutine test_mpi_avg_call_count_is_bounded_on_odd_rank_subcomm
 
    @test
+   subroutine test_mpi_avg_call_count_preserves_equal_i64_on_odd_subcomm(this)
+      class(mpi_summary_4pe_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_summary_t) :: summary
+      type(ftimer_mpi_union_summary_t) :: union_summary
+      type(MPI_F08_Comm) :: subcomm
+      integer :: color
+      integer :: id_hot
+      integer :: ierr
+      integer :: rank
+      integer(int64) :: boundary_count
+      logical :: strict_avg_matches
+      logical :: union_avg_matches
+      real(wp) :: expected_avg
+
+      rank = this%getProcessRank()
+      if (rank < 3) then
+         color = 0
+      else
+         color = 1
+      end if
+
+      call MPI_F08_Comm_split(MPI_F08_COMM_WORLD, color, rank, subcomm, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank < 3) then
+         boundary_count = huge(0_int64)
+         expected_avg = real(boundary_count, wp)
+
+         call timer%init(comm=subcomm, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         call attach_mock_clock(timer)
+
+         call timer%start("odd-equal-wide-count", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 1.0_wp
+         call timer%stop("odd-equal-wide-count", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         id_hot = timer%lookup("odd-equal-wide-count", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         call ftimer_test_set_call_count(timer, id_hot, 1, boundary_count, ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         call timer%mpi_summary(summary, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         @assertEqual(3, summary%num_ranks)
+         @assertEqual(1, summary%num_entries)
+         @assertEqual(boundary_count, summary%entries(1)%min_call_count)
+         @assertEqual(boundary_count, summary%entries(1)%max_call_count)
+         strict_avg_matches = summary%entries(1)%avg_call_count == expected_avg
+         @assertTrue(strict_avg_matches)
+
+         call timer%mpi_union_summary(union_summary, ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         @assertEqual(3, union_summary%num_ranks)
+         @assertEqual(1, union_summary%num_entries)
+         @assertEqual(3, union_summary%entries(1)%participating_rank_count)
+         @assertEqual(boundary_count, union_summary%entries(1)%min_call_count)
+         @assertEqual(boundary_count, union_summary%entries(1)%max_call_count)
+         union_avg_matches = union_summary%entries(1)%avg_call_count == expected_avg
+         @assertTrue(union_avg_matches)
+
+         call timer%finalize(ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end if
+
+      call MPI_F08_Comm_free(subcomm, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+   end subroutine test_mpi_avg_call_count_preserves_equal_i64_on_odd_subcomm
+
+   @test
    subroutine test_mpi_summary_preserves_partial_tie_rank_attribution(this)
       class(mpi_summary_4pe_case), intent(inout) :: this
       type(ftimer_t) :: timer

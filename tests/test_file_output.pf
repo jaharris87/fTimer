@@ -692,7 +692,7 @@ contains
       open (newunit=unit, file=path, status='replace', action='write', iostat=io)
       @assertEqual(0, io)
       write (unit, '(a)') trim(header)
-      write (unit, '(a)') '"2","local","summary"'
+      write (unit, '(a)') '"2","local","summary",'
       close (unit)
       call capture_raw_file_text(path, before_text)
 
