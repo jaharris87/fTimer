@@ -264,6 +264,62 @@ contains
    end subroutine test_mpi_avg_call_count_preserves_equal_i64_on_odd_subcomm
 
    @test
+   subroutine test_mpi_union_avg_call_count_sparse_odd_i64(this)
+      class(mpi_summary_4pe_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_union_summary_t) :: summary
+      integer :: id_hot
+      integer :: ierr
+      integer :: rank
+      integer(int64) :: expected_avg_count
+      integer(int64) :: high_count
+      integer(int64) :: low_count
+      integer(int64) :: rank_count
+      logical :: avg_bounded
+      logical :: avg_matches
+
+      rank = this%getProcessRank()
+      low_count = huge(0_int64) - 32767_int64
+      expected_avg_count = huge(0_int64) - 24575_int64
+      high_count = huge(0_int64) - 16383_int64
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      if (rank < 3) then
+         rank_count = low_count + int(rank, int64)*8192_int64
+
+         call timer%start("sparse-odd-wide-count", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = 1.0_wp + real(rank, wp)
+         call timer%stop("sparse-odd-wide-count", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+
+         id_hot = timer%lookup("sparse-odd-wide-count", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         call ftimer_test_set_call_count(timer, id_hot, 1, rank_count, ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end if
+
+      call timer%mpi_union_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(4, summary%num_ranks)
+      @assertEqual(1, summary%num_entries)
+      @assertEqual(3, summary%entries(1)%participating_rank_count)
+      @assertEqual(low_count, summary%entries(1)%min_call_count)
+      @assertEqual(high_count, summary%entries(1)%max_call_count)
+      avg_bounded = summary%entries(1)%avg_call_count >= real(low_count, wp)
+      avg_bounded = avg_bounded .and. summary%entries(1)%avg_call_count <= real(high_count, wp)
+      avg_matches = summary%entries(1)%avg_call_count == real(expected_avg_count, wp)
+      @assertTrue(avg_bounded)
+      @assertTrue(avg_matches)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_avg_call_count_sparse_odd_i64
+
+   @test
    subroutine test_mpi_summary_preserves_partial_tie_rank_attribution(this)
       class(mpi_summary_4pe_case), intent(inout) :: this
       type(ftimer_t) :: timer

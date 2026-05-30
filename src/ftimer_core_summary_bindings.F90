@@ -1180,6 +1180,7 @@ contains
       integer :: record_prefix_limit
       character(len=1) :: last_char
       logical :: exists
+      logical :: after_quoted_field
       logical :: in_quotes
       logical :: pending_quote
       logical :: reading_header
@@ -1202,6 +1203,7 @@ contains
       record_field_count = 1
       last_char = ''
       reading_header = .true.
+      after_quoted_field = .false.
       in_quotes = .false.
       pending_quote = .false.
       saw_any_char = .false.
@@ -1249,6 +1251,16 @@ contains
             end if
             in_quotes = .false.
             pending_quote = .false.
+            after_quoted_field = .true.
+         end if
+
+         if (after_quoted_field) then
+            if ((ch /= ',') .and. (ch /= new_line('a')) .and. (ch /= achar(13))) then
+               close (file_unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing CSV records contain malformed quoted fields'
+               return
+            end if
          end if
 
          if ((ch == new_line('a')) .and. (.not. in_quotes)) then
@@ -1261,18 +1273,21 @@ contains
             end if
             record_text = ''
             record_field_count = 1
+            after_quoted_field = .false.
             cycle
          end if
 
          call append_limited_csv_record_prefix(record_text, ch, record_prefix_limit)
 
          if ((ch == ',') .and. (.not. in_quotes)) record_field_count = record_field_count + 1
+         if ((ch == ',') .and. after_quoted_field) after_quoted_field = .false.
 
          if (ch == '"') then
             if (in_quotes) then
                pending_quote = .true.
             else
                in_quotes = .true.
+               after_quoted_field = .false.
             end if
          end if
       end do

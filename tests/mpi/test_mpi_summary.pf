@@ -202,6 +202,7 @@ contains
       integer(int64) :: high_count
       integer(int64) :: local_count
       integer(int64) :: low_count
+      logical :: avg_count_interior
       logical :: avg_count_matches
       logical :: avg_count_bounded
       logical :: avg_count_positive
@@ -210,8 +211,8 @@ contains
       real(wp) :: expected_avg
 
       rank = this%getProcessRank()
-      low_count = huge(0_int64) - 1024_int64
-      high_count = huge(0_int64) - 512_int64
+      low_count = huge(0_int64) - 32767_int64
+      high_count = huge(0_int64) - 16383_int64
       expected_avg = real(low_count, wp) + real(high_count - low_count, wp)/2.0_wp
       if (rank == 0) then
          local_count = low_count
@@ -244,11 +245,14 @@ contains
       avg_count_positive = summary%entries(1)%avg_call_count > 0.0_wp
       avg_count_bounded = summary%entries(1)%avg_call_count >= real(low_count, wp)
       avg_count_bounded = avg_count_bounded .and. summary%entries(1)%avg_call_count <= real(high_count, wp)
+      avg_count_interior = summary%entries(1)%avg_call_count /= real(low_count, wp)
+      avg_count_interior = avg_count_interior .and. summary%entries(1)%avg_call_count /= real(high_count, wp)
       @assertTrue(min_count_matches)
       @assertTrue(max_count_matches)
       @assertTrue(avg_count_matches)
       @assertTrue(avg_count_positive)
       @assertTrue(avg_count_bounded)
+      @assertTrue(avg_count_interior)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -362,6 +366,7 @@ contains
       integer(int64) :: high_count
       integer(int64) :: local_count
       integer(int64) :: low_count
+      logical :: avg_count_interior
       logical :: avg_count_matches
       logical :: avg_count_bounded
       logical :: avg_count_positive
@@ -370,8 +375,8 @@ contains
       real(wp) :: expected_avg
 
       rank = this%getProcessRank()
-      low_count = huge(0_int64) - 2048_int64
-      high_count = huge(0_int64) - 1024_int64
+      low_count = huge(0_int64) - 32767_int64
+      high_count = huge(0_int64) - 16383_int64
       expected_avg = real(low_count, wp) + real(high_count - low_count, wp)/2.0_wp
       if (rank == 0) then
          local_count = low_count
@@ -405,11 +410,14 @@ contains
       avg_count_positive = summary%entries(1)%avg_call_count > 0.0_wp
       avg_count_bounded = summary%entries(1)%avg_call_count >= real(low_count, wp)
       avg_count_bounded = avg_count_bounded .and. summary%entries(1)%avg_call_count <= real(high_count, wp)
+      avg_count_interior = summary%entries(1)%avg_call_count /= real(low_count, wp)
+      avg_count_interior = avg_count_interior .and. summary%entries(1)%avg_call_count /= real(high_count, wp)
       @assertTrue(min_count_matches)
       @assertTrue(max_count_matches)
       @assertTrue(avg_count_matches)
       @assertTrue(avg_count_positive)
       @assertTrue(avg_count_bounded)
+      @assertTrue(avg_count_interior)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -2613,13 +2621,15 @@ contains
       integer(int64) :: base_count
       integer(int64) :: local_count
       real(wp) :: avg_count_value
+      real(wp) :: expected_avg_value
 
       rank = this%getProcessRank()
       flags = 0
-      base_count = huge(0_int64) - 1_int64
-      local_count = base_count + int(rank, int64)
+      base_count = huge(0_int64) - 32767_int64
+      local_count = base_count + int(rank, int64)*16384_int64
+      expected_avg_value = real(base_count, wp) + 8192.0_wp
       write (expected_min_text, '(i0)') base_count
-      write (expected_max_text, '(i0)') base_count + 1_int64
+      write (expected_max_text, '(i0)') base_count + 16384_int64
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -2670,9 +2680,8 @@ contains
          if (avg_io == 0) flags(11) = 1
          if ((avg_io == 0) .and. (avg_count_value > 0.0_wp)) flags(12) = 1
          if ((avg_io == 0) .and. (avg_count_value >= real(base_count, wp)) .and. &
-             (avg_count_value <= real(base_count + 1_int64, wp))) flags(3) = 1
-         if ((avg_io == 0) .and. &
-             real_spacing_close(avg_count_value, real(base_count, wp) + 0.5_wp)) flags(13) = 1
+             (avg_count_value <= real(base_count + 16384_int64, wp))) flags(3) = 1
+         if ((avg_io == 0) .and. real_spacing_close(avg_count_value, expected_avg_value)) flags(13) = 1
 
          call delete_if_exists(csv_path)
       end if
@@ -2818,6 +2827,168 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_write_csv_rejects_short_v2_record
+
+   @test
+   subroutine test_mpi_write_csv_rejects_bad_quoted_field(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=*), parameter :: csv_path = 'test_mpi_summary_quote_junk_append.csv'
+      character(len=*), parameter :: timer_name_field = '"outer"'
+      character(len=:), allocatable :: bad_line
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      integer :: ierr
+      integer :: io
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+      integer :: quote_pos
+      integer :: rank
+      integer :: unchanged_flag
+      integer :: unit
+      logical :: found_timer_name
+
+      rank = this%getProcessRank()
+      unchanged_flag = 0
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_nested_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) call delete_if_exists(csv_path)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_summary_csv(csv_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         csv_text = read_file_text(csv_path)
+         header = csv_line_at(csv_text, 1)
+         entry_line = csv_line_at(csv_text, 3)
+         quote_pos = index(entry_line, timer_name_field)
+         found_timer_name = quote_pos > 0
+         @assertTrue(found_timer_name)
+         bad_line = entry_line(:quote_pos + len(timer_name_field) - 1)//'junk'// &
+                    entry_line(quote_pos + len(timer_name_field):)
+         open (newunit=unit, file=csv_path, status='replace', action='write', iostat=io)
+         @assertEqual(0, io)
+         write (unit, '(a)') trim(header)
+         write (unit, '(a)') trim(bad_line)
+         close (unit)
+         call capture_raw_file_text(csv_path, before_text)
+      end if
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_summary_csv(csv_path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_IO, min_err)
+      @assertEqual(FTIMER_ERR_IO, max_err)
+
+      if (rank == 0) unchanged_flag = raw_file_unchanged_flag(csv_path, before_text)
+      call MPI_F08_Bcast(unchanged_flag, 1, MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      @assertEqual(1, unchanged_flag)
+
+      if (rank == 0) call delete_if_exists(csv_path)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_write_csv_rejects_bad_quoted_field
+
+   @test
+   subroutine test_mpi_write_csv_rejects_unknown_v2_record_type(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=*), parameter :: csv_path = 'test_mpi_summary_bad_v2_type_append.csv'
+      character(len=*), parameter :: valid_prefix = '"2","mpi","entry"'
+      character(len=*), parameter :: bad_prefix = '"2","mpi","bogus"'
+      character(len=:), allocatable :: bad_line
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      integer :: ierr
+      integer :: io
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+      integer :: rank
+      integer :: unchanged_flag
+      integer :: unit
+      logical :: prefix_matches
+
+      rank = this%getProcessRank()
+      unchanged_flag = 0
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_nested_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) call delete_if_exists(csv_path)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_summary_csv(csv_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         csv_text = read_file_text(csv_path)
+         header = csv_line_at(csv_text, 1)
+         entry_line = csv_line_at(csv_text, 3)
+         prefix_matches = entry_line(:len(valid_prefix)) == valid_prefix
+         @assertTrue(prefix_matches)
+         bad_line = bad_prefix//entry_line(len(valid_prefix) + 1:)
+         open (newunit=unit, file=csv_path, status='replace', action='write', iostat=io)
+         @assertEqual(0, io)
+         write (unit, '(a)') trim(header)
+         write (unit, '(a)') trim(bad_line)
+         close (unit)
+         call capture_raw_file_text(csv_path, before_text)
+      end if
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_summary_csv(csv_path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_IO, min_err)
+      @assertEqual(FTIMER_ERR_IO, max_err)
+
+      if (rank == 0) unchanged_flag = raw_file_unchanged_flag(csv_path, before_text)
+      call MPI_F08_Bcast(unchanged_flag, 1, MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      @assertEqual(1, unchanged_flag)
+
+      if (rank == 0) call delete_if_exists(csv_path)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_write_csv_rejects_unknown_v2_record_type
 
    @test
    subroutine test_mpi_write_summary_csv_rejects_unterminated_append_target(this)
