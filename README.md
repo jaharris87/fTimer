@@ -368,6 +368,9 @@ This is useful for before/after regression checks when changing hot-path timing 
 
 - Runtime semantics: [`docs/semantics.md`](docs/semantics.md)
 - Current architecture reference: [`docs/design.md`](docs/design.md)
+- Release checklist and artifact policy: [`docs/release.md`](docs/release.md)
+- Contributor guidance: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Support and security reporting: [`SUPPORT.md`](SUPPORT.md), [`SECURITY.md`](SECURITY.md)
 
 When current-state sources disagree, use this repository-wide precedence order:
 

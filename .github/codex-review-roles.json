@@ -53,8 +53,12 @@
         "path_regex_any": [
           "^AGENTS\\.md$",
           "^CLAUDE\\.md$",
+          "^CONTRIBUTING\\.md$",
           "^README\\.md$",
+          "^SECURITY\\.md$",
+          "^SUPPORT\\.md$",
           "^docs/",
+          "^\\.github/ISSUE_TEMPLATE/",
           "^examples/",
           "^\\.github/pull_request_template\\.md$",
           "^\\.github/workflows/codex-review\\.yml$",
