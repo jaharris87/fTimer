@@ -1183,6 +1183,7 @@ contains
       logical :: after_quoted_field
       logical :: field_has_content
       logical :: in_quotes
+      logical :: pending_record_cr
       logical :: pending_quote
       logical :: reading_header
       logical :: saw_any_char
@@ -1207,6 +1208,7 @@ contains
       after_quoted_field = .false.
       field_has_content = .false.
       in_quotes = .false.
+      pending_record_cr = .false.
       pending_quote = .false.
       saw_any_char = .false.
 
@@ -1245,6 +1247,16 @@ contains
             cycle
          end if
 
+         if (pending_record_cr) then
+            if (ch /= new_line('a')) then
+               close (file_unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing CSV records contain a bare carriage return'
+               return
+            end if
+            pending_record_cr = .false.
+         end if
+
          if (pending_quote) then
             if (ch == '"') then
                pending_quote = .false.
@@ -1256,8 +1268,13 @@ contains
             after_quoted_field = .true.
          end if
 
+         if ((ch == achar(13)) .and. (.not. in_quotes)) then
+            pending_record_cr = .true.
+            cycle
+         end if
+
          if (after_quoted_field) then
-            if ((ch /= ',') .and. (ch /= new_line('a')) .and. (ch /= achar(13))) then
+            if ((ch /= ',') .and. (ch /= new_line('a'))) then
                close (file_unit)
                status = FTIMER_ERR_IO
                iomsg = 'existing CSV records contain malformed quoted fields'
@@ -1301,7 +1318,7 @@ contains
                in_quotes = .true.
                after_quoted_field = .false.
             end if
-         else if ((.not. in_quotes) .and. (ch /= achar(13))) then
+         else if (.not. in_quotes) then
             field_has_content = .true.
          end if
       end do
@@ -1318,6 +1335,12 @@ contains
       if (in_quotes) then
          status = FTIMER_ERR_IO
          iomsg = 'existing CSV records contain an unterminated quoted field'
+         return
+      end if
+
+      if (pending_record_cr) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing CSV records contain a bare carriage return'
          return
       end if
 
