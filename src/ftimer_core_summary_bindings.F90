@@ -1242,7 +1242,13 @@ contains
                   return
                end if
             else
-               if (len(header_line) <= len(expected_header)) header_line = header_line//ch
+               if (len(header_line) >= len(expected_header) + 1) then
+                  close (file_unit)
+                  status = FTIMER_ERR_IO
+                  iomsg = 'existing CSV header does not match fTimer CSV format_version 2'
+                  return
+               end if
+               header_line = header_line//ch
             end if
             cycle
          end if

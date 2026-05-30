@@ -693,6 +693,40 @@ contains
    end subroutine test_write_summary_csv_rejects_mismatched_append_header
 
    @test
+   subroutine test_write_summary_csv_rejects_bare_cr_in_header()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: source_path = 'phase3_summary_header_cr_source.csv'
+      character(len=*), parameter :: path = 'phase3_summary_header_cr_append.csv'
+      character(len=:), allocatable :: before_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      integer :: ierr
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+      call build_single_timer_summary(timer, summary, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%write_summary_csv(source_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      csv_text = read_file_text(source_path)
+      header = csv_line_at(csv_text, 1)
+      entry_line = csv_line_at(csv_text, 3)
+
+      call write_raw_text(path, trim(header)//achar(13)//'junk'//new_line('a')//trim(entry_line)//new_line('a'))
+      call capture_raw_file_text(path, before_text)
+
+      call timer%write_summary_csv(path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+      call assert_raw_file_unchanged(path, before_text)
+
+      call delete_if_exists(source_path)
+      call delete_if_exists(path)
+   end subroutine test_write_summary_csv_rejects_bare_cr_in_header
+
+   @test
    subroutine test_write_summary_csv_rejects_prior_format_version_append()
       type(ftimer_t) :: timer
       type(ftimer_summary_t) :: summary
