@@ -2749,6 +2749,7 @@ contains
    subroutine test_mpi_write_summary_csv_rejects_unterminated_append_target(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
+      character(len=:), allocatable :: before_text
       character(len=:), allocatable :: csv_text
       character(len=:), allocatable :: header
       character(len=*), parameter :: csv_path = 'test_mpi_summary_unterminated_append.csv'
@@ -2757,8 +2758,10 @@ contains
       integer :: min_err
       integer :: mpierr
       integer :: rank
+      integer :: unchanged_flag
 
       rank = this%getProcessRank()
+      unchanged_flag = 0
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -2780,6 +2783,7 @@ contains
          csv_text = read_file_text(csv_path)
          header = csv_line_at(csv_text, 1)
          call write_raw_text_without_newline(csv_path, header)
+         call capture_raw_file_text(csv_path, before_text)
       end if
       call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
       @assertEqual(MPI_F08_SUCCESS, ierr)
@@ -2795,6 +2799,11 @@ contains
       @assertEqual(FTIMER_ERR_IO, min_err)
       @assertEqual(FTIMER_ERR_IO, max_err)
 
+      if (rank == 0) unchanged_flag = raw_file_unchanged_flag(csv_path, before_text)
+      call MPI_F08_Bcast(unchanged_flag, 1, MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      @assertEqual(1, unchanged_flag)
+
       if (rank == 0) call delete_if_exists(csv_path)
 
       call timer%finalize(ierr=ierr)
@@ -2805,6 +2814,7 @@ contains
    subroutine test_mpi_write_csv_rejects_unterminated_quote_record(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
+      character(len=:), allocatable :: before_text
       character(len=:), allocatable :: csv_text
       character(len=:), allocatable :: header
       character(len=*), parameter :: csv_path = 'test_mpi_summary_unterminated_quote_append.csv'
@@ -2815,8 +2825,10 @@ contains
       integer :: mpierr
       integer :: rank
       integer :: unit
+      integer :: unchanged_flag
 
       rank = this%getProcessRank()
+      unchanged_flag = 0
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -2842,6 +2854,7 @@ contains
          write (unit, '(a)') trim(header)
          write (unit, '(a)') '"2","mpi","metadata","Notes","unterminated'
          close (unit)
+         call capture_raw_file_text(csv_path, before_text)
       end if
       call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
       @assertEqual(MPI_F08_SUCCESS, ierr)
@@ -2856,6 +2869,11 @@ contains
 
       @assertEqual(FTIMER_ERR_IO, min_err)
       @assertEqual(FTIMER_ERR_IO, max_err)
+
+      if (rank == 0) unchanged_flag = raw_file_unchanged_flag(csv_path, before_text)
+      call MPI_F08_Bcast(unchanged_flag, 1, MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      @assertEqual(1, unchanged_flag)
 
       if (rank == 0) call delete_if_exists(csv_path)
 
@@ -3329,6 +3347,45 @@ contains
       @assertEqual(0, io)
       close (unit)
    end subroutine write_raw_text_without_newline
+
+   subroutine capture_raw_file_text(path, text)
+      character(len=*), intent(in) :: path
+      character(len=:), allocatable, intent(out) :: text
+      integer :: file_size
+      integer :: io
+      integer :: unit
+      logical :: exists
+
+      inquire (file=path, exist=exists, size=file_size)
+      @assertTrue(exists)
+
+      if (file_size <= 0) then
+         text = ''
+         return
+      end if
+
+      allocate (character(len=file_size) :: text)
+      open (newunit=unit, file=path, status='old', access='stream', form='unformatted', &
+            action='read', iostat=io)
+      @assertEqual(0, io)
+      read (unit, iostat=io) text
+      @assertEqual(0, io)
+      close (unit, iostat=io)
+      @assertEqual(0, io)
+   end subroutine capture_raw_file_text
+
+   integer function raw_file_unchanged_flag(path, expected) result(flag)
+      character(len=*), intent(in) :: path
+      character(len=*), intent(in) :: expected
+      character(len=:), allocatable :: actual
+
+      call capture_raw_file_text(path, actual)
+      if (actual == expected) then
+         flag = 1
+      else
+         flag = 0
+      end if
+   end function raw_file_unchanged_flag
 
    subroutine assert_real_close(actual, expected)
       real(wp), intent(in) :: actual
