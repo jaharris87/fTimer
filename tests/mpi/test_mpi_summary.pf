@@ -131,10 +131,13 @@ contains
       type(ftimer_t) :: timer
       type(ftimer_mpi_summary_t) :: summary
       integer :: ierr
+      real(wp), parameter :: base_time = 1.0e12_wp
 
       call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
-      call attach_mock_clock(timer)
+      fake_time = base_time
+      call timer%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
 
       call build_large_timestamp_nested_timers(timer, this%getProcessRank(), ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)

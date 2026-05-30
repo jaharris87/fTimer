@@ -121,12 +121,17 @@ contains
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: after_state
       type(ftimer_test_state_t) :: before_state
+      type(ftimer_summary_t) :: summary
       real(wp) :: default_after
       real(wp) :: default_before
       real(wp) :: original_init_wtime
       real(wp) :: rebased_init_wtime
+      real(wp) :: summary_after
+      real(wp) :: summary_before
+      real(wp) :: summary_total
       integer :: ierr
       logical :: rebased_between_defaults
+      logical :: summary_total_in_default_window
 
       fake_time = 7.0_wp
       call timer%set_clock(mock_clock, ierr=ierr)
@@ -150,6 +155,18 @@ contains
 
       @assertTrue(rebased_between_defaults)
       @assertTrue(rebased_init_wtime /= original_init_wtime)
+
+      summary_before = runtime_default_clock()
+      call timer%get_summary(summary, ierr=ierr)
+      summary_after = runtime_default_clock()
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      summary_total = summary%total_time
+      summary_total_in_default_window = (summary_total >= summary_before - rebased_init_wtime) .and. &
+                                        (summary_total <= summary_after - rebased_init_wtime)
+
+      @assertTrue(summary_total_in_default_window)
+      @assertEqual(0, summary%num_entries)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
