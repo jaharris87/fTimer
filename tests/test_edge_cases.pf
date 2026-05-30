@@ -292,13 +292,15 @@ contains
    end subroutine test_finalize_with_active_timer_returns_active
 
    @test
-   subroutine test_clear_clock_after_timing_data_preserves_clock()
+   subroutine test_clock_change_after_data_preserves_window()
       type(ftimer_t) :: timer
       type(ftimer_call_stack_t) :: root_stack
+      type(ftimer_summary_t) :: summary
       type(ftimer_test_state_t) :: state
       integer :: ctx
       integer :: ierr
       real(wp) :: elapsed
+      real(wp) :: initial_init_wtime
 
       call timer%init(ierr=ierr)
       call attach_mock_clock(timer)
@@ -308,14 +310,32 @@ contains
       call timer%stop("A", ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
+      call snapshot_timer(timer, state)
+      initial_init_wtime = state%init_wtime
+
+      fake_time = 6.0_wp
       call timer%set_clock(scaled_mock_clock, ierr=ierr)
       @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+
+      call snapshot_timer(timer, state)
+      @assertEqual(initial_init_wtime, state%init_wtime)
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(6.0_wp, summary%total_time)
+      @assertEqual(1.0_wp, summary%entries(1)%inclusive_time)
 
       call timer%clear_clock(ierr=ierr)
       @assertEqual(FTIMER_ERR_ACTIVE, ierr)
 
+      call snapshot_timer(timer, state)
+      @assertEqual(initial_init_wtime, state%init_wtime)
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(6.0_wp, summary%total_time)
+      @assertEqual(1.0_wp, summary%entries(1)%inclusive_time)
+
       call timer%start("B", ierr=ierr)
-      fake_time = 2.5_wp
+      fake_time = 7.5_wp
       call timer%stop("B", ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
@@ -324,7 +344,7 @@ contains
       elapsed = state%segments(2)%time(ctx)
 
       @assertEqual(1.5_wp, elapsed)
-   end subroutine test_clear_clock_after_timing_data_preserves_clock
+   end subroutine test_clock_change_after_data_preserves_window
 
    @test
    subroutine test_finalize_clears_preinit_callback_state()
