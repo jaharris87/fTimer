@@ -381,6 +381,7 @@ contains
       end if
 
       self%clock => clock
+      if (self%initialized) call rebase_summary_window(self)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine set_clock_impl
 
@@ -407,7 +408,7 @@ contains
       end if
 
       call restore_default_clock(self)
-      if (self%initialized) self%init_wtime = self%wtime()
+      if (self%initialized) call rebase_summary_window(self)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine clear_clock_impl
 
@@ -604,7 +605,6 @@ contains
       token = create_activation_token(self)
       call self%call_stack%push(id, token)
       now = self%wtime()
-      if (needs_init_wtime_rebase(self)) self%init_wtime = now
       self%segments(id)%start_time(ctx) = now
       self%segments(id)%call_count(ctx) = self%segments(id)%call_count(ctx) + 1_int64
       self%segments(id)%is_running(ctx) = .true.
@@ -1006,6 +1006,13 @@ contains
       self%clock => ftimer_default_clock
 #endif
    end subroutine restore_default_clock
+
+   subroutine rebase_summary_window(self)
+      class(ftimer_t), intent(inout) :: self
+
+      self%init_wtime = self%wtime()
+      self%init_date = ftimer_date_string()
+   end subroutine rebase_summary_window
 
    subroutine clear_callback_state(self)
       class(ftimer_t), intent(inout) :: self
@@ -1496,20 +1503,5 @@ contains
       if (self%initialized .and. has_recorded_timing(self)) return
       can_configure = .true.
    end function can_configure_clock
-
-   logical function needs_init_wtime_rebase(self) result(needs_rebase)
-      class(ftimer_t), intent(in) :: self
-
-      needs_rebase = .false.
-      if (.not. self%initialized) return
-      if (.not. associated(self%clock)) return
-      if (has_recorded_timing(self)) return
-#ifdef FTIMER_USE_MPI
-      if (associated(self%clock, ftimer_mpi_clock)) return
-#else
-      if (associated(self%clock, ftimer_default_clock)) return
-#endif
-      needs_rebase = .true.
-   end function needs_init_wtime_rebase
 
 end module ftimer_core
