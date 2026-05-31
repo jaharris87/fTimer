@@ -361,9 +361,12 @@ The repository includes a standalone benchmark harness for measuring timer overh
 cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-bench --target ftimer_bench
 ./build-bench/bench/ftimer_bench
+./build-bench/bench/ftimer_bench /tmp/ftimer_bench_results.csv
 ```
 
 This is useful for before/after regression checks when changing hot-path timing behavior. Compare the name-based lookup-scaling rows across resident timer counts to confirm the mapped default path stays much flatter than the old linear-scan baseline, and compare the context-scaling rows across larger `C` values to see how one hot timer behaves when it is reused under many distinct parent stacks. The first-touch rows measure the remaining allocation/growth cost for newly discovered timer names and parent-stack contexts after setup has prebuilt labels and initialized independent timer objects. The long-name rows show the extra validation/hash cost for labels above the legacy threshold. The flat name-based/id-based rows still help judge whether the optional cached-id path is worth it for one especially hot loop.
+
+The benchmark harness also includes reporting-scale rows for local text reports, local CSV reports, sparse MPI-union text formatting, long timer names, and metadata-heavy output. When fTimer is built with `FTIMER_USE_MPI=ON`, the harness adds a strict MPI CSV report row. Passing a file path as the first argument writes parseable CSV benchmark observations that can be archived for trend review; the harness records measurements only and does not enforce timing thresholds.
 
 ## More Detail
 

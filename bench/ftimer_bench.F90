@@ -50,9 +50,14 @@
 !                                       prebuilt flat segments; isolates the
 !                                       tree build/allocation work from the
 !                                       wrapper's timestamp capture
-! 34. raw date string formatting     -- date_and_time + string formatting,
+! 34-41. Reporting scale             -- local text, local CSV, sparse-union
+!                                       text, long-name reports, and
+!                                       metadata-heavy report output
+! 42. strict MPI CSV reporting        -- MPI-enabled builds only; captures the
+!                                       reduction + root CSV reporting path
+! 43. raw date string formatting      -- date_and_time + string formatting,
 !                                       matching the original per-call wrapper
-! 35. ftimer_date_string steady-state -- cached second-resolution date stamp
+! 44. ftimer_date_string steady-state -- cached second-resolution date stamp
 !                                        path used by get_summary/print/write
 !
 ! METRICS
@@ -65,6 +70,11 @@
 !   cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON
 !   cmake --build build-bench --target ftimer_bench
 !   ./build-bench/bench/ftimer_bench
+!   ./build-bench/bench/ftimer_bench /tmp/ftimer_bench_results.csv
+!
+! The optional first argument writes parseable CSV benchmark results for trend
+! review or archival. It intentionally records observations only, not pass/fail
+! thresholds.
 !
 ! INTERPRETATION
 !   Compare "flat name-based" vs "flat id-based" to isolate the remaining
@@ -82,14 +92,19 @@
 !   Compare get_summary timer counts to see summary-generation scaling.
 
 program ftimer_bench
-   use, intrinsic :: iso_fortran_env, only: int64, real64
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64, real64
    use ftimer_clock, only: ftimer_date_string
    use ftimer_core, only: ftimer_t
    use ftimer, only: ftimer_finalize, ftimer_get_summary, ftimer_init, &
                      ftimer_lookup, ftimer_start, ftimer_start_id, &
                      ftimer_stop, ftimer_stop_id
-   use ftimer_summary, only: build_summary
-   use ftimer_types, only: ftimer_segment_t, ftimer_summary_t, wp
+   use ftimer_summary, only: build_summary, format_mpi_union_summary, format_summary
+   use ftimer_types, only: ftimer_metadata_t, ftimer_mpi_union_summary_t, ftimer_segment_t, &
+                           ftimer_summary_t, wp
+#ifdef FTIMER_USE_MPI
+   use mpi_f08, only: MPI_Barrier, MPI_COMM_WORLD, MPI_Comm_rank, MPI_Comm_size, MPI_Finalize, &
+                      MPI_Init
+#endif
    implicit none
 
    integer, parameter :: REPS_HOT = 100000  ! flat and lookup scenarios
@@ -101,19 +116,41 @@ program ftimer_bench
    integer, parameter :: REPS_SUMMARY_LARGE = 200  ! for 100-timer scenario
    integer, parameter :: REPS_DATE_RAW = 5000
    integer, parameter :: REPS_DATE_CACHED = 100000
+   integer, parameter :: REPS_REPORT = 25
+   integer, parameter :: REPS_REPORT_LARGE = 5
+   integer, parameter :: REPS_CSV_REPORT = 5
+   integer, parameter :: REPS_METADATA_REPORT = 10
+   integer, parameter :: REPS_MPI_REPORT = 5
+   integer, parameter :: REPORT_N_SMALL = 100
+   integer, parameter :: REPORT_N_LARGE = 1000
+   integer, parameter :: REPORT_LONG_NAME_LEN = 256
+   integer, parameter :: REPORT_METADATA_COUNT = 200
    character(len=40), parameter :: BENCH_DATE = '2026-03-27 12:00:00 -0400'
+   character(len=*), parameter :: LOCAL_CSV_REPORT_PATH = '/tmp/ftimer_bench_local_report.csv'
+   character(len=*), parameter :: MPI_CSV_REPORT_PATH = '/tmp/ftimer_bench_mpi_report.csv'
 
    integer(int64) :: count_rate
    integer :: date_string_sink = 0
+   integer(int64) :: text_sink = 0_int64
+   integer :: bench_csv_unit = -1
+   integer :: bench_nprocs = 1
+   integer :: bench_rank = 0
+   logical :: bench_csv_enabled = .false.
+#ifdef FTIMER_USE_MPI
+   integer :: mpierr
+#endif
 
+#ifdef FTIMER_USE_MPI
+   call MPI_Init(mpierr)
+   call MPI_Comm_rank(MPI_COMM_WORLD, bench_rank, mpierr)
+   call MPI_Comm_size(MPI_COMM_WORLD, bench_nprocs, mpierr)
+#endif
    call system_clock(count_rate=count_rate)
+   call setup_bench_csv()
 
-   write (*, '(a)') '=== fTimer Performance Benchmark ==='
-   write (*, '(a)') ''
-   write (*, '(a47,a10,a12,a13)') &
-      'Benchmark                                      ', &
-      '      Reps', '  Total(ms)', '  Per-op(ns)'
-   write (*, '(a82)') repeat('-', 82)
+   call write_bench_line('=== fTimer Performance Benchmark ===')
+   call write_bench_line('')
+   call write_bench_header()
 
    ! --- Hot-path scenarios ---
    call bench_flat_name(REPS_HOT, count_rate)
@@ -123,7 +160,7 @@ program ftimer_bench
    call bench_long_name(REPS_LONG_NAME, 1024, .false., count_rate)
    call bench_long_name(REPS_LONG_NAME, 1024, .true., count_rate)
 
-   write (*, '(a)') ''
+   call write_bench_line('')
 
    ! --- Lookup scaling scenarios ---
    call bench_lookup_scaling(REPS_HOT, 1, count_rate)
@@ -132,7 +169,7 @@ program ftimer_bench
    call bench_lookup_scaling(REPS_HOT/100, 100, count_rate)
    call bench_lookup_scaling(REPS_HOT/1000, 1000, count_rate)
 
-   write (*, '(a)') ''
+   call write_bench_line('')
 
    ! --- First-touch allocation scenarios ---
    call bench_timer_first_touch(1000, 10, count_rate)
@@ -142,7 +179,7 @@ program ftimer_bench
    call bench_context_first_touch(200, 100, count_rate)
    call bench_context_first_touch(50, 1000, count_rate)
 
-   write (*, '(a)') ''
+   call write_bench_line('')
 
    ! --- Context-scaling scenarios ---
    call bench_context_scaling_name(REPS_HOT, 1, count_rate)
@@ -158,7 +195,7 @@ program ftimer_bench
    call bench_context_scaling_id(REPS_HOT/500, 500, count_rate)
    call bench_context_scaling_id(REPS_HOT/1000, 1000, count_rate)
 
-   write (*, '(a)') ''
+   call write_bench_line('')
 
    ! --- Nesting-depth (call-stack push/pop churn) scenarios ---
    call bench_nesting(REPS_NESTED, 1, count_rate)
@@ -166,41 +203,177 @@ program ftimer_bench
    call bench_nesting(REPS_NESTED, 10, count_rate)
    call bench_nesting(REPS_NESTED, 20, count_rate)
 
-   write (*, '(a)') ''
+   call write_bench_line('')
 
    ! --- Summary-generation scaling scenarios ---
    call bench_summary(10, REPS_SUMMARY, count_rate)
    call bench_summary(50, REPS_SUMMARY, count_rate)
    call bench_summary(100, REPS_SUMMARY_LARGE, count_rate)
 
-   write (*, '(a)') ''
+   call write_bench_line('')
 
    ! --- Direct summary-construction scenarios ---
    call bench_build_summary_direct(10, REPS_SUMMARY, count_rate)
    call bench_build_summary_direct(50, REPS_SUMMARY, count_rate)
    call bench_build_summary_direct(100, REPS_SUMMARY_LARGE, count_rate)
 
-   write (*, '(a)') ''
+   call write_bench_line('')
+
+   ! --- Reporting scale scenarios ---
+   call bench_format_local_text(REPORT_N_SMALL, REPS_REPORT, 8, 0, count_rate, &
+                                'format local text N=100 entries')
+   call bench_format_local_text(REPORT_N_LARGE, REPS_REPORT_LARGE, 8, 0, count_rate, &
+                                'format local text N=1000 entries')
+   call bench_write_local_csv(REPORT_N_SMALL, REPS_CSV_REPORT, 8, 0, count_rate, &
+                              'write local CSV N=100 entries')
+   call bench_write_local_csv(REPORT_N_LARGE, REPS_CSV_REPORT, 8, 0, count_rate, &
+                              'write local CSV N=1000 entries')
+   call bench_format_local_text(REPORT_N_SMALL, REPS_REPORT, REPORT_LONG_NAME_LEN, 0, count_rate, &
+                                'format local text N=100 long L=256')
+   call bench_format_local_text(REPORT_N_SMALL, REPS_METADATA_REPORT, 8, REPORT_METADATA_COUNT, count_rate, &
+                                'format local text metadata M=200')
+   call bench_write_local_csv(REPORT_N_SMALL, REPS_METADATA_REPORT, 8, REPORT_METADATA_COUNT, count_rate, &
+                              'write local CSV metadata M=200')
+   call bench_format_mpi_union_text(REPORT_N_SMALL, REPS_REPORT, 8, count_rate, &
+                                    'format sparse union text N=100')
+   call bench_format_mpi_union_text(REPORT_N_LARGE, REPS_REPORT_LARGE, 8, count_rate, &
+                                    'format sparse union text N=1000')
+#ifdef FTIMER_USE_MPI
+   call bench_write_strict_mpi_csv(REPORT_N_SMALL, REPS_MPI_REPORT, count_rate)
+#endif
+
+   call write_bench_line('')
 
    ! --- Date formatting / cache scenarios ---
    call bench_raw_date_string(REPS_DATE_RAW, count_rate)
    call bench_cached_date_string(REPS_DATE_CACHED, count_rate)
 
-   write (*, '(a)') ''
-   write (*, '(a)') 'Notes:'
-   write (*, '(a)') '  - Nesting "per-op" = per full nest cycle (D pushes + D pops).'
-   write (*, '(a)') '  - Context scaling "per-op" = one parent/work start-stop cycle.'
-   write (*, '(a)') '  - First-touch rows exclude timer init/finalize and prebuilt-name formatting.'
-   write (*, '(a)') '  - get_summary "per-op" = per summary build call.'
-   write (*, '(a)') '  - build_summary (direct) uses prebuilt flat segments and fixed dates.'
-   write (*, '(a)') '  - raw date string = uncached date_and_time + formatting.'
-   write (*, '(a)') '  - ftimer_date_string steady-state = cached path after warm-up.'
-   write (*, '(a)') '  - Long-name name-based rows include full per-call validation and hashing of the label.'
-   write (*, '(a)') '  - name-based start/stop remains the default path; lookup/start_id/stop_id is the optional hot path.'
-   write (*, '(a)') '  - All scenarios use the real wall-clock (no mock clock).'
-   write (*, '(a)') '  - Timings include clock-call overhead inside start/stop.'
+   call write_bench_line('')
+   call write_bench_line('Notes:')
+   call write_bench_line('  - Nesting "per-op" = per full nest cycle (D pushes + D pops).')
+   call write_bench_line('  - Context scaling "per-op" = one parent/work start-stop cycle.')
+   call write_bench_line('  - First-touch rows exclude timer init/finalize and prebuilt-name formatting.')
+   call write_bench_line('  - get_summary "per-op" = per summary build call.')
+   call write_bench_line('  - build_summary (direct) uses prebuilt flat segments and fixed dates.')
+   call write_bench_line('  - Reporting rows measure generated report size effects without hard thresholds.')
+   call write_bench_line('  - strict MPI CSV reporting appears only in FTIMER_USE_MPI=ON builds.')
+   call write_bench_line('  - raw date string = uncached date_and_time + formatting.')
+   call write_bench_line('  - ftimer_date_string steady-state = cached path after warm-up.')
+   call write_bench_line('  - Long-name name-based rows include full per-call validation and hashing of the label.')
+   call write_bench_line('  - name-based start/stop remains the default path; lookup/start_id/stop_id is the optional hot path.')
+   call write_bench_line('  - All scenarios use the real wall-clock (no mock clock).')
+   call write_bench_line('  - Timings include clock-call overhead inside start/stop.')
+   call write_bench_line('  - Pass a CSV path as argv[1] to archive parseable benchmark results.')
+
+   call close_bench_csv()
+#ifdef FTIMER_USE_MPI
+   call MPI_Finalize(mpierr)
+#endif
 
 contains
+
+   logical function is_reporting_rank() result(is_root)
+      is_root = (bench_rank == 0)
+   end function is_reporting_rank
+
+   subroutine setup_bench_csv()
+      character(len=512) :: csv_path
+      character(len=256) :: iomsg
+      integer :: arg_status
+      integer :: io
+
+      if (.not. is_reporting_rank()) return
+      if (command_argument_count() < 1) return
+
+      call get_command_argument(1, csv_path, status=arg_status)
+      if (arg_status /= 0) return
+      if (len_trim(csv_path) <= 0) return
+
+      open (newunit=bench_csv_unit, file=trim(csv_path), status='replace', action='write', &
+            iostat=io, iomsg=iomsg)
+      if (io /= 0) then
+         write (error_unit, '(a)') 'ftimer_bench: unable to write CSV result file: '//trim(iomsg)
+         bench_csv_enabled = .false.
+         bench_csv_unit = -1
+         return
+      end if
+
+      bench_csv_enabled = .true.
+      write (bench_csv_unit, '(a)') 'benchmark,reps,total_ms,per_op_ns'
+   end subroutine setup_bench_csv
+
+   subroutine close_bench_csv()
+      if (.not. bench_csv_enabled) return
+      close (bench_csv_unit)
+      bench_csv_enabled = .false.
+      bench_csv_unit = -1
+   end subroutine close_bench_csv
+
+   subroutine write_bench_line(line)
+      character(len=*), intent(in) :: line
+
+      if (.not. is_reporting_rank()) return
+      write (*, '(a)') line
+   end subroutine write_bench_line
+
+   subroutine write_bench_header()
+      if (.not. is_reporting_rank()) return
+      write (*, '(a47,a10,a12,a13)') &
+         'Benchmark                                      ', &
+         '      Reps', '  Total(ms)', '  Per-op(ns)'
+      write (*, '(a82)') repeat('-', 82)
+   end subroutine write_bench_header
+
+   subroutine write_csv_result(label, reps, total_ms, per_op_ns)
+      character(len=*), intent(in) :: label
+      integer, intent(in) :: reps
+      real(real64), intent(in) :: total_ms
+      real(real64), intent(in) :: per_op_ns
+
+      if (.not. bench_csv_enabled) return
+      write (bench_csv_unit, '(a,",",i0,",",f0.6,",",f0.3)') &
+         csv_quote(trim(label)), reps, total_ms, per_op_ns
+   end subroutine write_csv_result
+
+   function csv_quote(value) result(field)
+      character(len=*), intent(in) :: value
+      character(len=:), allocatable :: field
+      integer :: i
+
+      field = '"'
+      do i = 1, len_trim(value)
+         if (value(i:i) == '"') then
+            field = field//'""'
+         else
+            field = field//value(i:i)
+         end if
+      end do
+      field = field//'"'
+   end function csv_quote
+
+   subroutine consume_report_text(text)
+      character(len=*), intent(in) :: text
+
+      text_sink = text_sink + int(len(text), int64)
+   end subroutine consume_report_text
+
+   subroutine delete_file_if_present(filename)
+      character(len=*), intent(in) :: filename
+      integer :: file_unit
+      integer :: io
+
+      open (newunit=file_unit, file=filename, status='old', action='write', iostat=io)
+      if (io == 0) close (file_unit, status='delete')
+   end subroutine delete_file_if_present
+
+   subroutine require_success(ierr, operation)
+      integer, intent(in) :: ierr
+      character(len=*), intent(in) :: operation
+
+      if (ierr == 0) return
+      write (error_unit, '(a,i0)') 'ftimer_bench: '//trim(operation)//' failed with ierr=', ierr
+      error stop
+   end subroutine require_success
 
    ! Scenario 1: name-based start/stop, single timer, steady-state loop.
    ! Pre-registers the timer with ftimer_lookup before timing to ensure the
@@ -618,6 +791,136 @@ contains
       call print_result(trim(label), reps, t0, t1, count_rate)
    end subroutine bench_build_summary_direct
 
+   subroutine bench_format_local_text(num_timers, reps, name_len, metadata_count, count_rate, label)
+      integer, intent(in) :: num_timers
+      integer, intent(in) :: reps
+      integer, intent(in) :: name_len
+      integer, intent(in) :: metadata_count
+      integer(int64), intent(in) :: count_rate
+      character(len=*), intent(in) :: label
+      integer(int64) :: t0
+      integer(int64) :: t1
+      integer :: i
+      type(ftimer_metadata_t), allocatable :: metadata(:)
+      type(ftimer_segment_t), allocatable :: segments(:)
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+
+      if (.not. is_reporting_rank()) return
+
+      call build_flat_segments(segments, num_timers, name_len)
+      call build_summary(summary=summary, segments=segments, init_wtime=0.0_wp, init_date=BENCH_DATE, &
+                         end_time=real(num_timers, wp), end_date=BENCH_DATE)
+      if (metadata_count > 0) call build_metadata(metadata, metadata_count)
+
+      call system_clock(t0)
+      do i = 1, reps
+         if (metadata_count > 0) then
+            call format_summary(summary, text, metadata)
+         else
+            call format_summary(summary, text)
+         end if
+         call consume_report_text(text)
+      end do
+      call system_clock(t1)
+
+      if (allocated(metadata)) deallocate (metadata)
+      if (allocated(segments)) deallocate (segments)
+      call print_result(label, reps, t0, t1, count_rate)
+   end subroutine bench_format_local_text
+
+   subroutine bench_write_local_csv(num_timers, reps, name_len, metadata_count, count_rate, label)
+      integer, intent(in) :: num_timers
+      integer, intent(in) :: reps
+      integer, intent(in) :: name_len
+      integer, intent(in) :: metadata_count
+      integer(int64), intent(in) :: count_rate
+      character(len=*), intent(in) :: label
+      integer(int64) :: t0
+      integer(int64) :: t1
+      integer :: ierr
+      integer :: i
+      type(ftimer_metadata_t), allocatable :: metadata(:)
+      type(ftimer_t) :: timer
+
+      if (.not. is_reporting_rank()) return
+
+      call prepare_timer_with_flat_entries(timer, num_timers, name_len)
+      if (metadata_count > 0) call build_metadata(metadata, metadata_count)
+      call delete_file_if_present(LOCAL_CSV_REPORT_PATH)
+
+      call system_clock(t0)
+      do i = 1, reps
+         if (metadata_count > 0) then
+            call timer%write_summary_csv(LOCAL_CSV_REPORT_PATH, append=.false., metadata=metadata, ierr=ierr)
+         else
+            call timer%write_summary_csv(LOCAL_CSV_REPORT_PATH, append=.false., ierr=ierr)
+         end if
+         call require_success(ierr, 'write_summary_csv')
+      end do
+      call system_clock(t1)
+
+      call timer%finalize()
+      if (allocated(metadata)) deallocate (metadata)
+      call delete_file_if_present(LOCAL_CSV_REPORT_PATH)
+      call print_result(label, reps, t0, t1, count_rate)
+   end subroutine bench_write_local_csv
+
+   subroutine bench_format_mpi_union_text(num_timers, reps, name_len, count_rate, label)
+      integer, intent(in) :: num_timers
+      integer, intent(in) :: reps
+      integer, intent(in) :: name_len
+      integer(int64), intent(in) :: count_rate
+      character(len=*), intent(in) :: label
+      integer(int64) :: t0
+      integer(int64) :: t1
+      integer :: i
+      type(ftimer_mpi_union_summary_t) :: summary
+      character(len=:), allocatable :: text
+
+      if (.not. is_reporting_rank()) return
+
+      call build_mpi_union_summary_fixture(summary, num_timers, name_len)
+
+      call system_clock(t0)
+      do i = 1, reps
+         call format_mpi_union_summary(summary, text)
+         call consume_report_text(text)
+      end do
+      call system_clock(t1)
+
+      call print_result(label, reps, t0, t1, count_rate)
+   end subroutine bench_format_mpi_union_text
+
+#ifdef FTIMER_USE_MPI
+   subroutine bench_write_strict_mpi_csv(num_timers, reps, count_rate)
+      integer, intent(in) :: num_timers
+      integer, intent(in) :: reps
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0
+      integer(int64) :: t1
+      integer :: ierr
+      integer :: i
+      type(ftimer_t) :: timer
+
+      call prepare_mpi_timer_with_flat_entries(timer, num_timers)
+      if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
+      call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+
+      call system_clock(t0)
+      do i = 1, reps
+         call timer%write_mpi_summary_csv(MPI_CSV_REPORT_PATH, append=.false., ierr=ierr)
+         call require_success(ierr, 'write_mpi_summary_csv')
+      end do
+      call system_clock(t1)
+
+      call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+      call timer%finalize()
+      if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
+      call print_result('write strict MPI CSV N=100 entries', reps, t0, t1, count_rate)
+   end subroutine bench_write_strict_mpi_csv
+#endif
+
    subroutine bench_raw_date_string(reps, count_rate)
       integer, intent(in) :: reps
       integer(int64), intent(in) :: count_rate
@@ -652,15 +955,20 @@ contains
       call print_result('ftimer_date_string steady-state', reps, t0, t1, count_rate)
    end subroutine bench_cached_date_string
 
-   subroutine build_flat_segments(segments, num_timers)
+   subroutine build_flat_segments(segments, num_timers, name_len)
       type(ftimer_segment_t), allocatable, intent(out) :: segments(:)
       integer, intent(in) :: num_timers
+      integer, intent(in), optional :: name_len
       integer :: i
-      character(len=8) :: tname
+      integer :: actual_name_len
+      character(len=:), allocatable :: tname
+
+      actual_name_len = 8
+      if (present(name_len)) actual_name_len = name_len
 
       allocate (segments(num_timers))
       do i = 1, num_timers
-         write (tname, '("t",i7.7)') i
+         tname = timer_name(i, actual_name_len)
          segments(i)%name = tname
          segments(i)%contexts%count = 1
          allocate (segments(i)%contexts%stacks(1))
@@ -674,6 +982,108 @@ contains
          segments(i)%call_count(1) = 1
       end do
    end subroutine build_flat_segments
+
+   subroutine build_metadata(metadata, count)
+      type(ftimer_metadata_t), allocatable, intent(out) :: metadata(:)
+      integer, intent(in) :: count
+      character(len=16) :: idx_text
+      integer :: i
+
+      allocate (metadata(count))
+      do i = 1, count
+         write (idx_text, '(i0)') i
+         metadata(i)%key = 'metadata_key_'//trim(idx_text)
+         metadata(i)%value = repeat('value-', 12)//'quoted "'//trim(idx_text)//'", comma field'
+      end do
+   end subroutine build_metadata
+
+   subroutine prepare_timer_with_flat_entries(timer, num_timers, name_len)
+      type(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: num_timers
+      integer, intent(in) :: name_len
+      character(len=:), allocatable :: tname
+      integer :: i
+
+      call timer%init()
+      do i = 1, num_timers
+         tname = timer_name(i, name_len)
+         call timer%start(tname)
+         call timer%stop(tname)
+      end do
+   end subroutine prepare_timer_with_flat_entries
+
+#ifdef FTIMER_USE_MPI
+   subroutine prepare_mpi_timer_with_flat_entries(timer, num_timers)
+      type(ftimer_t), intent(inout) :: timer
+      integer, intent(in) :: num_timers
+      character(len=:), allocatable :: tname
+      integer :: i
+
+      call timer%init(comm=MPI_COMM_WORLD)
+      do i = 1, num_timers
+         tname = timer_name(i, 8)
+         call timer%start(tname)
+         call timer%stop(tname)
+      end do
+   end subroutine prepare_mpi_timer_with_flat_entries
+#endif
+
+   subroutine build_mpi_union_summary_fixture(summary, num_timers, name_len)
+      type(ftimer_mpi_union_summary_t), intent(out) :: summary
+      integer, intent(in) :: num_timers
+      integer, intent(in) :: name_len
+      integer :: i
+      integer :: participating_ranks
+
+      summary%num_ranks = max(bench_nprocs, 4)
+      summary%num_entries = num_timers
+      summary%min_total_time = real(num_timers, wp)
+      summary%avg_total_time = real(num_timers, wp) + 0.5_wp
+      summary%max_total_time = real(num_timers, wp) + 1.0_wp
+      summary%total_time_imbalance = 1.0_wp/real(max(num_timers, 1), wp)
+      summary%min_total_time_rank = 0
+      summary%max_total_time_rank = summary%num_ranks - 1
+      allocate (summary%entries(num_timers))
+
+      do i = 1, num_timers
+         participating_ranks = 1 + modulo(i - 1, summary%num_ranks)
+         summary%entries(i)%name = timer_name(i, name_len)
+         summary%entries(i)%depth = 0
+         summary%entries(i)%participating_rank_count = participating_ranks
+         summary%entries(i)%min_inclusive_time = real(i, wp)*0.001_wp
+         summary%entries(i)%avg_inclusive_time = real(i, wp)*0.0015_wp
+         summary%entries(i)%max_inclusive_time = real(i, wp)*0.002_wp
+         summary%entries(i)%inclusive_imbalance = 0.1_wp
+         summary%entries(i)%min_self_time = real(i, wp)*0.0005_wp
+         summary%entries(i)%avg_self_time = real(i, wp)*0.001_wp
+         summary%entries(i)%max_self_time = real(i, wp)*0.0015_wp
+         summary%entries(i)%self_imbalance = 0.1_wp
+         summary%entries(i)%min_call_count = int(i, int64)
+         summary%entries(i)%avg_call_count = real(i, wp) + 0.5_wp
+         summary%entries(i)%max_call_count = int(i + participating_ranks, int64)
+         summary%entries(i)%min_pct_time = 0.1_wp
+         summary%entries(i)%avg_pct_time = 0.2_wp
+         summary%entries(i)%max_pct_time = 0.3_wp
+         summary%entries(i)%node_id = i
+         summary%entries(i)%parent_id = 0
+         summary%entries(i)%min_inclusive_time_rank = 0
+         summary%entries(i)%max_inclusive_time_rank = participating_ranks - 1
+      end do
+   end subroutine build_mpi_union_summary_fixture
+
+   function timer_name(index, name_len) result(name)
+      integer, intent(in) :: index
+      integer, intent(in) :: name_len
+      character(len=:), allocatable :: name
+      character(len=32) :: index_text
+      integer :: suffix_len
+
+      write (index_text, '(i0)') index
+      suffix_len = len_trim(index_text)
+      name = repeat('t', max(name_len, suffix_len))
+      name(len(name) - suffix_len + 1:len(name)) = trim(index_text)
+      if (len(name) > name_len) name = name(len(name) - name_len + 1:len(name))
+   end function timer_name
 
    function raw_date_string() result(stamp)
       character(len=40) :: stamp
@@ -699,7 +1109,10 @@ contains
       total_ms = real(t1 - t0, real64)/real(count_rate, real64)*1.0d3
       per_op_ns = real(t1 - t0, real64)/real(count_rate, real64) &
                   /real(reps, real64)*1.0d9
-      write (*, '(a47,i10,f12.2,f13.1)') label, reps, total_ms, per_op_ns
+      if (is_reporting_rank()) then
+         write (*, '(a47,i10,f12.2,f13.1)') label, reps, total_ms, per_op_ns
+         call write_csv_result(label, reps, total_ms, per_op_ns)
+      end if
    end subroutine print_result
 
 end program ftimer_bench
