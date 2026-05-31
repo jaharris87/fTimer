@@ -408,6 +408,13 @@ contains
       @assertEqual(0, state%call_stack%depth)
       @assertFalse(call_count_allocated)
 
+      call ftimer_start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call ftimer_stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, procedural_callback_count)
+
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call ftimer_init(ierr=ierr)
@@ -471,6 +478,54 @@ contains
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_procedural_cached_id_negative_paths_match_oop_contract
+
+   @test
+   subroutine test_procedural_cached_id_survives_reset()
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: ctx
+      integer :: id
+      integer :: ierr
+      integer(int64) :: count
+      real(wp) :: elapsed
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      id = ftimer_lookup('procedural_cached_reset_region', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call ftimer_stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_reset(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 3.0_wp
+      call ftimer_stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(ftimer_default_instance, state)
+      ctx = find_context_idx(state, 1, root_stack)
+      elapsed = state%segments(1)%time(ctx)
+      count = state%segments(1)%call_count(ctx)
+
+      @assertEqual(1, state%num_segments)
+      @assertEqual('procedural_cached_reset_region', trim(state%segments(1)%name))
+      @assertEqual(2.0_wp, elapsed)
+      @assertEqual(1_int64, count)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_cached_id_survives_reset
 
    @test
    subroutine test_procedural_cached_id_stale_alias_after_reinit_is_rejected()
