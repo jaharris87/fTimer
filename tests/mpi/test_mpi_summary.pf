@@ -9,8 +9,9 @@ module test_mpi_summary
                       MPI_F08_MAX => MPI_MAX, MPI_F08_MIN => MPI_MIN, MPI_F08_SUCCESS => MPI_SUCCESS, &
                       MPI_F08_SUM => MPI_SUM
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
-                     ftimer_mpi_union_summary, ftimer_print_mpi_summary, ftimer_start, ftimer_stop, &
-                     ftimer_print_mpi_union_summary, ftimer_write_mpi_summary_csv, ftimer_write_mpi_union_summary
+                     ftimer_mpi_union_summary, ftimer_print_mpi_summary, ftimer_start, ftimer_start_id, &
+                     ftimer_stop, ftimer_stop_id, ftimer_lookup, ftimer_print_mpi_union_summary, &
+                     ftimer_write_mpi_summary_csv, ftimer_write_mpi_union_summary
    use ftimer_core, only: ftimer_t, ftimer_test_set_call_count
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MPI_INCON, FTIMER_NAME_LEN, &
                            FTIMER_SUCCESS, ftimer_metadata_t, ftimer_mpi_summary_t, &
@@ -90,6 +91,81 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_summary_reduces_nested_timer_statistics_on_all_ranks
+
+   @test
+   subroutine test_mpi_cached_id_paths_match_name_reductions(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_mpi_summary_t) :: procedural_summary
+      type(ftimer_mpi_summary_t) :: summary
+      integer :: id
+      integer :: ierr
+      integer :: rank
+
+      rank = this%getProcessRank()
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      id = timer%lookup('cached_mpi_region', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp + real(rank, wp)
+      call timer%stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%mpi_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(1, summary%num_entries)
+      @assertEqual('cached_mpi_region', trim(summary%entries(1)%name))
+      call assert_real_close(summary%min_total_time, 2.0_wp)
+      call assert_real_close(summary%avg_total_time, 2.5_wp)
+      call assert_real_close(summary%max_total_time, 3.0_wp)
+      call assert_real_close(summary%entries(1)%min_inclusive_time, 2.0_wp)
+      call assert_real_close(summary%entries(1)%avg_inclusive_time, 2.5_wp)
+      call assert_real_close(summary%entries(1)%max_inclusive_time, 3.0_wp)
+      @assertEqual(0, summary%entries(1)%min_inclusive_time_rank)
+      @assertEqual(1, summary%entries(1)%max_inclusive_time_rank)
+      call assert_real_close(summary%entries(1)%avg_call_count, 1.0_wp)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      id = ftimer_lookup('procedural_cached_mpi_region', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 4.0_wp + real(rank, wp)
+      call ftimer_stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_mpi_summary(procedural_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(1, procedural_summary%num_entries)
+      @assertEqual('procedural_cached_mpi_region', trim(procedural_summary%entries(1)%name))
+      call assert_real_close(procedural_summary%min_total_time, 4.0_wp)
+      call assert_real_close(procedural_summary%avg_total_time, 4.5_wp)
+      call assert_real_close(procedural_summary%max_total_time, 5.0_wp)
+      call assert_real_close(procedural_summary%entries(1)%min_inclusive_time, 4.0_wp)
+      call assert_real_close(procedural_summary%entries(1)%avg_inclusive_time, 4.5_wp)
+      call assert_real_close(procedural_summary%entries(1)%max_inclusive_time, 5.0_wp)
+      @assertEqual(0, procedural_summary%entries(1)%min_inclusive_time_rank)
+      @assertEqual(1, procedural_summary%entries(1)%max_inclusive_time_rank)
+      call assert_real_close(procedural_summary%entries(1)%avg_call_count, 1.0_wp)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_cached_id_paths_match_name_reductions
 
    @test
    subroutine test_mpi_summary_prefers_lowest_rank_when_extrema_tie(this)

@@ -483,11 +483,16 @@ contains
    subroutine test_procedural_cached_id_survives_reset()
       type(ftimer_test_state_t) :: state
       type(ftimer_call_stack_t) :: root_stack
-      integer :: ctx
       integer :: id
       integer :: ierr
-      integer(int64) :: count
-      real(wp) :: elapsed
+      integer :: new_id
+      integer :: new_ctx
+      integer :: old_ctx
+      integer(int64) :: new_count
+      integer(int64) :: old_count
+      logical :: ids_differ
+      real(wp) :: new_elapsed
+      real(wp) :: old_elapsed
 
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -513,15 +518,32 @@ contains
       call ftimer_stop_id(id, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
-      call snapshot_timer(ftimer_default_instance, state)
-      ctx = find_context_idx(state, 1, root_stack)
-      elapsed = state%segments(1)%time(ctx)
-      count = state%segments(1)%call_count(ctx)
+      new_id = ftimer_lookup('procedural_cached_reset_new_region', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      ids_differ = new_id /= id
+      @assertTrue(ids_differ)
 
-      @assertEqual(1, state%num_segments)
+      call ftimer_start_id(new_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 4.0_wp
+      call ftimer_stop_id(new_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(ftimer_default_instance, state)
+      old_ctx = find_context_idx(state, 1, root_stack)
+      new_ctx = find_context_idx(state, 2, root_stack)
+      old_elapsed = state%segments(1)%time(old_ctx)
+      new_elapsed = state%segments(2)%time(new_ctx)
+      old_count = state%segments(1)%call_count(old_ctx)
+      new_count = state%segments(2)%call_count(new_ctx)
+
+      @assertEqual(2, state%num_segments)
       @assertEqual('procedural_cached_reset_region', trim(state%segments(1)%name))
-      @assertEqual(2.0_wp, elapsed)
-      @assertEqual(1_int64, count)
+      @assertEqual('procedural_cached_reset_new_region', trim(state%segments(2)%name))
+      @assertEqual(2.0_wp, old_elapsed)
+      @assertEqual(1.0_wp, new_elapsed)
+      @assertEqual(1_int64, old_count)
+      @assertEqual(1_int64, new_count)
 
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
