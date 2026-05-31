@@ -586,7 +586,7 @@ contains
 
    @test
    subroutine test_format_summary_escapes_metadata_controls()
-      type(ftimer_metadata_t) :: metadata(9)
+      type(ftimer_metadata_t) :: metadata(17)
       type(ftimer_summary_t) :: summary
       character(len=:), allocatable :: text
 
@@ -601,7 +601,7 @@ contains
 
    @test
    subroutine test_format_mpi_summary_escapes_metadata_controls()
-      type(ftimer_metadata_t) :: metadata(9)
+      type(ftimer_metadata_t) :: metadata(17)
       type(ftimer_mpi_summary_t) :: summary
       character(len=:), allocatable :: text
 
@@ -615,7 +615,7 @@ contains
 
    @test
    subroutine test_format_mpi_union_summary_escapes_metadata_controls()
-      type(ftimer_metadata_t) :: metadata(9)
+      type(ftimer_metadata_t) :: metadata(17)
       type(ftimer_mpi_union_summary_t) :: summary
       character(len=:), allocatable :: text
 
@@ -647,19 +647,39 @@ contains
       metadata(8)%key = 'C1Start'
       metadata(8)%value = 'start'//achar(128)//'value'
       metadata(9)%key = 'BlankValue'
+      metadata(10)%key = 'Key'//achar(9)//'Name'
+      metadata(10)%value = 'tab-key'
+      metadata(11)%key = 'Key'//achar(13)//'Name'
+      metadata(11)%value = 'carriage-key'
+      metadata(12)%key = 'Key'//achar(127)//'Name'
+      metadata(12)%value = 'delete-key'
+      metadata(13)%key = 'Key'//achar(27)//'Name'
+      metadata(13)%value = 'escape-key'
+      metadata(14)%key = 'Key'//achar(155)//'Name'
+      metadata(14)%value = 'c1-key'
+      metadata(15)%key = 'EuroKey'
+      metadata(15)%value = 'euro'//achar(226)//achar(130)//achar(172)//'value'
+      metadata(16)%key = 'Euro'//achar(226)//achar(130)//achar(172)//'Key'
+      metadata(16)%value = 'euro-key'
+      metadata(17)%key = 'Utf8C1'
+      metadata(17)%value = 'utf8-c1'//achar(194)//achar(155)//'value'
    end subroutine set_control_metadata
 
    subroutine assert_metadata_controls_escaped(text)
       character(len=*), intent(in) :: text
       logical :: blank_value_remains_blank
+      logical :: corrupted_utf8_present
+      logical :: encoded_c1_escaped
       logical :: escaped_carriage
       logical :: escaped_c1_csi
       logical :: escaped_c1_start
       logical :: escaped_delete
       logical :: escaped_escape
+      logical :: escaped_key_controls
       logical :: escaped_leading_space_and_backslash
       logical :: escaped_newline
       logical :: escaped_tab
+      logical :: preserved_utf8
       logical :: raw_carriage_present
       logical :: raw_c1_csi_present
       logical :: raw_c1_start_present
@@ -680,7 +700,21 @@ contains
                                             (index(text, '\x20\x20Value\\Tail') > 0)
       escaped_c1_csi = index(text, 'csi\x9Bvalue') > 0
       escaped_c1_start = index(text, 'start\x80value') > 0
-      blank_value_remains_blank = index(text, 'BlankValue            :') > 0
+      escaped_key_controls = index(text, 'Key\tName') > 0
+      escaped_key_controls = escaped_key_controls .and. (index(text, 'Key\rName') > 0)
+      escaped_key_controls = escaped_key_controls .and. (index(text, 'Key\x7FName') > 0)
+      escaped_key_controls = escaped_key_controls .and. (index(text, 'Key\x1BName') > 0)
+      escaped_key_controls = escaped_key_controls .and. (index(text, 'Key\x9BName') > 0)
+      blank_value_remains_blank = index(text, 'BlankValue            :'//new_line('a')) > 0
+      blank_value_remains_blank = blank_value_remains_blank .and. &
+                                  (index(text, 'BlankValue            : <blank>') == 0)
+      preserved_utf8 = index(text, 'euro'//achar(226)//achar(130)//achar(172)//'value') > 0
+      preserved_utf8 = preserved_utf8 .and. &
+                       (index(text, 'Euro'//achar(226)//achar(130)//achar(172)//'Key') > 0)
+      corrupted_utf8_present = index(text, 'euro'//achar(226)//'\x82'//achar(172)//'value') > 0
+      corrupted_utf8_present = corrupted_utf8_present .or. &
+                               (index(text, 'Euro'//achar(226)//'\x82'//achar(172)//'Key') > 0)
+      encoded_c1_escaped = index(text, 'utf8-c1\xC2\x9Bvalue') > 0
       raw_newline_present = index(text, 'Line'//achar(10)//'Key') > 0
       raw_newline_present = raw_newline_present .or. (index(text, 'line'//achar(10)//'value') > 0)
       raw_carriage_present = index(text, 'car'//achar(13)//'return') > 0
@@ -696,6 +730,7 @@ contains
                                                (index(text, 'Value\Tail') > 0)
       raw_c1_csi_present = index(text, 'csi'//achar(155)//'value') > 0
       raw_c1_start_present = index(text, 'start'//achar(128)//'value') > 0
+      raw_c1_start_present = raw_c1_start_present .or. (index(text, achar(194)//achar(155)) > 0)
 
       @assertTrue(escaped_newline)
       @assertTrue(escaped_carriage)
@@ -705,7 +740,10 @@ contains
       @assertTrue(escaped_leading_space_and_backslash)
       @assertTrue(escaped_c1_csi)
       @assertTrue(escaped_c1_start)
+      @assertTrue(escaped_key_controls)
       @assertTrue(blank_value_remains_blank)
+      @assertTrue(preserved_utf8)
+      @assertTrue(encoded_c1_escaped)
       @assertFalse(raw_newline_present)
       @assertFalse(raw_carriage_present)
       @assertFalse(raw_tab_present)
@@ -714,7 +752,39 @@ contains
       @assertFalse(raw_leading_space_or_backslash_present)
       @assertFalse(raw_c1_csi_present)
       @assertFalse(raw_c1_start_present)
+      @assertFalse(corrupted_utf8_present)
    end subroutine assert_metadata_controls_escaped
+
+   @test
+   subroutine test_format_summary_preserves_utf8_names_and_metadata()
+      type(ftimer_metadata_t) :: metadata(1)
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      logical :: corrupted_utf8_absent
+      logical :: metadata_value_preserved
+      logical :: name_preserved
+
+      summary%total_time = 1.0_wp
+      summary%num_entries = 1
+      allocate (summary%entries(1))
+      summary%entries(1)%name = 'name'//achar(226)//achar(130)//achar(172)
+      summary%entries(1)%inclusive_time = 1.0_wp
+      summary%entries(1)%self_time = 1.0_wp
+      summary%entries(1)%call_count = 1
+      summary%entries(1)%pct_time = 100.0_wp
+      metadata(1)%key = 'Unit'
+      metadata(1)%value = 'euro'//achar(226)//achar(130)//achar(172)//'value'
+
+      call format_summary(summary, text, metadata)
+
+      name_preserved = index(text, 'name'//achar(226)//achar(130)//achar(172)) > 0
+      metadata_value_preserved = index(text, 'euro'//achar(226)//achar(130)//achar(172)//'value') > 0
+      corrupted_utf8_absent = index(text, achar(226)//'\x82'//achar(172)) == 0
+
+      @assertTrue(name_preserved)
+      @assertTrue(metadata_value_preserved)
+      @assertTrue(corrupted_utf8_absent)
+   end subroutine test_format_summary_preserves_utf8_names_and_metadata
 
    @test
    subroutine test_get_summary_keeps_same_timer_distinct_across_parents()
