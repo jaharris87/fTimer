@@ -7,57 +7,57 @@
 !
 ! SCENARIOS COVERED
 ! -----------------
-!  1. Flat start/stop (name-based)   -- measures name normalization + mapped
+!  Flat start/stop (name-based)      -- measures name normalization + mapped
 !                                       lookup + stack push/pop + clock call
-!  2. Flat start/stop (id-based)     -- same path minus name normalization and
+!  Flat start/stop (id-based)        -- same path minus name normalization and
 !                                       mapped lookup; isolates stack cost
-!  3-6. Long-name hot path L=64/256/1024
+!  Long-name hot path L=64/256/1024
 !                                     -- one resident timer with long labels;
 !                                       name-based rows include full validation
 !                                       and hashing, id-based row shows cached
 !                                       lookup behavior for a long label
-!  7-11. Lookup scaling N=1/10/50/100/1000
+!  Lookup scaling N=1/10/50/100/1000
 !                                     -- name-based; keeps the historical
 !                                       comparison points while also showing
 !                                       whether steady-state mapped lookup
 !                                       stays near-flat as the resident timer
 !                                       set grows into the larger regimes
-! 12-14. Timer first-touch N=10/100/1000
+!  Timer first-touch N=10/100/1000
 !                                     -- new resident timer creation through
 !                                       lookup; names are prebuilt so this
 !                                       isolates internal allocation, growth,
 !                                       and index insertion from formatting;
 !                                       each row uses one long timed batch of
 !                                       independent initialized timer objects
-! 15-17. Context first-touch C=10/100/1000
+!  Context first-touch C=10/100/1000
 !                                     -- one hot timer first observed under
 !                                       many parent stacks; parent timers and
 !                                       parent root contexts are warmed first
 !                                       to isolate new work-context creation;
 !                                       each row uses one long timed batch of
 !                                       independent initialized timer objects
-! 18-23. Context scaling C=1/10/50/100/500/1000
+!  Context scaling C=1/10/50/100/500/1000
 !                                     -- one hot timer reused under many parent
 !                                        stacks; name-based rows measure the
 !                                        default path under growing context
 !                                        counts and id-based rows isolate the
 !                                        per-segment parent-stack lookup
-! 24-27. Nesting depth 1/5/10/20     -- id-based; each cycle does D pushes +
+!  Nesting depth 1/5/10/20           -- id-based; each cycle does D pushes +
 !                                       D pops; shows stack bookkeeping cost
 !                                       scaling with nesting depth
-! 28-30. get_summary N=10/50/100     -- summary build scaling with timer count
-! 31-33. build_summary N=10/50/100   -- direct local summary construction on
+!  get_summary N=10/50/100           -- summary build scaling with timer count
+!  build_summary N=10/50/100         -- direct local summary construction on
 !                                       prebuilt flat segments; isolates the
 !                                       tree build/allocation work from the
 !                                       wrapper's timestamp capture
-! 34-41. Reporting scale             -- local text, local CSV, sparse-union
+!  Reporting scale                   -- local text, local CSV, sparse-union
 !                                       text, long-name reports, and
 !                                       metadata-heavy report output
-! 42. strict MPI CSV reporting        -- MPI-enabled builds only; captures the
+!  strict MPI CSV reporting          -- MPI-enabled builds only; captures the
 !                                       reduction + root CSV reporting path
-! 43. raw date string formatting      -- date_and_time + string formatting,
+!  raw date string formatting        -- date_and_time + string formatting,
 !                                       matching the original per-call wrapper
-! 44. ftimer_date_string steady-state -- cached second-resolution date stamp
+!  ftimer_date_string steady-state   -- cached second-resolution date stamp
 !                                        path used by get_summary/print/write
 !
 ! METRICS
@@ -75,6 +75,8 @@
 ! The optional first argument writes parseable CSV benchmark results for trend
 ! review or archival. It intentionally records observations only, not pass/fail
 ! thresholds.
+! The report-writing rows use per-run scratch files in the system temporary
+! directory and delete only those scratch files when the rows complete.
 !
 ! INTERPRETATION
 !   Compare "flat name-based" vs "flat id-based" to isolate the remaining
@@ -126,8 +128,6 @@ program ftimer_bench
    integer, parameter :: REPORT_LONG_NAME_LEN = 256
    integer, parameter :: REPORT_METADATA_COUNT = 200
    character(len=40), parameter :: BENCH_DATE = '2026-03-27 12:00:00 -0400'
-   character(len=*), parameter :: LOCAL_CSV_REPORT_PATH = '/tmp/ftimer_bench_local_report.csv'
-   character(len=*), parameter :: MPI_CSV_REPORT_PATH = '/tmp/ftimer_bench_mpi_report.csv'
 
    integer(int64) :: count_rate
    integer :: date_string_sink = 0
@@ -136,6 +136,9 @@ program ftimer_bench
    integer :: bench_nprocs = 1
    integer :: bench_rank = 0
    logical :: bench_csv_enabled = .false.
+   character(len=:), allocatable :: bench_csv_path
+   character(len=:), allocatable :: local_csv_report_path
+   character(len=:), allocatable :: mpi_csv_report_path
 #ifdef FTIMER_USE_MPI
    integer :: mpierr
 #endif
@@ -147,6 +150,7 @@ program ftimer_bench
 #endif
    call system_clock(count_rate=count_rate)
    call setup_bench_csv()
+   call setup_report_scratch_paths()
 
    call write_bench_line('=== fTimer Performance Benchmark ===')
    call write_bench_line('')
@@ -288,8 +292,9 @@ contains
       call get_command_argument(1, csv_path, status=arg_status)
       if (arg_status /= 0) return
       if (len_trim(csv_path) <= 0) return
+      bench_csv_path = trim(csv_path)
 
-      open (newunit=bench_csv_unit, file=trim(csv_path), status='replace', action='write', &
+      open (newunit=bench_csv_unit, file=bench_csv_path, status='replace', action='write', &
             iostat=io, iomsg=iomsg)
       if (io /= 0) then
          write (error_unit, '(a)') 'ftimer_bench: unable to write CSV result file: '//trim(iomsg)
@@ -301,6 +306,73 @@ contains
       bench_csv_enabled = .true.
       write (bench_csv_unit, '(a)') 'benchmark,reps,total_ms,per_op_ns'
    end subroutine setup_bench_csv
+
+   subroutine setup_report_scratch_paths()
+      local_csv_report_path = make_scratch_path('local_report')
+      mpi_csv_report_path = make_scratch_path('mpi_report')
+   end subroutine setup_report_scratch_paths
+
+   function make_scratch_path(role) result(path)
+      character(len=*), intent(in) :: role
+      character(len=:), allocatable :: path
+      character(len=512) :: tmpdir
+      character(len=32) :: count_text
+      character(len=16) :: rank_text
+      integer(int64) :: count
+      integer :: env_status
+      integer :: attempt
+      logical :: exists
+
+      call get_environment_variable('TMPDIR', tmpdir, status=env_status)
+      if (env_status /= 0 .or. len_trim(tmpdir) <= 0) tmpdir = '/tmp'
+      call system_clock(count=count)
+      write (count_text, '(i0)') count
+      write (rank_text, '(i0)') bench_rank
+
+      attempt = 0
+      do
+         path = trim_trailing_slash(trim(tmpdir))//'/ftimer_bench_'//trim(role)//'_'// &
+                trim(count_text)//'_r'//trim(rank_text)//scratch_attempt_suffix(attempt)//'.csv'
+         inquire (file=path, exist=exists)
+         if ((.not. exists) .and. (.not. path_matches_bench_csv(path))) exit
+         attempt = attempt + 1
+      end do
+   end function make_scratch_path
+
+   function trim_trailing_slash(path) result(trimmed)
+      character(len=*), intent(in) :: path
+      character(len=:), allocatable :: trimmed
+      integer :: last
+
+      trimmed = trim(path)
+      do
+         last = len(trimmed)
+         if (last <= 1) exit
+         if (trimmed(last:last) /= '/') exit
+         trimmed = trimmed(1:last - 1)
+      end do
+   end function trim_trailing_slash
+
+   function scratch_attempt_suffix(attempt) result(suffix)
+      integer, intent(in) :: attempt
+      character(len=:), allocatable :: suffix
+      character(len=16) :: attempt_text
+
+      if (attempt <= 0) then
+         suffix = ''
+      else
+         write (attempt_text, '(i0)') attempt
+         suffix = '_'//trim(attempt_text)
+      end if
+   end function scratch_attempt_suffix
+
+   logical function path_matches_bench_csv(path) result(matches)
+      character(len=*), intent(in) :: path
+
+      matches = .false.
+      if (.not. allocated(bench_csv_path)) return
+      matches = trim(path) == trim(bench_csv_path)
+   end function path_matches_bench_csv
 
    subroutine close_bench_csv()
       if (.not. bench_csv_enabled) return

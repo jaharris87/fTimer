@@ -6,3 +6,14 @@ set_tests_properties(bench_smoke PROPERTIES
   TIMEOUT 120
   LABELS bench
 )
+
+add_test(NAME bench_csv_smoke
+  COMMAND ${CMAKE_COMMAND}
+    -DFTIMER_BENCH_EXE=$<TARGET_FILE:ftimer_bench>
+    -DFTIMER_BENCH_CSV=${CMAKE_CURRENT_BINARY_DIR}/ftimer_bench_results.csv
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/check_bench_csv_output.cmake
+)
+set_tests_properties(bench_csv_smoke PROPERTIES
+  TIMEOUT 120
+  LABELS bench
+)
