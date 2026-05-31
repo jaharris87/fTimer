@@ -118,7 +118,7 @@ This disabled-facade behavior is an application integration contract, not an alt
 - Per-timer context selection remains fully context-sensitive accounting over the current parent stack for that timer; repeated reuse of one timer name under many distinct parent stacks now uses a per-segment parent-stack index in steady state rather than rescanning the full known-context list each time
 - `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization for tight loops that repeatedly time the same known regions, especially when long labels would otherwise be validated and hashed on every name-based call
 - Formatted summary output does not emit unsafe raw summary-entry names or metadata header text literally
-- Escaped formatted-summary forms are stable: leading blanks render as `\x20`, backslashes render as `\\`, tab/newline/carriage return render as `\t`/`\n`/`\r`, delete, terminal escape bytes, and other ASCII control characters render as `\xNN`, blank/empty raw names render as `<blank>`, and blank metadata values remain blank
+- Escaped formatted-summary forms are stable: leading blanks render as `\x20`, backslashes render as `\\`, tab/newline/carriage return render as `\t`/`\n`/`\r`, delete, terminal escape bytes, C0/C1 control bytes, and other ASCII control characters render as `\xNN`, blank/empty raw names render as `<blank>`, and blank metadata values remain blank
 
 ## Scoped Guard Contract
 

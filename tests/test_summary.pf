@@ -586,7 +586,7 @@ contains
 
    @test
    subroutine test_format_summary_escapes_metadata_controls()
-      type(ftimer_metadata_t) :: metadata(5)
+      type(ftimer_metadata_t) :: metadata(9)
       type(ftimer_summary_t) :: summary
       character(len=:), allocatable :: text
 
@@ -601,7 +601,7 @@ contains
 
    @test
    subroutine test_format_mpi_summary_escapes_metadata_controls()
-      type(ftimer_metadata_t) :: metadata(5)
+      type(ftimer_metadata_t) :: metadata(9)
       type(ftimer_mpi_summary_t) :: summary
       character(len=:), allocatable :: text
 
@@ -615,7 +615,7 @@ contains
 
    @test
    subroutine test_format_mpi_union_summary_escapes_metadata_controls()
-      type(ftimer_metadata_t) :: metadata(5)
+      type(ftimer_metadata_t) :: metadata(9)
       type(ftimer_mpi_union_summary_t) :: summary
       character(len=:), allocatable :: text
 
@@ -640,18 +640,32 @@ contains
       metadata(4)%value = 'del'//achar(127)//'value'
       metadata(5)%key = 'Escape'
       metadata(5)%value = 'esc'//achar(27)//'[31m'
+      metadata(6)%key = '  Path\KeyWide'
+      metadata(6)%value = '  Value\Tail'
+      metadata(7)%key = 'C1CSI'
+      metadata(7)%value = 'csi'//achar(155)//'value'
+      metadata(8)%key = 'C1Start'
+      metadata(8)%value = 'start'//achar(128)//'value'
+      metadata(9)%key = 'BlankValue'
    end subroutine set_control_metadata
 
    subroutine assert_metadata_controls_escaped(text)
       character(len=*), intent(in) :: text
+      logical :: blank_value_remains_blank
       logical :: escaped_carriage
+      logical :: escaped_c1_csi
+      logical :: escaped_c1_start
       logical :: escaped_delete
       logical :: escaped_escape
+      logical :: escaped_leading_space_and_backslash
       logical :: escaped_newline
       logical :: escaped_tab
       logical :: raw_carriage_present
+      logical :: raw_c1_csi_present
+      logical :: raw_c1_start_present
       logical :: raw_delete_present
       logical :: raw_escape_present
+      logical :: raw_leading_space_or_backslash_present
       logical :: raw_newline_present
       logical :: raw_tab_present
 
@@ -661,23 +675,45 @@ contains
       escaped_tab = index(text, 'tab\tvalue') > 0
       escaped_delete = index(text, 'del\x7Fvalue') > 0
       escaped_escape = index(text, 'esc\x1B[31m') > 0
+      escaped_leading_space_and_backslash = index(text, '\x20\x20Path\\KeyWide') > 0
+      escaped_leading_space_and_backslash = escaped_leading_space_and_backslash .and. &
+                                            (index(text, '\x20\x20Value\\Tail') > 0)
+      escaped_c1_csi = index(text, 'csi\x9Bvalue') > 0
+      escaped_c1_start = index(text, 'start\x80value') > 0
+      blank_value_remains_blank = index(text, 'BlankValue            :') > 0
       raw_newline_present = index(text, 'Line'//achar(10)//'Key') > 0
       raw_newline_present = raw_newline_present .or. (index(text, 'line'//achar(10)//'value') > 0)
       raw_carriage_present = index(text, 'car'//achar(13)//'return') > 0
       raw_tab_present = index(text, 'tab'//achar(9)//'value') > 0
       raw_delete_present = index(text, 'del'//achar(127)//'value') > 0
       raw_escape_present = index(text, 'esc'//achar(27)//'[31m') > 0
+      raw_leading_space_or_backslash_present = index(text, '  Path\KeyWide') > 0
+      raw_leading_space_or_backslash_present = raw_leading_space_or_backslash_present .or. &
+                                               (index(text, 'Path\KeyWide') > 0)
+      raw_leading_space_or_backslash_present = raw_leading_space_or_backslash_present .or. &
+                                               (index(text, '  Value\Tail') > 0)
+      raw_leading_space_or_backslash_present = raw_leading_space_or_backslash_present .or. &
+                                               (index(text, 'Value\Tail') > 0)
+      raw_c1_csi_present = index(text, 'csi'//achar(155)//'value') > 0
+      raw_c1_start_present = index(text, 'start'//achar(128)//'value') > 0
 
       @assertTrue(escaped_newline)
       @assertTrue(escaped_carriage)
       @assertTrue(escaped_tab)
       @assertTrue(escaped_delete)
       @assertTrue(escaped_escape)
+      @assertTrue(escaped_leading_space_and_backslash)
+      @assertTrue(escaped_c1_csi)
+      @assertTrue(escaped_c1_start)
+      @assertTrue(blank_value_remains_blank)
       @assertFalse(raw_newline_present)
       @assertFalse(raw_carriage_present)
       @assertFalse(raw_tab_present)
       @assertFalse(raw_delete_present)
       @assertFalse(raw_escape_present)
+      @assertFalse(raw_leading_space_or_backslash_present)
+      @assertFalse(raw_c1_csi_present)
+      @assertFalse(raw_c1_start_present)
    end subroutine assert_metadata_controls_escaped
 
    @test

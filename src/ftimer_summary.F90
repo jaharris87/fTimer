@@ -1117,7 +1117,7 @@ contains
          text = text//'\r'
       case (92)
          text = text//'\\'
-      case (0:8, 11:12, 14:31, 127)
+      case (0:8, 11:12, 14:31, 127:159)
          call append_hex_escape(text, code)
       case default
          text = text//ch
