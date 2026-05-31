@@ -738,13 +738,18 @@ contains
    @test
    subroutine test_finalize_with_active_timer_returns_active()
       type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
       type(ftimer_test_state_t) :: state
+      integer :: id
       integer :: ierr
 
       call timer%init(ierr=ierr)
       call attach_mock_clock(timer)
 
-      call timer%start("A", ierr=ierr)
+      id = timer%lookup("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
       fake_time = 1.0_wp
       call timer%finalize(ierr=ierr)
 
@@ -752,6 +757,17 @@ contains
       call snapshot_timer(timer, state)
       @assertTrue(state%initialized)
       @assertEqual(1, state%call_stack%depth)
+
+      fake_time = 2.0_wp
+      call timer%stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2.0_wp, summary%total_time)
+      @assertEqual(2.0_wp, summary%entries(1)%inclusive_time)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_finalize_with_active_timer_returns_active
 
    @test
@@ -843,6 +859,7 @@ contains
       type(ftimer_test_state_t) :: state
       character(len=:), allocatable :: stderr_text
       integer :: capture_ierr
+      integer :: cached_id
       integer :: ctx
       integer :: ierr
       integer :: idx_a
@@ -855,7 +872,10 @@ contains
       call timer%init(ierr=ierr)
       call attach_mock_clock(timer)
 
-      call timer%start("A", ierr=ierr)
+      cached_id = timer%lookup("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%start_id(cached_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
       call begin_stderr_capture('test_finalize_without_ierr_warns_and_leaves_state_unchanged.err', saved_fd, &
                                 capture_ierr)
       @assertEqual(0, capture_ierr)
@@ -880,7 +900,7 @@ contains
       @assertEqual(1, state%segments(1)%call_count(ctx))
 
       fake_time = 3.0_wp
-      call timer%stop("A", ierr=ierr)
+      call timer%stop_id(cached_id, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       fake_time = 4.0_wp
@@ -1025,6 +1045,7 @@ contains
       character(len=:), allocatable :: stderr_text
       integer :: capture_ierr
       integer :: ctx
+      integer :: id
       integer :: ierr
       integer :: saved_fd
       logical :: has_warning
@@ -1033,7 +1054,10 @@ contains
       call timer%init(ierr=ierr)
       call attach_mock_clock(timer)
 
-      call timer%start("A", ierr=ierr)
+      id = timer%lookup("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
       call snapshot_timer(timer, before_state)
 
       call begin_stderr_capture('test_init_with_active_timer_ierr.err', saved_fd, capture_ierr)
@@ -1081,7 +1105,7 @@ contains
       @assertEqual(1, after_warn_state%segments(1)%call_count(ctx))
 
       fake_time = 4.0_wp
-      call timer%stop("A", ierr=ierr)
+      call timer%stop_id(id, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call timer%get_summary(summary, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
