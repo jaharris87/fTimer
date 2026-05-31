@@ -165,23 +165,18 @@ foreach(benchmark_doc IN LISTS benchmark_docs)
 
   file(STRINGS "${REPO_ROOT}/${benchmark_doc}" benchmark_doc_lines)
   foreach(benchmark_doc_line IN LISTS benchmark_doc_lines)
-    if(benchmark_doc_line MATCHES "^[ \t]*cmake[ \t]+--fresh")
+    if(benchmark_doc_line MATCHES "(^|[ \t])cmake[ \t]+--fresh" AND
+       NOT benchmark_doc_line MATCHES "CMake[ \t]+3\\.24")
       message(FATAL_ERROR
-        "${benchmark_doc} must not use cmake --fresh as a primary benchmark command."
+        "${benchmark_doc} must mark cmake --fresh as a CMake 3.24+ convenience on the same line and must not use it as a primary benchmark command."
       )
     endif()
   endforeach()
-
-  string(FIND "${benchmark_doc_text}" "CMake 3.24" cmake_fresh_note_found)
-  if(cmake_fresh_note_found EQUAL -1 AND benchmark_doc_text MATCHES "cmake[ \t]+--fresh")
-    message(FATAL_ERROR
-      "${benchmark_doc} must mark cmake --fresh as a CMake 3.24+ convenience when mentioning it."
-    )
-  endif()
 endforeach()
 
 set(release_command_paths
   ${benchmark_docs}
+  CONTRIBUTING.md
   Makefile
 )
 
