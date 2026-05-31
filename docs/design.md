@@ -263,7 +263,7 @@ That means pFUnit-backed serial, MPI, and OpenMP test jobs are part of current C
 
 ## Maintainer Workflow
 
-Repository workflow guidance lives in [`docs/maintainer.md`](maintainer.md) and the phase-specific docs under [`docs/workflows/`](workflows/). The standard flow for scoped work on current `main` is:
+Repository workflow guidance lives in [`docs/maintainer.md`](maintainer.md) and the workflow-specific docs under [`docs/workflows/`](workflows/). The standard flow for scoped work on current `main` is:
 
 1. Create or link the GitHub issue first.
 2. Create a feature branch from updated local `main`.

@@ -26,7 +26,7 @@ The default local smoke path is:
 ```bash
 cmake -B build-smoke
 cmake --build build-smoke
-ctest --test-dir build-smoke --output-on-failure
+cmake -E chdir build-smoke ctest --output-on-failure
 ```
 
 Behavioral tests require pFUnit and a matching compiler/toolchain:
@@ -34,7 +34,7 @@ Behavioral tests require pFUnit and a matching compiler/toolchain:
 ```bash
 FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build
-ctest --test-dir build --output-on-failure
+cmake -E chdir build ctest --output-on-failure
 ```
 
 MPI and OpenMP validation commands are listed in `AGENTS.md`, `README.md`, and

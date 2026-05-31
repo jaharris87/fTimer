@@ -66,6 +66,12 @@ add_test(NAME ftimer_public_symbol_allowlist
     -P ${CMAKE_CURRENT_SOURCE_DIR}/check_public_symbol_allowlist.cmake
 )
 
+add_test(NAME ftimer_release_docs_contract
+  COMMAND ${CMAKE_COMMAND}
+    -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/check_release_docs_contract.cmake
+)
+
 if(FTIMER_BUILD_SMOKE_TESTS)
   if(DEFINED ENV{TMPDIR} AND NOT "$ENV{TMPDIR}" STREQUAL "")
     set(ftimer_absolute_includedir_base "$ENV{TMPDIR}")

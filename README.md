@@ -293,22 +293,22 @@ Minimum requirements:
 # Smoke-test path (includes install/export consumer verification)
 cmake -B build-smoke
 cmake --build build-smoke
-ctest --test-dir build-smoke --output-on-failure
+cmake -E chdir build-smoke ctest --output-on-failure
 
 # Serial build with pFUnit tests
 FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build
-ctest --test-dir build --output-on-failure
+cmake -E chdir build ctest --output-on-failure
 
 # MPI build with pFUnit tests
 FC=mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-mpi
-ctest --test-dir build-mpi --output-on-failure -L mpi
+cmake -E chdir build-mpi ctest --output-on-failure -L mpi
 
 # OpenMP build with pFUnit tests
 FC=gfortran cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-openmp
-ctest --test-dir build-openmp --output-on-failure
+cmake -E chdir build-openmp ctest --output-on-failure
 
 # Convenience Makefile wrapper
 make
@@ -358,10 +358,14 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 The repository includes a standalone benchmark harness for measuring timer overhead and summary-generation cost:
 
 ```bash
-cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build-bench -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-bench --target ftimer_bench
 ./build-bench/bench/ftimer_bench
 ```
+
+For a clean benchmark reconfigure, remove or use a separate `build-bench/`
+directory first. With CMake 3.24 or newer, `cmake --fresh` may be added to the
+configure command as a convenience for a clean reconfigure.
 
 This is useful for before/after regression checks when changing hot-path timing behavior. Compare the name-based lookup-scaling rows across resident timer counts to confirm the mapped default path stays much flatter than the old linear-scan baseline, and compare the context-scaling rows across larger `C` values to see how one hot timer behaves when it is reused under many distinct parent stacks. The first-touch rows measure the remaining allocation/growth cost for newly discovered timer names and parent-stack contexts after setup has prebuilt labels and initialized independent timer objects. The long-name rows show the extra validation/hash cost for labels above the legacy threshold. The flat name-based/id-based rows still help judge whether the optional cached-id path is worth it for one especially hot loop.
 
