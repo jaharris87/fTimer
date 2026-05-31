@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the procedural `ftimer_scope` scoped guard, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
+Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the procedural `ftimer_scope` scoped guard, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -94,7 +94,22 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 - `ierr` present: set code, no stderr
 - `ierr` absent: emit a diagnostic to stderr
 - Validation and lifecycle errors follow a warn-and-return contract: they leave timer state unchanged unless the caller explicitly selected a repair-capable mismatch mode
-- Error codes and their meanings
+
+### Public Status And Error Codes
+
+These constants are public from `ftimer_types` and are the canonical status values returned through optional `ierr` arguments.
+
+| Constant | Code | Meaning |
+| --- | --- | --- |
+| `FTIMER_SUCCESS` | `0` | Operation completed successfully. |
+| `FTIMER_ERR_NOT_INIT` | `1` | The timer instance or default procedural instance has not been initialized for the requested operation. |
+| `FTIMER_ERR_NOT_IMPLEMENTED` | `2` | The requested API is unavailable in this build, such as MPI summary/report APIs when `FTIMER_USE_MPI=OFF`. |
+| `FTIMER_ERR_UNKNOWN` | `3` | Generic failure for an unsupported or unexpected condition that does not have a more specific public code. |
+| `FTIMER_ERR_ACTIVE` | `4` | An active timer, active scoped guard, or already-recorded timing data prevents the requested lifecycle, configuration, or report operation. |
+| `FTIMER_ERR_MISMATCH` | `5` | Strict nesting, cached-id, or scoped-guard ownership checks detected a start/stop mismatch. |
+| `FTIMER_ERR_MPI_INCON` | `6` | MPI participants have inconsistent timer descriptor trees for a strict MPI summary/report operation. |
+| `FTIMER_ERR_IO` | `7` | File, unit, or CSV append validation failed. |
+| `FTIMER_ERR_INVALID_NAME` | `8` | A timer name failed public name validation. |
 
 ## Compile-Out / No-Op Instrumentation Pattern
 
@@ -113,13 +128,13 @@ This disabled-facade behavior is an application integration contract, not an alt
 
 - Public timer creation/lookup paths right-trim trailing blanks, reject empty names, reject names that begin with a blank, and reject ASCII control characters. They do not silently truncate names and do not impose the legacy `FTIMER_NAME_LEN` value as a runtime name cap.
 - Timer names, runtime segment names, local summary entry names, MPI summary entry names, and metadata key/value fields use allocatable-length character storage. The exported `FTIMER_NAME_LEN = 64` constant is retained so code that imports it still compiles, but it is not the current storage or validation limit. Pre-1.0 code that treated those components as fixed writable buffers, such as internal writes directly into metadata `%value`, must allocate or assign through a temporary string first.
-- Metadata entries with an unallocated or blank key are skipped by formatted reports and CSV exports. An unallocated metadata value is emitted as blank; assigned metadata values are emitted at their full trimmed length.
+- Metadata entries with an unallocated or blank key are skipped by formatted reports and CSV exports. An unallocated metadata value is emitted as blank; assigned metadata values are right-trimmed before text-report escaping or CSV quoting.
 - Name-based `start`/`stop` remains the default supported timing path; the runtime uses internal mapped lookup for both resident timer names and per-segment parent-stack contexts, plus capacity-based growth, so that this ergonomic path avoids repeated resident-timer linear scans, steady-state context-list scans, and one-slot-at-a-time whole-array growth as the timer set grows
 - Per-timer context selection remains fully context-sensitive accounting over the current parent stack for that timer; repeated reuse of one timer name under many distinct parent stacks now uses a per-segment parent-stack index in steady state rather than rescanning the full known-context list each time
 - `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization for tight loops that repeatedly time the same known regions, especially when long labels would otherwise be validated and hashed on every name-based call
 - Cached IDs returned by `lookup()` are opaque handles for the current timer runtime state, not segment-array indexes. They remain valid across `reset()`, but successful `init()` and `finalize()` calls invalidate them. Calls made while finalized follow the normal `FTIMER_ERR_NOT_INIT` lifecycle contract; after a later successful `init()`, passing a stale cached ID to `start_id()` or `stop_id()` returns `FTIMER_ERR_UNKNOWN` and leaves timer state unchanged
-- Formatted summary output does not emit unsafe raw summary-entry names literally
-- Escaped formatted-summary forms are stable: leading blanks render as `\x20`, backslashes render as `\\`, tab/newline/carriage return render as `\t`/`\n`/`\r`, other ASCII control characters render as `\xNN`, and blank/empty raw names render as `<blank>`
+- Formatted summary output does not emit unsafe raw summary-entry names or metadata header text literally
+- Escaped formatted-summary forms are stable: leading blanks render as `\x20`, backslashes render as `\\`, tab/newline/carriage return render as `\t`/`\n`/`\r`, delete, terminal escape bytes, C0/C1 control bytes, UTF-8 encoded C1 controls, and other ASCII control characters render as `\xNN`, valid non-control UTF-8 text is preserved, blank/empty raw names render as `<blank>`, and blank metadata values remain blank
 
 ## Scoped Guard Contract
 
@@ -181,7 +196,7 @@ This disabled-facade behavior is an application integration contract, not an alt
 - `print_summary()` and `write_summary()` format the same local snapshot data. When any returned entry is active, formatted reports add active-state information and reserve the `Active timers` metadata key for the built-in snapshot status line. A formatted local report whose `Active timers` field is `yes` is an interim snapshot, not a final stopped-run report.
 - `write_summary_csv()` exports the same local snapshot data in CSV format version `2`. It writes one header row, a `record_type=summary` row, zero or more `record_type=metadata` rows, and one `record_type=entry` row per summary entry. Entry rows include `node_id`, `parent_id`, `depth`, `name`, `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. The local integer `call_count` field is emitted as decimal text without narrowing to default integer, and version `2` is the schema signal that local `call_count` can require signed 64-bit parsing.
 - CSV `append=.true.` appends records to the target file and omits the header when the existing file is non-empty. Non-empty append targets must begin with the fTimer CSV format-version-2 header, existing data rows must be well-formed CSV logical records with the exact v2 header field count and recognized `summary_kind`/`record_type` combinations, and the target must end with a newline; mismatched headers, older-format records, malformed v2 record shape or quote placement, or unterminated final records are rejected with `FTIMER_ERR_IO` instead of silently mixing schemas. Append validation is a schema-shape and CSV-syntax guard for existing files, not a semantic reparse of every numeric, logical, or timing payload field already present.
-- CSV text fields emit the same trimmed timer names and metadata key/value text used by fTimer reports, with standard CSV quoting. They are not spreadsheet-formula-sanitized.
+- CSV text fields emit trimmed raw timer names and metadata key/value text with standard CSV quoting. Unlike human-readable text reports, CSV exports do not apply the visible `\t`/`\n`/`\xNN` display escaping. They are not spreadsheet-formula-sanitized.
 - A caller that requires a final local report should stop all timers first and verify `summary%has_active_timers == .false.`
 
 ## MPI Guarantees
@@ -306,7 +321,7 @@ enforcement should pass `ierr` and check it.
 - OpenMP guard behavior is enabled only when the library is built with `FTIMER_USE_OPENMP=ON`
 - The CMake option is the source-level switch; global OpenMP compiler flags alone do not enable these guards when `FTIMER_USE_OPENMP=OFF`
 - This is a narrow master-thread-only carve-out for bracketing a parallel region as a whole; it is not general hybrid MPI+OpenMP timing support
-- The implemented model is master-thread-only timing; this phase does not make `fTimer` generally thread-safe
+- The implemented model is master-thread-only timing; the current implementation does not make `fTimer` generally thread-safe
 - Inside OpenMP parallel regions, the guarded `ftimer_core` timer operations run only on the master thread
 - Non-master calls to those guarded core timer operations become no-ops instead of mutating shared timer state
 - Suppressed non-master calls are skipped before normal validation, emit no stderr warning, and leave any caller-provided `ierr` unchanged

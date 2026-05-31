@@ -1,6 +1,6 @@
 # Implementation History
 
-The in-repo design reference for implementation is [docs/design.md](docs/design.md).
+The in-repo design reference for implementation is [design.md](design.md).
 
 This file preserves the historical phase roadmap that led to the current implementation on `main`. It is not the authoritative statement of what ships today. For the current user-facing contract, use `README.md`, `docs/semantics.md`, and the implementation in `src/`.
 

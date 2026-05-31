@@ -83,7 +83,7 @@ The guard starts the named timer through the default procedural instance and sto
 
 Use `ftimer` for the procedural API and `ftimer_types` for shared types and constants such as `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, `ftimer_metadata_t`, and `FTIMER_MISMATCH_*`.
 
-For metadata headers, construct `ftimer_metadata_t` values by assigning `%key` and `%value` directly. These fields use allocatable-length storage, so assigned strings are not silently capped at the legacy 64-character threshold. fTimer does not currently provide a helper constructor such as `ftimer_metadata(...)`; for formatted numeric metadata, write to a temporary character variable and then assign that string to `%value`.
+For metadata headers, construct `ftimer_metadata_t` values by assigning `%key` and `%value` directly. These fields use allocatable-length storage, so assigned strings are not silently capped at the legacy 64-character threshold. Human-readable text reports escape metadata C0/C1 control bytes, UTF-8 encoded C1 controls, terminal escape bytes, backslashes, and leading blanks with the same visible policy used for formatted timer names, while valid non-control UTF-8 text is preserved. fTimer does not currently provide a helper constructor such as `ftimer_metadata(...)`; for formatted numeric metadata, write to a temporary character variable and then assign that string to `%value`.
 
 ## First Success
 
@@ -228,6 +228,7 @@ Operational notes:
 - Configure callbacks through `set_callback()` and `clear_callback()`. Callback configuration is rejected while timers are active, `clear_callback()` also clears callback `user_data`, and `finalize()` clears callback configuration.
 - `get_summary()`, `print_summary()`, and `write_summary()` are local-only summary/reporting paths.
 - `get_summary()`, `print_summary()`, and `write_summary()` are live snapshot APIs. They include active local timer contexts through the snapshot timestamp without stopping them, and mark that state with `summary%has_active_timers`, each entry's `is_active`, and, when active entries exist, the formatted report's `Active timers`/`Active` fields. For a final local report, stop all timers first and verify `summary%has_active_timers == .false.`.
+- Human-readable local, strict MPI, and sparse MPI text reports escape metadata header keys and values before writing them. Tabs, newlines, carriage returns, delete, terminal escape bytes, other C0/C1 controls, UTF-8 encoded C1 controls, backslashes, and leading blanks are rendered visibly instead of being emitted as raw log-control text; valid non-control UTF-8 text is preserved and blank metadata values remain blank.
 - Local summary entries retain preorder formatting compatibility and now expose explicit tree structure through `node_id` and `parent_id`. `node_id` values are stable only within one produced summary object, and roots use `parent_id = 0`.
 - Local summary `call_count` fields are signed-64-bit counts. If a timer context ever reaches the signed-64-bit maximum, the next `start` fails with `FTIMER_ERR_UNKNOWN` or the normal omitted-`ierr` warning path rather than wrapping the count.
 - `write_summary_csv()` and `ftimer_write_summary_csv()` export local summaries as stable CSV records for dashboards, CI comparisons, plotting, and archives. The text report remains human-facing; consumers should use the CSV or structured Fortran summary rather than scraping fixed-width report output.
@@ -267,7 +268,7 @@ Each CSV starts with one header row followed by typed records:
 
 Common columns include `summary_kind`, `node_id`, `parent_id`, `depth`, and `name`. Local entry rows populate `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. MPI entry rows populate the reduced fields from `ftimer_mpi_summary_t`, including min/avg/max inclusive and self time, call count extrema, rank-local percent extrema, imbalance fields, and inclusive-time extrema ranks. Local `call_count` and MPI `min_call_count`/`max_call_count` are `integer(int64)` values and are emitted as decimal text without narrowing to default integer. MPI `avg_call_count` remains a real-valued CSV field. CSV format version `2` is the compatibility signal for those widened integer count ranges; consumers should parse local `call_count` and MPI call-count extrema fields as at least signed 64-bit decimal integers.
 
-Appending to an existing non-empty CSV requires the existing first row to match the fTimer CSV format-version-2 header, existing rows to be well-formed CSV logical records with the exact v2 header field count and recognized `summary_kind`/`record_type` combinations, and the target to end with a newline; mismatched headers, older-format records, malformed v2 record shape or quote placement, or unterminated final records are rejected instead of mixing schemas silently. Append validation is a schema-shape and CSV-syntax guard for existing files, not a semantic reparse of every numeric, logical, or timing payload field already present. CSV text fields emit the same trimmed timer names and metadata key/value text used by fTimer reports, with standard CSV quoting. They are not spreadsheet-formula-sanitized, so treat CSV opened in spreadsheet software as data from the generating program.
+Appending to an existing non-empty CSV requires the existing first row to match the fTimer CSV format-version-2 header, existing rows to be well-formed CSV logical records with the exact v2 header field count and recognized `summary_kind`/`record_type` combinations, and the target to end with a newline; mismatched headers, older-format records, malformed v2 record shape or quote placement, or unterminated final records are rejected instead of mixing schemas silently. Append validation is a schema-shape and CSV-syntax guard for existing files, not a semantic reparse of every numeric, logical, or timing payload field already present. CSV text fields emit trimmed raw timer names and metadata key/value text with standard CSV quoting; unlike human-readable text reports, they do not apply the visible `\t`/`\n`/`\xNN` display escaping. They are not spreadsheet-formula-sanitized, so treat CSV opened in spreadsheet software as data from the generating program.
 
 Example:
 
@@ -294,22 +295,22 @@ Minimum requirements:
 # Smoke-test path (includes install/export consumer verification)
 cmake -B build-smoke
 cmake --build build-smoke
-ctest --test-dir build-smoke --output-on-failure
+cmake -E chdir build-smoke ctest --output-on-failure
 
 # Serial build with pFUnit tests
 FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build
-ctest --test-dir build --output-on-failure
+cmake -E chdir build ctest --output-on-failure
 
 # MPI build with pFUnit tests
 FC=mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-mpi
-ctest --test-dir build-mpi --output-on-failure -L mpi
+cmake -E chdir build-mpi ctest --output-on-failure -L mpi
 
 # OpenMP build with pFUnit tests
 FC=gfortran cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-openmp
-ctest --test-dir build-openmp --output-on-failure
+cmake -E chdir build-openmp ctest --output-on-failure
 
 # Convenience Makefile wrapper
 make
@@ -359,12 +360,19 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 The repository includes a standalone benchmark harness for measuring timer overhead and summary-generation cost:
 
 ```bash
-cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build-bench -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-bench --target ftimer_bench
 ./build-bench/bench/ftimer_bench
+./build-bench/bench/ftimer_bench /tmp/ftimer_bench_results.csv
 ```
 
+For a clean benchmark reconfigure, remove or use a separate `build-bench/`
+directory first. With CMake 3.24 or newer, `cmake --fresh` may be added to the
+configure command as a convenience for a clean reconfigure.
+
 This is useful for before/after regression checks when changing hot-path timing behavior. Compare the name-based lookup-scaling rows across resident timer counts to confirm the mapped default path stays much flatter than the old linear-scan baseline, and compare the context-scaling rows across larger `C` values to see how one hot timer behaves when it is reused under many distinct parent stacks. The first-touch rows measure the remaining allocation/growth cost for newly discovered timer names and parent-stack contexts after setup has prebuilt labels and initialized independent timer objects. The long-name rows show the extra validation/hash cost for labels above the legacy threshold. The flat name-based/id-based rows still help judge whether the optional cached-id path is worth it for one especially hot loop.
+
+The benchmark harness also includes reporting-scale rows for local text reports, local CSV reports, sparse MPI-union text formatting, long timer names, and metadata-heavy output. When fTimer is built with `FTIMER_USE_MPI=ON`, the harness adds a strict MPI CSV report row. Passing a file path as the first argument writes parseable CSV benchmark observations that can be archived for trend review. Report-writing rows use per-run scratch files in the system temporary directory and delete only those scratch files when they finish. The harness records measurements only and does not enforce timing thresholds.
 
 ## More Detail
 
