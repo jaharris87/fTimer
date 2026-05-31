@@ -61,27 +61,27 @@ Reference commands:
 ```bash
 cmake -B build-smoke
 cmake --build build-smoke
-ctest --test-dir build-smoke --output-on-failure
+cmake -E chdir build-smoke ctest --output-on-failure
 
 FC=gfortran cmake -B build \
   -DFTIMER_BUILD_TESTS=ON \
   -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build
-ctest --test-dir build --output-on-failure
+cmake -E chdir build ctest --output-on-failure
 
 FC=mpifort cmake -B build-mpi \
   -DFTIMER_USE_MPI=ON \
   -DFTIMER_BUILD_TESTS=ON \
   -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-mpi
-ctest --test-dir build-mpi --output-on-failure -L mpi
+cmake -E chdir build-mpi ctest --output-on-failure -L mpi
 
 FC=gfortran cmake -B build-openmp \
   -DFTIMER_USE_OPENMP=ON \
   -DFTIMER_BUILD_TESTS=ON \
   -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-openmp
-ctest --test-dir build-openmp --output-on-failure
+cmake -E chdir build-openmp ctest --output-on-failure
 
 cmake -S . -B build-bench \
   -DFTIMER_BUILD_BENCH=ON \

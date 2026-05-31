@@ -153,10 +153,20 @@ foreach(benchmark_doc IN LISTS benchmark_docs)
   endif()
 endforeach()
 
+foreach(command_doc IN LISTS benchmark_docs)
+  file(READ "${REPO_ROOT}/${command_doc}" command_doc_text)
+  if(command_doc_text MATCHES "ctest[ \t]+--test-dir")
+    message(FATAL_ERROR
+      "${command_doc} must use CTest 3.16-compatible test commands instead of ctest --test-dir."
+    )
+  endif()
+endforeach()
+
 set(current_contract_docs
   AGENTS.md
   CLAUDE.md
   README.md
+  docs/design.md
   docs/semantics.md
 )
 
@@ -164,6 +174,7 @@ set(forbidden_current_contract_phrases
   "Current `main` is in Phase"
   "Current `main` implements the Phase"
   "During Phase"
+  "phase-specific docs"
   "this phase does not make"
 )
 
