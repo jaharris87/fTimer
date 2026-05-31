@@ -6,8 +6,8 @@ module test_procedural_api
                      ftimer_lookup, ftimer_print_summary, ftimer_reset, ftimer_start, ftimer_start_id, &
                      ftimer_stop, ftimer_stop_id, ftimer_write_summary, ftimer_write_summary_csv
    use ftimer_core, only: ftimer_t, ftimer_test_set_call_count, ftimer_test_state_t
-   use ftimer_types, only: FTIMER_MISMATCH_STRICT, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
-                           ftimer_call_stack_t, ftimer_metadata_t, ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_MISMATCH_STRICT, FTIMER_ERR_MISMATCH, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, &
+                           FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_metadata_t, ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time, find_context_idx, &
                            read_file_text, read_unit_text, snapshot_timer, summary_node_ids_unique, &
                            summary_parent_index
@@ -274,7 +274,7 @@ contains
 
       procedural_id = ftimer_lookup("cached", ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
-      @assertEqual(oop_id, procedural_id)
+      @assertTrue(procedural_id > 0)
 
       call oop_timer%start_id(oop_id, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -303,6 +303,8 @@ contains
 
    @test
    subroutine test_procedural_cached_id_negative_paths_match_oop_contract()
+      type(ftimer_test_state_t) :: after_state
+      type(ftimer_test_state_t) :: before_state
       type(ftimer_test_state_t) :: state
       character(len=:), allocatable :: stderr_text
       integer :: capture_ierr
@@ -360,28 +362,47 @@ contains
 
       id = ftimer_lookup('procedural_cached_id', ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
-      @assertEqual(1, id)
+      @assertTrue(id > 0)
 
+      call snapshot_timer(ftimer_default_instance, before_state)
       call ftimer_start_id(0, ierr=ierr)
       @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(ftimer_default_instance, before_state)
       call ftimer_stop_id(id + 1, ierr=ierr)
       @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
 
+      call snapshot_timer(ftimer_default_instance, before_state)
       call begin_stderr_capture('test_procedural_cached_id_unknown_warn.err', saved_fd, capture_ierr)
       @assertEqual(0, capture_ierr)
       call ftimer_start_id(id + 1)
-      call ftimer_stop_id(0)
       call end_stderr_capture('test_procedural_cached_id_unknown_warn.err', saved_fd, stderr_text, capture_ierr)
       @assertEqual(0, capture_ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
 
       has_start_warning = index(stderr_text, 'ftimer start_id with unknown timer id') > 0
-      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
       @assertTrue(has_start_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(ftimer_default_instance, before_state)
+      call begin_stderr_capture('test_procedural_cached_id_unknown_stop_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_stop_id(0)
+      call end_stderr_capture('test_procedural_cached_id_unknown_stop_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+
+      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
       @assertTrue(has_stop_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
       @assertEqual(0, procedural_callback_count)
 
       call snapshot_timer(ftimer_default_instance, state)
-      call_count_allocated = allocated(state%segments(id)%call_count)
+      call_count_allocated = allocated(state%segments(1)%call_count)
       @assertTrue(state%initialized)
       @assertEqual(1, state%num_segments)
       @assertEqual(0, state%call_stack%depth)
@@ -396,22 +417,41 @@ contains
       call ftimer_default_instance%set_callback(count_procedural_callback, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
+      call snapshot_timer(ftimer_default_instance, before_state)
       call ftimer_start_id(id, ierr=ierr)
       @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(ftimer_default_instance, before_state)
       call ftimer_stop_id(id, ierr=ierr)
       @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
 
+      call snapshot_timer(ftimer_default_instance, before_state)
       call begin_stderr_capture('test_procedural_cached_id_stale_warn.err', saved_fd, capture_ierr)
       @assertEqual(0, capture_ierr)
       call ftimer_start_id(id)
-      call ftimer_stop_id(id)
       call end_stderr_capture('test_procedural_cached_id_stale_warn.err', saved_fd, stderr_text, capture_ierr)
       @assertEqual(0, capture_ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
 
       has_start_warning = index(stderr_text, 'ftimer start_id with unknown timer id') > 0
-      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
       @assertTrue(has_start_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(ftimer_default_instance, before_state)
+      call begin_stderr_capture('test_procedural_cached_id_stale_stop_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_stop_id(id)
+      call end_stderr_capture('test_procedural_cached_id_stale_stop_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+
+      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
       @assertTrue(has_stop_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
       @assertEqual(0, procedural_callback_count)
 
       call snapshot_timer(ftimer_default_instance, state)
@@ -419,9 +459,185 @@ contains
       @assertEqual(0, state%num_segments)
       @assertEqual(0, state%call_stack%depth)
 
+      id = ftimer_lookup('procedural_valid_after_failures', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp
+      call ftimer_stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, procedural_callback_count)
+
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_procedural_cached_id_negative_paths_match_oop_contract
+
+   @test
+   subroutine test_procedural_cached_id_stale_alias_after_reinit_is_rejected()
+      type(ftimer_test_state_t) :: after_state
+      type(ftimer_test_state_t) :: before_state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: ierr
+      integer :: new_id
+      integer :: old_id
+      integer :: saved_fd
+      logical :: has_start_warning
+      logical :: has_stop_warning
+      logical :: ids_differ
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      old_id = ftimer_lookup('procedural_old_cached_region', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+      call reset_procedural_callback_count()
+      call ftimer_default_instance%set_callback(count_procedural_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      new_id = ftimer_lookup('procedural_new_cached_region', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      ids_differ = new_id /= old_id
+      @assertTrue(ids_differ)
+
+      call snapshot_timer(ftimer_default_instance, before_state)
+      call ftimer_start_id(old_id, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(ftimer_default_instance, before_state)
+      call ftimer_stop_id(old_id, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(ftimer_default_instance, before_state)
+      call begin_stderr_capture('test_procedural_cached_id_stale_alias_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_start_id(old_id)
+      call ftimer_stop_id(old_id)
+      call end_stderr_capture('test_procedural_cached_id_stale_alias_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+
+      has_start_warning = index(stderr_text, 'ftimer start_id with unknown timer id') > 0
+      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
+      @assertTrue(has_start_warning)
+      @assertTrue(has_stop_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, procedural_callback_count)
+
+      call ftimer_start_id(new_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call ftimer_stop_id(new_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, procedural_callback_count)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_cached_id_stale_alias_after_reinit_is_rejected
+
+   @test
+   subroutine test_procedural_stop_id_mismatch_preserves_state()
+      type(ftimer_test_state_t) :: after_state
+      type(ftimer_test_state_t) :: before_state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: id_a
+      integer :: id_b
+      integer :: ierr
+      integer :: saved_fd
+      logical :: has_empty_warning
+      logical :: has_mismatch_warning
+      logical :: is_silent
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+      call reset_procedural_callback_count()
+      call ftimer_default_instance%set_callback(count_procedural_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_a = ftimer_lookup('procedural_valid_a', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      id_b = ftimer_lookup('procedural_valid_b', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(ftimer_default_instance, before_state)
+      call begin_stderr_capture('test_procedural_stop_id_empty_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_stop_id(id_a, ierr=ierr)
+      call end_stderr_capture('test_procedural_stop_id_empty_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, procedural_callback_count)
+
+      call snapshot_timer(ftimer_default_instance, before_state)
+      call begin_stderr_capture('test_procedural_stop_id_empty_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_stop_id(id_a)
+      call end_stderr_capture('test_procedural_stop_id_empty_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+      has_empty_warning = index(stderr_text, 'ftimer stop mismatch on empty call stack') > 0
+      @assertTrue(has_empty_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, procedural_callback_count)
+
+      call ftimer_start_id(id_a, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, procedural_callback_count)
+
+      call snapshot_timer(ftimer_default_instance, before_state)
+      call begin_stderr_capture('test_procedural_stop_id_mismatch_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_stop_id(id_b, ierr=ierr)
+      call end_stderr_capture('test_procedural_stop_id_mismatch_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(1, procedural_callback_count)
+
+      call snapshot_timer(ftimer_default_instance, before_state)
+      call begin_stderr_capture('test_procedural_stop_id_mismatch_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_stop_id(id_b)
+      call end_stderr_capture('test_procedural_stop_id_mismatch_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(ftimer_default_instance, after_state)
+      has_mismatch_warning = index(stderr_text, 'ftimer stop mismatch: requested procedural_valid_b') > 0
+      @assertTrue(has_mismatch_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(1, procedural_callback_count)
+
+      fake_time = 3.0_wp
+      call ftimer_stop_id(id_a, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, procedural_callback_count)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_stop_id_mismatch_preserves_state
 
    @test
    subroutine test_procedural_start_id_handles_int64_boundary()
@@ -447,7 +663,7 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       call snapshot_timer(ftimer_default_instance, state)
-      ctx = find_context_idx(state, id_hot, root_stack)
+      ctx = find_context_idx(state, 1, root_stack)
       call ftimer_test_set_call_count(ftimer_default_instance, id_hot, ctx, huge(0_int64) - 1_int64, ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
@@ -459,7 +675,7 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       call snapshot_timer(ftimer_default_instance, state)
-      stored_count = state%segments(id_hot)%call_count(ctx)
+      stored_count = state%segments(1)%call_count(ctx)
       count_at_max = stored_count == huge(0_int64)
       @assertTrue(count_at_max)
 
@@ -467,7 +683,7 @@ contains
       @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
 
       call snapshot_timer(ftimer_default_instance, state)
-      stored_count = state%segments(id_hot)%call_count(ctx)
+      stored_count = state%segments(1)%call_count(ctx)
       count_unchanged = stored_count == huge(0_int64)
       @assertTrue(count_unchanged)
       @assertEqual(0, state%call_stack%depth)
@@ -844,6 +1060,182 @@ contains
       open (newunit=unit, file=path, status='old', iostat=io)
       if (io == 0) close (unit, status='delete')
    end subroutine delete_if_exists
+
+   logical function test_state_matches(lhs, rhs) result(matches)
+      type(ftimer_test_state_t), intent(in) :: lhs
+      type(ftimer_test_state_t), intent(in) :: rhs
+      integer :: i
+
+      matches = (lhs%initialized .eqv. rhs%initialized) .and. &
+                (lhs%num_segments == rhs%num_segments) .and. &
+                (lhs%call_stack%depth == rhs%call_stack%depth) .and. &
+                (lhs%init_wtime == rhs%init_wtime) .and. &
+                (lhs%init_date == rhs%init_date) .and. &
+                (lhs%mismatch_mode == rhs%mismatch_mode)
+      if (.not. matches) return
+
+      if (allocated(lhs%call_stack%ids) .neqv. allocated(rhs%call_stack%ids)) then
+         matches = .false.
+         return
+      end if
+      if (allocated(lhs%call_stack%ids)) then
+         if (size(lhs%call_stack%ids) /= size(rhs%call_stack%ids)) then
+            matches = .false.
+            return
+         end if
+         if (any(lhs%call_stack%ids /= rhs%call_stack%ids)) then
+            matches = .false.
+            return
+         end if
+      end if
+
+      if (allocated(lhs%call_stack%activation_tokens) .neqv. &
+          allocated(rhs%call_stack%activation_tokens)) then
+         matches = .false.
+         return
+      end if
+      if (allocated(lhs%call_stack%activation_tokens)) then
+         if (size(lhs%call_stack%activation_tokens) /= size(rhs%call_stack%activation_tokens)) then
+            matches = .false.
+            return
+         end if
+         if (any(lhs%call_stack%activation_tokens /= rhs%call_stack%activation_tokens)) then
+            matches = .false.
+            return
+         end if
+      end if
+
+      if (allocated(lhs%segments) .neqv. allocated(rhs%segments)) then
+         matches = .false.
+         return
+      end if
+      if (.not. allocated(lhs%segments)) return
+      if (size(lhs%segments) /= size(rhs%segments)) then
+         matches = .false.
+         return
+      end if
+
+      do i = 1, lhs%num_segments
+         if (allocated(lhs%segments(i)%name) .neqv. allocated(rhs%segments(i)%name)) then
+            matches = .false.
+            return
+         end if
+         if (allocated(lhs%segments(i)%name)) then
+            if (lhs%segments(i)%name /= rhs%segments(i)%name) then
+               matches = .false.
+               return
+            end if
+         end if
+
+         if (lhs%segments(i)%contexts%count /= rhs%segments(i)%contexts%count) then
+            matches = .false.
+            return
+         end if
+         if (.not. segment_context_stacks_match(lhs%segments(i)%contexts%stacks, &
+                                                rhs%segments(i)%contexts%stacks, &
+                                                lhs%segments(i)%contexts%count)) then
+            matches = .false.
+            return
+         end if
+         if (.not. segment_real_arrays_match(lhs%segments(i)%time, rhs%segments(i)%time)) then
+            matches = .false.
+            return
+         end if
+         if (.not. segment_real_arrays_match(lhs%segments(i)%start_time, rhs%segments(i)%start_time)) then
+            matches = .false.
+            return
+         end if
+         if (.not. segment_logical_arrays_match(lhs%segments(i)%is_running, rhs%segments(i)%is_running)) then
+            matches = .false.
+            return
+         end if
+         if (.not. segment_count_arrays_match(lhs%segments(i)%call_count, rhs%segments(i)%call_count)) then
+            matches = .false.
+            return
+         end if
+      end do
+   end function test_state_matches
+
+   logical function segment_real_arrays_match(lhs, rhs) result(matches)
+      real(wp), allocatable, intent(in) :: lhs(:)
+      real(wp), allocatable, intent(in) :: rhs(:)
+
+      matches = allocated(lhs) .eqv. allocated(rhs)
+      if (.not. matches) return
+      if (.not. allocated(lhs)) return
+      matches = size(lhs) == size(rhs)
+      if (.not. matches) return
+      matches = all(lhs == rhs)
+   end function segment_real_arrays_match
+
+   logical function segment_logical_arrays_match(lhs, rhs) result(matches)
+      logical, allocatable, intent(in) :: lhs(:)
+      logical, allocatable, intent(in) :: rhs(:)
+
+      matches = allocated(lhs) .eqv. allocated(rhs)
+      if (.not. matches) return
+      if (.not. allocated(lhs)) return
+      matches = size(lhs) == size(rhs)
+      if (.not. matches) return
+      matches = all(lhs .eqv. rhs)
+   end function segment_logical_arrays_match
+
+   logical function segment_count_arrays_match(lhs, rhs) result(matches)
+      integer(int64), allocatable, intent(in) :: lhs(:)
+      integer(int64), allocatable, intent(in) :: rhs(:)
+
+      matches = allocated(lhs) .eqv. allocated(rhs)
+      if (.not. matches) return
+      if (.not. allocated(lhs)) return
+      matches = size(lhs) == size(rhs)
+      if (.not. matches) return
+      matches = all(lhs == rhs)
+   end function segment_count_arrays_match
+
+   logical function segment_context_stacks_match(lhs, rhs, count) result(matches)
+      type(ftimer_call_stack_t), allocatable, intent(in) :: lhs(:)
+      type(ftimer_call_stack_t), allocatable, intent(in) :: rhs(:)
+      integer, intent(in) :: count
+      integer :: i
+
+      matches = allocated(lhs) .eqv. allocated(rhs)
+      if (.not. matches) return
+      if (.not. allocated(lhs)) return
+      matches = size(lhs) == size(rhs)
+      if (.not. matches) return
+
+      do i = 1, count
+         if (.not. stack_storage_matches(lhs(i), rhs(i))) then
+            matches = .false.
+            return
+         end if
+      end do
+   end function segment_context_stacks_match
+
+   logical function stack_storage_matches(lhs, rhs) result(matches)
+      type(ftimer_call_stack_t), intent(in) :: lhs
+      type(ftimer_call_stack_t), intent(in) :: rhs
+
+      matches = lhs%depth == rhs%depth
+      if (.not. matches) return
+
+      matches = allocated(lhs%ids) .eqv. allocated(rhs%ids)
+      if (.not. matches) return
+      if (allocated(lhs%ids)) then
+         matches = size(lhs%ids) == size(rhs%ids)
+         if (.not. matches) return
+         matches = all(lhs%ids == rhs%ids)
+         if (.not. matches) return
+      end if
+
+      matches = allocated(lhs%activation_tokens) .eqv. allocated(rhs%activation_tokens)
+      if (.not. matches) return
+      if (allocated(lhs%activation_tokens)) then
+         matches = size(lhs%activation_tokens) == size(rhs%activation_tokens)
+         if (.not. matches) return
+         matches = all(lhs%activation_tokens == rhs%activation_tokens)
+      end if
+   end function stack_storage_matches
 
    subroutine count_procedural_callback(timer_id, context_idx, event, timestamp, user_data)
       integer, intent(in) :: timer_id

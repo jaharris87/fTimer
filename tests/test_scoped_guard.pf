@@ -2,7 +2,7 @@ module test_scoped_guard
    use, intrinsic :: iso_c_binding, only: c_ptr
    use pfunit
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_get_summary, ftimer_guard_t, ftimer_init, &
-                     ftimer_reset, ftimer_scope, ftimer_start, ftimer_stop
+                     ftimer_lookup, ftimer_reset, ftimer_scope, ftimer_start, ftimer_stop
    use ftimer_core, only: ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
                            FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_summary_t, wp
@@ -383,11 +383,13 @@ contains
    @test
    subroutine test_scope_rejects_owned_activation_below_child()
       type(ftimer_test_state_t) :: state
+      integer :: child_id
       integer :: ierr
-      integer, parameter :: expected_timer_ids(4) = [1, 2, 2, 1]
+      integer :: expected_timer_ids(4)
       integer, parameter :: expected_events(4) = [FTIMER_EVENT_START, FTIMER_EVENT_START, &
                                                   FTIMER_EVENT_STOP, FTIMER_EVENT_STOP]
       real(wp), parameter :: expected_timestamps(4) = [0.0_wp, 1.0_wp, 3.0_wp, 4.0_wp]
+      integer :: outer_id
 
       call reset_scope_callback_log()
       call ftimer_init(ierr=ierr)
@@ -395,6 +397,11 @@ contains
       call attach_mock_clock(ftimer_default_instance)
       call ftimer_default_instance%set_callback(record_scope_callback, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
+      outer_id = ftimer_lookup("outer", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      child_id = ftimer_lookup("child", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      expected_timer_ids = [outer_id, child_id, child_id, outer_id]
 
       below_child: block
          type(ftimer_guard_t) :: outer
@@ -487,6 +494,8 @@ contains
    @test
    subroutine test_scope_callbacks_match_normal_start_stop_events()
       type(ftimer_guard_t) :: explicit_guard
+      integer :: explicit_id
+      integer :: finalized_id
       integer :: ierr
 
       call reset_scope_callback_log()
@@ -494,6 +503,10 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
       call attach_mock_clock(ftimer_default_instance)
       call ftimer_default_instance%set_callback(record_scope_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      explicit_id = ftimer_lookup("explicit", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      finalized_id = ftimer_lookup("finalized", ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       call ftimer_scope(explicit_guard, "explicit", ierr=ierr)
@@ -515,10 +528,10 @@ contains
       @assertEqual(FTIMER_EVENT_STOP, scope_callback_events(2))
       @assertEqual(FTIMER_EVENT_START, scope_callback_events(3))
       @assertEqual(FTIMER_EVENT_STOP, scope_callback_events(4))
-      @assertEqual(1, scope_callback_timer_ids(1))
-      @assertEqual(1, scope_callback_timer_ids(2))
-      @assertEqual(2, scope_callback_timer_ids(3))
-      @assertEqual(2, scope_callback_timer_ids(4))
+      @assertEqual(explicit_id, scope_callback_timer_ids(1))
+      @assertEqual(explicit_id, scope_callback_timer_ids(2))
+      @assertEqual(finalized_id, scope_callback_timer_ids(3))
+      @assertEqual(finalized_id, scope_callback_timer_ids(4))
       @assertEqual(1, scope_callback_contexts(1))
       @assertEqual(1, scope_callback_contexts(2))
       @assertEqual(1, scope_callback_contexts(3))

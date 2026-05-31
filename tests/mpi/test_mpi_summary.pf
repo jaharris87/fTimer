@@ -3078,6 +3078,57 @@ contains
    end subroutine test_mpi_write_summary_csv_rejects_wrong_header_append
 
    @test
+   subroutine test_proc_mpi_csv_rejects_wrong_header_append(this)
+      class(mpi_summary_case), intent(inout) :: this
+      character(len=*), parameter :: csv_path = 'test_mpi_summary_procedural_wrong_header_append.csv'
+      character(len=:), allocatable :: before_text
+      integer :: ierr
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+      integer :: rank
+      integer :: unchanged_flag
+
+      rank = this%getProcessRank()
+      unchanged_flag = 0
+
+      call ftimer_init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+
+      call build_nested_timers(ftimer_default_instance, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) then
+         call write_raw_text(csv_path, 'wrong,header'//new_line('a'))
+         call capture_raw_file_text(csv_path, before_text)
+      end if
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call ftimer_write_mpi_summary_csv(csv_path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_IO, min_err)
+      @assertEqual(FTIMER_ERR_IO, max_err)
+
+      if (rank == 0) unchanged_flag = raw_file_unchanged_flag(csv_path, before_text)
+      call MPI_F08_Bcast(unchanged_flag, 1, MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      @assertEqual(1, unchanged_flag)
+
+      if (rank == 0) call delete_if_exists(csv_path)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_proc_mpi_csv_rejects_wrong_header_append
+
+   @test
    subroutine test_mpi_write_csv_rejects_bare_cr_in_header(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
