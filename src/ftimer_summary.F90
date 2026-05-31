@@ -79,8 +79,8 @@ contains
          do i = 1, size(metadata)
             if (metadata_key_len(metadata(i)) <= 0) cycle
             if (has_active_entries .and. metadata_key_is_reserved(metadata_key_text(metadata(i)))) cycle
-            call set_padded_text(padded, metadata_key_text(metadata(i)), key_width)
-            call append_line(text, padded(1:key_width)//' : '//metadata_value_text(metadata(i)))
+            call set_padded_text(padded, metadata_key_display_text(metadata(i)), key_width)
+            call append_line(text, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
          end do
       end if
 
@@ -174,8 +174,8 @@ contains
       if (present(metadata)) then
          do i = 1, size(metadata)
             if (metadata_key_len(metadata(i)) <= 0) cycle
-            call set_padded_text(padded, metadata_key_text(metadata(i)), key_width)
-            call append_line(text, padded(1:key_width)//' : '//metadata_value_text(metadata(i)))
+            call set_padded_text(padded, metadata_key_display_text(metadata(i)), key_width)
+            call append_line(text, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
          end do
       end if
 
@@ -270,8 +270,8 @@ contains
       if (present(metadata)) then
          do i = 1, size(metadata)
             if (metadata_key_len(metadata(i)) <= 0) cycle
-            call set_padded_text(padded, metadata_key_text(metadata(i)), key_width)
-            call append_line(text, padded(1:key_width)//' : '//metadata_value_text(metadata(i)))
+            call set_padded_text(padded, metadata_key_display_text(metadata(i)), key_width)
+            call append_line(text, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
          end do
       end if
 
@@ -758,7 +758,8 @@ contains
       if (.not. present(metadata)) return
 
       do i = 1, size(metadata)
-         width = max(width, metadata_key_len(metadata(i)))
+         if (metadata_key_len(metadata(i)) <= 0) cycle
+         width = max(width, metadata_key_display_len(metadata(i)))
       end do
    end function metadata_key_width
 
@@ -1044,32 +1045,170 @@ contains
       end if
    end function metadata_value_text
 
+   integer function metadata_key_display_len(item) result(width)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      text = metadata_key_display_text(item)
+      width = len(text)
+   end function metadata_key_display_len
+
+   function metadata_key_display_text(item) result(text)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      text = escaped_report_text(metadata_key_text(item), '<blank>')
+   end function metadata_key_display_text
+
+   function metadata_value_display_text(item) result(text)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      text = escaped_report_text(metadata_value_text(item), '')
+   end function metadata_value_display_text
+
    function escaped_summary_name(name) result(escaped)
       character(len=*), intent(in) :: name
       character(len=:), allocatable :: escaped
+
+      escaped = escaped_report_text(name, '<blank>')
+   end function escaped_summary_name
+
+   function escaped_report_text(raw_text, blank_text) result(escaped)
+      character(len=*), intent(in) :: raw_text
+      character(len=*), intent(in) :: blank_text
+      character(len=:), allocatable :: escaped
       integer :: i
+      integer :: seq_len
       integer :: visible_len
       logical :: leading_space
 
       escaped = ''
-      visible_len = len_trim(name)
+      visible_len = len_trim(raw_text)
       if (visible_len <= 0) then
-         escaped = '<blank>'
+         escaped = blank_text
          return
       end if
 
       leading_space = .true.
 
-      do i = 1, visible_len
-         if (leading_space .and. (name(i:i) == ' ')) then
+      i = 1
+      do while (i <= visible_len)
+         if (leading_space .and. (raw_text(i:i) == ' ')) then
             escaped = escaped//'\x20'
+            i = i + 1
             cycle
          end if
 
          leading_space = .false.
-         call append_escaped_char(escaped, name(i:i))
+         seq_len = valid_utf8_sequence_len(raw_text, i, visible_len)
+         if (seq_len > 0) then
+            if (is_utf8_encoded_c1_control(raw_text, i, seq_len)) then
+               call append_escaped_bytes(escaped, raw_text(i:i + seq_len - 1))
+            else
+               escaped = escaped//raw_text(i:i + seq_len - 1)
+            end if
+            i = i + seq_len
+            cycle
+         end if
+
+         call append_escaped_char(escaped, raw_text(i:i))
+         i = i + 1
       end do
-   end function escaped_summary_name
+   end function escaped_report_text
+
+   integer function valid_utf8_sequence_len(text, start, visible_len) result(seq_len)
+      character(len=*), intent(in) :: text
+      integer, intent(in) :: start
+      integer, intent(in) :: visible_len
+      integer :: b1
+      integer :: b2
+
+      seq_len = 0
+      b1 = iachar(text(start:start))
+
+      select case (b1)
+      case (194:223)
+         if (has_utf8_continuations(text, start, visible_len, 2)) seq_len = 2
+      case (224)
+         if (start + 2 <= visible_len) then
+            b2 = iachar(text(start + 1:start + 1))
+            if ((b2 >= 160) .and. (b2 <= 191) .and. &
+                is_utf8_continuation_code(iachar(text(start + 2:start + 2)))) seq_len = 3
+         end if
+      case (225:236, 238:239)
+         if (has_utf8_continuations(text, start, visible_len, 3)) seq_len = 3
+      case (237)
+         if (start + 2 <= visible_len) then
+            b2 = iachar(text(start + 1:start + 1))
+            if ((b2 >= 128) .and. (b2 <= 159) .and. &
+                is_utf8_continuation_code(iachar(text(start + 2:start + 2)))) seq_len = 3
+         end if
+      case (240)
+         if (start + 3 <= visible_len) then
+            b2 = iachar(text(start + 1:start + 1))
+            if ((b2 >= 144) .and. (b2 <= 191) .and. &
+                is_utf8_continuation_code(iachar(text(start + 2:start + 2))) .and. &
+                is_utf8_continuation_code(iachar(text(start + 3:start + 3)))) seq_len = 4
+         end if
+      case (241:243)
+         if (has_utf8_continuations(text, start, visible_len, 4)) seq_len = 4
+      case (244)
+         if (start + 3 <= visible_len) then
+            b2 = iachar(text(start + 1:start + 1))
+            if ((b2 >= 128) .and. (b2 <= 143) .and. &
+                is_utf8_continuation_code(iachar(text(start + 2:start + 2))) .and. &
+                is_utf8_continuation_code(iachar(text(start + 3:start + 3)))) seq_len = 4
+         end if
+      end select
+   end function valid_utf8_sequence_len
+
+   logical function has_utf8_continuations(text, start, visible_len, seq_len) result(is_valid)
+      character(len=*), intent(in) :: text
+      integer, intent(in) :: start
+      integer, intent(in) :: visible_len
+      integer, intent(in) :: seq_len
+      integer :: i
+
+      is_valid = .false.
+      if (start + seq_len - 1 > visible_len) return
+
+      do i = start + 1, start + seq_len - 1
+         if (.not. is_utf8_continuation_code(iachar(text(i:i)))) return
+      end do
+      is_valid = .true.
+   end function has_utf8_continuations
+
+   logical function is_utf8_continuation_code(code) result(is_continuation)
+      integer, intent(in) :: code
+
+      is_continuation = (code >= 128) .and. (code <= 191)
+   end function is_utf8_continuation_code
+
+   logical function is_utf8_encoded_c1_control(text, start, seq_len) result(is_control)
+      character(len=*), intent(in) :: text
+      integer, intent(in) :: start
+      integer, intent(in) :: seq_len
+      integer :: b1
+      integer :: b2
+
+      is_control = .false.
+      if (seq_len /= 2) return
+
+      b1 = iachar(text(start:start))
+      b2 = iachar(text(start + 1:start + 1))
+      is_control = (b1 == 194) .and. (b2 >= 128) .and. (b2 <= 159)
+   end function is_utf8_encoded_c1_control
+
+   subroutine append_escaped_bytes(text, bytes)
+      character(len=:), allocatable, intent(inout) :: text
+      character(len=*), intent(in) :: bytes
+      integer :: i
+
+      do i = 1, len(bytes)
+         call append_hex_escape(text, iachar(bytes(i:i)))
+      end do
+   end subroutine append_escaped_bytes
 
    subroutine append_escaped_char(text, ch)
       character(len=:), allocatable, intent(inout) :: text
@@ -1086,7 +1225,7 @@ contains
          text = text//'\r'
       case (92)
          text = text//'\\'
-      case (0:8, 11:12, 14:31, 127)
+      case (0:8, 11:12, 14:31, 127:159)
          call append_hex_escape(text, code)
       case default
          text = text//ch
