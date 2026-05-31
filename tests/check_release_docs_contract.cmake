@@ -53,7 +53,7 @@ endforeach()
 
 file(READ "${REPO_ROOT}/src/ftimer_types.F90" ftimer_types_text)
 file(STRINGS "${REPO_ROOT}/src/ftimer_types.F90" ftimer_types_lines)
-file(READ "${REPO_ROOT}/docs/semantics.md" semantics_text)
+file(STRINGS "${REPO_ROOT}/docs/semantics.md" semantics_lines)
 
 set(public_status_constants)
 foreach(source_line IN LISTS ftimer_types_lines)
@@ -73,36 +73,108 @@ foreach(source_line IN LISTS ftimer_types_lines)
   endforeach()
 endforeach()
 
+if(NOT public_status_constants)
+  message(FATAL_ERROR "No public fTimer status/error constants were extracted from src/ftimer_types.F90.")
+endif()
+
 list(SORT public_status_constants)
 
+set(public_status_entries)
 foreach(status_constant IN LISTS public_status_constants)
   if(NOT ftimer_types_text MATCHES "integer,[^\n]*parameter[^\n]*::[ \t]*${status_constant}[ \t]*=[ \t]*([0-9]+)")
     message(FATAL_ERROR "Could not find parameter value for ${status_constant}.")
   endif()
   set(status_value "${CMAKE_MATCH_1}")
-  string(FIND
-    "${semantics_text}"
-    "| `${status_constant}` | `${status_value}` |"
-    documented_status
+  list(APPEND public_status_entries "${status_constant}|${status_value}")
+endforeach()
+
+set(documented_status_entries)
+foreach(semantics_line IN LISTS semantics_lines)
+  string(STRIP "${semantics_line}" semantics_line)
+  if(semantics_line MATCHES "^\\|[ \t]*`(FTIMER_(SUCCESS|ERR_[A-Za-z0-9_]+))`[ \t]*\\|[ \t]*`([0-9]+)`[ \t]*\\|")
+    list(APPEND documented_status_entries "${CMAKE_MATCH_1}|${CMAKE_MATCH_3}")
+  endif()
+endforeach()
+
+if(NOT documented_status_entries)
+  message(FATAL_ERROR "docs/semantics.md must include a public fTimer status/error-code table.")
+endif()
+
+list(SORT public_status_entries)
+list(SORT documented_status_entries)
+
+set(missing_status_entries)
+foreach(public_status_entry IN LISTS public_status_entries)
+  list(FIND documented_status_entries "${public_status_entry}" found_index)
+  if(found_index EQUAL -1)
+    list(APPEND missing_status_entries "${public_status_entry}")
+  endif()
+endforeach()
+
+set(extra_status_entries)
+foreach(documented_status_entry IN LISTS documented_status_entries)
+  list(FIND public_status_entries "${documented_status_entry}" found_index)
+  if(found_index EQUAL -1)
+    list(APPEND extra_status_entries "${documented_status_entry}")
+  endif()
+endforeach()
+
+if(missing_status_entries OR extra_status_entries)
+  string(REPLACE ";" "\n  " missing_text "${missing_status_entries}")
+  string(REPLACE ";" "\n  " extra_text "${extra_status_entries}")
+  message(FATAL_ERROR
+    "docs/semantics.md public status/error-code table must exactly match src/ftimer_types.F90.\n"
+    "Missing or wrong in docs:\n  ${missing_text}\n"
+    "Extra or stale in docs:\n  ${extra_text}"
   )
-  if(documented_status EQUAL -1)
+endif()
+
+set(benchmark_docs
+  README.md
+  AGENTS.md
+  CLAUDE.md
+  docs/release.md
+)
+
+foreach(benchmark_doc IN LISTS benchmark_docs)
+  file(READ "${REPO_ROOT}/${benchmark_doc}" benchmark_doc_text)
+  string(FIND "${benchmark_doc_text}" "cmake -S . -B build-bench" benchmark_configure_found)
+  if(benchmark_configure_found EQUAL -1)
     message(FATAL_ERROR
-      "docs/semantics.md must list public status/error constant ${status_constant} with code ${status_value}."
+      "${benchmark_doc} benchmark instructions must include a CMake 3.16-compatible configure command."
+    )
+  endif()
+
+  string(FIND "${benchmark_doc_text}" "CMake 3.24" cmake_fresh_note_found)
+  if(cmake_fresh_note_found EQUAL -1 AND benchmark_doc_text MATCHES "cmake[ \t]+--fresh")
+    message(FATAL_ERROR
+      "${benchmark_doc} must mark cmake --fresh as a CMake 3.24+ convenience when mentioning it."
     )
   endif()
 endforeach()
 
-file(READ "${REPO_ROOT}/README.md" readme_text)
-string(FIND "${readme_text}" "cmake -S . -B build-bench" benchmark_configure_found)
-if(benchmark_configure_found EQUAL -1)
-  message(FATAL_ERROR
-    "README.md benchmark instructions must include a CMake 3.16-compatible configure command."
-  )
-endif()
+set(current_contract_docs
+  AGENTS.md
+  CLAUDE.md
+  README.md
+  docs/semantics.md
+)
 
-string(FIND "${readme_text}" "CMake 3.24" cmake_fresh_note_found)
-if(cmake_fresh_note_found EQUAL -1 AND readme_text MATCHES "cmake[ \t]+--fresh")
-  message(FATAL_ERROR
-    "README.md must mark cmake --fresh as a CMake 3.24+ convenience when mentioning it."
-  )
-endif()
+set(forbidden_current_contract_phrases
+  "Current `main` is in Phase"
+  "Current `main` implements the Phase"
+  "During Phase"
+  "this phase does not make"
+)
+
+foreach(current_contract_doc IN LISTS current_contract_docs)
+  file(READ "${REPO_ROOT}/${current_contract_doc}" current_contract_doc_text)
+  foreach(forbidden_phrase IN LISTS forbidden_current_contract_phrases)
+    string(FIND "${current_contract_doc_text}" "${forbidden_phrase}" forbidden_index)
+    if(NOT forbidden_index EQUAL -1)
+      message(FATAL_ERROR
+        "${current_contract_doc} contains stale phase-oriented current-state wording: ${forbidden_phrase}"
+      )
+    endif()
+  endforeach()
+endforeach()

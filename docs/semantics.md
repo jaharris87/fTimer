@@ -320,7 +320,7 @@ enforcement should pass `ierr` and check it.
 - OpenMP guard behavior is enabled only when the library is built with `FTIMER_USE_OPENMP=ON`
 - The CMake option is the source-level switch; global OpenMP compiler flags alone do not enable these guards when `FTIMER_USE_OPENMP=OFF`
 - This is a narrow master-thread-only carve-out for bracketing a parallel region as a whole; it is not general hybrid MPI+OpenMP timing support
-- The implemented model is master-thread-only timing; this phase does not make `fTimer` generally thread-safe
+- The implemented model is master-thread-only timing; the current implementation does not make `fTimer` generally thread-safe
 - Inside OpenMP parallel regions, the guarded `ftimer_core` timer operations run only on the master thread
 - Non-master calls to those guarded core timer operations become no-ops instead of mutating shared timer state
 - Suppressed non-master calls are skipped before normal validation, emit no stderr warning, and leave any caller-provided `ierr` unchanged

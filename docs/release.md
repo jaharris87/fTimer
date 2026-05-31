@@ -83,7 +83,7 @@ FC=gfortran cmake -B build-openmp \
 cmake --build build-openmp
 ctest --test-dir build-openmp --output-on-failure
 
-cmake --fresh -B build-bench \
+cmake -S . -B build-bench \
   -DFTIMER_BUILD_BENCH=ON \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build build-bench --target ftimer_bench
@@ -94,6 +94,10 @@ git diff --check
 
 If a toolchain is unavailable locally, record the skip reason in the release-prep
 PR and rely on the corresponding required CI job before tagging.
+
+For a clean benchmark reconfigure, remove or use a separate `build-bench/`
+directory first. With CMake 3.24 or newer, `cmake --fresh` may be added to the
+benchmark configure command as a convenience for a clean reconfigure.
 
 ## Artifact Policy
 
