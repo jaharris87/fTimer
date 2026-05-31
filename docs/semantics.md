@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements the Phase 2 core timer behavior, Phase 3 local summary/reporting behavior, Phase 4 procedural wrappers, Phase 5 MPI structured summaries, and the Phase 6 OpenMP guard behavior: stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the procedural `ftimer_scope` scoped guard, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
+Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the procedural `ftimer_scope` scoped guard, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -94,7 +94,22 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 - `ierr` present: set code, no stderr
 - `ierr` absent: emit a diagnostic to stderr
 - Validation and lifecycle errors follow a warn-and-return contract: they leave timer state unchanged unless the caller explicitly selected a repair-capable mismatch mode
-- Error codes and their meanings
+
+### Public Status And Error Codes
+
+These constants are public from `ftimer_types` and are the canonical status values returned through optional `ierr` arguments.
+
+| Constant | Code | Meaning |
+| --- | --- | --- |
+| `FTIMER_SUCCESS` | `0` | Operation completed successfully. |
+| `FTIMER_ERR_NOT_INIT` | `1` | The timer instance or default procedural instance has not been initialized for the requested operation. |
+| `FTIMER_ERR_NOT_IMPLEMENTED` | `2` | The requested API is unavailable in this build, such as MPI summary/report APIs when `FTIMER_USE_MPI=OFF`. |
+| `FTIMER_ERR_UNKNOWN` | `3` | Generic failure for an unsupported or unexpected condition that does not have a more specific public code. |
+| `FTIMER_ERR_ACTIVE` | `4` | Active timers or already-recorded timing data prevent the requested lifecycle or configuration operation. |
+| `FTIMER_ERR_MISMATCH` | `5` | Strict nesting, cached-id, or scoped-guard ownership checks detected a start/stop mismatch. |
+| `FTIMER_ERR_MPI_INCON` | `6` | MPI participants have inconsistent timer descriptor trees for a strict MPI summary/report operation. |
+| `FTIMER_ERR_IO` | `7` | File, unit, or CSV append validation failed. |
+| `FTIMER_ERR_INVALID_NAME` | `8` | A timer name failed public name validation. |
 
 ## Compile-Out / No-Op Instrumentation Pattern
 

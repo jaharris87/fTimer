@@ -10,7 +10,7 @@ This file provides guidance to Codex and other coding-agent workflows in this re
 
 ```bash
 # Performance measurement harness (serial, no pFUnit required)
-cmake --fresh -B build-bench -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build-bench -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-bench --target ftimer_bench
 ./build-bench/bench/ftimer_bench
 
@@ -48,6 +48,10 @@ make test       # build + run tests
 make clean      # remove build/
 make install    # install to CMAKE_INSTALL_PREFIX
 ```
+
+For a clean benchmark reconfigure, remove or use a separate `build-bench/`
+directory first. With CMake 3.24 or newer, `cmake --fresh` may be added to the
+configure command as a convenience for a clean reconfigure.
 
 Supported toolchain matrix:
 
@@ -128,13 +132,13 @@ The call stack state CHANGES between start and stop — this is the most common 
 
 ## Development Workflow
 
-Current `main` is in Phase 6. The shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, sparse/union MPI descriptor summaries, and limited OpenMP master-thread guards are implemented.
+Current `main` contains the shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, sparse/union MPI descriptor summaries, and limited OpenMP master-thread guards.
 
-During Phase 6, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep the diff phase-bounded: preserve procedural-wrapper parity with the OOP core unless a tracked issue explicitly defers parity, keep MPI summary behavior correct and explicit, preserve the limited master-thread-only OpenMP guard model, and keep current-state docs/examples honest. Do not pull fuller post-Phase-6 design work or broader OpenMP support forward.
+During release-readiness work, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep diffs issue-bounded: preserve procedural-wrapper parity with the OOP core unless a tracked issue explicitly defers parity, keep MPI summary behavior correct and explicit, preserve the limited master-thread-only OpenMP guard model, and keep current-state docs/examples honest. Do not pull broader deferred design work or fuller OpenMP support forward without a linked issue.
 
 Detailed repository operations and PR/review handling live in `docs/maintainer.md`. Use that file for GitHub workflow details; keep this file focused on coding/build/test behavior and the short mandatory PR summary below.
 
-**Phase 1 exception:** the types/clock foundation was compile-first work, not an early pFUnit phase. Starting in Phase 2, test-driven development is mandatory: write tests first, confirm they fail, then implement. All behavioral tests use the injectable mock clock for deterministic results — tests never sleep or depend on wall-clock timing.
+Historical note: the original types/clock foundation was compile-first work before pFUnit coverage existed. For current behavioral changes, test-driven development is mandatory: write tests first, confirm they fail, then implement. All behavioral tests use the injectable mock clock for deterministic results — tests never sleep or depend on wall-clock timing.
 
 ### Source-of-Truth Order
 
@@ -161,18 +165,18 @@ Read additional docs only when the task requires them:
 - `docs/semantics.md` — when runtime behavior or contract is changing or unclear
 - `README.md` — when user-facing behavior, examples, or docs may need updates
 - `docs/design.md` — for architectural or repository-structure questions
-- `docs/implementation-history.md` — for historical phase-plan context or landed roadmap history
-- `docs/maintainer.md` — for workflow routing; then load only the phase-specific doc you need:
+- `docs/implementation-history.md` — for historical roadmap context or landed implementation history
+- `docs/maintainer.md` — for workflow routing; then load only the workflow-specific doc you need:
   - `docs/workflows/pr-open.md` — PR opening and review labels
   - `docs/workflows/review-monitoring.md` — monitoring and fallback review
   - `docs/workflows/findings-disposition.md` — responding to findings and merge criteria
 
 Context budget:
 
-- Read each file once per phase unless it changed or ambiguity remains.
+- Read each file once per work item unless it changed or ambiguity remains.
 - After the initial discovery pass, switch to implementation mode.
 - Prefer diff-based validation late in the task over broad repo sweeps.
-- Batch progress updates by phase, not by file or micro-step.
+- Batch progress updates by work stage, not by file or micro-step.
 
 ### GitHub Tooling Policy
 
@@ -242,8 +246,8 @@ The native Codex trigger comments are intentionally posted as single-line `@code
 ## Configuration
 
 - **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` / `mpi_union_summary()` can populate cross-rank fields. Use MPI-enabled fTimer only after `MPI_Init` and before `MPI_Finalize`. The supported path is an MPI wrapper compiler such as `mpifort`; configure now fails early if the active compiler cannot compile a minimal `mpi_f08` probe against the discovered MPI toolchain. When OFF, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI result objects; they do not fall back to local summaries.
-- **`FTIMER_USE_OPENMP`** (CMake option, default OFF): Enables the Phase 6 `!$omp master` guards around the guarded `ftimer_core` entry points. This is limited master-thread-only protection, not full thread safety. The documented/supported build path is GNU Fortran (`gfortran`).
-- **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the current smoke-test baseline, including install/export consumer verification and the script-driven build-contract regression checks when their toolchain prerequisites are available.
+- **`FTIMER_USE_OPENMP`** (CMake option, default OFF): Enables limited `!$omp master` guards around the guarded `ftimer_core` entry points. This is master-thread-only protection, not full thread safety. The documented/supported build path is GNU Fortran (`gfortran`).
+- **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the smoke-test baseline, including install/export consumer verification and the script-driven build-contract regression checks when their toolchain prerequisites are available.
 - **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables the pFUnit-backed behavioral and MPI test suites.
 - **`CMAKE_INSTALL_PREFIX`**: Where `make install` places the library and module files.
 - **pFUnit**: Optional dependency for behavioral tests. Set `PFUNIT_DIR` explicitly when enabling `FTIMER_BUILD_TESTS`.
