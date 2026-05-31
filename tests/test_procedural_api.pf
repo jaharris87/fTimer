@@ -1123,11 +1123,21 @@ contains
 
       matches = (lhs%initialized .eqv. rhs%initialized) .and. &
                 (lhs%num_segments == rhs%num_segments) .and. &
+                (lhs%next_segment_id == rhs%next_segment_id) .and. &
                 (lhs%call_stack%depth == rhs%call_stack%depth) .and. &
                 (lhs%init_wtime == rhs%init_wtime) .and. &
                 (lhs%init_date == rhs%init_date) .and. &
                 (lhs%mismatch_mode == rhs%mismatch_mode)
       if (.not. matches) return
+
+      if (.not. segment_integer_arrays_match(lhs%segment_ids, rhs%segment_ids)) then
+         matches = .false.
+         return
+      end if
+      if (.not. segment_integer_arrays_match(lhs%segment_id_slots, rhs%segment_id_slots)) then
+         matches = .false.
+         return
+      end if
 
       if (allocated(lhs%call_stack%ids) .neqv. allocated(rhs%call_stack%ids)) then
          matches = .false.
@@ -1246,6 +1256,18 @@ contains
       if (.not. matches) return
       matches = all(lhs == rhs)
    end function segment_count_arrays_match
+
+   logical function segment_integer_arrays_match(lhs, rhs) result(matches)
+      integer, allocatable, intent(in) :: lhs(:)
+      integer, allocatable, intent(in) :: rhs(:)
+
+      matches = allocated(lhs) .eqv. allocated(rhs)
+      if (.not. matches) return
+      if (.not. allocated(lhs)) return
+      matches = size(lhs) == size(rhs)
+      if (.not. matches) return
+      matches = all(lhs == rhs)
+   end function segment_integer_arrays_match
 
    logical function segment_context_stacks_match(lhs, rhs, count) result(matches)
       type(ftimer_call_stack_t), allocatable, intent(in) :: lhs(:)

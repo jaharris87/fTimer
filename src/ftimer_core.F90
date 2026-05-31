@@ -36,7 +36,10 @@ module ftimer_core
    type :: ftimer_test_state_t
       type(ftimer_call_stack_t) :: call_stack
       type(ftimer_segment_t), allocatable :: segments(:)
+      integer, allocatable :: segment_ids(:)
+      integer, allocatable :: segment_id_slots(:)
       integer :: num_segments = 0
+      integer :: next_segment_id = 1
       real(wp) :: init_wtime = 0.0_wp
       character(len=40) :: init_date = ''
       logical :: initialized = .false.
@@ -961,6 +964,7 @@ contains
 
       state%call_stack = self%call_stack
       state%num_segments = self%num_segments
+      state%next_segment_id = self%next_segment_id
       state%init_wtime = self%init_wtime
       state%init_date = self%init_date
       state%initialized = self%initialized
@@ -973,10 +977,14 @@ contains
 #endif
 
       if (allocated(state%segments)) deallocate (state%segments)
+      if (allocated(state%segment_ids)) deallocate (state%segment_ids)
+      if (allocated(state%segment_id_slots)) deallocate (state%segment_id_slots)
       if (self%num_segments > 0) then
          allocate (state%segments(self%num_segments))
          state%segments = self%segments(1:self%num_segments)
       end if
+      if (allocated(self%segment_ids)) state%segment_ids = self%segment_ids
+      if (allocated(self%segment_id_slots)) state%segment_id_slots = self%segment_id_slots
    end subroutine ftimer_test_get_state
 
    subroutine ftimer_test_set_call_count(self, segment_id, context_id, call_count, ierr)
