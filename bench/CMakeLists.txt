@@ -5,6 +5,7 @@ add_test(NAME bench_smoke COMMAND ftimer_bench)
 set_tests_properties(bench_smoke PROPERTIES
   TIMEOUT 120
   LABELS bench
+  RUN_SERIAL TRUE
 )
 
 add_test(NAME bench_csv_smoke
@@ -16,6 +17,7 @@ add_test(NAME bench_csv_smoke
 set_tests_properties(bench_csv_smoke PROPERTIES
   TIMEOUT 120
   LABELS bench
+  RUN_SERIAL TRUE
 )
 
 add_test(NAME bench_csv_error_smoke
@@ -27,4 +29,5 @@ add_test(NAME bench_csv_error_smoke
 set_tests_properties(bench_csv_error_smoke PROPERTIES
   TIMEOUT 120
   LABELS bench
+  RUN_SERIAL TRUE
 )

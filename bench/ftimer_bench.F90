@@ -94,6 +94,7 @@
 !   Compare get_summary timer counts to see summary-generation scaling.
 
 program ftimer_bench
+   use, intrinsic :: iso_c_binding, only: c_int
    use, intrinsic :: iso_fortran_env, only: error_unit, int64, real64
    use ftimer_clock, only: ftimer_date_string
    use ftimer_core, only: ftimer_t
@@ -108,6 +109,13 @@ program ftimer_bench
                       MPI_Init
 #endif
    implicit none
+
+   interface
+      function c_getpid() bind(C, name="getpid") result(pid)
+         import :: c_int
+         integer(c_int) :: pid
+      end function c_getpid
+   end interface
 
    integer, parameter :: REPS_HOT = 100000  ! flat and lookup scenarios
    integer, parameter :: REPS_LONG_NAME = 50000
@@ -281,17 +289,27 @@ contains
    end function is_reporting_rank
 
    subroutine setup_bench_csv()
-      character(len=512) :: csv_path
+      character(len=:), allocatable :: csv_path
       character(len=256) :: iomsg
+      integer :: arg_len
       integer :: arg_status
       integer :: io
 
       if (.not. is_reporting_rank()) return
       if (command_argument_count() < 1) return
 
+      call get_command_argument(1, length=arg_len, status=arg_status)
+      if (arg_status /= 0) then
+         write (error_unit, '(a)') 'ftimer_bench: unable to read CSV result path argument'
+         error stop
+      end if
+      if (arg_len <= 0) return
+      allocate (character(len=arg_len) :: csv_path)
       call get_command_argument(1, csv_path, status=arg_status)
-      if (arg_status /= 0) return
-      if (len_trim(csv_path) <= 0) return
+      if (arg_status /= 0) then
+         write (error_unit, '(a)') 'ftimer_bench: unable to read CSV result path argument'
+         error stop
+      end if
       bench_csv_path = trim(csv_path)
 
       open (newunit=bench_csv_unit, file=bench_csv_path, status='replace', action='write', &
@@ -315,6 +333,7 @@ contains
       character(len=:), allocatable :: path
       character(len=512) :: tmpdir
       character(len=32) :: count_text
+      character(len=16) :: pid_text
       character(len=16) :: rank_text
       integer(int64) :: count
       integer :: env_status
@@ -325,12 +344,14 @@ contains
       if (env_status /= 0 .or. len_trim(tmpdir) <= 0) tmpdir = '/tmp'
       call system_clock(count=count)
       write (count_text, '(i0)') count
+      write (pid_text, '(i0)') int(c_getpid())
       write (rank_text, '(i0)') bench_rank
 
       attempt = 0
       do
          path = trim_trailing_slash(trim(tmpdir))//'/ftimer_bench_'//trim(role)//'_'// &
-                trim(count_text)//'_r'//trim(rank_text)//scratch_attempt_suffix(attempt)//'.csv'
+                trim(pid_text)//'_'//trim(count_text)//'_r'//trim(rank_text)// &
+                scratch_attempt_suffix(attempt)//'.csv'
          inquire (file=path, exist=exists)
          if ((.not. exists) .and. (.not. path_matches_bench_csv(path))) exit
          attempt = attempt + 1
@@ -468,7 +489,7 @@ contains
 
    ! Id-based start/stop, pre-registered timer.
    ! No name normalization, no segment lookup. Isolates pure stack push/pop
-   ! and clock-call cost from the mapped-lookup cost in scenario 1.
+   ! and clock-call cost from the mapped-lookup cost in name-based start/stop.
    subroutine bench_flat_id(reps, count_rate)
       integer, intent(in) :: reps
       integer(int64), intent(in) :: count_rate
