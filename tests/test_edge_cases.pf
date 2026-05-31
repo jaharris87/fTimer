@@ -30,6 +30,127 @@ contains
    end subroutine test_start_and_stop_before_init_return_not_init
 
    @test
+   subroutine test_cached_id_negative_paths_are_noops_and_warn_without_ierr()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: id
+      integer :: ierr
+      integer :: saved_fd
+      logical :: call_count_allocated
+      logical :: has_start_warning
+      logical :: has_stop_warning
+      logical :: is_silent
+
+      call reset_lifecycle_callback_count()
+      call timer%set_callback(count_lifecycle_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call begin_stderr_capture('test_cached_id_preinit_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start_id(1, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      call timer%stop_id(1, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      call end_stderr_capture('test_cached_id_preinit_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
+      @assertEqual(0, lifecycle_callback_count)
+
+      call begin_stderr_capture('test_cached_id_preinit_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start_id(1)
+      call timer%stop_id(1)
+      call end_stderr_capture('test_cached_id_preinit_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_start_warning = index(stderr_text, 'ftimer start_id before init') > 0
+      has_stop_warning = index(stderr_text, 'ftimer stop_id before init') > 0
+      @assertTrue(has_start_warning)
+      @assertTrue(has_stop_warning)
+      @assertEqual(0, lifecycle_callback_count)
+
+      call snapshot_timer(timer, state)
+      @assertFalse(state%initialized)
+      @assertEqual(0, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+      call reset_lifecycle_callback_count()
+      call timer%set_callback(count_lifecycle_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id = timer%lookup('cached_id', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, id)
+
+      call timer%start_id(0, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call timer%stop_id(id + 1, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+
+      call begin_stderr_capture('test_cached_id_unknown_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start_id(id + 1)
+      call timer%stop_id(0)
+      call end_stderr_capture('test_cached_id_unknown_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_start_warning = index(stderr_text, 'ftimer start_id with unknown timer id') > 0
+      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
+      @assertTrue(has_start_warning)
+      @assertTrue(has_stop_warning)
+      @assertEqual(0, lifecycle_callback_count)
+
+      call snapshot_timer(timer, state)
+      call_count_allocated = allocated(state%segments(id)%call_count)
+      @assertTrue(state%initialized)
+      @assertEqual(1, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+      @assertFalse(call_count_allocated)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+      call reset_lifecycle_callback_count()
+      call timer%set_callback(count_lifecycle_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call timer%stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+
+      call begin_stderr_capture('test_cached_id_stale_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start_id(id)
+      call timer%stop_id(id)
+      call end_stderr_capture('test_cached_id_stale_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_start_warning = index(stderr_text, 'ftimer start_id with unknown timer id') > 0
+      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
+      @assertTrue(has_start_warning)
+      @assertTrue(has_stop_warning)
+      @assertEqual(0, lifecycle_callback_count)
+
+      call snapshot_timer(timer, state)
+      @assertTrue(state%initialized)
+      @assertEqual(0, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_cached_id_negative_paths_are_noops_and_warn_without_ierr
+
+   @test
    subroutine test_print_summary_before_init_with_ierr_is_silent()
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: after_state

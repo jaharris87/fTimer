@@ -1,5 +1,6 @@
 module test_procedural_api
    use pfunit
+   use, intrinsic :: iso_c_binding, only: c_ptr
    use, intrinsic :: iso_fortran_env, only: int64
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_get_summary, ftimer_init, &
                      ftimer_lookup, ftimer_print_summary, ftimer_reset, ftimer_start, ftimer_start_id, &
@@ -11,6 +12,8 @@ module test_procedural_api
                            read_file_text, read_unit_text, snapshot_timer, summary_node_ids_unique, &
                            summary_parent_index
    implicit none
+
+   integer, save :: procedural_callback_count = 0
 
 contains
 
@@ -297,6 +300,128 @@ contains
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_procedural_lookup_start_id_stop_id_matches_oop
+
+   @test
+   subroutine test_procedural_cached_id_negative_paths_match_oop_contract()
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: id
+      integer :: ierr
+      integer :: saved_fd
+      logical :: call_count_allocated
+      logical :: has_start_warning
+      logical :: has_stop_warning
+      logical :: is_silent
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call reset_procedural_callback_count()
+      call ftimer_default_instance%set_callback(count_procedural_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call begin_stderr_capture('test_procedural_cached_id_preinit_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_start_id(1, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      call ftimer_stop_id(1, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      call end_stderr_capture('test_procedural_cached_id_preinit_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
+      @assertEqual(0, procedural_callback_count)
+
+      call begin_stderr_capture('test_procedural_cached_id_preinit_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_start_id(1)
+      call ftimer_stop_id(1)
+      call end_stderr_capture('test_procedural_cached_id_preinit_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_start_warning = index(stderr_text, 'ftimer start_id before init') > 0
+      has_stop_warning = index(stderr_text, 'ftimer stop_id before init') > 0
+      @assertTrue(has_start_warning)
+      @assertTrue(has_stop_warning)
+      @assertEqual(0, procedural_callback_count)
+
+      call snapshot_timer(ftimer_default_instance, state)
+      @assertFalse(state%initialized)
+      @assertEqual(0, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+      call reset_procedural_callback_count()
+      call ftimer_default_instance%set_callback(count_procedural_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id = ftimer_lookup('procedural_cached_id', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, id)
+
+      call ftimer_start_id(0, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call ftimer_stop_id(id + 1, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+
+      call begin_stderr_capture('test_procedural_cached_id_unknown_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_start_id(id + 1)
+      call ftimer_stop_id(0)
+      call end_stderr_capture('test_procedural_cached_id_unknown_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_start_warning = index(stderr_text, 'ftimer start_id with unknown timer id') > 0
+      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
+      @assertTrue(has_start_warning)
+      @assertTrue(has_stop_warning)
+      @assertEqual(0, procedural_callback_count)
+
+      call snapshot_timer(ftimer_default_instance, state)
+      call_count_allocated = allocated(state%segments(id)%call_count)
+      @assertTrue(state%initialized)
+      @assertEqual(1, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+      @assertFalse(call_count_allocated)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(ftimer_default_instance)
+      call reset_procedural_callback_count()
+      call ftimer_default_instance%set_callback(count_procedural_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call ftimer_stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+
+      call begin_stderr_capture('test_procedural_cached_id_stale_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call ftimer_start_id(id)
+      call ftimer_stop_id(id)
+      call end_stderr_capture('test_procedural_cached_id_stale_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_start_warning = index(stderr_text, 'ftimer start_id with unknown timer id') > 0
+      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
+      @assertTrue(has_start_warning)
+      @assertTrue(has_stop_warning)
+      @assertEqual(0, procedural_callback_count)
+
+      call snapshot_timer(ftimer_default_instance, state)
+      @assertTrue(state%initialized)
+      @assertEqual(0, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_cached_id_negative_paths_match_oop_contract
 
    @test
    subroutine test_procedural_start_id_handles_int64_boundary()
@@ -719,6 +844,20 @@ contains
       open (newunit=unit, file=path, status='old', iostat=io)
       if (io == 0) close (unit, status='delete')
    end subroutine delete_if_exists
+
+   subroutine count_procedural_callback(timer_id, context_idx, event, timestamp, user_data)
+      integer, intent(in) :: timer_id
+      integer, intent(in) :: context_idx
+      integer, intent(in) :: event
+      real(wp), intent(in) :: timestamp
+      type(c_ptr), intent(in) :: user_data
+
+      procedural_callback_count = procedural_callback_count + 1
+   end subroutine count_procedural_callback
+
+   subroutine reset_procedural_callback_count()
+      procedural_callback_count = 0
+   end subroutine reset_procedural_callback_count
 
    subroutine assert_summary_equal(lhs, rhs)
       type(ftimer_summary_t), intent(in) :: lhs
