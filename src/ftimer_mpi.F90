@@ -26,6 +26,7 @@ module ftimer_mpi
    public :: ftimer_test_get_mpi_union_descriptor_exchange
    public :: ftimer_test_reset_mpi_preflight_collectives
    public :: ftimer_test_reset_mpi_union_descriptor_exchange
+   public :: ftimer_test_set_mpi_union_descriptor_count_limit
 #endif
 #endif
 
@@ -36,10 +37,12 @@ module ftimer_mpi
    integer :: test_preflight_summary_reduction_count = 0
    integer, allocatable :: test_preflight_mismatch_flags(:)
    logical :: test_preflight_after_descriptor_check = .false.
+   integer :: test_union_descriptor_local_count = 0
    integer :: test_union_descriptor_local_chars = 0
    integer :: test_union_descriptor_packed_chars = 0
    integer :: test_union_descriptor_dense_chars = 0
    integer :: test_union_descriptor_total_count = 0
+   integer :: test_union_descriptor_count_limit = huge(0)
 #endif
 #endif
 
@@ -1006,6 +1009,17 @@ contains
       ok = .true.
    end function checked_add_int
 
+   logical function checked_add_union_descriptor_count(lhs, rhs, sum_value) result(ok)
+      integer, intent(in) :: lhs
+      integer, intent(in) :: rhs
+      integer, intent(out) :: sum_value
+
+      ok = checked_add_int(lhs, rhs, sum_value)
+#ifdef FTIMER_BUILD_TESTS
+      if (ok) ok = sum_value <= test_union_descriptor_count_limit
+#endif
+   end function checked_add_union_descriptor_count
+
    subroutine build_displacements_from_counts(counts, displacements, total_count, ok)
       integer, intent(in) :: counts(:)
       integer, intent(out) :: displacements(:)
@@ -1043,6 +1057,8 @@ contains
       integer :: dense_char_count
       integer :: dense_entry_chars
 #endif
+      integer :: all_mapping_ready
+      integer :: all_pack_ready
       integer :: descriptor_len
       integer :: descriptor_offset
       integer :: i
@@ -1050,6 +1066,8 @@ contains
       integer :: local_char_count
       integer :: local_descriptor_count
       integer :: local_idx
+      integer :: local_mapping_ready
+      integer :: local_pack_ready
 #ifdef FTIMER_BUILD_TESTS
       integer :: max_descriptor_count
       integer :: max_descriptor_len
@@ -1093,6 +1111,7 @@ contains
       if (total_descriptor_count <= 0) then
          allocate (union_descriptors(0))
 #ifdef FTIMER_BUILD_TESTS
+         test_union_descriptor_local_count = 0
          test_union_descriptor_local_chars = 0
          test_union_descriptor_packed_chars = 0
          test_union_descriptor_dense_chars = 0
@@ -1106,17 +1125,31 @@ contains
       allocate (all_descriptor_lengths(total_descriptor_count))
 
       local_char_count = 0
+      local_pack_ready = 1
       do i = 1, size(permutation)
          local_idx = permutation(i)
          descriptor_len = len_trim(descriptors(local_idx))
          local_descriptor_lengths(i) = descriptor_len
-         if (.not. checked_add_int(local_char_count, descriptor_len, next_count)) then
-            mpierr = FTIMER_ERR_UNKNOWN
-            return
+         if (local_pack_ready == 1) then
+            if (checked_add_union_descriptor_count(local_char_count, descriptor_len, next_count)) then
+               local_char_count = next_count
+            else
+               local_pack_ready = 0
+            end if
          end if
-         local_char_count = next_count
       end do
 
+      call MPI_Allreduce(local_pack_ready, all_pack_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) return
+      if (all_pack_ready /= 1) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+#ifdef FTIMER_BUILD_TESTS
+      test_union_descriptor_local_count = local_descriptor_count
+      test_union_descriptor_total_count = total_descriptor_count
+#endif
       call MPI_Allgatherv(local_descriptor_lengths, local_descriptor_count, MPI_INTEGER, all_descriptor_lengths, &
                           descriptor_counts, descriptor_displacements, MPI_INTEGER, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) return
@@ -1190,9 +1223,18 @@ contains
          end do
       end do
 
+      local_mapping_ready = 1
       do i = 1, size(permutation)
          local_to_union(i) = find_descriptor_index(union_descriptors, union_count, descriptors(permutation(i)))
+         if (local_to_union(i) <= 0) local_mapping_ready = 0
       end do
+
+      call MPI_Allreduce(local_mapping_ready, all_mapping_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) return
+      if (all_mapping_ready /= 1) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
 
 #ifdef FTIMER_BUILD_TESTS
       test_union_descriptor_local_chars = local_char_count
@@ -1828,10 +1870,12 @@ contains
    end subroutine ftimer_test_reset_mpi_preflight_collectives
 
    subroutine ftimer_test_reset_mpi_union_descriptor_exchange()
+      test_union_descriptor_local_count = 0
       test_union_descriptor_local_chars = 0
       test_union_descriptor_packed_chars = 0
       test_union_descriptor_dense_chars = 0
       test_union_descriptor_total_count = 0
+      test_union_descriptor_count_limit = huge(0)
    end subroutine ftimer_test_reset_mpi_union_descriptor_exchange
 
    subroutine ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count, &
@@ -1845,13 +1889,22 @@ contains
       summary_reduction_count = test_preflight_summary_reduction_count
    end subroutine ftimer_test_get_mpi_preflight_collectives
 
-   subroutine ftimer_test_get_mpi_union_descriptor_exchange(local_char_count, packed_char_count, dense_char_count, &
+   subroutine ftimer_test_set_mpi_union_descriptor_count_limit(count_limit)
+      integer, intent(in) :: count_limit
+
+      test_union_descriptor_count_limit = max(count_limit, 0)
+   end subroutine ftimer_test_set_mpi_union_descriptor_count_limit
+
+   subroutine ftimer_test_get_mpi_union_descriptor_exchange(local_descriptor_count, local_char_count, &
+                                                            packed_char_count, dense_char_count, &
                                                             total_descriptor_count)
+      integer, intent(out) :: local_descriptor_count
       integer, intent(out) :: local_char_count
       integer, intent(out) :: packed_char_count
       integer, intent(out) :: dense_char_count
       integer, intent(out) :: total_descriptor_count
 
+      local_descriptor_count = test_union_descriptor_local_count
       local_char_count = test_union_descriptor_local_chars
       packed_char_count = test_union_descriptor_packed_chars
       dense_char_count = test_union_descriptor_dense_chars
