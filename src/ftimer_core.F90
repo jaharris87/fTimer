@@ -36,7 +36,10 @@ module ftimer_core
    type :: ftimer_test_state_t
       type(ftimer_call_stack_t) :: call_stack
       type(ftimer_segment_t), allocatable :: segments(:)
+      integer, allocatable :: segment_ids(:)
+      integer, allocatable :: segment_id_slots(:)
       integer :: num_segments = 0
+      integer :: next_segment_id = 1
       real(wp) :: init_wtime = 0.0_wp
       character(len=40) :: init_date = ''
       logical :: initialized = .false.
@@ -59,8 +62,11 @@ module ftimer_core
       type(ftimer_call_stack_t) :: call_stack
       type(ftimer_segment_t), allocatable :: segments(:)
       integer, allocatable :: segment_name_slots(:)
+      integer, allocatable :: segment_ids(:)
+      integer, allocatable :: segment_id_slots(:)
       type(ftimer_context_index_t), allocatable :: segment_context_indices(:)
       integer :: num_segments = 0
+      integer :: next_segment_id = 1
       integer(int64) :: next_activation_token = 0_int64
       real(wp) :: init_wtime = 0.0_wp
       character(len=40) :: init_date = ''
@@ -493,7 +499,7 @@ contains
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
       integer(int64), intent(out), optional :: activation_token
-      integer :: id
+      integer :: segment_idx
       integer :: status
       integer :: trimmed_len
       character(len=:), allocatable :: message
@@ -511,8 +517,8 @@ contains
          return
       end if
 
-      id = self%find_or_create_segment(name(1:trimmed_len))
-      call start_id_impl(self, id, ierr=ierr, activation_token=activation_token)
+      segment_idx = self%find_or_create_segment(name(1:trimmed_len))
+      call start_segment_impl(self, segment_idx, ierr=ierr, activation_token=activation_token)
    end subroutine start_impl
 
    subroutine stop(self, name, ierr)
@@ -533,7 +539,7 @@ contains
       class(ftimer_t), intent(inout) :: self
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
-      integer :: id
+      integer :: segment_idx
       integer :: status
       integer :: trimmed_len
       character(len=:), allocatable :: message
@@ -549,14 +555,14 @@ contains
          return
       end if
 
-      id = find_segment_index(self, name(1:trimmed_len))
-      if (id <= 0) then
+      segment_idx = find_segment_index(self, name(1:trimmed_len))
+      if (segment_idx <= 0) then
          message = "ftimer stop on unknown timer: "//name(1:trimmed_len)
          call report_status(ierr, FTIMER_ERR_UNKNOWN, trim(message))
          return
       end if
 
-      call stop_id_impl(self, id, ierr=ierr)
+      call stop_segment_impl(self, segment_idx, ierr=ierr)
    end subroutine stop_impl
 
    subroutine start_id(self, id, ierr)
@@ -578,9 +584,7 @@ contains
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
       integer(int64), intent(out), optional :: activation_token
-      integer :: ctx
-      integer(int64) :: token
-      real(wp) :: now
+      integer :: segment_idx
 
       if (present(activation_token)) activation_token = 0_int64
 
@@ -589,33 +593,48 @@ contains
          return
       end if
 
-      if ((id < 1) .or. (id > self%num_segments)) then
+      segment_idx = find_segment_id_index(self, id)
+      if (segment_idx <= 0) then
          call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer start_id with unknown timer id")
          return
       end if
 
-      ctx = find_or_create_segment_context(self, id, self%call_stack)
-      call ensure_context_storage(self%segments(id), ctx)
+      call start_segment_impl(self, segment_idx, ierr=ierr, activation_token=activation_token)
+   end subroutine start_id_impl
 
-      if (self%segments(id)%call_count(ctx) >= huge(0_int64)) then
+   subroutine start_segment_impl(self, segment_idx, ierr, activation_token)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: segment_idx
+      integer, intent(out), optional :: ierr
+      integer(int64), intent(out), optional :: activation_token
+      integer :: ctx
+      integer(int64) :: token
+      real(wp) :: now
+
+      if (present(activation_token)) activation_token = 0_int64
+
+      ctx = find_or_create_segment_context(self, segment_idx, self%call_stack)
+      call ensure_context_storage(self%segments(segment_idx), ctx)
+
+      if (self%segments(segment_idx)%call_count(ctx) >= huge(0_int64)) then
          call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer start call count overflow")
          return
       end if
 
       token = create_activation_token(self)
-      call self%call_stack%push(id, token)
+      call self%call_stack%push(segment_idx, token)
       now = self%wtime()
-      self%segments(id)%start_time(ctx) = now
-      self%segments(id)%call_count(ctx) = self%segments(id)%call_count(ctx) + 1_int64
-      self%segments(id)%is_running(ctx) = .true.
+      self%segments(segment_idx)%start_time(ctx) = now
+      self%segments(segment_idx)%call_count(ctx) = self%segments(segment_idx)%call_count(ctx) + 1_int64
+      self%segments(segment_idx)%is_running(ctx) = .true.
 
       if (associated(self%on_event)) then
-         call self%on_event(id, ctx, FTIMER_EVENT_START, now, self%user_data)
+         call self%on_event(public_segment_id(self, segment_idx), ctx, FTIMER_EVENT_START, now, self%user_data)
       end if
 
       if (present(activation_token)) activation_token = token
       if (present(ierr)) ierr = FTIMER_SUCCESS
-   end subroutine start_id_impl
+   end subroutine start_segment_impl
 
    subroutine stop_id(self, id, ierr)
       class(ftimer_t), intent(inout) :: self
@@ -635,30 +654,40 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: id
       integer, intent(out), optional :: ierr
-      character(len=:), allocatable :: message
+      integer :: segment_idx
 
       if (.not. self%initialized) then
          call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer stop_id before init")
          return
       end if
 
-      if ((id < 1) .or. (id > self%num_segments)) then
+      segment_idx = find_segment_id_index(self, id)
+      if (segment_idx <= 0) then
          call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer stop_id with unknown timer id")
          return
       end if
+
+      call stop_segment_impl(self, segment_idx, ierr=ierr)
+   end subroutine stop_id_impl
+
+   subroutine stop_segment_impl(self, segment_idx, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: segment_idx
+      integer, intent(out), optional :: ierr
+      character(len=:), allocatable :: message
 
       if (self%call_stack%depth <= 0) then
          call report_status(ierr, FTIMER_ERR_MISMATCH, "ftimer stop mismatch on empty call stack")
          return
       end if
 
-      if (self%call_stack%top() == id) then
-         call stop_segment_with_now(self, id, self%wtime(), fire_callback=.true.)
+      if (self%call_stack%top() == segment_idx) then
+         call stop_segment_with_now(self, segment_idx, self%wtime(), fire_callback=.true.)
          if (present(ierr)) ierr = FTIMER_SUCCESS
          return
       end if
 
-      message = "ftimer stop mismatch: requested "//trim(self%segments(id)%name)// &
+      message = "ftimer stop mismatch: requested "//trim(self%segments(segment_idx)%name)// &
                 " but top of stack is "//trim(self%segments(self%call_stack%top())%name)
 
       select case (self%mismatch_mode)
@@ -666,26 +695,26 @@ contains
          call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
          return
       case (FTIMER_MISMATCH_WARN)
-         if (.not. stack_contains(self%call_stack, id)) then
+         if (.not. stack_contains(self%call_stack, segment_idx)) then
             call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
             return
          end if
 
          call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
-         call self%repair_mismatch(id)
+         call self%repair_mismatch(segment_idx)
       case (FTIMER_MISMATCH_REPAIR)
-         if (.not. stack_contains(self%call_stack, id)) then
+         if (.not. stack_contains(self%call_stack, segment_idx)) then
             call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
             return
          end if
 
-         call self%repair_mismatch(id)
+         call self%repair_mismatch(segment_idx)
          if (present(ierr)) ierr = FTIMER_SUCCESS
       case default
          call report_status(ierr, FTIMER_ERR_MISMATCH, trim(message))
          return
       end select
-   end subroutine stop_id_impl
+   end subroutine stop_segment_impl
 
    integer function lookup(self, name, ierr) result(id)
       class(ftimer_t), intent(inout) :: self
@@ -722,7 +751,7 @@ contains
          return
       end if
 
-      id = self%find_or_create_segment(name(1:trimmed_len))
+      id = public_segment_id(self, self%find_or_create_segment(name(1:trimmed_len)))
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end function lookup_impl
 
@@ -894,6 +923,19 @@ contains
       activation_token = self%next_activation_token
    end function create_activation_token
 
+   integer function allocate_segment_id(self) result(id)
+      class(ftimer_t), intent(inout) :: self
+
+      if (self%next_segment_id <= 0) error stop "ftimer timer id space exhausted"
+
+      id = self%next_segment_id
+      if (self%next_segment_id >= huge(self%next_segment_id)) then
+         self%next_segment_id = -1
+      else
+         self%next_segment_id = self%next_segment_id + 1
+      end if
+   end function allocate_segment_id
+
    integer function find_or_create_segment(self, name) result(idx)
       class(ftimer_t), intent(inout) :: self
       character(len=*), intent(in) :: name
@@ -905,10 +947,13 @@ contains
       new_idx = self%num_segments + 1
       call ensure_segment_capacity(self, new_idx)
       self%segments(new_idx)%name = name
+      self%segment_ids(new_idx) = allocate_segment_id(self)
       call ensure_segment_name_index(self, new_idx)
+      call ensure_segment_id_index(self, new_idx)
 
       self%num_segments = new_idx
       call insert_segment_name_slot(self%segment_name_slots, name, new_idx)
+      call insert_segment_id_slot(self%segment_id_slots, self%segment_ids(new_idx), new_idx)
       idx = new_idx
    end function find_or_create_segment
 
@@ -919,6 +964,7 @@ contains
 
       state%call_stack = self%call_stack
       state%num_segments = self%num_segments
+      state%next_segment_id = self%next_segment_id
       state%init_wtime = self%init_wtime
       state%init_date = self%init_date
       state%initialized = self%initialized
@@ -931,10 +977,14 @@ contains
 #endif
 
       if (allocated(state%segments)) deallocate (state%segments)
+      if (allocated(state%segment_ids)) deallocate (state%segment_ids)
+      if (allocated(state%segment_id_slots)) deallocate (state%segment_id_slots)
       if (self%num_segments > 0) then
          allocate (state%segments(self%num_segments))
          state%segments = self%segments(1:self%num_segments)
       end if
+      if (allocated(self%segment_ids)) state%segment_ids = self%segment_ids
+      if (allocated(self%segment_id_slots)) state%segment_id_slots = self%segment_id_slots
    end subroutine ftimer_test_get_state
 
    subroutine ftimer_test_set_call_count(self, segment_id, context_id, call_count, ierr)
@@ -943,28 +993,30 @@ contains
       integer, intent(in) :: context_id
       integer(int64), intent(in) :: call_count
       integer, intent(out), optional :: ierr
+      integer :: segment_idx
 
       if (.not. self%initialized) then
          call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer test_set_call_count before init")
          return
       end if
 
-      if ((segment_id < 1) .or. (segment_id > self%num_segments)) then
+      segment_idx = find_segment_id_index(self, segment_id)
+      if (segment_idx <= 0) then
          call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer test_set_call_count with unknown segment id")
          return
       end if
 
-      if (.not. allocated(self%segments(segment_id)%call_count)) then
+      if (.not. allocated(self%segments(segment_idx)%call_count)) then
          call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer test_set_call_count before context allocation")
          return
       end if
 
-      if ((context_id < 1) .or. (context_id > self%segments(segment_id)%contexts%count)) then
+      if ((context_id < 1) .or. (context_id > self%segments(segment_idx)%contexts%count)) then
          call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer test_set_call_count with unknown context id")
          return
       end if
 
-      self%segments(segment_id)%call_count(context_id) = call_count
+      self%segments(segment_idx)%call_count(context_id) = call_count
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine ftimer_test_set_call_count
 
@@ -976,6 +1028,8 @@ contains
 
       if (allocated(self%segments)) deallocate (self%segments)
       if (allocated(self%segment_name_slots)) deallocate (self%segment_name_slots)
+      if (allocated(self%segment_ids)) deallocate (self%segment_ids)
+      if (allocated(self%segment_id_slots)) deallocate (self%segment_id_slots)
       if (allocated(self%segment_context_indices)) deallocate (self%segment_context_indices)
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       if (allocated(self%call_stack%activation_tokens)) deallocate (self%call_stack%activation_tokens)
@@ -1070,6 +1124,7 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: required_size
       type(ftimer_context_index_t), allocatable :: new_context_indices(:)
+      integer, allocatable :: new_ids(:)
       type(ftimer_segment_t), allocatable :: new_segments(:)
       integer :: new_capacity
       integer :: old_capacity
@@ -1087,14 +1142,20 @@ contains
       end if
 
       allocate (new_segments(new_capacity))
+      allocate (new_ids(new_capacity))
       allocate (new_context_indices(new_capacity))
+      new_ids = 0
       if (self%num_segments > 0) then
          new_segments(1:self%num_segments) = self%segments(1:self%num_segments)
+         if (allocated(self%segment_ids)) then
+            new_ids(1:self%num_segments) = self%segment_ids(1:self%num_segments)
+         end if
          if (allocated(self%segment_context_indices)) then
             new_context_indices(1:self%num_segments) = self%segment_context_indices(1:self%num_segments)
          end if
       end if
       call move_alloc(new_segments, self%segments)
+      call move_alloc(new_ids, self%segment_ids)
       call move_alloc(new_context_indices, self%segment_context_indices)
    end subroutine ensure_segment_capacity
 
@@ -1134,6 +1195,43 @@ contains
 
       call move_alloc(new_slots, self%segment_name_slots)
    end subroutine ensure_segment_name_index
+
+   subroutine ensure_segment_id_index(self, required_count)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: required_count
+      integer, allocatable :: new_slots(:)
+      integer :: current_capacity
+      integer :: i
+      integer :: new_capacity
+
+      if (required_count <= 0) return
+
+      current_capacity = 0
+      if (allocated(self%segment_id_slots)) current_capacity = size(self%segment_id_slots)
+
+      if (current_capacity > 0) then
+         if (required_count*FTIMER_NAME_INDEX_LOAD_DENOMINATOR <= &
+             FTIMER_NAME_INDEX_LOAD_NUMERATOR*current_capacity) then
+            return
+         end if
+         new_capacity = current_capacity
+      else
+         new_capacity = FTIMER_NAME_INDEX_INITIAL_CAPACITY
+      end if
+
+      do while (required_count*FTIMER_NAME_INDEX_LOAD_DENOMINATOR > &
+                FTIMER_NAME_INDEX_LOAD_NUMERATOR*new_capacity)
+         new_capacity = 2*new_capacity
+      end do
+
+      allocate (new_slots(new_capacity))
+      new_slots = 0
+      do i = 1, self%num_segments
+         call insert_segment_id_slot(new_slots, self%segment_ids(i), i)
+      end do
+
+      call move_alloc(new_slots, self%segment_id_slots)
+   end subroutine ensure_segment_id_index
 
    subroutine ensure_segment_context_index(self, segment_id, required_count)
       class(ftimer_t), intent(inout) :: self
@@ -1202,6 +1300,35 @@ contains
 
       error stop "ftimer internal name index overflow"
    end subroutine insert_segment_name_slot
+
+   subroutine insert_segment_id_slot(slots, id, segment_idx)
+      integer, intent(inout) :: slots(:)
+      integer, intent(in) :: id
+      integer, intent(in) :: segment_idx
+      integer :: candidate_idx
+      integer :: slot
+      integer :: start_slot
+
+      if (size(slots) <= 0) error stop "ftimer internal id index has zero capacity"
+
+      slot = hash_id_slot(id, size(slots))
+      start_slot = slot
+      do
+         candidate_idx = slots(slot)
+         if (candidate_idx == 0) then
+            slots(slot) = segment_idx
+            return
+         end if
+
+         if (candidate_idx == segment_idx) return
+
+         slot = slot + 1
+         if (slot > size(slots)) slot = 1
+         if (slot == start_slot) exit
+      end do
+
+      error stop "ftimer internal id index overflow"
+   end subroutine insert_segment_id_slot
 
    subroutine insert_segment_context_slot(segment, slots, stack, ctx)
       type(ftimer_segment_t), intent(in) :: segment
@@ -1273,6 +1400,62 @@ contains
          end if
       end do
    end function find_segment_index
+
+   integer function public_segment_id(self, segment_idx) result(id)
+      class(ftimer_t), intent(in) :: self
+      integer, intent(in) :: segment_idx
+
+      id = 0
+      if ((segment_idx < 1) .or. (segment_idx > self%num_segments)) return
+      if (allocated(self%segment_ids)) then
+         if (segment_idx <= size(self%segment_ids)) then
+            id = self%segment_ids(segment_idx)
+            if (id > 0) return
+         end if
+      end if
+
+      id = segment_idx
+   end function public_segment_id
+
+   integer function find_segment_id_index(self, id) result(idx)
+      class(ftimer_t), intent(in) :: self
+      integer, intent(in) :: id
+      integer :: candidate_idx
+      integer :: i
+      integer :: slot
+      integer :: start_slot
+
+      idx = 0
+      if ((id <= 0) .or. (self%num_segments <= 0)) return
+
+      if (allocated(self%segment_id_slots) .and. allocated(self%segment_ids)) then
+         slot = hash_id_slot(id, size(self%segment_id_slots))
+         start_slot = slot
+         do
+            candidate_idx = self%segment_id_slots(slot)
+            if (candidate_idx == 0) return
+            if ((candidate_idx >= 1) .and. (candidate_idx <= self%num_segments)) then
+               if (self%segment_ids(candidate_idx) == id) then
+                  idx = candidate_idx
+                  return
+               end if
+            end if
+
+            slot = slot + 1
+            if (slot > size(self%segment_id_slots)) slot = 1
+            if (slot == start_slot) return
+         end do
+      end if
+
+      if (allocated(self%segment_ids)) then
+         do i = 1, self%num_segments
+            if (self%segment_ids(i) == id) then
+               idx = i
+               return
+            end if
+         end do
+      end if
+   end function find_segment_id_index
 
    integer function find_segment_context(self, segment_id, stack) result(ctx)
       class(ftimer_t), intent(inout) :: self
@@ -1357,6 +1540,21 @@ contains
 
       slot = 1 + int(modulo(hash, int(table_size, int64)))
    end function hash_name_slot
+
+   integer function hash_id_slot(id, table_size) result(slot)
+      integer, intent(in) :: id
+      integer, intent(in) :: table_size
+      integer(int64) :: hash
+
+      if (table_size <= 0) error stop "ftimer internal hash_id_slot called with empty table"
+
+      hash = int(id, int64)
+      hash = ieor(hash, shiftr(hash, 15))
+      hash = modulo(FTIMER_NAME_HASH_MIX_MULTIPLIER*hash, FTIMER_NAME_HASH_MODULUS)
+      hash = ieor(hash, shiftr(hash, 15))
+
+      slot = 1 + int(modulo(hash, int(table_size, int64)))
+   end function hash_id_slot
 
    integer function hash_context_slot(stack, table_size) result(slot)
       type(ftimer_call_stack_t), intent(in) :: stack
@@ -1464,7 +1662,7 @@ contains
       self%segments(id)%is_running(ctx) = .false.
 
       if (fire_callback .and. associated(self%on_event)) then
-         call self%on_event(id, ctx, FTIMER_EVENT_STOP, now, self%user_data)
+         call self%on_event(public_segment_id(self, id), ctx, FTIMER_EVENT_STOP, now, self%user_data)
       end if
    end subroutine stop_segment_with_now
 

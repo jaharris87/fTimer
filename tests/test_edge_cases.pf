@@ -3,10 +3,10 @@ module test_edge_cases
    use pfunit
    use ftimer_clock, only: ftimer_default_clock, ftimer_mpi_clock
    use ftimer_core, only: ftimer_t, ftimer_test_state_t
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, &
-                           FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, FTIMER_SUCCESS, &
-                           ftimer_call_stack_t, ftimer_summary_t, wp
-   use, intrinsic :: iso_fortran_env, only: error_unit
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, FTIMER_ERR_NOT_INIT, &
+                           FTIMER_ERR_UNKNOWN, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, &
+                           FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_summary_t, wp
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64
    use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time, &
                            find_context_idx, mock_clock, read_unit_text, reset_mock_clock_state, &
                            scaled_mock_clock, snapshot_timer
@@ -28,6 +28,418 @@ contains
       call timer%stop("A", ierr=ierr)
       @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
    end subroutine test_start_and_stop_before_init_return_not_init
+
+   @test
+   subroutine test_cached_id_negative_paths_are_noops_and_warn_without_ierr()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: after_state
+      type(ftimer_test_state_t) :: before_state
+      type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: id
+      integer :: ierr
+      integer :: saved_fd
+      logical :: call_count_allocated
+      logical :: has_start_warning
+      logical :: has_stop_warning
+      logical :: is_silent
+
+      call reset_lifecycle_callback_count()
+      call timer%set_callback(count_lifecycle_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call begin_stderr_capture('test_cached_id_preinit_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start_id(1, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      call timer%stop_id(1, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      call end_stderr_capture('test_cached_id_preinit_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
+      @assertEqual(0, lifecycle_callback_count)
+
+      call begin_stderr_capture('test_cached_id_preinit_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start_id(1)
+      call timer%stop_id(1)
+      call end_stderr_capture('test_cached_id_preinit_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_start_warning = index(stderr_text, 'ftimer start_id before init') > 0
+      has_stop_warning = index(stderr_text, 'ftimer stop_id before init') > 0
+      @assertTrue(has_start_warning)
+      @assertTrue(has_stop_warning)
+      @assertEqual(0, lifecycle_callback_count)
+
+      call snapshot_timer(timer, state)
+      @assertFalse(state%initialized)
+      @assertEqual(0, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+      call reset_lifecycle_callback_count()
+      call timer%set_callback(count_lifecycle_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, before_state)
+      id = timer%lookup('cached_id', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, id)
+      call snapshot_timer(timer, before_state)
+
+      call timer%start_id(0, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(timer, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(timer, before_state)
+      call timer%stop_id(id + 1, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(timer, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(timer, before_state)
+      call begin_stderr_capture('test_cached_id_unknown_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start_id(id + 1)
+      call end_stderr_capture('test_cached_id_unknown_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(timer, after_state)
+
+      has_start_warning = index(stderr_text, 'ftimer start_id with unknown timer id') > 0
+      @assertTrue(has_start_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(timer, before_state)
+      call begin_stderr_capture('test_cached_id_unknown_stop_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%stop_id(0)
+      call end_stderr_capture('test_cached_id_unknown_stop_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(timer, after_state)
+
+      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
+      @assertTrue(has_stop_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, lifecycle_callback_count)
+
+      call snapshot_timer(timer, state)
+      call_count_allocated = allocated(state%segments(id)%call_count)
+      @assertTrue(state%initialized)
+      @assertEqual(1, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+      @assertFalse(call_count_allocated)
+
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, lifecycle_callback_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+      call reset_lifecycle_callback_count()
+      call timer%set_callback(count_lifecycle_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, before_state)
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(timer, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(timer, before_state)
+      call timer%stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(timer, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(timer, before_state)
+      call begin_stderr_capture('test_cached_id_stale_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start_id(id)
+      call end_stderr_capture('test_cached_id_stale_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(timer, after_state)
+
+      has_start_warning = index(stderr_text, 'ftimer start_id with unknown timer id') > 0
+      @assertTrue(has_start_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(timer, before_state)
+      call begin_stderr_capture('test_cached_id_stale_stop_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%stop_id(id)
+      call end_stderr_capture('test_cached_id_stale_stop_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(timer, after_state)
+
+      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
+      @assertTrue(has_stop_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, lifecycle_callback_count)
+
+      call snapshot_timer(timer, state)
+      @assertTrue(state%initialized)
+      @assertEqual(0, state%num_segments)
+      @assertEqual(0, state%call_stack%depth)
+
+      id = timer%lookup('valid_after_failures', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp
+      call timer%stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, lifecycle_callback_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_cached_id_negative_paths_are_noops_and_warn_without_ierr
+
+   @test
+   subroutine test_cached_id_survives_reset()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      integer :: id
+      integer :: ierr
+      integer :: new_id
+      integer :: new_ctx
+      integer :: old_ctx
+      integer(int64) :: new_count
+      integer(int64) :: old_count
+      logical :: ids_differ
+      real(wp) :: new_elapsed
+      real(wp) :: old_elapsed
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      id = timer%lookup('cached_reset_region', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%reset(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 3.0_wp
+      call timer%stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      new_id = timer%lookup('cached_reset_new_region', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      ids_differ = new_id /= id
+      @assertTrue(ids_differ)
+
+      call timer%start_id(new_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 4.0_wp
+      call timer%stop_id(new_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, state)
+      old_ctx = find_context_idx(state, 1, root_stack)
+      new_ctx = find_context_idx(state, 2, root_stack)
+      old_elapsed = state%segments(1)%time(old_ctx)
+      new_elapsed = state%segments(2)%time(new_ctx)
+      old_count = state%segments(1)%call_count(old_ctx)
+      new_count = state%segments(2)%call_count(new_ctx)
+
+      @assertEqual(2, state%num_segments)
+      @assertEqual('cached_reset_region', trim(state%segments(1)%name))
+      @assertEqual('cached_reset_new_region', trim(state%segments(2)%name))
+      @assertEqual(2.0_wp, old_elapsed)
+      @assertEqual(1.0_wp, new_elapsed)
+      @assertEqual(1_int64, old_count)
+      @assertEqual(1_int64, new_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_cached_id_survives_reset
+
+   @test
+   subroutine test_cached_id_stale_alias_after_reinit_is_rejected()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: after_state
+      type(ftimer_test_state_t) :: before_state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: ierr
+      integer :: new_id
+      integer :: old_id
+      integer :: saved_fd
+      logical :: has_start_warning
+      logical :: has_stop_warning
+      logical :: ids_differ
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      old_id = timer%lookup('old_cached_region', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+      call reset_lifecycle_callback_count()
+      call timer%set_callback(count_lifecycle_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      new_id = timer%lookup('new_cached_region', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      ids_differ = new_id /= old_id
+      @assertTrue(ids_differ)
+
+      call snapshot_timer(timer, before_state)
+      call timer%start_id(old_id, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(timer, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(timer, before_state)
+      call timer%stop_id(old_id, ierr=ierr)
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      call snapshot_timer(timer, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call snapshot_timer(timer, before_state)
+      call begin_stderr_capture('test_cached_id_stale_alias_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start_id(old_id)
+      call timer%stop_id(old_id)
+      call end_stderr_capture('test_cached_id_stale_alias_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(timer, after_state)
+
+      has_start_warning = index(stderr_text, 'ftimer start_id with unknown timer id') > 0
+      has_stop_warning = index(stderr_text, 'ftimer stop_id with unknown timer id') > 0
+      @assertTrue(has_start_warning)
+      @assertTrue(has_stop_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, lifecycle_callback_count)
+
+      call timer%start_id(new_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%stop_id(new_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, lifecycle_callback_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_cached_id_stale_alias_after_reinit_is_rejected
+
+   @test
+   subroutine test_stop_id_valid_id_mismatch_preserves_state_and_callbacks()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: after_state
+      type(ftimer_test_state_t) :: before_state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: id_a
+      integer :: id_b
+      integer :: ierr
+      integer :: saved_fd
+      logical :: has_empty_warning
+      logical :: has_mismatch_warning
+      logical :: is_silent
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+      call reset_lifecycle_callback_count()
+      call timer%set_callback(count_lifecycle_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      id_a = timer%lookup('valid_a', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      id_b = timer%lookup('valid_b', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, before_state)
+      call begin_stderr_capture('test_stop_id_empty_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%stop_id(id_a, ierr=ierr)
+      call end_stderr_capture('test_stop_id_empty_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+      call snapshot_timer(timer, after_state)
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, lifecycle_callback_count)
+
+      call snapshot_timer(timer, before_state)
+      call begin_stderr_capture('test_stop_id_empty_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%stop_id(id_a)
+      call end_stderr_capture('test_stop_id_empty_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(timer, after_state)
+      has_empty_warning = index(stderr_text, 'ftimer stop mismatch on empty call stack') > 0
+      @assertTrue(has_empty_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, lifecycle_callback_count)
+
+      call timer%start_id(id_a, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, lifecycle_callback_count)
+
+      call snapshot_timer(timer, before_state)
+      call begin_stderr_capture('test_stop_id_mismatch_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%stop_id(id_b, ierr=ierr)
+      call end_stderr_capture('test_stop_id_mismatch_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+      call snapshot_timer(timer, after_state)
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(1, lifecycle_callback_count)
+
+      call snapshot_timer(timer, before_state)
+      call begin_stderr_capture('test_stop_id_mismatch_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%stop_id(id_b)
+      call end_stderr_capture('test_stop_id_mismatch_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call snapshot_timer(timer, after_state)
+      has_mismatch_warning = index(stderr_text, 'ftimer stop mismatch: requested valid_b') > 0
+      @assertTrue(has_mismatch_warning)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(1, lifecycle_callback_count)
+
+      fake_time = 3.0_wp
+      call timer%stop_id(id_a, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, lifecycle_callback_count)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_stop_id_valid_id_mismatch_preserves_state_and_callbacks
 
    @test
    subroutine test_print_summary_before_init_with_ierr_is_silent()
@@ -326,13 +738,18 @@ contains
    @test
    subroutine test_finalize_with_active_timer_returns_active()
       type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
       type(ftimer_test_state_t) :: state
+      integer :: id
       integer :: ierr
 
       call timer%init(ierr=ierr)
       call attach_mock_clock(timer)
 
-      call timer%start("A", ierr=ierr)
+      id = timer%lookup("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
       fake_time = 1.0_wp
       call timer%finalize(ierr=ierr)
 
@@ -340,6 +757,17 @@ contains
       call snapshot_timer(timer, state)
       @assertTrue(state%initialized)
       @assertEqual(1, state%call_stack%depth)
+
+      fake_time = 2.0_wp
+      call timer%stop_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2.0_wp, summary%total_time)
+      @assertEqual(2.0_wp, summary%entries(1)%inclusive_time)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_finalize_with_active_timer_returns_active
 
    @test
@@ -431,6 +859,7 @@ contains
       type(ftimer_test_state_t) :: state
       character(len=:), allocatable :: stderr_text
       integer :: capture_ierr
+      integer :: cached_id
       integer :: ctx
       integer :: ierr
       integer :: idx_a
@@ -443,7 +872,10 @@ contains
       call timer%init(ierr=ierr)
       call attach_mock_clock(timer)
 
-      call timer%start("A", ierr=ierr)
+      cached_id = timer%lookup("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%start_id(cached_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
       call begin_stderr_capture('test_finalize_without_ierr_warns_and_leaves_state_unchanged.err', saved_fd, &
                                 capture_ierr)
       @assertEqual(0, capture_ierr)
@@ -468,7 +900,7 @@ contains
       @assertEqual(1, state%segments(1)%call_count(ctx))
 
       fake_time = 3.0_wp
-      call timer%stop("A", ierr=ierr)
+      call timer%stop_id(cached_id, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       fake_time = 4.0_wp
@@ -613,6 +1045,7 @@ contains
       character(len=:), allocatable :: stderr_text
       integer :: capture_ierr
       integer :: ctx
+      integer :: id
       integer :: ierr
       integer :: saved_fd
       logical :: has_warning
@@ -621,7 +1054,10 @@ contains
       call timer%init(ierr=ierr)
       call attach_mock_clock(timer)
 
-      call timer%start("A", ierr=ierr)
+      id = timer%lookup("A", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call timer%start_id(id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
       call snapshot_timer(timer, before_state)
 
       call begin_stderr_capture('test_init_with_active_timer_ierr.err', saved_fd, capture_ierr)
@@ -669,7 +1105,7 @@ contains
       @assertEqual(1, after_warn_state%segments(1)%call_count(ctx))
 
       fake_time = 4.0_wp
-      call timer%stop("A", ierr=ierr)
+      call timer%stop_id(id, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call timer%get_summary(summary, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -1160,6 +1596,204 @@ contains
       call snapshot_timer(timer, state)
       @assertEqual(20, state%num_segments)
    end subroutine test_dynamic_growth_creates_many_segments
+
+   logical function test_state_matches(lhs, rhs) result(matches)
+      type(ftimer_test_state_t), intent(in) :: lhs
+      type(ftimer_test_state_t), intent(in) :: rhs
+      integer :: i
+
+      matches = (lhs%initialized .eqv. rhs%initialized) .and. &
+                (lhs%num_segments == rhs%num_segments) .and. &
+                (lhs%next_segment_id == rhs%next_segment_id) .and. &
+                (lhs%call_stack%depth == rhs%call_stack%depth) .and. &
+                (lhs%init_wtime == rhs%init_wtime) .and. &
+                (lhs%init_date == rhs%init_date) .and. &
+                (lhs%mismatch_mode == rhs%mismatch_mode)
+      if (.not. matches) return
+
+      if (.not. segment_integer_arrays_match(lhs%segment_ids, rhs%segment_ids)) then
+         matches = .false.
+         return
+      end if
+      if (.not. segment_integer_arrays_match(lhs%segment_id_slots, rhs%segment_id_slots)) then
+         matches = .false.
+         return
+      end if
+
+      if (allocated(lhs%call_stack%ids) .neqv. allocated(rhs%call_stack%ids)) then
+         matches = .false.
+         return
+      end if
+      if (allocated(lhs%call_stack%ids)) then
+         if (size(lhs%call_stack%ids) /= size(rhs%call_stack%ids)) then
+            matches = .false.
+            return
+         end if
+         if (any(lhs%call_stack%ids /= rhs%call_stack%ids)) then
+            matches = .false.
+            return
+         end if
+      end if
+
+      if (allocated(lhs%call_stack%activation_tokens) .neqv. &
+          allocated(rhs%call_stack%activation_tokens)) then
+         matches = .false.
+         return
+      end if
+      if (allocated(lhs%call_stack%activation_tokens)) then
+         if (size(lhs%call_stack%activation_tokens) /= size(rhs%call_stack%activation_tokens)) then
+            matches = .false.
+            return
+         end if
+         if (any(lhs%call_stack%activation_tokens /= rhs%call_stack%activation_tokens)) then
+            matches = .false.
+            return
+         end if
+      end if
+
+      if (allocated(lhs%segments) .neqv. allocated(rhs%segments)) then
+         matches = .false.
+         return
+      end if
+      if (.not. allocated(lhs%segments)) return
+      if (size(lhs%segments) /= size(rhs%segments)) then
+         matches = .false.
+         return
+      end if
+
+      do i = 1, lhs%num_segments
+         if (allocated(lhs%segments(i)%name) .neqv. allocated(rhs%segments(i)%name)) then
+            matches = .false.
+            return
+         end if
+         if (allocated(lhs%segments(i)%name)) then
+            if (lhs%segments(i)%name /= rhs%segments(i)%name) then
+               matches = .false.
+               return
+            end if
+         end if
+
+         if (lhs%segments(i)%contexts%count /= rhs%segments(i)%contexts%count) then
+            matches = .false.
+            return
+         end if
+         if (.not. segment_context_stacks_match(lhs%segments(i)%contexts%stacks, &
+                                                rhs%segments(i)%contexts%stacks, &
+                                                lhs%segments(i)%contexts%count)) then
+            matches = .false.
+            return
+         end if
+         if (.not. segment_real_arrays_match(lhs%segments(i)%time, rhs%segments(i)%time)) then
+            matches = .false.
+            return
+         end if
+         if (.not. segment_real_arrays_match(lhs%segments(i)%start_time, rhs%segments(i)%start_time)) then
+            matches = .false.
+            return
+         end if
+         if (.not. segment_logical_arrays_match(lhs%segments(i)%is_running, rhs%segments(i)%is_running)) then
+            matches = .false.
+            return
+         end if
+         if (.not. segment_count_arrays_match(lhs%segments(i)%call_count, rhs%segments(i)%call_count)) then
+            matches = .false.
+            return
+         end if
+      end do
+   end function test_state_matches
+
+   logical function segment_real_arrays_match(lhs, rhs) result(matches)
+      real(wp), allocatable, intent(in) :: lhs(:)
+      real(wp), allocatable, intent(in) :: rhs(:)
+
+      matches = allocated(lhs) .eqv. allocated(rhs)
+      if (.not. matches) return
+      if (.not. allocated(lhs)) return
+      matches = size(lhs) == size(rhs)
+      if (.not. matches) return
+      matches = all(lhs == rhs)
+   end function segment_real_arrays_match
+
+   logical function segment_logical_arrays_match(lhs, rhs) result(matches)
+      logical, allocatable, intent(in) :: lhs(:)
+      logical, allocatable, intent(in) :: rhs(:)
+
+      matches = allocated(lhs) .eqv. allocated(rhs)
+      if (.not. matches) return
+      if (.not. allocated(lhs)) return
+      matches = size(lhs) == size(rhs)
+      if (.not. matches) return
+      matches = all(lhs .eqv. rhs)
+   end function segment_logical_arrays_match
+
+   logical function segment_count_arrays_match(lhs, rhs) result(matches)
+      integer(int64), allocatable, intent(in) :: lhs(:)
+      integer(int64), allocatable, intent(in) :: rhs(:)
+
+      matches = allocated(lhs) .eqv. allocated(rhs)
+      if (.not. matches) return
+      if (.not. allocated(lhs)) return
+      matches = size(lhs) == size(rhs)
+      if (.not. matches) return
+      matches = all(lhs == rhs)
+   end function segment_count_arrays_match
+
+   logical function segment_integer_arrays_match(lhs, rhs) result(matches)
+      integer, allocatable, intent(in) :: lhs(:)
+      integer, allocatable, intent(in) :: rhs(:)
+
+      matches = allocated(lhs) .eqv. allocated(rhs)
+      if (.not. matches) return
+      if (.not. allocated(lhs)) return
+      matches = size(lhs) == size(rhs)
+      if (.not. matches) return
+      matches = all(lhs == rhs)
+   end function segment_integer_arrays_match
+
+   logical function segment_context_stacks_match(lhs, rhs, count) result(matches)
+      type(ftimer_call_stack_t), allocatable, intent(in) :: lhs(:)
+      type(ftimer_call_stack_t), allocatable, intent(in) :: rhs(:)
+      integer, intent(in) :: count
+      integer :: i
+
+      matches = allocated(lhs) .eqv. allocated(rhs)
+      if (.not. matches) return
+      if (.not. allocated(lhs)) return
+      matches = size(lhs) == size(rhs)
+      if (.not. matches) return
+
+      do i = 1, count
+         if (.not. stack_storage_matches(lhs(i), rhs(i))) then
+            matches = .false.
+            return
+         end if
+      end do
+   end function segment_context_stacks_match
+
+   logical function stack_storage_matches(lhs, rhs) result(matches)
+      type(ftimer_call_stack_t), intent(in) :: lhs
+      type(ftimer_call_stack_t), intent(in) :: rhs
+
+      matches = lhs%depth == rhs%depth
+      if (.not. matches) return
+
+      matches = allocated(lhs%ids) .eqv. allocated(rhs%ids)
+      if (.not. matches) return
+      if (allocated(lhs%ids)) then
+         matches = size(lhs%ids) == size(rhs%ids)
+         if (.not. matches) return
+         matches = all(lhs%ids == rhs%ids)
+         if (.not. matches) return
+      end if
+
+      matches = allocated(lhs%activation_tokens) .eqv. allocated(rhs%activation_tokens)
+      if (.not. matches) return
+      if (allocated(lhs%activation_tokens)) then
+         matches = size(lhs%activation_tokens) == size(rhs%activation_tokens)
+         if (.not. matches) return
+         matches = all(lhs%activation_tokens == rhs%activation_tokens)
+      end if
+   end function stack_storage_matches
 
    integer function find_summary_entry(summary, name, depth) result(idx)
       type(ftimer_summary_t), intent(in) :: summary
