@@ -79,8 +79,8 @@ contains
          do i = 1, size(metadata)
             if (metadata_key_len(metadata(i)) <= 0) cycle
             if (has_active_entries .and. metadata_key_is_reserved(metadata_key_text(metadata(i)))) cycle
-            call set_padded_text(padded, metadata_key_text(metadata(i)), key_width)
-            call append_line(text, padded(1:key_width)//' : '//metadata_value_text(metadata(i)))
+            call set_padded_text(padded, metadata_key_display_text(metadata(i)), key_width)
+            call append_line(text, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
          end do
       end if
 
@@ -174,8 +174,8 @@ contains
       if (present(metadata)) then
          do i = 1, size(metadata)
             if (metadata_key_len(metadata(i)) <= 0) cycle
-            call set_padded_text(padded, metadata_key_text(metadata(i)), key_width)
-            call append_line(text, padded(1:key_width)//' : '//metadata_value_text(metadata(i)))
+            call set_padded_text(padded, metadata_key_display_text(metadata(i)), key_width)
+            call append_line(text, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
          end do
       end if
 
@@ -270,8 +270,8 @@ contains
       if (present(metadata)) then
          do i = 1, size(metadata)
             if (metadata_key_len(metadata(i)) <= 0) cycle
-            call set_padded_text(padded, metadata_key_text(metadata(i)), key_width)
-            call append_line(text, padded(1:key_width)//' : '//metadata_value_text(metadata(i)))
+            call set_padded_text(padded, metadata_key_display_text(metadata(i)), key_width)
+            call append_line(text, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
          end do
       end if
 
@@ -758,7 +758,8 @@ contains
       if (.not. present(metadata)) return
 
       do i = 1, size(metadata)
-         width = max(width, metadata_key_len(metadata(i)))
+         if (metadata_key_len(metadata(i)) <= 0) cycle
+         width = max(width, metadata_key_display_len(metadata(i)))
       end do
    end function metadata_key_width
 
@@ -1044,32 +1045,62 @@ contains
       end if
    end function metadata_value_text
 
+   integer function metadata_key_display_len(item) result(width)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      text = metadata_key_display_text(item)
+      width = len(text)
+   end function metadata_key_display_len
+
+   function metadata_key_display_text(item) result(text)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      text = escaped_report_text(metadata_key_text(item), '<blank>')
+   end function metadata_key_display_text
+
+   function metadata_value_display_text(item) result(text)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      text = escaped_report_text(metadata_value_text(item), '')
+   end function metadata_value_display_text
+
    function escaped_summary_name(name) result(escaped)
       character(len=*), intent(in) :: name
+      character(len=:), allocatable :: escaped
+
+      escaped = escaped_report_text(name, '<blank>')
+   end function escaped_summary_name
+
+   function escaped_report_text(raw_text, blank_text) result(escaped)
+      character(len=*), intent(in) :: raw_text
+      character(len=*), intent(in) :: blank_text
       character(len=:), allocatable :: escaped
       integer :: i
       integer :: visible_len
       logical :: leading_space
 
       escaped = ''
-      visible_len = len_trim(name)
+      visible_len = len_trim(raw_text)
       if (visible_len <= 0) then
-         escaped = '<blank>'
+         escaped = blank_text
          return
       end if
 
       leading_space = .true.
 
       do i = 1, visible_len
-         if (leading_space .and. (name(i:i) == ' ')) then
+         if (leading_space .and. (raw_text(i:i) == ' ')) then
             escaped = escaped//'\x20'
             cycle
          end if
 
          leading_space = .false.
-         call append_escaped_char(escaped, name(i:i))
+         call append_escaped_char(escaped, raw_text(i:i))
       end do
-   end function escaped_summary_name
+   end function escaped_report_text
 
    subroutine append_escaped_char(text, ch)
       character(len=:), allocatable, intent(inout) :: text
