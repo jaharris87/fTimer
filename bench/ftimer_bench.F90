@@ -298,9 +298,7 @@ contains
             iostat=io, iomsg=iomsg)
       if (io /= 0) then
          write (error_unit, '(a)') 'ftimer_bench: unable to write CSV result file: '//trim(iomsg)
-         bench_csv_enabled = .false.
-         bench_csv_unit = -1
-         return
+         error stop
       end if
 
       bench_csv_enabled = .true.
@@ -447,7 +445,7 @@ contains
       error stop
    end subroutine require_success
 
-   ! Scenario 1: name-based start/stop, single timer, steady-state loop.
+   ! Name-based start/stop, single timer, steady-state loop.
    ! Pre-registers the timer with ftimer_lookup before timing to ensure the
    ! segment exists; the hot loop then always hits the existing segment.
    subroutine bench_flat_name(reps, count_rate)
@@ -468,7 +466,7 @@ contains
       call print_result('flat start/stop (name-based)', reps, t0, t1, count_rate)
    end subroutine bench_flat_name
 
-   ! Scenario 2: id-based start/stop, pre-registered timer.
+   ! Id-based start/stop, pre-registered timer.
    ! No name normalization, no segment lookup. Isolates pure stack push/pop
    ! and clock-call cost from the mapped-lookup cost in scenario 1.
    subroutine bench_flat_id(reps, count_rate)
@@ -489,7 +487,7 @@ contains
       call print_result('flat start/stop (id-based)', reps, t0, t1, count_rate)
    end subroutine bench_flat_id
 
-   ! Scenarios 3-6: long-name start/stop with one steady-state resident timer.
+   ! Long-name start/stop with one steady-state resident timer.
    ! The name-based rows include per-call validation and hashing across the full
    ! label length. The id-based row shows the cached-id path after one lookup.
    subroutine bench_long_name(reps, name_len, use_id, count_rate)
@@ -529,7 +527,7 @@ contains
       call print_result(trim(label), reps, t0, t1, count_rate)
    end subroutine bench_long_name
 
-   ! Scenarios 7-11: name-based lookup with N unique timers.
+   ! Name-based lookup with N unique timers.
    ! Cycles through all N timers each outer rep. Each inner start/stop uses
    ! the same public name-based path as production code, but with a large
    ! resident timer set already registered. The 1/10/50 points preserve the
@@ -569,7 +567,7 @@ contains
       call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_lookup_scaling
 
-   ! Scenarios 12-14: new timer discovery through lookup. This measures the
+   ! New timer discovery through lookup. This measures the
    ! internal segment array, name-index, and name storage allocation/growth cost
    ! that remains on the first touch of a previously unseen timer name. The
    ! repetitions use independent already-initialized timer objects inside one
@@ -613,7 +611,7 @@ contains
       call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_timer_first_touch
 
-   ! Scenarios 15-17: new context creation for one already-known hot timer.
+   ! New context creation for one already-known hot timer.
    ! Parent timers and their root contexts are warmed before the measured block,
    ! so the measured work isolates first creation of the work timer's distinct
    ! parent-stack contexts plus the steady parent/work start-stop cycle. The
@@ -669,7 +667,7 @@ contains
       call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_context_first_touch
 
-   ! Scenarios 18-23: one timer reused under many parent stacks.
+   ! One timer reused under many parent stacks.
    ! Each cycle times the same "work" timer under a distinct parent, so the
    ! hot path sees growing context counts for one segment. The name-based rows
    ! keep the default public API path; the id-based rows isolate the
@@ -757,7 +755,7 @@ contains
       call print_result(trim(label), total_ops, t0, t1, count_rate)
    end subroutine bench_context_scaling_id
 
-   ! Scenarios 24-27: id-based nesting at increasing depths.
+   ! Id-based nesting at increasing depths.
    ! Each cycle does D id-based starts then D id-based stops.
    ! Using id-based ops isolates call-stack bookkeeping cost from
    ! name-lookup cost.  After the warm-up cycle has grown the stack to the
@@ -805,7 +803,7 @@ contains
       call print_result(trim(label), reps, t0, t1, count_rate)
    end subroutine bench_nesting
 
-   ! Scenarios 28-30: get_summary overhead with N flat timers.
+   ! get_summary overhead with N flat timers.
    ! Creates N timers each called once, then measures the cost of repeatedly
    ! calling get_summary().  The summary build walks the visible timer tree,
    ! computes self-times from direct children, and allocates the entries array.
