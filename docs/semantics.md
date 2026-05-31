@@ -105,7 +105,7 @@ These constants are public from `ftimer_types` and are the canonical status valu
 | `FTIMER_ERR_NOT_INIT` | `1` | The timer instance or default procedural instance has not been initialized for the requested operation. |
 | `FTIMER_ERR_NOT_IMPLEMENTED` | `2` | The requested API is unavailable in this build, such as MPI summary/report APIs when `FTIMER_USE_MPI=OFF`. |
 | `FTIMER_ERR_UNKNOWN` | `3` | Generic failure for an unsupported or unexpected condition that does not have a more specific public code. |
-| `FTIMER_ERR_ACTIVE` | `4` | Active timers or already-recorded timing data prevent the requested lifecycle or configuration operation. |
+| `FTIMER_ERR_ACTIVE` | `4` | An active timer, active scoped guard, or already-recorded timing data prevents the requested lifecycle, configuration, or report operation. |
 | `FTIMER_ERR_MISMATCH` | `5` | Strict nesting, cached-id, or scoped-guard ownership checks detected a start/stop mismatch. |
 | `FTIMER_ERR_MPI_INCON` | `6` | MPI participants have inconsistent timer descriptor trees for a strict MPI summary/report operation. |
 | `FTIMER_ERR_IO` | `7` | File, unit, or CSV append validation failed. |

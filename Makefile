@@ -29,7 +29,7 @@ openmp:
 	cmake --build $(OPENMP_BUILD_DIR) -j$(NPROC)
 
 test: all
-	ctest --test-dir $(BUILD_DIR) --output-on-failure
+	cmake -E chdir $(BUILD_DIR) ctest --output-on-failure
 
 clean:
 	rm -rf $(BUILD_DIR) $(MPI_BUILD_DIR) $(OPENMP_BUILD_DIR)

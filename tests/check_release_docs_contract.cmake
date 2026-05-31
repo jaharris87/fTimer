@@ -6,6 +6,7 @@ set(required_paths
   README.md
   docs/design.md
   docs/implementation-history.md
+  docs/maintainer.md
   docs/release.md
   docs/semantics.md
   CONTRIBUTING.md
@@ -138,12 +139,38 @@ set(benchmark_docs
 
 foreach(benchmark_doc IN LISTS benchmark_docs)
   file(READ "${REPO_ROOT}/${benchmark_doc}" benchmark_doc_text)
-  string(FIND "${benchmark_doc_text}" "cmake -S . -B build-bench" benchmark_configure_found)
-  if(benchmark_configure_found EQUAL -1)
+  string(REPLACE "\r\n" "\n" benchmark_doc_normalized "${benchmark_doc_text}")
+  string(REGEX REPLACE "\\\\[ \t]*\n[ \t]*" " " benchmark_doc_flat "${benchmark_doc_normalized}")
+  string(REGEX REPLACE "[ \t\n]+" " " benchmark_doc_flat "${benchmark_doc_flat}")
+
+  if(NOT benchmark_doc_flat MATCHES "cmake -S \\. -B build-bench -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release")
     message(FATAL_ERROR
-      "${benchmark_doc} benchmark instructions must include a CMake 3.16-compatible configure command."
+      "${benchmark_doc} benchmark instructions must include the complete CMake 3.16-compatible configure command."
     )
   endif()
+
+  string(FIND "${benchmark_doc_text}" "cmake --build build-bench --target ftimer_bench" benchmark_build_found)
+  if(benchmark_build_found EQUAL -1)
+    message(FATAL_ERROR
+      "${benchmark_doc} benchmark instructions must include the ftimer_bench build target command."
+    )
+  endif()
+
+  string(FIND "${benchmark_doc_text}" "./build-bench/bench/ftimer_bench" benchmark_run_found)
+  if(benchmark_run_found EQUAL -1)
+    message(FATAL_ERROR
+      "${benchmark_doc} benchmark instructions must include the ftimer_bench executable command."
+    )
+  endif()
+
+  file(STRINGS "${REPO_ROOT}/${benchmark_doc}" benchmark_doc_lines)
+  foreach(benchmark_doc_line IN LISTS benchmark_doc_lines)
+    if(benchmark_doc_line MATCHES "^[ \t]*cmake[ \t]+--fresh")
+      message(FATAL_ERROR
+        "${benchmark_doc} must not use cmake --fresh as a primary benchmark command."
+      )
+    endif()
+  endforeach()
 
   string(FIND "${benchmark_doc_text}" "CMake 3.24" cmake_fresh_note_found)
   if(cmake_fresh_note_found EQUAL -1 AND benchmark_doc_text MATCHES "cmake[ \t]+--fresh")
@@ -153,11 +180,16 @@ foreach(benchmark_doc IN LISTS benchmark_docs)
   endif()
 endforeach()
 
-foreach(command_doc IN LISTS benchmark_docs)
-  file(READ "${REPO_ROOT}/${command_doc}" command_doc_text)
-  if(command_doc_text MATCHES "ctest[ \t]+--test-dir")
+set(release_command_paths
+  ${benchmark_docs}
+  Makefile
+)
+
+foreach(command_path IN LISTS release_command_paths)
+  file(READ "${REPO_ROOT}/${command_path}" command_text)
+  if(command_text MATCHES "ctest[ \t]+--test-dir")
     message(FATAL_ERROR
-      "${command_doc} must use CTest 3.16-compatible test commands instead of ctest --test-dir."
+      "${command_path} must use CTest 3.16-compatible test commands instead of ctest --test-dir."
     )
   endif()
 endforeach()
@@ -167,6 +199,7 @@ set(current_contract_docs
   CLAUDE.md
   README.md
   docs/design.md
+  docs/maintainer.md
   docs/semantics.md
 )
 
@@ -174,7 +207,9 @@ set(forbidden_current_contract_phrases
   "Current `main` is in Phase"
   "Current `main` implements the Phase"
   "During Phase"
-  "phase-specific docs"
+  "Phase 6"
+  "phase-specific"
+  "Load only the phase you need"
   "this phase does not make"
 )
 

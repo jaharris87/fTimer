@@ -1,8 +1,8 @@
-> **When to read this:** When you need repository workflow guidance: issue setup, PR opening, review monitoring, findings disposition. Do not load this during routine coding tasks unless the task is in an issue/PR/review/disposition phase.
+> **When to read this:** When you need repository workflow guidance: issue setup, PR opening, review monitoring, findings disposition. Do not load this during routine coding tasks unless the task is in an issue/PR/review/disposition stage.
 
 # Maintainer Guide
 
-This document routes to phase-specific workflow docs. Shared coding-agent context lives in `CLAUDE.md` / `AGENTS.md`; this file is for maintainer workflow, not implementation guidance.
+This document routes to workflow-specific docs. Shared coding-agent context lives in `CLAUDE.md` / `AGENTS.md`; this file is for maintainer workflow, not implementation guidance.
 
 ## Repository Bootstrap
 
@@ -62,9 +62,9 @@ download identity and cache identity together when updating pinned tools.
   - Let GitHub CI exercise the verified pFUnit download path and the pinned
     lint install path before treating a release-boundary PR as ready.
 
-## Workflow Phases
+## Workflow Docs
 
-Use the workflow docs below for phase-specific operating procedures. Load only the phase you need.
+Use the workflow docs below for workflow-specific operating procedures. Load only the workflow you need.
 
 - [`docs/workflows/pr-open.md`](workflows/pr-open.md) — opening a PR,
   applying review labels, review prompt library
