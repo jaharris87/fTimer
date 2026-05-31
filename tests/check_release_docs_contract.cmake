@@ -208,7 +208,12 @@ set(forbidden_current_contract_phrases
   "Current `main` implements the Phase"
   "During Phase"
   "Phase 6"
+  "Phase 1 exception"
+  "Starting in Phase 2"
+  "phase-bounded"
   "phase-specific"
+  "per phase"
+  "by phase"
   "Load only the phase you need"
   "this phase does not make"
 )
