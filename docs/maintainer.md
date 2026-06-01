@@ -63,6 +63,12 @@ download identity and cache identity together when updating pinned tools.
   - Keep the job scheduled/manual and allowed-failure until GitHub-hosted runner
     storage, install time, and serial smoke compatibility are proven stable
     enough for release gating.
+- MPICH:
+  - Keep `build-mpi-mpich` on a hosted image with working MPICH process
+    management. Ubuntu 24.04's MPICH package has launched multi-process jobs as
+    singleton `MPI_COMM_WORLD` instances in CI, so the job is pinned away from
+    `ubuntu-latest` until that distro package is fixed or CI installs a known-good
+    MPICH build.
 - Validation:
   - Run `git diff --check` after dependency pin updates.
   - Let GitHub CI exercise the verified pFUnit download path and the pinned

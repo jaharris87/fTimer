@@ -93,7 +93,11 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   build-mpi-mpich:
-    runs-on: ubuntu-latest
+    # Ubuntu 24.04's MPICH package currently has an incorrect PMI/Hydra
+    # configuration that launches multiple singleton worlds, so keep this
+    # required MPICH coverage on the older hosted image until that package is
+    # fixed or a separate MPICH install path is added.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
 

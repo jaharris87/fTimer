@@ -330,7 +330,7 @@ Supported toolchain matrix:
 
 - Serial smoke/library build: GNU Fortran and LLVM Flang are validated in automation
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
-- MPI smoke and installed-consumer paths: GNU Fortran with OpenMPI and MPICH wrapper compilers are validated in automation
+- MPI smoke and installed-consumer paths: GNU Fortran with OpenMPI and MPICH wrapper compilers are validated in automation; the MPICH job is pinned to a hosted image with working MPICH process management because Ubuntu 24.04's MPICH package has produced singleton `MPI_COMM_WORLD` launches in CI
 - MPI pFUnit tests: GNU Fortran with OpenMPI is validated in automation; MPICH pFUnit coverage is deferred because the first GitHub Actions trial launched the generated pFUnit MPI tests with `PE=0` rather than the requested process counts
 - OpenMP: GNU Fortran only for the documented master-thread-only carve-out
 
