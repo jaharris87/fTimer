@@ -136,9 +136,13 @@ jobs:
         run: cmake --build build -j$(nproc)
 
       - name: Smoke test
+        # Serial smoke executables call fTimer without MPI_Init. In an
+        # FTIMER_USE_MPI=ON build, keep this required MPICH job to tests that
+        # either document the lifecycle contract or enter the MPI lifetime
+        # explicitly.
         run: >
           ctest --test-dir build --output-on-failure
-          -R "ftimer_(phase0_smoke|basic_usage_smoke|instrumentation_facade_enabled_smoke|instrumentation_facade_disabled_smoke|init_contract_docs|mpi_lifecycle_contract_docs|public_symbol_allowlist|release_docs_contract|installed_package_consumer|installed_package_consumer_absolute_includedir|absolute_includedir_destdir_install|installed_package_consumer_mpi|mpi_example_smoke)$"
+          -R "ftimer_(init_contract_docs|mpi_lifecycle_contract_docs|public_symbol_allowlist|release_docs_contract|installed_package_consumer|installed_package_consumer_absolute_includedir|absolute_includedir_destdir_install|installed_package_consumer_mpi|mpi_example_smoke)$"
 
   test-serial:
     runs-on: ubuntu-latest
