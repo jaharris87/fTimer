@@ -29,6 +29,8 @@ ftimer|ftimer_write_mpi_union_summary|stable
 ftimer|ftimer_write_mpi_union_summary_csv|stable
 ftimer|ftimer_default_instance|stable
 ftimer_core|ftimer_t|stable
+ftimer_core|ftimer_oop_guard_t|stable
+ftimer_core|ftimer_scope|stable
 ftimer_core|ftimer_internal_start_scope_activation|unstable
 ftimer_core|ftimer_internal_stop_scope_activation|unstable
 ftimer_core|ftimer_test_get_state|test-only

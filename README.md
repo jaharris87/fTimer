@@ -9,7 +9,7 @@ For a first release, the focus is a small, dependable core:
 - strict, stack-based start/stop timing by default
 - context-sensitive accounting for the same timer name under different parents
 - inclusive and self time in structured summaries with explicit tree linkage
-- a small procedural scoped guard for lexical blocks with early exits
+- small procedural and explicit OOP scoped guards for lexical blocks with early exits
 - procedural wrappers and an OOP core API
 - optional MPI global summaries plus first-class strict text/CSV and sparse text/CSV report output
 - an installable CMake package for downstream projects
@@ -81,6 +81,29 @@ end block
 ```
 
 The guard starts the named timer through the default procedural instance and stops that same activation when the guard leaves scope. Call `guard%stop(ierr=ierr)` when you need to observe the stop result before scope exit. For non-lexical lifetimes, cached-id hot paths, or complex ownership, prefer explicit `ftimer_start`/`ftimer_stop`.
+
+OOP users can use the same scoped pattern when they make the borrowed timer
+lifetime explicit with a pointer:
+
+```fortran
+use ftimer_core, only: ftimer_oop_guard_t, ftimer_scope, ftimer_t
+
+type(ftimer_t), target :: timer_storage
+type(ftimer_t), pointer :: timer
+
+timer => timer_storage
+call timer%init()
+
+block
+   type(ftimer_oop_guard_t) :: guard
+
+   call ftimer_scope(timer, guard, "work")
+end block
+
+call timer%finalize()
+```
+
+The OOP guard stores a non-owning pointer to the timer, so the timer target must outlive the guard and remain initialized until the guard is inactive. Keep explicit `timer%start()` / `timer%stop()` as the primary OOP API when a pointer-borrowed lexical guard would make ownership less clear.
 
 Use `ftimer` for the procedural API and `ftimer_types` for shared types and constants such as `ftimer_summary_t`, `ftimer_context_diagnostic_t`, `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, `ftimer_metadata_t`, and `FTIMER_MISMATCH_*`.
 
@@ -201,12 +224,12 @@ The repository includes a worked example under `examples/instrumentation_facade_
 The public API supports two styles:
 
 - Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_scope`, `ftimer_guard_t`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_mpi_union_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, `ftimer_print_mpi_union_summary`, `ftimer_write_mpi_union_summary`, `ftimer_write_mpi_union_summary_csv`, and `ftimer_default_instance`
-- OOP API through `type(ftimer_t)` in `ftimer_core`, including the explicit configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`
+- OOP API through `type(ftimer_t)` in `ftimer_core`, including explicit `start`/`stop`, the configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`, plus pointer-based scoped timing with `ftimer_oop_guard_t` and `ftimer_scope`
 - Shared stable types, constants, and callback/clock interfaces from `ftimer_types`, including the summary/result types and `FTIMER_*` status, event, and mismatch constants
 
 New users should start with the procedural API unless they already know they need instance-level control. Reach for `type(ftimer_t)` when you want multiple independent timer objects, want to avoid the default global instance, or need to manage clock or callback configuration on a specific timer object. Procedural callers that need those advanced controls can use `ftimer_default_instance%...` explicitly.
 
-Some implementation-detail symbols are publicly visible from stable modules because current Fortran module layering requires them: `ftimer_call_stack_t`, `ftimer_context_list_t`, `ftimer_segment_t`, `ftimer_internal_start_scope_activation`, and `ftimer_internal_stop_scope_activation`. They are unstable public-by-necessity names, not supported downstream API. User code should avoid importing them and should rely on `ftimer_scope()`, explicit start/stop calls, and the structured summary result types instead. Test-only helper exports such as `ftimer_test_get_state`, `ftimer_test_set_call_count`, and `ftimer_test_state_t` are confined to `FTIMER_BUILD_TESTS` helper builds.
+Some implementation-detail symbols are publicly visible from stable modules because current Fortran module layering requires them: `ftimer_call_stack_t`, `ftimer_context_list_t`, `ftimer_segment_t`, `ftimer_internal_start_scope_activation`, and `ftimer_internal_stop_scope_activation`. They are unstable public-by-necessity names, not supported downstream API. User code should avoid importing them and should rely on the procedural or OOP `ftimer_scope()` helpers, explicit start/stop calls, and the structured summary result types instead. Test-only helper exports such as `ftimer_test_get_state`, `ftimer_test_set_call_count`, and `ftimer_test_state_t` are confined to `FTIMER_BUILD_TESTS` helper builds.
 
 Operational notes:
 
@@ -217,8 +240,10 @@ Operational notes:
 - Stop-mismatch repair remains an explicit `mismatch_mode` choice (`FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR`); omitted-`ierr` alone does not opt a caller into recovery.
 - Timer names are right-trimmed and must be non-empty, must not begin with a blank, and must not contain ASCII control characters. fTimer does not silently truncate timer names and no longer rejects names solely for exceeding the legacy `FTIMER_NAME_LEN = 64` threshold.
 - Name-based `start`/`stop` remains the default ergonomic path. The runtime now uses internal mapped lookup for both resident timer names and per-segment parent-stack contexts, plus capacity-based growth, so that this default path avoids repeated resident-timer linear scans and context-list scans in steady state as the timer set and parent-stack variants grow.
-- `ftimer_scope(guard, name, ierr)` is a small safety layer for scalar lexical-block timing on the default procedural instance. The guard may stop only the exact activation it started; if that activation was already stopped or displaced by other timer operations, `guard%stop(ierr)` returns `FTIMER_ERR_MISMATCH` and the finalizer warns when it cannot report `ierr`.
-- Scoped guards do not replace explicit `start`/`stop`. Guard assignment/copy is unsupported and does not copy or transfer active ownership; assignment involving an active guard warns and leaves ownership with the original guard. Guard arrays, saved/global guards, function-return guard constructors, cross-procedure lifetime patterns, and block-local finalization inside OpenMP parallel regions are unsupported. `ftimer_scope_id` and OOP scoped guards are deferred.
+- `ftimer_scope(guard, name, ierr)` is a small safety layer for scalar lexical-block timing on the default procedural instance. `call ftimer_scope(timer_pointer, guard, name, ierr)` provides OOP scoped timing through `ftimer_core` when the caller passes an associated `type(ftimer_t), pointer` and uses `type(ftimer_oop_guard_t)`.
+- Scoped guards do not replace explicit `start`/`stop`; explicit `timer%start()` / `timer%stop()` remains the primary OOP API. A guard may stop only the exact activation it started; if that activation was already stopped, invalidated by lifecycle, or displaced by other timer operations, `guard%stop(ierr)` returns `FTIMER_ERR_MISMATCH` or the relevant lifecycle error and the finalizer warns when it cannot report `ierr`.
+- OOP scoped guards store a non-owning timer pointer. The timer target must outlive the guard and remain initialized until the guard is inactive; use a nested block/procedure for the guard or call `guard%stop(ierr=...)` before leaving a shared scope or calling timer lifecycle operations. Do not rely on finalization order for an automatic timer object and an active guard declared in the same scoping unit.
+- Guard assignment/copy is unsupported and does not copy or transfer active ownership; assignment involving an active guard warns and leaves ownership with the original guard. Guard arrays, saved/global guards, function-return guard constructors, cross-procedure lifetime patterns, deallocated timer targets, and block-local finalization inside OpenMP parallel regions are unsupported. `ftimer_scope_id` is deferred.
 - `lookup()` plus `start_id()`/`stop_id()` remains an optional hot-path optimization when one call site times the same known region in a very tight loop. That path is especially useful when a long scientific label would otherwise be validated and hashed on every name-based call.
 - Cached IDs returned by `lookup()` are opaque handles for the current timer runtime state, not segment-array indexes. They remain valid across `reset()`, but successful `init()` and `finalize()` calls invalidate them. Calls made while finalized follow the normal `FTIMER_ERR_NOT_INIT` lifecycle contract; after a later successful `init()`, passing a stale cached ID to `start_id()` or `stop_id()` returns `FTIMER_ERR_UNKNOWN` and leaves timer state unchanged.
 - Configure custom clocks through `set_clock()` and restore the build-default wall clock through `clear_clock()`. Direct mutation of raw runtime clock internals is not part of the supported API.

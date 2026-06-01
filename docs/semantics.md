@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, the procedural `ftimer_scope` scoped guard, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
+Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural and OOP `ftimer_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -138,21 +138,23 @@ This disabled-facade behavior is an application integration contract, not an alt
 
 ## Scoped Guard Contract
 
-- `ftimer_scope(guard, name, ierr)` is the only scoped guard constructor on current `main`
-- The public guard type is `ftimer_guard_t`, imported from `ftimer`
-- Scoped guards use the default procedural timer instance; there is no `type(ftimer_t)` scoped guard API on current `main`
-- `ftimer_scope` starts the named timer through the same validation, lookup, accounting, and callback path as normal name-based `start`
+- Scoped guards are an optional safety layer for simple lexical blocks and early exits; explicit `start`/`stop` remains the primary OOP API and the right choice for non-lexical lifetimes, complex ownership, cached-id hot paths, or timing that spans procedure boundaries
+- Procedural scoped timing uses `type(ftimer_guard_t)` from `ftimer` with `call ftimer_scope(guard, name, ierr)` and records on the saved default timer instance
+- OOP scoped timing uses `type(ftimer_oop_guard_t)` from `ftimer_core` with `call ftimer_scope(timer, guard, name, ierr)`, where `timer` is an associated `type(ftimer_t), pointer`
+- The OOP guard stores a non-owning pointer to that timer. The timer target must outlive the guard, remain allocated/alive, and remain initialized until the guard is inactive. Declare the guard in a nested block or procedure scope that exits before the timer target can go out of scope, or call `guard%stop(ierr=...)` before leaving a shared scope or performing timer lifecycle operations
+- Declaring an active OOP guard in the same scoping unit as an automatic timer object and relying on finalization order at scope exit is unsupported
+- Procedural and OOP `ftimer_scope` start the named timer through the same validation, lookup, accounting, and callback path as normal name-based `start`
 - If `ftimer_scope` fails while initializing an inactive guard, the guard remains inactive. Finalization and `guard%stop(ierr)` are no-ops for inactive guards.
 - Calling `ftimer_scope` on an already-active guard returns `FTIMER_ERR_ACTIVE`, or warns when `ierr` is omitted, and leaves the existing active ownership unchanged.
 - A guard owns exactly one activation token from its successful start. `guard%stop(ierr)` may stop only that exact activation while it is still the top of the stack.
-- If the guard's activation has already been stopped, repaired away, or replaced by another activation with the same timer name, `guard%stop(ierr)` returns `FTIMER_ERR_MISMATCH` and leaves timer state unchanged.
+- If the guard's activation has already been stopped, repaired away, invalidated by timer lifecycle, or replaced by another activation with the same timer name, `guard%stop(ierr)` returns `FTIMER_ERR_MISMATCH` or the relevant lifecycle error and leaves timer state unchanged.
+- Active scoped guards make `reset()` and `finalize()` fail through the normal `FTIMER_ERR_ACTIVE` lifecycle contract; timer lifecycle operations do not force-stop or clear active guards
 - The guard finalizer attempts the same exact-activation stop without `ierr`. On mismatch or lifecycle errors, it warns to stderr and does not repair.
 - Scoped guard finalization does not force-stop arbitrary matching timer names, synthesize elapsed time, invoke mismatch repair, or hide errors silently.
 - `guard%stop(ierr)` is the supported way to observe finalizer-equivalent stop errors before scope exit.
 - Guard assignment/copy is unsupported and does not copy or transfer active ownership. Assignment involving an active guard warns to stderr and leaves active ownership with the original guard. Use one scalar guard variable per lexical block.
-- Guard arrays, saved/global guards, function-return guard constructors, and cross-procedure lifetime patterns are unsupported.
+- Guard arrays, saved/global guards, function-return guard constructors, cross-procedure lifetime patterns, deallocated timer targets, and block-local scoped guard finalization inside OpenMP parallel regions are unsupported.
 - `ftimer_scope_id` is deferred; use explicit `lookup()` plus `start_id()`/`stop_id()` for cached-id hot paths.
-- The scoped guard is a safety layer for simple lexical blocks and early exits. Use explicit `start`/`stop` for non-lexical lifetimes, complex ownership, or timing that spans procedure boundaries.
 
 ## Reset Behavior
 
