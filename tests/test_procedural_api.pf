@@ -6,7 +6,7 @@ module test_procedural_api
                      ftimer_lookup, ftimer_print_summary, ftimer_reset, ftimer_start, ftimer_start_id, &
                      ftimer_stop, ftimer_stop_id, ftimer_write_summary, ftimer_write_summary_csv
    use ftimer_core, only: ftimer_t, ftimer_test_set_call_count, ftimer_test_state_t
-   use ftimer_types, only: FTIMER_MISMATCH_STRICT, FTIMER_ERR_MISMATCH, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, &
+   use ftimer_types, only: FTIMER_MISMATCH_WARN, FTIMER_ERR_MISMATCH, FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, &
                            FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_metadata_t, ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, begin_stderr_capture, end_stderr_capture, fake_time, find_context_idx, &
                            read_file_text, read_unit_text, snapshot_timer, summary_node_ids_unique, &
@@ -103,21 +103,18 @@ contains
       type(ftimer_test_state_t) :: oop_state
       type(ftimer_test_state_t) :: procedural_state
       integer :: ierr
-      integer :: comm
       integer :: mismatch_mode
 
-      comm = 42
-      mismatch_mode = 2
+      mismatch_mode = FTIMER_MISMATCH_WARN
 
       call oop_timer%init(mismatch_mode=mismatch_mode, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call snapshot_timer(oop_timer, oop_state)
 
-      call ftimer_init(comm=comm, mismatch_mode=mismatch_mode, ierr=ierr)
+      call ftimer_init(mismatch_mode=mismatch_mode, ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
       call snapshot_timer(ftimer_default_instance, procedural_state)
 
-      @assertEqual(42, comm)
       @assertEqual(oop_state%mismatch_mode, procedural_state%mismatch_mode)
       @assertEqual(mismatch_mode, procedural_state%mismatch_mode)
 
@@ -126,39 +123,6 @@ contains
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_procedural_init_keyword_options_match_oop
-
-   @test
-   subroutine test_init_positional_integer_binds_safely_to_comm()
-      type(ftimer_t) :: oop_timer
-      type(ftimer_test_state_t) :: oop_state
-      type(ftimer_test_state_t) :: procedural_state
-      integer :: ierr
-      integer :: oop_val
-      integer :: procedural_val
-
-      ! After reorder, a single positional integer binds to comm (intent(in)),
-      ! not ierr (intent(out)).  The caller's variable is NOT clobbered.
-      oop_val = 42
-      call oop_timer%init(oop_val)
-      call snapshot_timer(oop_timer, oop_state)
-
-      procedural_val = 42
-      call ftimer_init(procedural_val)
-      call snapshot_timer(ftimer_default_instance, procedural_state)
-
-      ! Key safety assertion: caller's variable is NOT overwritten
-      @assertEqual(42, oop_val)
-      @assertEqual(42, procedural_val)
-
-      ! mismatch_mode defaults to strict (was not passed)
-      @assertEqual(FTIMER_MISMATCH_STRICT, oop_state%mismatch_mode)
-      @assertEqual(FTIMER_MISMATCH_STRICT, procedural_state%mismatch_mode)
-
-      call oop_timer%finalize(ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call ftimer_finalize(ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-   end subroutine test_init_positional_integer_binds_safely_to_comm
 
    @test
    subroutine test_procedural_start_stop_matches_oop()

@@ -211,8 +211,11 @@ This disabled-facade behavior is an application integration contract, not an alt
 - Callers that pass a subcommunicator must keep it valid until all fTimer MPI summaries, MPI reports, `finalize()`, or `init()` reinitialization that may use that communicator are complete
 - All ranks in that communicator must enter `mpi_summary()` with fully stopped timers
 - Unlike local summaries, MPI summaries are final stopped-run summaries only; active timers return `FTIMER_ERR_ACTIVE`
-- The primary MPI interface path is `mpi_f08` with `type(MPI_Comm)` communicator handles captured at `init`
-- Integer communicator handles are accepted by `init` as transitional compatibility for pre-`mpi_f08` callers pending #187; `mpif.h` is not a supported interface path
+- The public MPI communicator interface path is `mpi_f08` with `type(MPI_Comm)` handles captured at `init`
+- Legacy integer communicator handles and `mpif.h` are not supported interface paths
+- Integer `init` options such as `mismatch_mode` and `ierr` must be passed by
+  keyword; positional integer `init` arguments are rejected so legacy
+  communicator handles cannot silently bind to non-communicator options
 - `FTIMER_USE_MPI=ON` configure requires that the active `mpi_f08` path compile the `MPI_Type_match_size` and `MPI_ERRORS_RETURN` calls used for datatype validation
 - MPI summary reductions select MPI datatypes with `MPI_Type_match_size` for the actual `real(wp)` and `integer(int64)` storage sizes before reducing those buffers. If that validation API is present but the active MPI implementation cannot provide matching datatypes at runtime, `mpi_summary()` temporarily requests MPI error returns for the datatype lookup, fails with `FTIMER_ERR_UNKNOWN`, and leaves the MPI result empty instead of reducing through a mismatched fixed datatype.
 - Hash-based timer-descriptor preflight before the reduction phase
@@ -271,7 +274,7 @@ strict or sparse MPI summaries, MPI report writers, `finalize()`, or an
 - A materialized present zero-call entry is participating and contributes zero calls plus its recorded time values to participating-rank statistics. An absent rank contributes only to the derived missing-rank count.
 - Entry min/avg/max time, call-count, percent, and imbalance fields are defined over participating ranks only. Absent ranks are not zero-filled. Sparse `min_call_count` and `max_call_count` are `integer(int64)` fields; `avg_call_count` remains `real(wp)` and follows the same conservative very-large-count averaging rule as strict MPI summaries.
 - No all-rank zero-filled or amortized entry fields are part of the initial result model. If such a view is added later, it must be explicitly named as all-rank or amortized.
-- The sparse API keeps the same init-captured communicator model as strict MPI summaries. The primary path is `mpi_f08` `type(MPI_Comm)`; transitional integer communicator capture remains only through `init` until #187 removes it.
+- The sparse API keeps the same init-captured communicator model as strict MPI summaries. The public communicator path is `mpi_f08` `type(MPI_Comm)`.
 - Sparse descriptor union construction exchanges per-rank descriptor counts, exact descriptor lengths, and a packed character payload. The character exchange scales with the sum of materialized encoded descriptor lengths across ranks, not with `num_ranks * max_descriptor_count * max_descriptor_length`.
 - Remaining sparse-summary scale limits are still explicit: each rank materializes and sorts its local encoded path descriptors at summary time, the packed exchange still gathers total communicator descriptor lengths and packed descriptor characters on every participant before deduplicating the canonical union, MPI descriptor counts/displacements and packed character counts must fit the default integer count type used by the current `mpi_f08` collectives, and the final union result plus per-entry reduction work arrays scale with the canonical union entry count.
 - The current implementation builds the descriptor union and structured sparse result. Sparse text and CSV reports are available through explicit union report entry points. Sparse CSV uses a separate participation-aware schema rather than overloading strict MPI CSV rows.

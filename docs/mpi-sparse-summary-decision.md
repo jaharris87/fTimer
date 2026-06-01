@@ -69,7 +69,7 @@ The sparse path should differ from strict `mpi_summary()` in these ways:
 
 The first sparse implementation does not provide an implicit zero-filled compatibility mode. Zero filling makes absence too easy to confuse with real zero work. If an all-rank amortized view is added later, it should be explicitly named and derived from participation-aware data rather than replacing participating-rank statistics. No all-rank zero-filled fields are part of the current result type.
 
-The sparse API follows the same `mpi_f08` primary contract as strict MPI summaries: communicator choice is captured at `init` as `type(MPI_Comm)` on the validated path, with legacy integer communicator capture remaining only as transitional compatibility until #187 removes it. No sparse API overload is added for per-call communicator selection, so #187 does not need to change the sparse summary entry point.
+The sparse API follows the same `mpi_f08` primary contract as strict MPI summaries: communicator choice is captured at `init` as `type(MPI_Comm)` on the validated path. No sparse API overload is added for per-call communicator selection.
 
 ## Non-Goals
 

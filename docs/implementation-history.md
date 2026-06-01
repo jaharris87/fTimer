@@ -17,7 +17,7 @@ Foundation types and injectable clock — everything else depends on these. No t
 The `ftimer_t` class with all timer operations. Write pFUnit tests FIRST for each behavior, then implement.
 
 - [x] `src/ftimer_core.F90` — `ftimer_t` derived type with private components: `call_stack`, `segments(:)`, `num_segments`, `init_wtime`, `init_date`, `initialized`, `mismatch_mode`, MPI fields (guarded), `clock` procedure pointer, `on_event` procedure pointer, `user_data` c_ptr
-- [x] `ftimer_t%init(...)` — Initialize timer. Accept optional `comm` (integer), `mismatch_mode`, `ierr`. Set clock to `ftimer_default_clock` (or `ftimer_mpi_clock` when MPI), record `init_wtime` and `init_date`.
+- [x] `ftimer_t%init(...)` — Initialize timer. Accept optional keyword `mismatch_mode` and `ierr`; in MPI builds, accept optional keyword `comm` as an `mpi_f08` `type(MPI_Comm)` handle. Set clock to `ftimer_default_clock` (or `ftimer_mpi_clock` when MPI), record `init_wtime` and `init_date`.
 - [x] `ftimer_t%finalize(...)` — Deallocate all. Warn/error if timers active. Force-stop all active timers when `ierr` absent.
 - [x] `ftimer_t%start(name, ...)` — Lookup/create segment, find/create context for current call stack, push onto stack, record start_time, increment call_count, fire `on_event` if associated.
 - [x] `ftimer_t%stop(name, ...)` — Lookup segment (don't create), verify top-of-stack match, pop stack, find context, accumulate time, fire `on_event`. On mismatch: dispatch to strict/warn/repair.

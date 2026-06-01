@@ -6,7 +6,6 @@ set(agents_path "${REPO_ROOT}/AGENTS.md")
 set(claude_path "${REPO_ROOT}/CLAUDE.md")
 set(mpi_example_path "${REPO_ROOT}/examples/mpi_example.F90")
 set(mpi_consumer_path "${REPO_ROOT}/tests/install-consumer/mpi_main.F90")
-set(legacy_mpi_consumer_path "${REPO_ROOT}/tests/install-consumer/legacy_mpi_main.F90")
 
 function(require_contains path needle message_text)
   file(READ "${path}" text)
@@ -47,5 +46,5 @@ require_contains("${mpi_example_path}" "non-owning handle"
   "examples/mpi_example.F90 must make the borrowed communicator lifetime visible.")
 require_contains("${mpi_consumer_path}" "non-owning handle"
   "tests/install-consumer/mpi_main.F90 must make the borrowed communicator lifetime visible.")
-require_contains("${legacy_mpi_consumer_path}" "fTimer borrows it"
-  "tests/install-consumer/legacy_mpi_main.F90 must make subcommunicator ownership visible.")
+require_contains("${mpi_consumer_path}" "MPI_Comm_free"
+  "tests/install-consumer/mpi_main.F90 must keep a caller-owned subcommunicator valid through fTimer finalization.")
