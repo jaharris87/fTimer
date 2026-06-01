@@ -339,7 +339,7 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: id
       integer(int64), intent(in) :: activation_token
-      integer, intent(out), optional :: ierr
+      integer, intent(inout), optional :: ierr
 
       status = FTIMER_ERR_ACTIVE
 #ifdef FTIMER_USE_OPENMP
