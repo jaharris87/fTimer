@@ -659,6 +659,12 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
       @assertEqual(4.0_wp, summary%total_time)
       @assertEqual(0, summary%num_entries)
+      @assertEqual(0, summary%total_contexts)
+      @assertEqual(0, summary%max_contexts_per_timer)
+      @assertEqual(1, summary%num_context_diagnostics)
+      @assertTrue(allocated(summary%context_diagnostics))
+      @assertEqual('planned', trim(summary%context_diagnostics(1)%name))
+      @assertEqual(0, summary%context_diagnostics(1)%context_count)
 
       fake_time = 205.0_wp
       call timer%start_id(id, ierr=ierr)

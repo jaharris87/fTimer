@@ -1362,8 +1362,17 @@ contains
       @assertEqual(rhs%num_entries, lhs%num_entries)
       @assertEqual(rhs%total_time, lhs%total_time)
       @assertEqual(rhs%has_active_timers, lhs%has_active_timers)
+      @assertEqual(rhs%total_contexts, lhs%total_contexts)
+      @assertEqual(rhs%max_contexts_per_timer, lhs%max_contexts_per_timer)
+      @assertEqual(rhs%num_context_diagnostics, lhs%num_context_diagnostics)
       @assertTrue(summary_node_ids_unique(lhs))
       @assertTrue(summary_node_ids_unique(rhs))
+
+      do i = 1, lhs%num_context_diagnostics
+         names_match = trim(lhs%context_diagnostics(i)%name) == trim(rhs%context_diagnostics(i)%name)
+         @assertTrue(names_match)
+         @assertEqual(rhs%context_diagnostics(i)%context_count, lhs%context_diagnostics(i)%context_count)
+      end do
 
       do i = 1, lhs%num_entries
          names_match = trim(lhs%entries(i)%name) == trim(rhs%entries(i)%name)
@@ -1379,6 +1388,7 @@ contains
          @assertEqual(rhs%entries(i)%call_count, lhs%entries(i)%call_count)
          @assertEqual(rhs%entries(i)%avg_time, lhs%entries(i)%avg_time)
          @assertEqual(rhs%entries(i)%is_active, lhs%entries(i)%is_active)
+         @assertEqual(rhs%entries(i)%timer_context_count, lhs%entries(i)%timer_context_count)
          pct_diff = abs(lhs%entries(i)%pct_time - rhs%entries(i)%pct_time)
          @assertTrue(pct_diff < 1.0e-12_wp)
       end do

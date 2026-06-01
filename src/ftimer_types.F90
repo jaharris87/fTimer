@@ -21,6 +21,7 @@ module ftimer_types
    public :: FTIMER_EVENT_STOP
    public :: wp
    public :: ftimer_metadata_t
+   public :: ftimer_context_diagnostic_t
    public :: ftimer_summary_entry_t
    public :: ftimer_summary_t
    public :: ftimer_mpi_summary_entry_t
@@ -75,7 +76,13 @@ module ftimer_types
       integer :: node_id = 0
       integer :: parent_id = 0
       logical :: is_active = .false.
+      integer :: timer_context_count = 0
    end type ftimer_summary_entry_t
+
+   type :: ftimer_context_diagnostic_t
+      character(len=:), allocatable :: name
+      integer :: context_count = 0
+   end type ftimer_context_diagnostic_t
 
    type :: ftimer_summary_t
       character(len=40) :: start_date = ''
@@ -84,6 +91,10 @@ module ftimer_types
       integer :: num_entries = 0
       type(ftimer_summary_entry_t), allocatable :: entries(:)
       logical :: has_active_timers = .false.
+      integer :: total_contexts = 0
+      integer :: max_contexts_per_timer = 0
+      integer :: num_context_diagnostics = 0
+      type(ftimer_context_diagnostic_t), allocatable :: context_diagnostics(:)
    end type ftimer_summary_t
 
    type :: ftimer_mpi_summary_entry_t
