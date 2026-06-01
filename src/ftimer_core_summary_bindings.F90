@@ -15,6 +15,12 @@ submodule(ftimer_core) ftimer_core_summary_bindings
 
    character(len=*), parameter :: FTIMER_CSV_FORMAT_VERSION = '2'
    character(len=*), parameter :: FTIMER_MPI_UNION_CSV_FORMAT_VERSION = '1'
+   integer, parameter :: default_report_buffer_capacity = 1024
+
+   type :: report_buffer_t
+      character(len=:), allocatable :: chars
+      integer :: used = 0
+   end type report_buffer_t
 
 contains
 
@@ -896,26 +902,28 @@ contains
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
       logical, intent(in), optional :: include_header
+      type(report_buffer_t) :: buffer
       integer :: i
       logical :: emit_header
 
-      text = ''
+      call init_report_buffer(buffer, default_report_buffer_capacity)
       emit_header = .true.
       if (present(include_header)) emit_header = include_header
 
-      if (emit_header) call append_summary_csv_header(text)
-      call append_local_summary_csv_record(text, summary)
+      if (emit_header) call append_summary_csv_header(buffer)
+      call append_local_summary_csv_record(buffer, summary)
 
       if (present(metadata)) then
          do i = 1, size(metadata)
             if (metadata_key_len(metadata(i)) <= 0) cycle
-            call append_metadata_csv_record(text, 'local', metadata(i))
+            call append_metadata_csv_record(buffer, 'local', metadata(i))
          end do
       end if
 
       do i = 1, summary%num_entries
-         call append_local_entry_csv_record(text, summary%entries(i))
+         call append_local_entry_csv_record(buffer, summary%entries(i))
       end do
+      call finish_report_buffer(buffer, text)
    end subroutine format_summary_csv
 
    subroutine format_mpi_summary_csv(summary, text, metadata, include_header)
@@ -923,26 +931,28 @@ contains
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
       logical, intent(in), optional :: include_header
+      type(report_buffer_t) :: buffer
       integer :: i
       logical :: emit_header
 
-      text = ''
+      call init_report_buffer(buffer, default_report_buffer_capacity)
       emit_header = .true.
       if (present(include_header)) emit_header = include_header
 
-      if (emit_header) call append_summary_csv_header(text)
-      call append_mpi_summary_csv_record(text, summary)
+      if (emit_header) call append_summary_csv_header(buffer)
+      call append_mpi_summary_csv_record(buffer, summary)
 
       if (present(metadata)) then
          do i = 1, size(metadata)
             if (metadata_key_len(metadata(i)) <= 0) cycle
-            call append_metadata_csv_record(text, 'mpi', metadata(i))
+            call append_metadata_csv_record(buffer, 'mpi', metadata(i))
          end do
       end if
 
       do i = 1, summary%num_entries
-         call append_mpi_entry_csv_record(text, summary%entries(i))
+         call append_mpi_entry_csv_record(buffer, summary%entries(i))
       end do
+      call finish_report_buffer(buffer, text)
    end subroutine format_mpi_summary_csv
 
    subroutine format_mpi_union_summary_csv(summary, text, metadata, include_header)
@@ -950,44 +960,46 @@ contains
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
       logical, intent(in), optional :: include_header
+      type(report_buffer_t) :: buffer
       integer :: i
       logical :: emit_header
 
-      text = ''
+      call init_report_buffer(buffer, default_report_buffer_capacity)
       emit_header = .true.
       if (present(include_header)) emit_header = include_header
 
-      if (emit_header) call append_mpi_union_summary_csv_header(text)
-      call append_mpi_union_summary_csv_record(text, summary)
+      if (emit_header) call append_mpi_union_summary_csv_header(buffer)
+      call append_mpi_union_summary_csv_record(buffer, summary)
 
       if (present(metadata)) then
          do i = 1, size(metadata)
             if (metadata_key_len(metadata(i)) <= 0) cycle
-            call append_mpi_union_metadata_csv_record(text, metadata(i))
+            call append_mpi_union_metadata_csv_record(buffer, metadata(i))
          end do
       end if
 
       do i = 1, summary%num_entries
-         call append_mpi_union_entry_csv_record(text, summary, summary%entries(i))
+         call append_mpi_union_entry_csv_record(buffer, summary, summary%entries(i))
       end do
+      call finish_report_buffer(buffer, text)
    end subroutine format_mpi_union_summary_csv
 
-   subroutine append_summary_csv_header(text)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_summary_csv_header(buffer)
+      type(report_buffer_t), intent(inout) :: buffer
 
-      call append_line(text, csv_header_line())
+      call append_line(buffer, csv_header_line())
    end subroutine append_summary_csv_header
 
-   subroutine append_mpi_union_summary_csv_header(text)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_mpi_union_summary_csv_header(buffer)
+      type(report_buffer_t), intent(inout) :: buffer
 
-      call append_line(text, mpi_union_csv_header_line())
+      call append_line(buffer, mpi_union_csv_header_line())
    end subroutine append_mpi_union_summary_csv_header
 
-   subroutine append_local_summary_csv_record(text, summary)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_local_summary_csv_record(buffer, summary)
+      type(report_buffer_t), intent(inout) :: buffer
       type(ftimer_summary_t), intent(in) :: summary
-      character(len=:), allocatable :: row
+      type(report_buffer_t) :: row
 
       call begin_csv_row(row, 'local', 'summary')
       call append_empty_csv_fields(row, 2)
@@ -997,13 +1009,13 @@ contains
       call append_csv_field(row, integer_csv_text(summary%num_entries))
       call append_csv_field(row, logical_csv_text(summary%has_active_timers))
       call append_empty_csv_fields(row, 33)
-      call append_line(text, row)
+      call append_row(buffer, row)
    end subroutine append_local_summary_csv_record
 
-   subroutine append_mpi_summary_csv_record(text, summary)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_mpi_summary_csv_record(buffer, summary)
+      type(report_buffer_t), intent(inout) :: buffer
       type(ftimer_mpi_summary_t), intent(in) :: summary
-      character(len=:), allocatable :: row
+      type(report_buffer_t) :: row
 
       call begin_csv_row(row, 'mpi', 'summary')
       call append_empty_csv_fields(row, 5)
@@ -1017,13 +1029,13 @@ contains
       call append_csv_field(row, integer_csv_text(summary%max_total_time_rank))
       call append_csv_field(row, real_csv_text(summary%total_time_imbalance))
       call append_empty_csv_fields(row, 26)
-      call append_line(text, row)
+      call append_row(buffer, row)
    end subroutine append_mpi_summary_csv_record
 
-   subroutine append_mpi_union_summary_csv_record(text, summary)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_mpi_union_summary_csv_record(buffer, summary)
+      type(report_buffer_t), intent(inout) :: buffer
       type(ftimer_mpi_union_summary_t), intent(in) :: summary
-      character(len=:), allocatable :: row
+      type(report_buffer_t) :: row
 
       call begin_mpi_union_csv_row(row, 'summary')
       call append_empty_csv_fields(row, 2)
@@ -1036,38 +1048,38 @@ contains
       call append_csv_field(row, integer_csv_text(summary%max_total_time_rank))
       call append_csv_field(row, real_csv_text(summary%total_time_imbalance))
       call append_empty_csv_fields(row, 22)
-      call append_line(text, row)
+      call append_row(buffer, row)
    end subroutine append_mpi_union_summary_csv_record
 
-   subroutine append_metadata_csv_record(text, summary_kind, item)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_metadata_csv_record(buffer, summary_kind, item)
+      type(report_buffer_t), intent(inout) :: buffer
       character(len=*), intent(in) :: summary_kind
       type(ftimer_metadata_t), intent(in) :: item
-      character(len=:), allocatable :: row
+      type(report_buffer_t) :: row
 
       call begin_csv_row(row, summary_kind, 'metadata')
       call append_csv_field(row, metadata_key_text(item))
       call append_csv_field(row, metadata_value_text(item))
       call append_empty_csv_fields(row, 38)
-      call append_line(text, row)
+      call append_row(buffer, row)
    end subroutine append_metadata_csv_record
 
-   subroutine append_mpi_union_metadata_csv_record(text, item)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_mpi_union_metadata_csv_record(buffer, item)
+      type(report_buffer_t), intent(inout) :: buffer
       type(ftimer_metadata_t), intent(in) :: item
-      character(len=:), allocatable :: row
+      type(report_buffer_t) :: row
 
       call begin_mpi_union_csv_row(row, 'metadata')
       call append_csv_field(row, metadata_key_text(item))
       call append_csv_field(row, metadata_value_text(item))
       call append_empty_csv_fields(row, 30)
-      call append_line(text, row)
+      call append_row(buffer, row)
    end subroutine append_mpi_union_metadata_csv_record
 
-   subroutine append_local_entry_csv_record(text, entry)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_local_entry_csv_record(buffer, entry)
+      type(report_buffer_t), intent(inout) :: buffer
       type(ftimer_summary_entry_t), intent(in) :: entry
-      character(len=:), allocatable :: row
+      type(report_buffer_t) :: row
 
       call begin_csv_row(row, 'local', 'entry')
       call append_empty_csv_fields(row, 14)
@@ -1082,13 +1094,13 @@ contains
       call append_csv_field(row, real_csv_text(entry%pct_time))
       call append_csv_field(row, logical_csv_text(entry%is_active))
       call append_empty_csv_fields(row, 16)
-      call append_line(text, row)
+      call append_row(buffer, row)
    end subroutine append_local_entry_csv_record
 
-   subroutine append_mpi_entry_csv_record(text, entry)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_mpi_entry_csv_record(buffer, entry)
+      type(report_buffer_t), intent(inout) :: buffer
       type(ftimer_mpi_summary_entry_t), intent(in) :: entry
-      character(len=:), allocatable :: row
+      type(report_buffer_t) :: row
 
       call begin_csv_row(row, 'mpi', 'entry')
       call append_empty_csv_fields(row, 14)
@@ -1113,14 +1125,14 @@ contains
       call append_csv_field(row, real_csv_text(entry%min_pct_time))
       call append_csv_field(row, real_csv_text(entry%avg_pct_time))
       call append_csv_field(row, real_csv_text(entry%max_pct_time))
-      call append_line(text, row)
+      call append_row(buffer, row)
    end subroutine append_mpi_entry_csv_record
 
-   subroutine append_mpi_union_entry_csv_record(text, summary, entry)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_mpi_union_entry_csv_record(buffer, summary, entry)
+      type(report_buffer_t), intent(inout) :: buffer
       type(ftimer_mpi_union_summary_t), intent(in) :: summary
       type(ftimer_mpi_union_summary_entry_t), intent(in) :: entry
-      character(len=:), allocatable :: row
+      type(report_buffer_t) :: row
       integer :: missing_rank_count
 
       missing_rank_count = summary%num_ranks - entry%participating_rank_count
@@ -1149,32 +1161,32 @@ contains
       call append_csv_field(row, real_csv_text(entry%min_pct_time))
       call append_csv_field(row, real_csv_text(entry%avg_pct_time))
       call append_csv_field(row, real_csv_text(entry%max_pct_time))
-      call append_line(text, row)
+      call append_row(buffer, row)
    end subroutine append_mpi_union_entry_csv_record
 
    subroutine begin_csv_row(row, summary_kind, record_type)
-      character(len=:), allocatable, intent(out) :: row
+      type(report_buffer_t), intent(out) :: row
       character(len=*), intent(in) :: summary_kind
       character(len=*), intent(in) :: record_type
 
-      row = ''
+      call init_report_buffer(row, 512)
       call append_csv_field(row, FTIMER_CSV_FORMAT_VERSION)
       call append_csv_field(row, summary_kind)
       call append_csv_field(row, record_type)
    end subroutine begin_csv_row
 
    subroutine begin_mpi_union_csv_row(row, record_type)
-      character(len=:), allocatable, intent(out) :: row
+      type(report_buffer_t), intent(out) :: row
       character(len=*), intent(in) :: record_type
 
-      row = ''
+      call init_report_buffer(row, 512)
       call append_csv_field(row, FTIMER_MPI_UNION_CSV_FORMAT_VERSION)
       call append_csv_field(row, 'mpi_union')
       call append_csv_field(row, record_type)
    end subroutine begin_mpi_union_csv_row
 
    subroutine append_empty_csv_fields(row, count)
-      character(len=:), allocatable, intent(inout) :: row
+      type(report_buffer_t), intent(inout) :: row
       integer, intent(in) :: count
       integer :: i
 
@@ -1184,28 +1196,21 @@ contains
    end subroutine append_empty_csv_fields
 
    subroutine append_csv_field(row, value)
-      character(len=:), allocatable, intent(inout) :: row
+      type(report_buffer_t), intent(inout) :: row
       character(len=*), intent(in) :: value
-
-      if (len(row) > 0) row = row//','
-      row = row//quoted_csv_field(value)
-   end subroutine append_csv_field
-
-   function quoted_csv_field(value) result(field)
-      character(len=*), intent(in) :: value
-      character(len=:), allocatable :: field
       integer :: i
 
-      field = '"'
+      if (row%used > 0) call append_report_text(row, ',')
+      call append_report_text(row, '"')
       do i = 1, len_trim(value)
          if (value(i:i) == '"') then
-            field = field//'""'
+            call append_report_text(row, '""')
          else
-            field = field//value(i:i)
+            call append_report_text(row, value(i:i))
          end if
       end do
-      field = field//'"'
-   end function quoted_csv_field
+      call append_report_text(row, '"')
+   end subroutine append_csv_field
 
    function integer_csv_text(value) result(text)
       integer, intent(in) :: value
@@ -1245,12 +1250,86 @@ contains
       end if
    end function logical_csv_text
 
-   subroutine append_line(text, line)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_line(buffer, line)
+      type(report_buffer_t), intent(inout) :: buffer
       character(len=*), intent(in) :: line
 
-      text = text//trim(line)//new_line('a')
+      call append_report_text(buffer, trim(line))
+      call append_report_text(buffer, new_line('a'))
    end subroutine append_line
+
+   subroutine append_row(buffer, row)
+      type(report_buffer_t), intent(inout) :: buffer
+      type(report_buffer_t), intent(in) :: row
+
+      if (row%used > 0) call append_report_text(buffer, row%chars(1:row%used))
+      call append_report_text(buffer, new_line('a'))
+   end subroutine append_row
+
+   subroutine init_report_buffer(buffer, initial_capacity)
+      type(report_buffer_t), intent(out) :: buffer
+      integer, intent(in) :: initial_capacity
+      integer :: capacity
+
+      capacity = max(1, initial_capacity)
+      allocate (character(len=capacity) :: buffer%chars)
+      buffer%used = 0
+   end subroutine init_report_buffer
+
+   subroutine append_report_text(buffer, fragment)
+      type(report_buffer_t), intent(inout) :: buffer
+      character(len=*), intent(in) :: fragment
+      integer :: fragment_len
+      integer :: next_used
+
+      fragment_len = len(fragment)
+      if (fragment_len <= 0) return
+
+      next_used = buffer%used + fragment_len
+      call ensure_report_capacity(buffer, next_used)
+      buffer%chars(buffer%used + 1:next_used) = fragment
+      buffer%used = next_used
+   end subroutine append_report_text
+
+   subroutine finish_report_buffer(buffer, text)
+      type(report_buffer_t), intent(in) :: buffer
+      character(len=:), allocatable, intent(out) :: text
+
+      if (buffer%used > 0) then
+         text = buffer%chars(1:buffer%used)
+      else
+         text = ''
+      end if
+   end subroutine finish_report_buffer
+
+   subroutine ensure_report_capacity(buffer, required_capacity)
+      type(report_buffer_t), intent(inout) :: buffer
+      integer, intent(in) :: required_capacity
+      character(len=:), allocatable :: grown
+      integer :: current_capacity
+      integer :: new_capacity
+
+      if (allocated(buffer%chars)) then
+         current_capacity = len(buffer%chars)
+      else
+         current_capacity = 0
+      end if
+      if (current_capacity >= required_capacity) return
+
+      new_capacity = max(default_report_buffer_capacity, current_capacity)
+      if (new_capacity <= 0) new_capacity = default_report_buffer_capacity
+      do while (new_capacity < required_capacity)
+         if (new_capacity > huge(new_capacity)/2) then
+            new_capacity = required_capacity
+         else
+            new_capacity = new_capacity*2
+         end if
+      end do
+
+      allocate (character(len=new_capacity) :: grown)
+      if (buffer%used > 0) grown(1:buffer%used) = buffer%chars(1:buffer%used)
+      call move_alloc(grown, buffer%chars)
+   end subroutine ensure_report_capacity
 
    function summary_entry_name(entry) result(name)
       type(ftimer_summary_entry_t), intent(in) :: entry
