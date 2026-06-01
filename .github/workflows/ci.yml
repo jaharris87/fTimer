@@ -12,6 +12,8 @@ env:
   PFUNIT_VERSION: v4.16.0
   PFUNIT_SHA256: 314381ff08dc99e87a4da5862501053d112babaf73244b1c04b77065d3fd3091
   PFUNIT_ARCHIVE_URL: https://github.com/Goddard-Fortran-Ecosystem/pFUnit/releases/download/v4.16.0/pFUnit-v4.16.0.tar
+  NVHPC_VERSION: "26.3"
+  NVHPC_APT_PACKAGE: nvhpc-26-3
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -71,6 +73,54 @@ jobs:
       - name: Smoke test
         run: ctest --test-dir build --output-on-failure
 
+  build-serial-nvhpc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # NVIDIA documents about 9.5 GB of required space for the slim HPC SDK.
+      # Clear large hosted-tool caches that this Fortran smoke job does not use.
+      - name: Free runner disk space
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+          df -h
+
+      - name: Install NVHPC dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates cmake curl gfortran gnupg
+          curl -fsSL https://developer.download.nvidia.com/hpc-sdk/ubuntu/DEB-GPG-KEY-NVIDIA-HPC-SDK \
+            | sudo gpg --dearmor --yes -o /usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg] https://developer.download.nvidia.com/hpc-sdk/ubuntu/amd64 /' \
+            | sudo tee /etc/apt/sources.list.d/nvhpc.list
+          sudo apt-get update -y
+          sudo apt-get install -y "${NVHPC_APT_PACKAGE}"
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Configure NVHPC environment
+        run: |
+          nvarch="$(uname -s)_$(uname -m)"
+          echo "NVARCH=${nvarch}" >> "$GITHUB_ENV"
+          echo "NVCOMPILERS=/opt/nvidia/hpc_sdk" >> "$GITHUB_ENV"
+          echo "/opt/nvidia/hpc_sdk/${nvarch}/${NVHPC_VERSION}/compilers/bin" >> "$GITHUB_PATH"
+
+      - name: Show NVHPC compiler
+        run: nvfortran --version
+
+      - name: Configure (NVHPC serial)
+        run: FC=nvfortran cmake -B build
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Serial smoke and installed-consumer checks
+        run: >
+          ctest --test-dir build --output-on-failure
+          -R '^(ftimer_phase0_smoke|ftimer_basic_usage_smoke|ftimer_instrumentation_facade_enabled_smoke|ftimer_instrumentation_facade_disabled_smoke|ftimer_installed_package_consumer|ftimer_installed_package_consumer_absolute_includedir|ftimer_absolute_includedir_destdir_install|ftimer_init_contract_docs|ftimer_mpi_lifecycle_contract_docs|ftimer_public_symbol_allowlist|ftimer_release_docs_contract)$'
+
   build-mpi:
     runs-on: ubuntu-latest
     steps:
@@ -91,6 +141,66 @@ jobs:
 
       - name: Smoke test
         run: ctest --test-dir build --output-on-failure
+
+  build-mpi-mpich:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake mpich libmpich-dev
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Resolve MPICH tools
+        run: |
+          if command -v mpifort.mpich >/dev/null 2>&1; then
+            mpich_fc="$(command -v mpifort.mpich)"
+          elif command -v mpif90.mpich >/dev/null 2>&1; then
+            mpich_fc="$(command -v mpif90.mpich)"
+          else
+            echo "No MPICH Fortran wrapper found on PATH." >&2
+            exit 1
+          fi
+
+          if command -v mpiexec.mpich >/dev/null 2>&1; then
+            mpich_mpiexec="$(command -v mpiexec.mpich)"
+          elif command -v mpirun.mpich >/dev/null 2>&1; then
+            mpich_mpiexec="$(command -v mpirun.mpich)"
+          else
+            echo "No MPICH launcher found on PATH." >&2
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/mpich-bin"
+          ln -sf "$mpich_fc" "$RUNNER_TEMP/mpich-bin/mpifort"
+          ln -sf "$mpich_mpiexec" "$RUNNER_TEMP/mpich-bin/mpiexec"
+          echo "$RUNNER_TEMP/mpich-bin" >> "$GITHUB_PATH"
+          echo "FTIMER_MPICH_FC=$mpich_fc" >> "$GITHUB_ENV"
+          echo "FTIMER_MPICH_MPIEXEC=$mpich_mpiexec" >> "$GITHUB_ENV"
+
+      - name: Show MPICH toolchain
+        run: |
+          "$FTIMER_MPICH_FC" --version
+          "$FTIMER_MPICH_MPIEXEC" --version
+
+      # MPICH smoke coverage uses the wrapper compiler explicitly, including
+      # the configure-time mpi_f08 probe and installed MPI consumer check.
+      - name: Configure (MPICH MPI)
+        run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DMPIEXEC_EXECUTABLE="$FTIMER_MPICH_MPIEXEC"
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Smoke test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Verify MPICH example and installed-consumer coverage
+        run: >
+          ctest --test-dir build --output-on-failure
+          -R '^(ftimer_mpi_example_smoke|ftimer_installed_package_consumer_mpi)$'
 
   test-serial:
     runs-on: ubuntu-latest
@@ -194,6 +304,86 @@ jobs:
 
       - name: Configure
         run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/opt/pfunit
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  test-mpi-mpich:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake mpich libmpich-dev
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Resolve MPICH tools
+        run: |
+          if command -v mpifort.mpich >/dev/null 2>&1; then
+            mpich_fc="$(command -v mpifort.mpich)"
+          elif command -v mpif90.mpich >/dev/null 2>&1; then
+            mpich_fc="$(command -v mpif90.mpich)"
+          else
+            echo "No MPICH Fortran wrapper found on PATH." >&2
+            exit 1
+          fi
+
+          if command -v mpiexec.mpich >/dev/null 2>&1; then
+            mpich_mpiexec="$(command -v mpiexec.mpich)"
+          elif command -v mpirun.mpich >/dev/null 2>&1; then
+            mpich_mpiexec="$(command -v mpirun.mpich)"
+          else
+            echo "No MPICH launcher found on PATH." >&2
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/mpich-bin"
+          ln -sf "$mpich_fc" "$RUNNER_TEMP/mpich-bin/mpifort"
+          ln -sf "$mpich_mpiexec" "$RUNNER_TEMP/mpich-bin/mpiexec"
+          echo "$RUNNER_TEMP/mpich-bin" >> "$GITHUB_PATH"
+          echo "FTIMER_MPICH_FC=$mpich_fc" >> "$GITHUB_ENV"
+          echo "FTIMER_MPICH_MPIEXEC=$mpich_mpiexec" >> "$GITHUB_ENV"
+
+      - name: Capture pFUnit cache identity
+        id: pfunit-identity
+        run: |
+          {
+            cat /etc/os-release
+            uname -a
+            gfortran --version
+            mpifort --version
+            mpiexec --version
+            cmake --version
+          } > /tmp/pfunit-cache-identity.txt
+          identity="$(sha256sum /tmp/pfunit-cache-identity.txt | cut -d ' ' -f1)"
+          echo "key=$identity" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pFUnit
+        uses: actions/cache@v4
+        id: pfunit-cache
+        with:
+          path: /opt/pfunit-mpich
+          key: pfunit-mpich-${{ runner.os }}-${{ steps.pfunit-identity.outputs.key }}-${{ env.PFUNIT_VERSION }}-${{ env.PFUNIT_SHA256 }}
+
+      - name: Build pFUnit
+        if: steps.pfunit-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/pfunit-src
+          curl -fsSL "$PFUNIT_ARCHIVE_URL" -o /tmp/pfunit.tar
+          printf '%s  %s\n' "$PFUNIT_SHA256" /tmp/pfunit.tar | sha256sum -c -
+          tar -xf /tmp/pfunit.tar --strip-components=1 -C /tmp/pfunit-src
+          FC=mpifort cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit-mpich -DMPI=YES
+          cmake --build /tmp/pfunit-build -j$(nproc)
+          cmake --install /tmp/pfunit-build
+
+      - name: Configure
+        run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/opt/pfunit-mpich -DMPIEXEC_EXECUTABLE="$FTIMER_MPICH_MPIEXEC"
 
       - name: Build
         run: cmake --build build -j$(nproc)

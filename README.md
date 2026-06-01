@@ -353,9 +353,9 @@ The smoke-test path also runs the enabled and disabled instrumentation facade ex
 
 Supported toolchain matrix:
 
-- Serial smoke/library build: GNU Fortran and LLVM Flang are validated in automation
+- Serial smoke/library build: GNU Fortran, LLVM Flang, and NVHPC `nvfortran` are validated in automation; NVHPC coverage is serial smoke/install-consumer only
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
-- MPI: an MPI wrapper compiler such as `mpifort`
+- MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH, including MPI smoke, MPI example, installed-package MPI consumer, and MPI pFUnit coverage
 - OpenMP: GNU Fortran only for the documented master-thread-only carve-out
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
