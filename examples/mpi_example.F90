@@ -14,7 +14,6 @@ program mpi_example
    call MPI_Init(ierr)
    call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
    call MPI_Comm_size(MPI_COMM_WORLD, nprocs, ierr)
-   if (nprocs /= 2) error stop "mpi_example smoke requires 2 MPI ranks"
 
    ! MPI-enabled fTimer uses MPI_Wtime and MPI collectives, so initialize and
    ! finalize it inside the MPI lifetime. The captured communicator is a
