@@ -231,7 +231,7 @@ contains
       type(ftimer_t), pointer, intent(inout) :: timer
       type(ftimer_oop_guard_t), intent(inout) :: guard
       character(len=*), intent(in) :: name
-      integer, intent(out), optional :: ierr
+      integer, intent(inout), optional :: ierr
 
 #ifdef FTIMER_USE_OPENMP
 !$omp master
@@ -273,7 +273,7 @@ contains
 
    subroutine ftimer_oop_guard_stop(self, ierr)
       class(ftimer_oop_guard_t), intent(inout) :: self
-      integer, intent(out), optional :: ierr
+      integer, intent(inout), optional :: ierr
       integer :: status
 
       if (.not. self%active) then

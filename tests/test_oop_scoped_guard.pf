@@ -228,12 +228,16 @@ contains
       call begin_stderr_capture('test_oop_scope_ierr_error_paths_are_silent.err', saved_fd, capture_ierr)
       @assertEqual(0, capture_ierr)
 
+      ierr = FTIMER_SUCCESS
       call ftimer_oop_scope(timer, invalid_guard, " ", ierr=ierr)
       @assertEqual(FTIMER_ERR_INVALID_NAME, ierr)
+      ierr = FTIMER_SUCCESS
       call ftimer_oop_scope(missing_timer, missing_guard, "missing_owner", ierr=ierr)
       @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      ierr = FTIMER_SUCCESS
       call ftimer_oop_scope(uninitialized_timer, uninitialized_guard, "missing_init", ierr=ierr)
       @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      ierr = FTIMER_SUCCESS
       call ftimer_oop_scope(timer, active_guard, "oop_ierr_replacement", ierr=ierr)
       @assertEqual(FTIMER_ERR_ACTIVE, ierr)
 
@@ -501,8 +505,12 @@ contains
       type(ftimer_t), pointer :: timer
       type(ftimer_oop_guard_t) :: outer
       type(ftimer_test_state_t) :: state
+      character(len=:), allocatable :: stderr_text
       integer :: child_id
+      integer :: capture_ierr
       integer :: ierr
+      integer :: saved_fd
+      logical :: is_silent
 
       timer => timer_storage
       call timer%init(ierr=ierr)
@@ -518,8 +526,15 @@ contains
       @assertEqual(FTIMER_SUCCESS, ierr)
 
       fake_time = 2.0_wp
+      call begin_stderr_capture('test_oop_scope_rejects_owned_activation_below_child.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
       call outer%stop(ierr=ierr)
+      call end_stderr_capture('test_oop_scope_rejects_owned_activation_below_child.err', saved_fd, stderr_text, &
+                              capture_ierr)
+      @assertEqual(0, capture_ierr)
       @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
 
       call snapshot_timer(timer_storage, state)
       @assertEqual(2, state%call_stack%depth)

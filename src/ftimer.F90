@@ -72,7 +72,7 @@ contains
    subroutine ftimer_scope(guard, name, ierr)
       type(ftimer_guard_t), intent(inout) :: guard
       character(len=*), intent(in) :: name
-      integer, intent(out), optional :: ierr
+      integer, intent(inout), optional :: ierr
       integer :: id
       integer(int64) :: activation_token
 
@@ -98,7 +98,7 @@ contains
 
    subroutine ftimer_guard_stop(self, ierr)
       class(ftimer_guard_t), intent(inout) :: self
-      integer, intent(out), optional :: ierr
+      integer, intent(inout), optional :: ierr
       integer :: status
 
       if (.not. self%active) then
