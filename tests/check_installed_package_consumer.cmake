@@ -609,6 +609,7 @@ endif()
 
 set(consumer_executable "${consumer_build_dir}/ftimer_installed_consumer${TEST_EXECUTABLE_SUFFIX}")
 set(oop_consumer_executable "${consumer_build_dir}/ftimer_installed_oop_consumer${TEST_EXECUTABLE_SUFFIX}")
+set(mixed_consumer_executable "${consumer_build_dir}/ftimer_installed_mixed_consumer${TEST_EXECUTABLE_SUFFIX}")
 if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   set(configured_consumer_executable
     "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_consumer${TEST_EXECUTABLE_SUFFIX}"
@@ -616,11 +617,17 @@ if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   set(configured_oop_consumer_executable
     "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_oop_consumer${TEST_EXECUTABLE_SUFFIX}"
   )
+  set(configured_mixed_consumer_executable
+    "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_mixed_consumer${TEST_EXECUTABLE_SUFFIX}"
+  )
   if(EXISTS "${configured_consumer_executable}")
     set(consumer_executable "${configured_consumer_executable}")
   endif()
   if(EXISTS "${configured_oop_consumer_executable}")
     set(oop_consumer_executable "${configured_oop_consumer_executable}")
+  endif()
+  if(EXISTS "${configured_mixed_consumer_executable}")
+    set(mixed_consumer_executable "${configured_mixed_consumer_executable}")
   endif()
 endif()
 
@@ -643,6 +650,15 @@ if(NOT TEST_ENABLE_MPI)
   )
   if(NOT oop_consumer_run_result EQUAL 0)
     message(FATAL_ERROR "Installed-package OOP consumer executable exited with a nonzero status.")
+  endif()
+
+  execute_process(
+    COMMAND "${mixed_consumer_executable}"
+    WORKING_DIRECTORY "${consumer_build_dir}"
+    RESULT_VARIABLE mixed_consumer_run_result
+  )
+  if(NOT mixed_consumer_run_result EQUAL 0)
+    message(FATAL_ERROR "Installed-package mixed-module consumer executable exited with a nonzero status.")
   endif()
 endif()
 

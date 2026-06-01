@@ -180,6 +180,12 @@ The currently exported procedural entry points are:
 - `ftimer_write_mpi_union_summary_csv`
 - `ftimer_default_instance`
 
+The currently supported `ftimer_core` OOP surface includes:
+
+- `ftimer_t`
+- `ftimer_oop_guard_t`
+- `ftimer_oop_scope`
+
 Important current-state API notes:
 
 - `ierr` is now the last optional argument in the `init` signatures. Integer
@@ -191,8 +197,8 @@ Important current-state API notes:
 - `init`, `reset`, and `finalize` treat active timers as an error in both API styles. With `ierr` they return `FTIMER_ERR_ACTIVE`; without `ierr` they warn and leave state untouched rather than force-stopping or cleaning up implicitly. In `FTIMER_USE_OPENMP=ON` builds, that lifecycle-diagnostic contract applies on the master thread; non-master lifecycle calls remain suppressed no-ops.
 - Repairing stop mismatches remains an explicit `mismatch_mode` decision; omitted `ierr` alone is not a recovery mode.
 - Name-based `start`/`stop` remains the default user path. `lookup()` plus `start_id()`/`stop_id()` is documented as an optional cached-id hot path rather than a separate primary workflow.
-- `ftimer_scope()` and `ftimer_guard_t` provide a small default-instance scoped guard for lexical blocks. There is no current OOP scoped guard API; that parity question is deferred separately.
-- `ftimer_core` exposes low-level scoped-activation helpers only so the procedural `ftimer` module can implement exact activation ownership without duplicating start/stop internals. `ftimer_types` also exposes runtime storage types that helper modules currently need to share. These names are unstable public-by-necessity internals, not a supported downstream API: `ftimer_internal_start_scope_activation`, `ftimer_internal_stop_scope_activation`, `ftimer_call_stack_t`, `ftimer_context_list_t`, and `ftimer_segment_t`. Callers should use `ftimer_scope()` or explicit `start`/`stop`, and should inspect structured summary result types instead of runtime storage.
+- `ftimer_scope()` and `ftimer_guard_t` provide a small default-instance scoped guard for lexical blocks. `ftimer_core` also exposes pointer-based OOP scoped timing through `ftimer_oop_guard_t` and `call ftimer_oop_scope(timer_pointer, guard, name, ierr)`. Explicit `timer%start()` / `timer%stop()` remains the primary OOP API; the scoped form is for lexical blocks where the timer pointer target visibly outlives the guard.
+- `ftimer_core` exposes low-level scoped-activation helpers only so the public scoped guard APIs can implement exact activation ownership without duplicating start/stop internals. `ftimer_types` also exposes runtime storage types that helper modules currently need to share. These names are unstable public-by-necessity internals, not a supported downstream API: `ftimer_internal_start_scope_activation`, `ftimer_internal_stop_scope_activation`, `ftimer_call_stack_t`, `ftimer_context_list_t`, and `ftimer_segment_t`. Callers should use `ftimer_scope()`, `ftimer_oop_scope()`, or explicit `start`/`stop`, and should inspect structured summary result types instead of runtime storage.
 - `get_summary()` is the local structured summary path.
 - `ftimer_summary_t` entries now retain `name`/`depth` and also expose `node_id`/`parent_id` links that are stable only within one produced summary object.
 - `print_summary()` and `write_summary()` format local report text.

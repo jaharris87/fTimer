@@ -14,6 +14,8 @@ module ftimer_core
    private
 
    public :: ftimer_t
+   public :: ftimer_oop_guard_t
+   public :: ftimer_oop_scope
    public :: ftimer_internal_start_scope_activation
    public :: ftimer_internal_stop_scope_activation
 #ifdef FTIMER_BUILD_TESTS
@@ -121,6 +123,19 @@ module ftimer_core
       procedure, private :: repair_mismatch
    end type ftimer_t
 
+   type :: ftimer_oop_guard_t
+      private
+      type(ftimer_t), pointer :: timer => null()
+      integer :: timer_id = 0
+      integer(int64) :: activation_token = 0_int64
+      logical :: active = .false.
+   contains
+      procedure, public :: stop => ftimer_oop_guard_stop
+      final :: ftimer_oop_guard_finalize
+      procedure, private :: assign => ftimer_oop_guard_assign
+      generic, public :: assignment(=) => assign
+   end type ftimer_oop_guard_t
+
    interface
       module subroutine get_summary(self, summary, ierr)
          class(ftimer_t), intent(in) :: self
@@ -212,6 +227,96 @@ module ftimer_core
 
 contains
 
+   subroutine ftimer_oop_scope(timer, guard, name, ierr)
+      type(ftimer_t), pointer, intent(inout) :: timer
+      type(ftimer_oop_guard_t), intent(inout) :: guard
+      character(len=*), intent(in) :: name
+      integer, intent(inout), optional :: ierr
+
+#ifdef FTIMER_USE_OPENMP
+!$omp master
+#endif
+      call ftimer_oop_scope_impl(timer, guard, name, ierr=ierr)
+#ifdef FTIMER_USE_OPENMP
+!$omp end master
+#endif
+   end subroutine ftimer_oop_scope
+
+   subroutine ftimer_oop_scope_impl(timer, guard, name, ierr)
+      type(ftimer_t), pointer, intent(inout) :: timer
+      type(ftimer_oop_guard_t), intent(inout) :: guard
+      character(len=*), intent(in) :: name
+      integer, intent(out), optional :: ierr
+      integer :: id
+      integer(int64) :: activation_token
+
+      if (guard%active) then
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer OOP scope called with an active guard; state unchanged")
+         return
+      end if
+
+      call clear_oop_guard(guard)
+
+      if (.not. associated(timer)) then
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer OOP scope with unassociated timer pointer")
+         return
+      end if
+
+      call start_scope_activation_impl(timer, name, id, activation_token, ierr=ierr)
+      if ((id <= 0) .or. (activation_token == 0_int64)) return
+
+      guard%timer => timer
+      guard%timer_id = id
+      guard%activation_token = activation_token
+      guard%active = .true.
+   end subroutine ftimer_oop_scope_impl
+
+   subroutine ftimer_oop_guard_stop(self, ierr)
+      class(ftimer_oop_guard_t), intent(inout) :: self
+      integer, intent(inout), optional :: ierr
+      integer :: status
+
+      if (.not. self%active) then
+         if (present(ierr)) ierr = FTIMER_SUCCESS
+         return
+      end if
+
+      if (.not. associated(self%timer)) then
+         call clear_oop_guard(self)
+         if (present(ierr)) ierr = FTIMER_SUCCESS
+         return
+      end if
+
+      status = ftimer_internal_stop_scope_activation(self%timer, self%timer_id, self%activation_token, ierr=ierr)
+      if (status == FTIMER_SUCCESS) call clear_oop_guard(self)
+   end subroutine ftimer_oop_guard_stop
+
+   subroutine ftimer_oop_guard_finalize(self)
+      type(ftimer_oop_guard_t), intent(inout) :: self
+
+      call self%stop()
+   end subroutine ftimer_oop_guard_finalize
+
+   subroutine ftimer_oop_guard_assign(lhs, rhs)
+      class(ftimer_oop_guard_t), intent(inout) :: lhs
+      type(ftimer_oop_guard_t), intent(in) :: rhs
+
+      if (lhs%active .or. rhs%active) then
+         write (error_unit, '(a)') "ftimer OOP guard assignment is unsupported; active ownership was not copied"
+      end if
+
+      if (.not. lhs%active) call clear_oop_guard(lhs)
+   end subroutine ftimer_oop_guard_assign
+
+   subroutine clear_oop_guard(guard)
+      class(ftimer_oop_guard_t), intent(inout) :: guard
+
+      nullify (guard%timer)
+      guard%timer_id = 0
+      guard%activation_token = 0_int64
+      guard%active = .false.
+   end subroutine clear_oop_guard
+
    subroutine ftimer_internal_start_scope_activation(self, name, id, activation_token, ierr)
       class(ftimer_t), target, intent(inout) :: self
       character(len=*), intent(in) :: name
@@ -234,7 +339,7 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: id
       integer(int64), intent(in) :: activation_token
-      integer, intent(out), optional :: ierr
+      integer, intent(inout), optional :: ierr
 
       status = FTIMER_ERR_ACTIVE
 #ifdef FTIMER_USE_OPENMP

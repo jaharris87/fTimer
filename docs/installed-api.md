@@ -7,7 +7,8 @@ Pre-1.0 CMake package version compatibility is limited to the same minor release
 The supported source-level import surface is intentionally narrow:
 
 - `use ftimer` for the procedural API and default timer instance
-- `use ftimer_core` for `type(ftimer_t)` and its OOP methods
+- `use ftimer_core` for `type(ftimer_t)`, its OOP methods, and the
+  pointer-based `ftimer_oop_scope` scoped guard helper
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
 ## MPI lifecycle and communicator ownership
@@ -70,6 +71,8 @@ Stable public symbols in `ftimer`:
 Stable public symbols in `ftimer_core`:
 
 - `ftimer_t`
+- `ftimer_oop_guard_t`
+- `ftimer_oop_scope`
 
 Stable public symbols in `ftimer_types`:
 
@@ -104,9 +107,9 @@ Stable public symbols in `ftimer_types`:
 
 The following names are visible from stable modules because current Fortran
 module layering requires helper modules to share implementation storage or
-because the procedural scoped guard delegates exact activation ownership to the
-OOP core. They are not part of the stable downstream contract and may change,
-move, narrow, or disappear before a future compatibility boundary:
+because the scoped guard implementations delegate exact activation ownership to
+the OOP core. They are not part of the stable downstream contract and may
+change, move, narrow, or disappear before a future compatibility boundary:
 
 - `ftimer_call_stack_t`
 - `ftimer_context_list_t`
@@ -116,9 +119,9 @@ move, narrow, or disappear before a future compatibility boundary:
 
 Downstream application code should not import or declare those names unless it
 is deliberately coupling to fTimer internals. Supported user code should use
-`ftimer_scope()` or explicit `start`/`stop` instead of the internal scoped
-activation hooks, and should use summary result types instead of the runtime
-storage types.
+the procedural `ftimer_scope()` helper, the OOP pointer-based `ftimer_oop_scope()`
+helper, or explicit `start`/`stop` instead of the internal scoped activation
+hooks, and should use summary result types instead of the runtime storage types.
 
 ## Test-only public symbols
 
