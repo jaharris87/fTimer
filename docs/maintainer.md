@@ -57,6 +57,12 @@ download identity and cache identity together when updating pinned tools.
   - Update `.github/constraints/lint.txt` when changing the lint tool version.
   - Keep the CI install command constraint-based so `pip` cannot float to a
     newer formatter during release validation.
+- NVHPC:
+  - Update `NVHPC_VERSION` and `NVHPC_APT_PACKAGE` together in
+    `.github/workflows/nvhpc-smoke.yml`.
+  - Keep the job scheduled/manual and allowed-failure until GitHub-hosted runner
+    storage, install time, and serial smoke compatibility are proven stable
+    enough for release gating.
 - Validation:
   - Run `git diff --check` after dependency pin updates.
   - Let GitHub CI exercise the verified pFUnit download path and the pinned

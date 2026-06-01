@@ -1,0 +1,65 @@
+name: NVHPC Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 9 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  NVHPC_VERSION: "26.3"
+  NVHPC_APT_PACKAGE: nvhpc-26-3
+
+concurrency:
+  group: nvhpc-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-serial-nvfortran:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install NVHPC
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates cmake curl g++ gcc gfortran gpg
+          curl -fsSL https://developer.download.nvidia.com/hpc-sdk/ubuntu/DEB-GPG-KEY-NVIDIA-HPC-SDK \
+            | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg] https://developer.download.nvidia.com/hpc-sdk/ubuntu/amd64 /' \
+            | sudo tee /etc/apt/sources.list.d/nvhpc.list
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends "$NVHPC_APT_PACKAGE"
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Resolve nvfortran
+        run: |
+          nvarch="$(uname -s)_$(uname -m)"
+          nvhpc_bin="/opt/nvidia/hpc_sdk/${nvarch}/${NVHPC_VERSION}/compilers/bin"
+          if [ ! -x "${nvhpc_bin}/nvfortran" ]; then
+            nvhpc_bin="$(find /opt/nvidia/hpc_sdk -path '*/compilers/bin' -type d | sort -V | tail -n 1)"
+          fi
+          if [ -z "${nvhpc_bin}" ] || [ ! -x "${nvhpc_bin}/nvfortran" ]; then
+            echo "nvfortran was not found after installing ${NVHPC_APT_PACKAGE}." >&2
+            find /opt/nvidia/hpc_sdk -maxdepth 4 -type f -name nvfortran -print >&2 || true
+            exit 1
+          fi
+          echo "${nvhpc_bin}" >> "$GITHUB_PATH"
+          echo "FC=${nvhpc_bin}/nvfortran" >> "$GITHUB_ENV"
+          "${nvhpc_bin}/nvfortran" --version
+          df -h /
+          du -sh /opt/nvidia/hpc_sdk || true
+
+      - name: Configure (nvfortran serial smoke)
+        run: cmake -B build-nvfortran -DFTIMER_BUILD_TESTS=OFF -DFTIMER_USE_MPI=OFF -DFTIMER_USE_OPENMP=OFF
+
+      - name: Build
+        run: cmake --build build-nvfortran -j$(nproc)
+
+      - name: Run conservative smoke subset
+        run: ctest --test-dir build-nvfortran --output-on-failure -R "ftimer_(phase0_smoke|basic_usage_smoke|installed_package_consumer)$"

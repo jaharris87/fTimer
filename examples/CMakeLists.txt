@@ -34,6 +34,16 @@ endif()
 if(FTIMER_USE_MPI)
   add_executable(mpi_example mpi_example.F90)
   target_link_libraries(mpi_example PRIVATE ftimer)
+  if(FTIMER_BUILD_SMOKE_TESTS)
+    add_test(NAME ftimer_mpi_example_smoke
+      COMMAND
+        ${MPIEXEC_EXECUTABLE}
+        ${MPIEXEC_NUMPROC_FLAG} 2
+        ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:mpi_example>
+        ${MPIEXEC_POSTFLAGS}
+    )
+  endif()
 endif()
 
 if(FTIMER_USE_OPENMP)

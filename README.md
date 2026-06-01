@@ -330,7 +330,7 @@ Supported toolchain matrix:
 
 - Serial smoke/library build: GNU Fortran and LLVM Flang are validated in automation
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
-- MPI: an MPI wrapper compiler such as `mpifort`
+- MPI: GNU Fortran with OpenMPI and MPICH wrapper compilers is validated in automation; other `mpi_f08` wrapper compiler stacks may work when the configure-time probes pass
 - OpenMP: GNU Fortran only for the documented master-thread-only carve-out
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.

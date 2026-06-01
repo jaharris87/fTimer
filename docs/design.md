@@ -215,7 +215,7 @@ Supported local build paths today are:
 
 - serial smoke/library build validated with GNU Fortran and LLVM Flang
 - serial pFUnit tests with `gfortran` plus a matching pFUnit install
-- MPI builds through an MPI wrapper compiler such as `mpifort`
+- MPI builds with GNU Fortran through OpenMPI and MPICH wrapper compilers
 - OpenMP builds with `gfortran`
 - benchmark harness builds with `FTIMER_BUILD_BENCH=ON`
 
@@ -252,15 +252,19 @@ The default repository baseline is still the smoke/build-contract path. The full
 - `build-serial`
 - `build-serial-flang`
 - `build-mpi`
+- `build-mpi-mpich`
 - `test-serial`
 - `test-mpi`
+- `test-mpi-mpich`
 - `build-openmp`
 - `test-openmp`
 - `build-contract-regressions`
 - `build-bench`
 - `lint`
 
-That means pFUnit-backed serial, MPI, and OpenMP test jobs are part of current CI now; they are not deferred future work. The contract-regression job also verifies the configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
+That means pFUnit-backed serial, MPI, and OpenMP test jobs are part of current CI now; they are not deferred future work. The required MPICH jobs exercise configure/build/smoke coverage, the MPI example smoke test, installed-package MPI consumer checks, and the MPI pFUnit suite with the MPICH wrapper compiler. The contract-regression job also verifies the configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
+
+`.github/workflows/nvhpc-smoke.yml` is an experimental scheduled/manual NVHPC serial smoke workflow. It installs the slim NVIDIA HPC SDK package, runs `nvfortran` configure/build coverage with MPI/OpenMP/pFUnit disabled, executes `basic_usage`, and runs the default installed-package consumer. The job is intentionally allowed-failure while runner storage, install time, and compiler compatibility are observed; it is not part of the release-supported toolchain matrix until it is made blocking or paired with an explicit maintainer validation path.
 
 ## Maintainer Workflow
 

@@ -92,6 +92,31 @@ jobs:
       - name: Smoke test
         run: ctest --test-dir build --output-on-failure
 
+  build-mpi-mpich:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake mpich libmpich-dev
+
+      - name: Report MPI toolchain
+        run: |
+          mpifort --version
+          mpifort -show
+          mpiexec --version
+
+      - name: Configure (GNU + MPICH)
+        run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Smoke test
+        run: ctest --test-dir build --output-on-failure
+
   test-serial:
     runs-on: ubuntu-latest
     steps:
@@ -159,6 +184,57 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
+
+      - name: Capture pFUnit cache identity
+        id: pfunit-identity
+        run: |
+          {
+            cat /etc/os-release
+            uname -a
+            gfortran --version
+            mpifort --version
+            mpirun --version
+            cmake --version
+          } > /tmp/pfunit-cache-identity.txt
+          identity="$(sha256sum /tmp/pfunit-cache-identity.txt | cut -d ' ' -f1)"
+          echo "key=$identity" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pFUnit
+        uses: actions/cache@v4
+        id: pfunit-cache
+        with:
+          path: /opt/pfunit
+          key: pfunit-${{ runner.os }}-${{ steps.pfunit-identity.outputs.key }}-${{ env.PFUNIT_VERSION }}-${{ env.PFUNIT_SHA256 }}
+
+      - name: Build pFUnit
+        if: steps.pfunit-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/pfunit-src
+          curl -fsSL "$PFUNIT_ARCHIVE_URL" -o /tmp/pfunit.tar
+          printf '%s  %s\n' "$PFUNIT_SHA256" /tmp/pfunit.tar | sha256sum -c -
+          tar -xf /tmp/pfunit.tar --strip-components=1 -C /tmp/pfunit-src
+          FC=mpifort cmake -B /tmp/pfunit-build -S /tmp/pfunit-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit -DMPI=YES
+          cmake --build /tmp/pfunit-build -j$(nproc)
+          cmake --install /tmp/pfunit-build
+
+      - name: Configure
+        run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/opt/pfunit
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  test-mpi-mpich:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake mpich libmpich-dev
 
       - name: Capture pFUnit cache identity
         id: pfunit-identity
