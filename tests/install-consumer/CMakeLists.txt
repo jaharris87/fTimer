@@ -13,9 +13,11 @@ add_executable(ftimer_installed_oop_consumer oop_main.F90)
 target_link_libraries(ftimer_installed_oop_consumer PRIVATE fTimer::ftimer)
 
 if(FTIMER_CONSUMER_ENABLE_MPI)
+  find_package(MPI REQUIRED COMPONENTS Fortran)
+
   add_executable(ftimer_installed_mpi_consumer mpi_main.F90)
-  target_link_libraries(ftimer_installed_mpi_consumer PRIVATE fTimer::ftimer)
+  target_link_libraries(ftimer_installed_mpi_consumer PRIVATE fTimer::ftimer MPI::MPI_Fortran)
 
   add_executable(ftimer_installed_legacy_mpi_consumer legacy_mpi_main.F90)
-  target_link_libraries(ftimer_installed_legacy_mpi_consumer PRIVATE fTimer::ftimer)
+  target_link_libraries(ftimer_installed_legacy_mpi_consumer PRIVATE fTimer::ftimer MPI::MPI_Fortran)
 endif()
