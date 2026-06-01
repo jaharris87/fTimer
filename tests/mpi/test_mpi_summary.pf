@@ -2690,7 +2690,8 @@ contains
       character(len=*), parameter :: csv_path = 'test_mpi_union_summary_export.csv'
       integer :: avg_call_count_col
       integer :: avg_inclusive_col
-      integer :: flags(37)
+      integer :: avg_total_col
+      integer :: flags(39)
       integer :: format_col
       integer :: ierr
       integer :: max_call_count_col
@@ -2712,6 +2713,7 @@ contains
       integer :: record_type_col
       integer :: strict_min_inclusive_col
       integer :: summary_kind_col
+      integer :: total_imbalance_col
       integer :: value_col
 
       rank = this%getProcessRank()
@@ -2753,9 +2755,11 @@ contains
          num_entries_col = csv_column_index(header, 'num_entries')
          num_ranks_col = csv_column_index(header, 'num_ranks')
          min_total_col = csv_column_index(header, 'min_total_time')
+         avg_total_col = csv_column_index(header, 'avg_total_time')
          max_total_col = csv_column_index(header, 'max_total_time')
          min_total_rank_col = csv_column_index(header, 'min_total_time_rank')
          max_total_rank_col = csv_column_index(header, 'max_total_time_rank')
+         total_imbalance_col = csv_column_index(header, 'total_time_imbalance')
          name_col = csv_column_index(header, 'name')
          participating_col = csv_column_index(header, 'participating_rank_count')
          missing_col = csv_column_index(header, 'missing_rank_count')
@@ -2805,6 +2809,8 @@ contains
          if (min_inclusive_col > 0) flags(35) = 1
          if (missing_col > 0) flags(36) = 1
          if (csv_text_field_equals(rank_zero_line, record_type_col, 'entry')) flags(37) = 1
+         if (csv_real_field_close(summary_line, avg_total_col, 6.5_wp)) flags(38) = 1
+         if (csv_real_field_close(summary_line, total_imbalance_col, 7.0_wp/6.5_wp)) flags(39) = 1
          call delete_if_exists(csv_path)
       end if
 
@@ -2848,6 +2854,8 @@ contains
       @assertEqual(1, flags(35))
       @assertEqual(1, flags(36))
       @assertEqual(1, flags(37))
+      @assertEqual(1, flags(38))
+      @assertEqual(1, flags(39))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)

@@ -36,7 +36,7 @@ If you need a tiny serial timing helper, you can use fTimer that way. If you nee
 fTimer currently supports these usage paths:
 
 - Serial timing with local summaries plus formatted text and CSV reports
-- Pure-MPI builds on the validated `mpi_f08` path that are used after `MPI_Init` and before `MPI_Finalize`, use `MPI_Wtime()`, produce global MPI summaries on every participating rank, and can emit strict communicator-level text/CSV reports or opt-in sparse union text reports
+- Pure-MPI builds on the validated `mpi_f08` path that are used after `MPI_Init` and before `MPI_Finalize`, use `MPI_Wtime()`, produce global MPI summaries on every participating rank, and can emit strict communicator-level text/CSV reports or opt-in sparse union text/CSV reports
 - A narrow OpenMP carve-out: master-thread-only timer guards for timing a parallel region as a whole
 - Downstream consumption through `find_package(fTimer CONFIG REQUIRED)`
 - Application-owned instrumentation facades that can select either the real fTimer implementation or a dependency-free no-op implementation at build time
