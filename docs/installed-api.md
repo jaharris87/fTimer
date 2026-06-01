@@ -8,7 +8,7 @@ The supported source-level import surface is intentionally narrow:
 
 - `use ftimer` for the procedural API and default timer instance
 - `use ftimer_core` for `type(ftimer_t)`, its OOP methods, and the
-  pointer-based OOP scoped guard helper
+  pointer-based `ftimer_oop_scope` scoped guard helper
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
 ## MPI lifecycle and communicator ownership
@@ -65,7 +65,7 @@ Stable public symbols in `ftimer_core`:
 
 - `ftimer_t`
 - `ftimer_oop_guard_t`
-- `ftimer_scope`
+- `ftimer_oop_scope`
 
 Stable public symbols in `ftimer_types`:
 
@@ -112,7 +112,7 @@ change, move, narrow, or disappear before a future compatibility boundary:
 
 Downstream application code should not import or declare those names unless it
 is deliberately coupling to fTimer internals. Supported user code should use
-the procedural `ftimer_scope()` helper, the OOP pointer-based `ftimer_scope()`
+the procedural `ftimer_scope()` helper, the OOP pointer-based `ftimer_oop_scope()`
 helper, or explicit `start`/`stop` instead of the internal scoped activation
 hooks, and should use summary result types instead of the runtime storage types.
 

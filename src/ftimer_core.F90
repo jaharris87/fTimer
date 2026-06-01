@@ -15,7 +15,7 @@ module ftimer_core
 
    public :: ftimer_t
    public :: ftimer_oop_guard_t
-   public :: ftimer_scope
+   public :: ftimer_oop_scope
    public :: ftimer_internal_start_scope_activation
    public :: ftimer_internal_stop_scope_activation
 #ifdef FTIMER_BUILD_TESTS
@@ -223,7 +223,7 @@ module ftimer_core
 
 contains
 
-   subroutine ftimer_scope(timer, guard, name, ierr)
+   subroutine ftimer_oop_scope(timer, guard, name, ierr)
       type(ftimer_t), pointer, intent(inout) :: timer
       type(ftimer_oop_guard_t), intent(inout) :: guard
       character(len=*), intent(in) :: name
@@ -232,13 +232,13 @@ contains
 #ifdef FTIMER_USE_OPENMP
 !$omp master
 #endif
-      call ftimer_scope_impl(timer, guard, name, ierr=ierr)
+      call ftimer_oop_scope_impl(timer, guard, name, ierr=ierr)
 #ifdef FTIMER_USE_OPENMP
 !$omp end master
 #endif
-   end subroutine ftimer_scope
+   end subroutine ftimer_oop_scope
 
-   subroutine ftimer_scope_impl(timer, guard, name, ierr)
+   subroutine ftimer_oop_scope_impl(timer, guard, name, ierr)
       type(ftimer_t), pointer, intent(inout) :: timer
       type(ftimer_oop_guard_t), intent(inout) :: guard
       character(len=*), intent(in) :: name
@@ -265,7 +265,7 @@ contains
       guard%timer_id = id
       guard%activation_token = activation_token
       guard%active = .true.
-   end subroutine ftimer_scope_impl
+   end subroutine ftimer_oop_scope_impl
 
    subroutine ftimer_oop_guard_stop(self, ierr)
       class(ftimer_oop_guard_t), intent(inout) :: self

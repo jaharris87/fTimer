@@ -1,5 +1,5 @@
 program ftimer_installed_oop_consumer
-   use ftimer_core, only: ftimer_oop_guard_t, ftimer_scope, ftimer_t
+   use ftimer_core, only: ftimer_oop_guard_t, ftimer_oop_scope, ftimer_t
    use ftimer_types, only: ftimer_summary_t, wp
    implicit none
    type(ftimer_t), target :: timer_storage
@@ -23,7 +23,7 @@ program ftimer_installed_oop_consumer
    scoped_oop_work: block
       type(ftimer_oop_guard_t) :: guard
 
-      call ftimer_scope(timer, guard, "oop_scoped_work", ierr=ierr)
+      call ftimer_oop_scope(timer, guard, "oop_scoped_work", ierr=ierr)
       if (ierr /= 0) error stop 4
    end block scoped_oop_work
 
