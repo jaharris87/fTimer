@@ -1743,6 +1743,136 @@ contains
    end subroutine test_mpi_union_write_summary_reports_sparse_participation
 
    @test
+   subroutine test_mpi_union_write_summary_large_sparse_report_preserves_rows(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=:), allocatable :: printed
+      character(len=:), allocatable :: metadata_value
+      character(len=*), parameter :: union_path = 'test_mpi_union_large_sparse_report.txt'
+      character(len=24) :: name
+      integer, parameter :: sparse_count = 90
+      integer :: expected_entries
+      integer :: expected_line_count
+      integer :: flags(18)
+      integer :: ierr
+      integer :: i
+      integer :: max_rank
+      integer :: min_rank
+      integer :: missing
+      integer :: participating
+      integer :: rank
+      logical :: ends_with_newline
+      logical :: found
+      real(wp) :: avg_calls
+      real(wp) :: avg_incl
+      real(wp) :: avg_pct
+      real(wp) :: avg_self
+      real(wp) :: imbalance
+      real(wp) :: max_incl
+      real(wp) :: min_incl
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      fake_time = 0.0_wp
+      call timer%start('common', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = fake_time + 1.0_wp + real(rank, wp)
+      call timer%stop('common', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      do i = 1, sparse_count
+         write (name, '("rank_",i1,"_",i4.4)') rank, i
+         call timer%start(trim(name), ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = fake_time + 0.5_wp + 0.125_wp*real(rank, wp)
+         call timer%stop(trim(name), ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end do
+
+      metadata(1)%key = 'LongMeta'
+      metadata_value = repeat('u', 600)//achar(10)//'tail'
+      metadata(1)%value = metadata_value
+
+      if (rank == 0) call delete_if_exists(union_path)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_union_summary(union_path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         printed = read_file_text(union_path)
+         expected_entries = 1 + 2*sparse_count
+         expected_line_count = 16 + expected_entries
+         if (count_text_lines(printed) == expected_line_count) flags(1) = 1
+         if (count_lines_with_prefix(printed, 'rank_0_') == sparse_count) flags(2) = 1
+         if (count_lines_with_prefix(printed, 'rank_1_') == sparse_count) flags(3) = 1
+         if (index(printed, repeat('u', 600)) > 0) flags(4) = 1
+         if (index(printed, '\n') > 0) flags(5) = 1
+
+         found = union_report_row_values(printed, 'common', participating, missing, min_incl, min_rank, &
+                                         avg_incl, max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct)
+         if (found) flags(6) = 1
+         if (participating == 2) flags(7) = 1
+         if (missing == 0) flags(8) = 1
+
+         found = union_report_row_values(printed, 'rank_0_0090', participating, missing, min_incl, min_rank, &
+                                         avg_incl, max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct)
+         if (found) flags(9) = 1
+         if (participating == 1) flags(10) = 1
+         if (missing == 1) flags(11) = 1
+         if (min_rank == 0) flags(12) = 1
+         if (max_rank == 0) flags(13) = 1
+
+         found = union_report_row_values(printed, 'rank_1_0090', participating, missing, min_incl, min_rank, &
+                                         avg_incl, max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct)
+         if (found) flags(14) = 1
+         if (participating == 1) flags(15) = 1
+         if (missing == 1) flags(16) = 1
+
+         ends_with_newline = len(printed) > 0
+         if (ends_with_newline) ends_with_newline = printed(len(printed):len(printed)) == new_line('a')
+         if (ends_with_newline) flags(17) = 1
+         if (len(printed) > 1024) flags(18) = 1
+
+         call delete_if_exists(union_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
+      @assertEqual(1, flags(7))
+      @assertEqual(1, flags(8))
+      @assertEqual(1, flags(9))
+      @assertEqual(1, flags(10))
+      @assertEqual(1, flags(11))
+      @assertEqual(1, flags(12))
+      @assertEqual(1, flags(13))
+      @assertEqual(1, flags(14))
+      @assertEqual(1, flags(15))
+      @assertEqual(1, flags(16))
+      @assertEqual(1, flags(17))
+      @assertEqual(1, flags(18))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_write_summary_large_sparse_report_preserves_rows
+
+   @test
    subroutine test_mpi_union_write_summary_replaces_existing_file(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
@@ -3621,6 +3751,132 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_mpi_write_summary_csv_emits_parseable_global_records
+
+   @test
+   subroutine test_mpi_write_summary_csv_large_report_preserves_rows(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: entry_line
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: long_value
+      character(len=:), allocatable :: metadata_line
+      character(len=:), allocatable :: record_line
+      character(len=*), parameter :: csv_path = 'test_mpi_summary_large_export.csv'
+      character(len=24) :: name
+      integer, parameter :: entry_count = 120
+      integer :: expected_record_count
+      integer :: flags(12)
+      integer :: header_field_count
+      integer :: ierr
+      integer :: i
+      integer :: max_call_count_col
+      integer :: min_call_count_col
+      integer :: name_col
+      integer :: rank
+      integer :: record_count
+      integer :: record_type_col
+      integer :: unit
+      integer :: io
+      integer :: value_col
+      logical :: all_field_counts_match
+      logical :: ends_with_newline
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      fake_time = 0.0_wp
+      do i = 1, entry_count
+         write (name, '("mpi_timer_",i4.4)') i
+         call timer%start(trim(name), ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         fake_time = fake_time + 1.0_wp + 0.125_wp*real(rank, wp)
+         call timer%stop(trim(name), ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end do
+
+      long_value = 'mpi, "stress" '//repeat('m', 600)
+      metadata(1)%key = 'Long'
+      metadata(1)%value = long_value
+
+      if (rank == 0) call delete_if_exists(csv_path)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_summary_csv(csv_path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         csv_text = read_file_text(csv_path)
+         record_count = csv_record_count(csv_text)
+         expected_record_count = entry_count + 3
+         if (record_count == expected_record_count) flags(1) = 1
+
+         header = csv_line_at(csv_text, 1)
+         header_field_count = csv_field_count_quoted(header)
+         record_type_col = csv_column_index(header, 'record_type')
+         value_col = csv_column_index(header, 'value')
+         name_col = csv_column_index(header, 'name')
+         min_call_count_col = csv_column_index(header, 'min_call_count')
+         max_call_count_col = csv_column_index(header, 'max_call_count')
+
+         if (count_csv_header_records(csv_text, header) == 1) flags(2) = 1
+
+         all_field_counts_match = .true.
+         do i = 1, record_count
+            record_line = csv_line_at(csv_text, i)
+            all_field_counts_match = all_field_counts_match .and. &
+                                     (csv_field_count_quoted(record_line) == header_field_count)
+         end do
+         if (all_field_counts_match) flags(3) = 1
+
+         metadata_line = csv_line_at(csv_text, 3)
+         if (csv_text_field_equals(metadata_line, record_type_col, 'metadata')) flags(4) = 1
+         if (csv_field_value(metadata_line, value_col) == long_value) flags(5) = 1
+         if (index(metadata_line, '""stress""') > 0) flags(6) = 1
+
+         entry_line = csv_line_at(csv_text, 4)
+         if (csv_text_field_equals(entry_line, name_col, 'mpi_timer_0001')) flags(7) = 1
+         entry_line = csv_line_at(csv_text, expected_record_count)
+         if (csv_text_field_equals(entry_line, name_col, 'mpi_timer_0120')) flags(8) = 1
+         if (csv_text_field_equals(entry_line, min_call_count_col, '1')) flags(9) = 1
+         if (csv_text_field_equals(entry_line, max_call_count_col, '1')) flags(10) = 1
+
+         ends_with_newline = len(csv_text) > 0
+         if (ends_with_newline) ends_with_newline = csv_text(len(csv_text):len(csv_text)) == new_line('a')
+         if (ends_with_newline) flags(11) = 1
+         if (len(csv_text) > 1024) flags(12) = 1
+
+         open (newunit=unit, file=csv_path, status='old', iostat=io)
+         if (io == 0) close (unit, status='delete')
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
+      @assertEqual(1, flags(7))
+      @assertEqual(1, flags(8))
+      @assertEqual(1, flags(9))
+      @assertEqual(1, flags(10))
+      @assertEqual(1, flags(11))
+      @assertEqual(1, flags(12))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_write_summary_csv_large_report_preserves_rows
 
    @test
    subroutine test_mpi_write_summary_csv_exports_call_count_extrema(this)
@@ -5745,6 +6001,40 @@ contains
          if (header(i:i) == ',') count = count + 1
       end do
    end function csv_header_column_count
+
+   integer function csv_field_count_quoted(line) result(count)
+      character(len=*), intent(in) :: line
+      integer :: i
+      integer :: text_len
+      logical :: in_quotes
+
+      count = 1
+      in_quotes = .false.
+      text_len = len_trim(line)
+      i = 1
+      do while (i <= text_len)
+         if (line(i:i) == '"') then
+            if (in_quotes .and. (i < text_len) .and. (line(i + 1:i + 1) == '"')) then
+               i = i + 1
+            else
+               in_quotes = .not. in_quotes
+            end if
+         else if ((line(i:i) == ',') .and. (.not. in_quotes)) then
+            count = count + 1
+         end if
+         i = i + 1
+      end do
+   end function csv_field_count_quoted
+
+   integer function count_text_lines(text) result(count)
+      character(len=*), intent(in) :: text
+      integer :: i
+
+      count = 0
+      do i = 1, len(text)
+         if (text(i:i) == new_line('a')) count = count + 1
+      end do
+   end function count_text_lines
 
    logical function csv_real_field_close(line, column, expected) result(matches)
       character(len=*), intent(in) :: line
