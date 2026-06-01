@@ -562,6 +562,57 @@ contains
    end subroutine test_format_summary_preserves_metadata_above_legacy_len
 
    @test
+   subroutine test_format_summary_large_report_not_truncated()
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      character(len=:), allocatable :: actual_line
+      character(len=:), allocatable :: expected_line
+      character(len=16) :: name
+      integer, parameter :: entry_count = 180
+      integer :: i
+      integer :: line_count
+      logical :: all_rows_match
+      logical :: ends_with_newline
+      logical :: header_matches
+      logical :: separator_matches
+
+      summary%total_time = real(entry_count, wp)
+      summary%num_entries = entry_count
+      allocate (summary%entries(entry_count))
+
+      do i = 1, entry_count
+         write (name, '("timer_",i4.4)') i
+         summary%entries(i)%name = trim(name)
+         summary%entries(i)%inclusive_time = real(i, wp)
+         summary%entries(i)%self_time = real(i, wp)
+         summary%entries(i)%call_count = i
+         summary%entries(i)%avg_time = real(i, wp)
+         summary%entries(i)%pct_time = 100.0_wp*real(i, wp)/real(entry_count, wp)
+      end do
+
+      call format_summary(summary, text)
+
+      line_count = count_lines(text)
+      header_matches = text_line_at(text, 3) == 'Timer name  Inclusive (s)     Self (s)    Calls   % Total'
+      separator_matches = text_line_at(text, 4) == '---------------------------------------------------------'
+      ends_with_newline = len(text) > 0
+      if (ends_with_newline) ends_with_newline = text(len(text):len(text)) == new_line('a')
+
+      all_rows_match = .true.
+      do i = 1, entry_count
+         actual_line = text_line_at(text, i + 4)
+         expected_line = expected_large_summary_row(i, entry_count)
+         all_rows_match = all_rows_match .and. (actual_line == expected_line)
+      end do
+
+      @assertEqual(entry_count + 4, line_count)
+      @assertTrue(header_matches)
+      @assertTrue(separator_matches)
+      @assertTrue(all_rows_match)
+      @assertTrue(ends_with_newline)
+   end subroutine test_format_summary_large_report_not_truncated
+
+   @test
    subroutine test_format_summary_handles_unallocated_metadata_fields()
       type(ftimer_metadata_t) :: metadata(3)
       type(ftimer_summary_t) :: summary
@@ -1068,6 +1119,46 @@ contains
          if (text(i:i) == new_line('a')) count = count + 1
       end do
    end function count_lines
+
+   function text_line_at(text, target_line) result(line)
+      character(len=*), intent(in) :: text
+      integer, intent(in) :: target_line
+      character(len=:), allocatable :: line
+      integer :: current_line
+      integer :: i
+      integer :: line_start
+
+      line = ''
+      if (target_line <= 0) return
+
+      current_line = 1
+      line_start = 1
+      do i = 1, len(text)
+         if (text(i:i) /= new_line('a')) cycle
+         if (current_line == target_line) then
+            if (i > line_start) line = text(line_start:i - 1)
+            return
+         end if
+         current_line = current_line + 1
+         line_start = i + 1
+      end do
+
+      if (current_line == target_line) line = text(line_start:)
+   end function text_line_at
+
+   function expected_large_summary_row(entry_index, entry_count) result(row)
+      integer, intent(in) :: entry_index
+      integer, intent(in) :: entry_count
+      character(len=:), allocatable :: row
+      character(len=16) :: name
+      character(len=128) :: scratch
+
+      write (name, '("timer_",i4.4)') entry_index
+      write (scratch, '(a10,2x,f12.6,2x,f12.6,2x,i8,2x,f8.2)') trim(name), &
+         real(entry_index, wp), real(entry_index, wp), entry_index, &
+         100.0_wp*real(entry_index, wp)/real(entry_count, wp)
+      row = trim(scratch)
+   end function expected_large_summary_row
 
    function deep_hierarchy_prefix(level) result(prefix)
       integer, intent(in) :: level
