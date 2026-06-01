@@ -1,5 +1,5 @@
 program ftimer_installed_mpi_consumer
-   use, intrinsic :: iso_fortran_env, only: int64
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64
    use ftimer, only: ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_mpi_union_summary, &
                      ftimer_write_mpi_summary, ftimer_write_mpi_union_summary, &
                      ftimer_write_mpi_union_summary_csv, ftimer_start, ftimer_stop
@@ -9,6 +9,7 @@ program ftimer_installed_mpi_consumer
    integer :: ierr
    integer :: i
    integer :: rank
+   integer :: world_size
    real :: accumulator
    type(ftimer_mpi_summary_t) :: summary
    type(ftimer_mpi_union_summary_t) :: union_summary
@@ -18,15 +19,22 @@ program ftimer_installed_mpi_consumer
 
    call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
    if (ierr /= MPI_SUCCESS) error stop 2
+   call MPI_Comm_size(MPI_COMM_WORLD, world_size, ierr)
+   if (ierr /= MPI_SUCCESS) error stop 3
+   if (world_size /= 2) then
+      write (error_unit, '(a,i0,a,i0)') "Expected MPI consumer to run with 2 ranks, got ", world_size, &
+         " on rank ", rank
+      error stop 4
+   end if
 
    ! MPI-enabled fTimer must run after MPI_Init and before MPI_Finalize. The
    ! communicator captured here is a non-owning handle kept valid through all
    ! summaries, reports, and fTimer finalization below.
    call ftimer_init(comm=MPI_COMM_WORLD, ierr=ierr)
-   if (ierr /= 0) error stop 3
+   if (ierr /= 0) error stop 5
 
    call ftimer_start("consumer_mpi_work", ierr=ierr)
-   if (ierr /= 0) error stop 4
+   if (ierr /= 0) error stop 6
 
    accumulator = 0.0
    do i = 1, (rank + 1)*100000
@@ -34,44 +42,52 @@ program ftimer_installed_mpi_consumer
    end do
 
    call ftimer_stop("consumer_mpi_work", ierr=ierr)
-   if (ierr /= 0) error stop 5
+   if (ierr /= 0) error stop 7
 
    call ftimer_mpi_summary(summary, ierr=ierr)
-   if (ierr /= 0) error stop 6
-   if (summary%num_ranks /= 2) error stop 7
-   if (summary%num_entries /= 1) error stop 8
-   if (trim(summary%entries(1)%name) /= "consumer_mpi_work") error stop 9
-   if (summary%entries(1)%min_inclusive_time < 0.0_wp) error stop 10
-   if (summary%entries(1)%max_inclusive_time < summary%entries(1)%min_inclusive_time) error stop 11
-   if (summary%entries(1)%avg_inclusive_time < summary%entries(1)%min_inclusive_time) error stop 12
-   if (summary%entries(1)%avg_call_count < 1.0_wp) error stop 13
-   if (kind(summary%entries(1)%min_call_count) /= int64) error stop 14
-   if (kind(summary%entries(1)%max_call_count) /= int64) error stop 15
+   if (ierr /= 0) error stop 8
+   if (summary%num_ranks /= world_size) then
+      write (error_unit, '(a,i0,a,i0,a,i0)') "fTimer MPI summary rank count mismatch on rank ", rank, &
+         ": MPI_Comm_size=", world_size, ", summary%num_ranks=", summary%num_ranks
+      error stop 9
+   end if
+   if (summary%num_entries /= 1) error stop 10
+   if (trim(summary%entries(1)%name) /= "consumer_mpi_work") error stop 11
+   if (summary%entries(1)%min_inclusive_time < 0.0_wp) error stop 12
+   if (summary%entries(1)%max_inclusive_time < summary%entries(1)%min_inclusive_time) error stop 13
+   if (summary%entries(1)%avg_inclusive_time < summary%entries(1)%min_inclusive_time) error stop 14
+   if (summary%entries(1)%avg_call_count < 1.0_wp) error stop 15
+   if (kind(summary%entries(1)%min_call_count) /= int64) error stop 16
+   if (kind(summary%entries(1)%max_call_count) /= int64) error stop 17
 
    call ftimer_mpi_union_summary(union_summary, ierr=ierr)
-   if (ierr /= 0) error stop 16
-   if (union_summary%num_ranks /= 2) error stop 17
-   if (union_summary%num_entries /= 1) error stop 18
-   if (trim(union_summary%entries(1)%name) /= "consumer_mpi_work") error stop 19
-   if (union_summary%entries(1)%participating_rank_count /= 2) error stop 20
-   if (union_summary%entries(1)%avg_call_count < 1.0_wp) error stop 21
-   if (kind(union_summary%entries(1)%min_call_count) /= int64) error stop 22
-   if (kind(union_summary%entries(1)%max_call_count) /= int64) error stop 23
+   if (ierr /= 0) error stop 18
+   if (union_summary%num_ranks /= world_size) then
+      write (error_unit, '(a,i0,a,i0,a,i0)') "fTimer MPI union summary rank count mismatch on rank ", rank, &
+         ": MPI_Comm_size=", world_size, ", union_summary%num_ranks=", union_summary%num_ranks
+      error stop 19
+   end if
+   if (union_summary%num_entries /= 1) error stop 20
+   if (trim(union_summary%entries(1)%name) /= "consumer_mpi_work") error stop 21
+   if (union_summary%entries(1)%participating_rank_count /= world_size) error stop 22
+   if (union_summary%entries(1)%avg_call_count < 1.0_wp) error stop 23
+   if (kind(union_summary%entries(1)%min_call_count) /= int64) error stop 24
+   if (kind(union_summary%entries(1)%max_call_count) /= int64) error stop 25
 
    call ftimer_write_mpi_summary("consumer_mpi_summary.txt", ierr=ierr)
-   if (ierr /= 0) error stop 24
-
-   call ftimer_write_mpi_union_summary("consumer_mpi_union_summary.txt", ierr=ierr)
-   if (ierr /= 0) error stop 25
-
-   call ftimer_write_mpi_union_summary_csv("consumer_mpi_union_summary.csv", ierr=ierr)
    if (ierr /= 0) error stop 26
 
-   call ftimer_finalize(ierr=ierr)
+   call ftimer_write_mpi_union_summary("consumer_mpi_union_summary.txt", ierr=ierr)
    if (ierr /= 0) error stop 27
 
+   call ftimer_write_mpi_union_summary_csv("consumer_mpi_union_summary.csv", ierr=ierr)
+   if (ierr /= 0) error stop 28
+
+   call ftimer_finalize(ierr=ierr)
+   if (ierr /= 0) error stop 29
+
    call MPI_Finalize(ierr)
-   if (ierr /= MPI_SUCCESS) error stop 28
+   if (ierr /= MPI_SUCCESS) error stop 30
 
    if (accumulator < 0.0) print *, accumulator
 end program ftimer_installed_mpi_consumer

@@ -558,6 +558,7 @@ if(TEST_ENABLE_MPI)
     list(APPEND ftimer_mpi_launch_command ${TEST_MPIEXEC_POSTFLAGS})
   endif()
 
+  message(STATUS "Running installed-package MPI consumer: ${ftimer_mpi_launch_command}")
   execute_process(
     COMMAND ${ftimer_mpi_launch_command}
     WORKING_DIRECTORY "${consumer_build_dir}"
@@ -601,6 +602,7 @@ if(TEST_ENABLE_MPI)
     list(APPEND ftimer_legacy_mpi_launch_command ${TEST_MPIEXEC_POSTFLAGS})
   endif()
 
+  message(STATUS "Running installed-package legacy MPI consumer: ${ftimer_legacy_mpi_launch_command}")
   execute_process(
     COMMAND ${ftimer_legacy_mpi_launch_command}
     WORKING_DIRECTORY "${consumer_build_dir}"
