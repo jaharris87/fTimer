@@ -81,10 +81,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
+      - name: Resolve OpenMPI toolchain
+        run: |
+          echo "FTIMER_OPENMPI_FC=$(command -v mpifort.openmpi || command -v mpifort)" >> "$GITHUB_ENV"
+          echo "FTIMER_OPENMPI_MPIEXEC=$(command -v mpiexec.openmpi || command -v mpiexec)" >> "$GITHUB_ENV"
+
       # MPI smoke tests validate the MPI-enabled build path (no pFUnit required).
       # pFUnit MPI behavioral tests run in the test-mpi job below.
       - name: Configure (MPI)
-        run: cmake -B build -DFTIMER_USE_MPI=ON
+        run: >
+          FC="$FTIMER_OPENMPI_FC" cmake -B build
+          -DFTIMER_USE_MPI=ON
+          -DMPIEXEC_EXECUTABLE="$FTIMER_OPENMPI_MPIEXEC"
 
       - name: Build
         run: cmake --build build -j$(nproc)
