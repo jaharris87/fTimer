@@ -148,9 +148,9 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
       - name: Verify MPICH example and installed-consumer coverage
-        run: >
-          ctest --test-dir build --output-on-failure
-          -R '^(ftimer_mpi_example_smoke|ftimer_installed_package_consumer_mpi)$'
+        run: |
+          ctest --test-dir build --output-on-failure --no-tests=error -R '^ftimer_mpi_example_smoke$'
+          ctest --test-dir build --output-on-failure --no-tests=error -R '^ftimer_installed_package_consumer_mpi$'
 
   test-serial:
     runs-on: ubuntu-latest
