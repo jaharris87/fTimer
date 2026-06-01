@@ -193,6 +193,85 @@ contains
    end subroutine test_oop_scope_uninitialized_timer_pointer_fails_inactive
 
    @test
+   subroutine test_oop_scope_ierr_error_paths_are_silent()
+      type(ftimer_t), target :: timer_storage
+      type(ftimer_t), target :: uninitialized_storage
+      type(ftimer_t), pointer :: timer
+      type(ftimer_t), pointer :: missing_timer
+      type(ftimer_t), pointer :: uninitialized_timer
+      type(ftimer_oop_guard_t) :: active_guard
+      type(ftimer_oop_guard_t) :: invalid_guard
+      type(ftimer_oop_guard_t) :: missing_guard
+      type(ftimer_oop_guard_t) :: uninitialized_guard
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: ctx
+      integer :: ierr
+      integer :: saved_fd
+      logical :: is_silent
+      logical :: names_match
+
+      timer => timer_storage
+      uninitialized_timer => uninitialized_storage
+      nullify (missing_timer)
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer_storage)
+
+      call ftimer_oop_scope(timer, active_guard, "oop_ierr_active", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+
+      call begin_stderr_capture('test_oop_scope_ierr_error_paths_are_silent.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call ftimer_oop_scope(timer, invalid_guard, " ", ierr=ierr)
+      @assertEqual(FTIMER_ERR_INVALID_NAME, ierr)
+      call ftimer_oop_scope(missing_timer, missing_guard, "missing_owner", ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      call ftimer_oop_scope(uninitialized_timer, uninitialized_guard, "missing_init", ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_INIT, ierr)
+      call ftimer_oop_scope(timer, active_guard, "oop_ierr_replacement", ierr=ierr)
+      @assertEqual(FTIMER_ERR_ACTIVE, ierr)
+
+      call end_stderr_capture('test_oop_scope_ierr_error_paths_are_silent.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      is_silent = len_trim(stderr_text) == 0
+      @assertTrue(is_silent)
+
+      call invalid_guard%stop(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call missing_guard%stop(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call uninitialized_guard%stop(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer_storage, state)
+      ctx = find_context_idx(state, 1, root_stack)
+      names_match = trim(state%segments(1)%name) == 'oop_ierr_active'
+      @assertTrue(names_match)
+      @assertEqual(1, state%num_segments)
+      @assertEqual(1, state%call_stack%depth)
+      @assertEqual(1, state%call_stack%top())
+      @assertTrue(state%segments(1)%is_running(ctx))
+
+      fake_time = 3.0_wp
+      call active_guard%stop(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer_storage, state)
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(3.0_wp, state%segments(1)%time(ctx))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_oop_scope_ierr_error_paths_are_silent
+
+   @test
    subroutine test_oop_scope_rejects_reusing_active_guard()
       type(ftimer_t), target :: timer_storage
       type(ftimer_t), pointer :: timer
