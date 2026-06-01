@@ -75,4 +75,4 @@ The sparse API follows the same `mpi_f08` primary contract as strict MPI summari
 
 Issue #149 did not implement sparse summaries. It recorded the decision and created the split implementation issues.
 
-The follow-up work should not weaken the existing descriptor preflight for `mpi_summary()`, change strict summary averages, add barriers, or require every future report format to expose every sparse field. Sparse text reporting is implemented as an explicit union-report path. Sparse CSV export remains a non-goal for the current slice and is tracked in #194 because the CSV schema needs explicit participation/missing-rank columns instead of overloading the strict `summary_kind=mpi` rows.
+The follow-up work should not weaken the existing descriptor preflight for `mpi_summary()`, change strict summary averages, add barriers, or require every future report format to expose every sparse field. Sparse text reporting is implemented as an explicit union-report path. Sparse CSV export was deferred from the initial text-report slice and is implemented separately with explicit participation/missing-rank columns instead of overloading the strict `summary_kind=mpi` rows.

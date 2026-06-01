@@ -57,6 +57,7 @@ Stable public symbols in `ftimer`:
 - `ftimer_write_mpi_summary_csv`
 - `ftimer_print_mpi_union_summary`
 - `ftimer_write_mpi_union_summary`
+- `ftimer_write_mpi_union_summary_csv`
 - `ftimer_default_instance`
 
 Stable public symbols in `ftimer_core`:

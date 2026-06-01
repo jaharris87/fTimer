@@ -30,6 +30,7 @@ module ftimer
    public :: ftimer_write_mpi_summary_csv
    public :: ftimer_print_mpi_union_summary
    public :: ftimer_write_mpi_union_summary
+   public :: ftimer_write_mpi_union_summary_csv
    public :: ftimer_default_instance
 
 #ifdef FTIMER_USE_MPI
@@ -295,5 +296,14 @@ contains
 
       call ftimer_default_instance%write_mpi_union_summary(filename, append=append, metadata=metadata, ierr=ierr)
    end subroutine ftimer_write_mpi_union_summary
+
+   subroutine ftimer_write_mpi_union_summary_csv(filename, append, metadata, ierr)
+      character(len=*), intent(in) :: filename
+      logical, intent(in), optional :: append
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      integer, intent(out), optional :: ierr
+
+      call ftimer_default_instance%write_mpi_union_summary_csv(filename, append=append, metadata=metadata, ierr=ierr)
+   end subroutine ftimer_write_mpi_union_summary_csv
 
 end module ftimer
