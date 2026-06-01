@@ -61,17 +61,36 @@ endif()
 
 if(DEFINED TEST_REQUIRED_COMPILER_NAMES AND NOT TEST_REQUIRED_COMPILER_NAMES STREQUAL "")
   string(REPLACE "," ";" required_compiler_names "${TEST_REQUIRED_COMPILER_NAMES}")
-  find_program(ftimer_required_compiler NAMES ${required_compiler_names})
-  if(NOT ftimer_required_compiler)
-    message(STATUS
-      "Skipping ${test_name}: none of the required compilers are available on PATH (${TEST_REQUIRED_COMPILER_NAMES})."
-    )
-    return()
+  set(ftimer_preferred_configured_compiler "")
+  if(TEST_PREFER_CONFIGURED_COMPILER AND DEFINED CMAKE_Fortran_COMPILER AND NOT CMAKE_Fortran_COMPILER STREQUAL "")
+    get_filename_component(configured_compiler_name "${CMAKE_Fortran_COMPILER}" NAME)
+    if(configured_compiler_name IN_LIST required_compiler_names)
+      set(ftimer_preferred_configured_compiler "${CMAKE_Fortran_COMPILER}")
+    endif()
   endif()
 
-  set(test_fortran_compiler "${ftimer_required_compiler}")
+  if(ftimer_preferred_configured_compiler)
+    set(test_fortran_compiler "${ftimer_preferred_configured_compiler}")
+  else()
+    find_program(ftimer_required_compiler NAMES ${required_compiler_names})
+    if(NOT ftimer_required_compiler)
+      message(STATUS
+        "Skipping ${test_name}: none of the required compilers are available on PATH (${TEST_REQUIRED_COMPILER_NAMES})."
+      )
+      return()
+    endif()
+
+    set(test_fortran_compiler "${ftimer_required_compiler}")
+  endif()
 else()
   set(test_fortran_compiler "${CMAKE_Fortran_COMPILER}")
+endif()
+
+if(NOT DEFINED test_fortran_compiler OR test_fortran_compiler STREQUAL "")
+  message(STATUS
+    "Skipping ${test_name}: no Fortran compiler was provided."
+  )
+  return()
 endif()
 
 file(REMOVE_RECURSE "${TEST_BINARY_DIR}")

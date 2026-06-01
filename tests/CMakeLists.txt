@@ -12,6 +12,7 @@ function(ftimer_add_installed_consumer_test test_name test_binary_dir)
     ENABLE_MPI
     ENABLE_OPENMP
     INSTALL_ONLY
+    PREFER_CONFIGURED_COMPILER
     USE_DESTDIR
   )
   set(oneValueArgs INSTALL_INCLUDEDIR REQUIRED_COMPILER_NAMES)
@@ -31,6 +32,7 @@ function(ftimer_add_installed_consumer_test test_name test_binary_dir)
       -DTEST_INSTALL_INCLUDEDIR=${FTIMER_CONSUMER_INSTALL_INCLUDEDIR}
       -DTEST_CLEAN_INSTALL_INCLUDEDIR=${FTIMER_CONSUMER_CLEAN_INSTALL_INCLUDEDIR}
       -DTEST_INSTALL_ONLY=${FTIMER_CONSUMER_INSTALL_ONLY}
+      -DTEST_PREFER_CONFIGURED_COMPILER=${FTIMER_CONSUMER_PREFER_CONFIGURED_COMPILER}
       -DTEST_USE_DESTDIR=${FTIMER_CONSUMER_USE_DESTDIR}
       -DTEST_ENABLE_MPI=${FTIMER_CONSUMER_ENABLE_MPI}
       -DTEST_ENABLE_OPENMP=${FTIMER_CONSUMER_ENABLE_OPENMP}
@@ -119,7 +121,8 @@ if(FTIMER_BUILD_SMOKE_TESTS)
   ftimer_add_installed_consumer_test(
     ftimer_installed_package_consumer_mpi
     ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer_mpi
-    REQUIRED_COMPILER_NAMES mpifort,mpif90
+    REQUIRED_COMPILER_NAMES mpifort.mpich,mpifort,mpif90.mpich,mpif90
+    PREFER_CONFIGURED_COMPILER
     ENABLE_MPI
   )
 
