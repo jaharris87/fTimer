@@ -920,6 +920,7 @@ contains
    subroutine test_get_summary_reports_context_cardinality()
       type(ftimer_t) :: timer
       type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: header_line
       character(len=:), allocatable :: text
       integer :: a_diag_idx
       integer :: b_diag_idx
@@ -986,8 +987,9 @@ contains
       @assertEqual(2, parent_entry_count)
 
       call format_summary(summary, text)
+      header_line = text_line_at(text, 3)
       @assertEqual(9, count_lines(text))
-      @assertTrue(index(text, 'Timer name') > 0)
+      @assertEqual('Timer name  Inclusive (s)     Self (s)    Calls   % Total', header_line)
       @assertTrue(index(text, 'Inclusive (s)') > 0)
       @assertTrue(index(text, 'Context') == 0)
       @assertTrue(index(text, 'context') == 0)

@@ -272,6 +272,7 @@ contains
       type(ftimer_summary_t) :: summary
       character(len=*), parameter :: path = 'phase3_summary_context_diagnostics.csv'
       character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: expected_header
       character(len=:), allocatable :: header
       character(len=:), allocatable :: record_line
       character(len=:), allocatable :: record_type
@@ -320,6 +321,14 @@ contains
       @assertEqual(6, record_count)
 
       header = csv_line_at(csv_text, 1)
+      expected_header = 'format_version,summary_kind,record_type,key,value,start_date,end_date,total_time,'// &
+                        'num_entries,has_active_timers,num_ranks,min_total_time,avg_total_time,max_total_time,'// &
+                        'min_total_time_rank,max_total_time_rank,total_time_imbalance,node_id,parent_id,depth,'// &
+                        'name,inclusive_time,self_time,call_count,avg_time,pct_time,is_active,min_inclusive_time,'// &
+                        'avg_inclusive_time,max_inclusive_time,min_inclusive_time_rank,max_inclusive_time_rank,'// &
+                        'inclusive_imbalance,min_self_time,avg_self_time,max_self_time,self_imbalance,'// &
+                        'min_call_count,avg_call_count,max_call_count,min_pct_time,avg_pct_time,max_pct_time'
+      @assertEqual(expected_header, header)
       no_context_columns = (index(header, 'context') == 0) .and. (index(header, 'Context') == 0)
       @assertTrue(no_context_columns)
 
