@@ -93,6 +93,51 @@ contains
    end subroutine test_oop_scope_explicit_stop_records_time
 
    @test
+   subroutine test_oop_scope_explicit_stop_clears_guard_for_reuse()
+      type(ftimer_t), target :: timer_storage
+      type(ftimer_t), pointer :: timer
+      type(ftimer_oop_guard_t) :: guard
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      logical :: first_name_matches
+      logical :: second_name_matches
+
+      timer => timer_storage
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer_storage)
+
+      call ftimer_oop_scope(timer, guard, "oop_reuse_first", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call guard%stop(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call guard%stop(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_oop_scope(timer, guard, "oop_reuse_second", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 4.0_wp
+      call guard%stop(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, summary%num_entries)
+      first_name_matches = trim(summary%entries(1)%name) == 'oop_reuse_first'
+      second_name_matches = trim(summary%entries(2)%name) == 'oop_reuse_second'
+      @assertTrue(first_name_matches)
+      @assertTrue(second_name_matches)
+      @assertEqual(1.0_wp, summary%entries(1)%inclusive_time)
+      @assertEqual(3.0_wp, summary%entries(2)%inclusive_time)
+      @assertFalse(summary%has_active_timers)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_oop_scope_explicit_stop_clears_guard_for_reuse
+
+   @test
    subroutine test_oop_scope_failed_start_leaves_guard_inactive()
       type(ftimer_t), target :: timer_storage
       type(ftimer_t), pointer :: timer
