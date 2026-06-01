@@ -79,7 +79,7 @@ contains
       return
    end if
 
-   call build_current_summary(self, summary)
+   call build_current_summary(self, summary, include_context_diagnostics=.false.)
    call format_summary(summary, text, metadata)
 
    out_unit = output_unit
@@ -107,7 +107,7 @@ contains
       return
    end if
 
-   call build_current_summary(self, summary)
+   call build_current_summary(self, summary, include_context_diagnostics=.false.)
    call format_summary(summary, text, metadata)
 
    append_mode = .false.
@@ -163,7 +163,7 @@ contains
       return
    end if
 
-   call build_current_summary(self, summary)
+   call build_current_summary(self, summary, include_context_diagnostics=.false.)
    call format_summary_csv(summary, text, metadata, include_header=include_header)
 
    if (append_mode) then
@@ -793,22 +793,27 @@ contains
    if (present(ierr)) ierr = FTIMER_SUCCESS
    end procedure write_mpi_union_summary_csv
 
-   subroutine build_current_summary(self, summary)
+   subroutine build_current_summary(self, summary, include_context_diagnostics)
       class(ftimer_t), intent(in) :: self
       type(ftimer_summary_t), intent(out) :: summary
+      logical, intent(in), optional :: include_context_diagnostics
       character(len=40) :: end_date
+      logical :: populate_context_diagnostics
       real(wp) :: end_time
 
+      populate_context_diagnostics = .true.
+      if (present(include_context_diagnostics)) populate_context_diagnostics = include_context_diagnostics
       end_time = self%wtime()
       end_date = ftimer_date_string()
 
       if (self%num_segments > 0) then
          call build_summary(summary=summary, segments=self%segments(1:self%num_segments), &
                             init_wtime=self%init_wtime, init_date=self%init_date, &
-                            end_time=end_time, end_date=end_date)
+                            end_time=end_time, end_date=end_date, &
+                            include_context_diagnostics=populate_context_diagnostics)
       else
          call build_summary(summary=summary, init_wtime=self%init_wtime, init_date=self%init_date, end_time=end_time, &
-                            end_date=end_date)
+                            end_date=end_date, include_context_diagnostics=populate_context_diagnostics)
       end if
    end subroutine build_current_summary
 
@@ -822,7 +827,7 @@ contains
 
       diagnostic = ''
       local_has_active_timers = self%call_stack%depth > 0
-      call build_current_summary(self, local_summary)
+      call build_current_summary(self, local_summary, include_context_diagnostics=.false.)
 #ifdef FTIMER_USE_MPI
       if (self%mpi_comm_was_present) then
          call check_mpi_summary_prereqs(local_has_active_timers, self%mpi_comm, status)
@@ -859,7 +864,7 @@ contains
 
       diagnostic = ''
       local_has_active_timers = self%call_stack%depth > 0
-      call build_current_summary(self, local_summary)
+      call build_current_summary(self, local_summary, include_context_diagnostics=.false.)
 #ifdef FTIMER_USE_MPI
       if (self%mpi_comm_was_present) then
          call check_mpi_summary_prereqs(local_has_active_timers, self%mpi_comm, status)

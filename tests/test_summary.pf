@@ -869,6 +869,7 @@ contains
    subroutine test_get_summary_reports_context_cardinality()
       type(ftimer_t) :: timer
       type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
       integer :: a_diag_idx
       integer :: b_diag_idx
       integer :: ierr
@@ -932,6 +933,13 @@ contains
 
       @assertEqual(3, work_entry_count)
       @assertEqual(2, parent_entry_count)
+
+      call format_summary(summary, text)
+      @assertEqual(9, count_lines(text))
+      @assertTrue(index(text, 'Timer name') > 0)
+      @assertTrue(index(text, 'Inclusive (s)') > 0)
+      @assertTrue(index(text, 'Context') == 0)
+      @assertTrue(index(text, 'context') == 0)
    end subroutine test_get_summary_reports_context_cardinality
 
    @test
@@ -951,24 +959,25 @@ contains
       call timer%init(ierr=ierr)
       call attach_mock_clock(timer)
 
-      call timer%start("outer_a", ierr=ierr)
-      fake_time = 1.0_wp
-      call timer%start("hot", ierr=ierr)
-      fake_time = 2.0_wp
-      call timer%stop("hot", ierr=ierr)
-      fake_time = 3.0_wp
-      call timer%stop("outer_a", ierr=ierr)
-
-      call timer%start("outer_b", ierr=ierr)
-      fake_time = 4.0_wp
-      call timer%start("hot", ierr=ierr)
-      fake_time = 5.0_wp
-      call timer%stop("hot", ierr=ierr)
-      fake_time = 6.0_wp
-      call timer%stop("outer_b", ierr=ierr)
-
       call begin_stderr_capture(stderr_path, saved_fd, capture_ierr)
       @assertEqual(0, capture_ierr)
+
+      call timer%start("outer_a")
+      fake_time = 1.0_wp
+      call timer%start("hot")
+      fake_time = 2.0_wp
+      call timer%stop("hot")
+      fake_time = 3.0_wp
+      call timer%stop("outer_a")
+
+      call timer%start("outer_b")
+      fake_time = 4.0_wp
+      call timer%start("hot")
+      fake_time = 5.0_wp
+      call timer%stop("hot")
+      fake_time = 6.0_wp
+      call timer%stop("outer_b")
+
       call timer%get_summary(summary)
       call end_stderr_capture(stderr_path, saved_fd, captured, capture_ierr)
       @assertEqual(0, capture_ierr)

@@ -15,28 +15,32 @@ module ftimer_summary
 
 contains
 
-   subroutine build_summary(summary, segments, init_wtime, init_date, end_time, end_date)
+   subroutine build_summary(summary, segments, init_wtime, init_date, end_time, end_date, include_context_diagnostics)
       type(ftimer_summary_t), intent(out) :: summary
       type(ftimer_segment_t), intent(in), optional :: segments(:)
       real(wp), intent(in) :: init_wtime
       real(wp), intent(in) :: end_time
       character(len=*), intent(in) :: init_date
       character(len=*), intent(in) :: end_date
+      logical, intent(in), optional :: include_context_diagnostics
+      logical :: populate_diagnostics
 
       call clear_summary(summary)
+      populate_diagnostics = .true.
+      if (present(include_context_diagnostics)) populate_diagnostics = include_context_diagnostics
+
       summary%start_date = init_date
       summary%end_date = end_date
       summary%total_time = end_time - init_wtime
 
       if (present(segments)) then
-         call populate_context_cardinality(summary, segments)
+         call populate_context_cardinality(summary, segments, populate_diagnostics)
          call populate_summary_entries(summary%entries, summary%num_entries, &
                                        segments, summary%total_time, end_time)
       else
          summary%num_entries = 0
          allocate (summary%entries(0))
-         summary%num_context_diagnostics = 0
-         allocate (summary%context_diagnostics(0))
+         if (populate_diagnostics) allocate (summary%context_diagnostics(0))
       end if
       summary%has_active_timers = summary_has_active_entries(summary)
       if (summary%num_entries <= 0) return
@@ -342,22 +346,27 @@ contains
       summary%num_context_diagnostics = 0
    end subroutine clear_summary
 
-   subroutine populate_context_cardinality(summary, segments)
+   subroutine populate_context_cardinality(summary, segments, include_context_diagnostics)
       type(ftimer_summary_t), intent(inout) :: summary
       type(ftimer_segment_t), intent(in) :: segments(:)
+      logical, intent(in) :: include_context_diagnostics
       integer :: context_count
       integer :: i
 
       summary%total_contexts = 0
       summary%max_contexts_per_timer = 0
-      summary%num_context_diagnostics = size(segments)
-      allocate (summary%context_diagnostics(summary%num_context_diagnostics))
+      if (include_context_diagnostics) then
+         summary%num_context_diagnostics = size(segments)
+         allocate (summary%context_diagnostics(summary%num_context_diagnostics))
+      end if
       do i = 1, size(segments)
          context_count = segments(i)%contexts%count
          summary%total_contexts = summary%total_contexts + context_count
          summary%max_contexts_per_timer = max(summary%max_contexts_per_timer, context_count)
-         summary%context_diagnostics(i)%name = segments(i)%name
-         summary%context_diagnostics(i)%context_count = context_count
+         if (include_context_diagnostics) then
+            summary%context_diagnostics(i)%name = segments(i)%name
+            summary%context_diagnostics(i)%context_count = context_count
+         end if
       end do
    end subroutine populate_context_cardinality
 

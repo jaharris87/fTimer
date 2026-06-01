@@ -267,6 +267,79 @@ contains
    end subroutine test_write_summary_csv_emits_parseable_records
 
    @test
+   subroutine test_write_summary_csv_keeps_schema_for_context_diagnostics()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=*), parameter :: path = 'phase3_summary_context_diagnostics.csv'
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: record_line
+      character(len=:), allocatable :: record_type
+      integer :: header_field_count
+      integer :: ierr
+      integer :: io
+      integer :: line_idx
+      integer :: record_count
+      integer :: record_type_col
+      integer :: unit
+      logical :: field_counts_match
+      logical :: no_context_columns
+      logical :: record_type_is_supported
+
+      call delete_if_exists(path)
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("outer_a", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("hot", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%stop("hot", ierr=ierr)
+      fake_time = 3.0_wp
+      call timer%stop("outer_a", ierr=ierr)
+
+      call timer%start("outer_b", ierr=ierr)
+      fake_time = 4.0_wp
+      call timer%start("hot", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%stop("hot", ierr=ierr)
+      fake_time = 6.0_wp
+      call timer%stop("outer_b", ierr=ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, summary%max_contexts_per_timer)
+
+      call timer%write_summary_csv(path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      csv_text = read_file_text(path)
+      record_count = csv_record_count(csv_text)
+      @assertEqual(6, record_count)
+
+      header = csv_line_at(csv_text, 1)
+      no_context_columns = (index(header, 'context') == 0) .and. (index(header, 'Context') == 0)
+      @assertTrue(no_context_columns)
+
+      record_type_col = csv_column_index(header, 'record_type')
+      header_field_count = csv_field_count_local(header)
+      field_counts_match = .true.
+      do line_idx = 2, record_count
+         record_line = csv_line_at(csv_text, line_idx)
+         record_type = csv_field_value(record_line, record_type_col)
+         field_counts_match = field_counts_match .and. (csv_field_count_local(record_line) == header_field_count)
+         record_type_is_supported = (record_type == 'summary') .or. (record_type == 'entry')
+         @assertTrue(record_type_is_supported)
+      end do
+      @assertTrue(field_counts_match)
+
+      open (newunit=unit, file=path, status='old', iostat=io)
+      if (io == 0) close (unit, status='delete')
+   end subroutine test_write_summary_csv_keeps_schema_for_context_diagnostics
+
+   @test
    subroutine test_write_summary_csv_after_set_clock_uses_custom_clock_window()
       type(ftimer_t) :: timer
       character(len=*), parameter :: path = 'phase3_summary_custom_clock_empty.csv'
