@@ -332,8 +332,13 @@ FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build
 cmake -E chdir build ctest --output-on-failure
 
-# MPI build with pFUnit tests
-FC=mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
+# MPI smoke/install-consumer build (validated with GNU OpenMPI and GNU MPICH wrappers)
+FC=mpifort cmake -B build-mpi-smoke -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=OFF
+cmake --build build-mpi-smoke
+cmake -E chdir build-mpi-smoke ctest --output-on-failure
+
+# MPI pFUnit build (validated path: GNU/OpenMPI wrapper + matching pFUnit install)
+FC=/path/to/openmpi-mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/openmpi-pfunit
 cmake --build build-mpi
 cmake -E chdir build-mpi ctest --output-on-failure -L mpi
 

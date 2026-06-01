@@ -69,10 +69,10 @@ FC=gfortran cmake -B build \
 cmake --build build
 cmake -E chdir build ctest --output-on-failure
 
-FC=mpifort cmake -B build-mpi \
+FC=/path/to/openmpi-mpifort cmake -B build-mpi \
   -DFTIMER_USE_MPI=ON \
   -DFTIMER_BUILD_TESTS=ON \
-  -DPFUNIT_DIR=/path/to/pfunit
+  -DPFUNIT_DIR=/path/to/openmpi-pfunit
 cmake --build build-mpi
 cmake -E chdir build-mpi ctest --output-on-failure -L mpi
 
