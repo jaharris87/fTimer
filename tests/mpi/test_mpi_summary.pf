@@ -1747,6 +1747,7 @@ contains
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer
       type(ftimer_metadata_t) :: metadata(1)
+      type(ftimer_mpi_union_summary_t) :: union_summary
       character(len=:), allocatable :: printed
       character(len=:), allocatable :: metadata_value
       character(len=*), parameter :: union_path = 'test_mpi_union_large_sparse_report.txt'
@@ -1754,7 +1755,7 @@ contains
       integer, parameter :: sparse_count = 90
       integer :: expected_entries
       integer :: expected_line_count
-      integer :: flags(18)
+      integer :: flags(20)
       integer :: ierr
       integer :: i
       integer :: max_rank
@@ -1762,8 +1763,10 @@ contains
       integer :: missing
       integer :: participating
       integer :: rank
+      logical :: all_union_rows_match
       logical :: ends_with_newline
       logical :: found
+      logical :: last_row_matches
       real(wp) :: avg_calls
       real(wp) :: avg_incl
       real(wp) :: avg_pct
@@ -1798,6 +1801,9 @@ contains
       metadata(1)%key = 'LongMeta'
       metadata_value = repeat('u', 600)//achar(10)//'tail'
       metadata(1)%value = metadata_value
+
+      call timer%mpi_union_summary(union_summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
 
       if (rank == 0) call delete_if_exists(union_path)
       call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
@@ -1843,6 +1849,29 @@ contains
          if (ends_with_newline) flags(17) = 1
          if (len(printed) > 1024) flags(18) = 1
 
+         all_union_rows_match = .true.
+         do i = 1, union_summary%num_entries
+            all_union_rows_match = all_union_rows_match .and. &
+                                   union_report_line_matches(report_text_line_at(printed, 16 + i), &
+                                                             trim(union_summary%entries(i)%name), &
+                                                             union_summary%entries(i)%participating_rank_count, &
+                                                             union_summary%num_ranks - &
+                                                             union_summary%entries(i)%participating_rank_count, &
+                                                             union_summary%entries(i)%min_inclusive_time_rank, &
+                                                             union_summary%entries(i)%max_inclusive_time_rank)
+         end do
+         if (all_union_rows_match) flags(19) = 1
+
+         i = union_summary%num_entries
+         last_row_matches = union_report_line_matches(report_text_line_at(printed, expected_line_count), &
+                                                      trim(union_summary%entries(i)%name), &
+                                                      union_summary%entries(i)%participating_rank_count, &
+                                                      union_summary%num_ranks - &
+                                                      union_summary%entries(i)%participating_rank_count, &
+                                                      union_summary%entries(i)%min_inclusive_time_rank, &
+                                                      union_summary%entries(i)%max_inclusive_time_rank)
+         if (last_row_matches) flags(20) = 1
+
          call delete_if_exists(union_path)
       end if
 
@@ -1867,6 +1896,8 @@ contains
       @assertEqual(1, flags(16))
       @assertEqual(1, flags(17))
       @assertEqual(1, flags(18))
+      @assertEqual(1, flags(19))
+      @assertEqual(1, flags(20))
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
@@ -3780,6 +3811,7 @@ contains
       integer :: unit
       integer :: io
       integer :: value_col
+      logical :: all_entry_rows_match
       logical :: all_field_counts_match
       logical :: ends_with_newline
 
@@ -3842,8 +3874,21 @@ contains
          if (csv_field_value(metadata_line, value_col) == long_value) flags(5) = 1
          if (index(metadata_line, '""stress""') > 0) flags(6) = 1
 
-         entry_line = csv_line_at(csv_text, 4)
-         if (csv_text_field_equals(entry_line, name_col, 'mpi_timer_0001')) flags(7) = 1
+         all_entry_rows_match = .true.
+         do i = 1, entry_count
+            write (name, '("mpi_timer_",i4.4)') i
+            entry_line = csv_line_at(csv_text, i + 3)
+            all_entry_rows_match = all_entry_rows_match .and. &
+                                   (csv_text_field_equals(entry_line, record_type_col, 'entry'))
+            all_entry_rows_match = all_entry_rows_match .and. &
+                                   (csv_text_field_equals(entry_line, name_col, trim(name)))
+            all_entry_rows_match = all_entry_rows_match .and. &
+                                   (csv_text_field_equals(entry_line, min_call_count_col, '1'))
+            all_entry_rows_match = all_entry_rows_match .and. &
+                                   (csv_text_field_equals(entry_line, max_call_count_col, '1'))
+         end do
+         if (all_entry_rows_match) flags(7) = 1
+
          entry_line = csv_line_at(csv_text, expected_record_count)
          if (csv_text_field_equals(entry_line, name_col, 'mpi_timer_0120')) flags(8) = 1
          if (csv_text_field_equals(entry_line, min_call_count_col, '1')) flags(9) = 1
@@ -6035,6 +6080,67 @@ contains
          if (text(i:i) == new_line('a')) count = count + 1
       end do
    end function count_text_lines
+
+   function report_text_line_at(text, target_line) result(line)
+      character(len=*), intent(in) :: text
+      integer, intent(in) :: target_line
+      character(len=:), allocatable :: line
+      integer :: current_line
+      integer :: i
+      integer :: line_start
+
+      line = ''
+      if (target_line <= 0) return
+
+      current_line = 1
+      line_start = 1
+      do i = 1, len(text)
+         if (text(i:i) /= new_line('a')) cycle
+         if (current_line == target_line) then
+            if (i > line_start) line = text(line_start:i - 1)
+            return
+         end if
+         current_line = current_line + 1
+         line_start = i + 1
+      end do
+
+      if ((current_line == target_line) .and. (line_start <= len(text))) line = text(line_start:)
+   end function report_text_line_at
+
+   logical function union_report_line_matches(line, timer_name, expected_participating, expected_missing, &
+                                              expected_min_rank, expected_max_rank) result(matches)
+      character(len=*), intent(in) :: line
+      character(len=*), intent(in) :: timer_name
+      integer, intent(in) :: expected_participating
+      integer, intent(in) :: expected_missing
+      integer, intent(in) :: expected_min_rank
+      integer, intent(in) :: expected_max_rank
+      character(len=128) :: row_name
+      integer :: io
+      integer :: max_rank
+      integer :: min_rank
+      integer :: missing
+      integer :: participating
+      real(wp) :: avg_calls
+      real(wp) :: avg_incl
+      real(wp) :: avg_pct
+      real(wp) :: avg_self
+      real(wp) :: imbalance
+      real(wp) :: max_incl
+      real(wp) :: min_incl
+
+      matches = .false.
+      row_name = ''
+      read (line, *, iostat=io) row_name, participating, missing, min_incl, min_rank, avg_incl, &
+         max_incl, max_rank, imbalance, avg_self, avg_calls, avg_pct
+      if (io /= 0) return
+
+      matches = (trim(row_name) == trim(timer_name)) .and. &
+                (participating == expected_participating) .and. &
+                (missing == expected_missing) .and. &
+                (min_rank == expected_min_rank) .and. &
+                (max_rank == expected_max_rank)
+   end function union_report_line_matches
 
    logical function csv_real_field_close(line, column, expected) result(matches)
       character(len=*), intent(in) :: line
