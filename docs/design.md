@@ -221,9 +221,9 @@ The repository supports three distinct validation layers, and the architecture d
 
 Supported local build paths today are:
 
-- serial smoke/library build validated with GNU Fortran, LLVM Flang, and NVHPC `nvfortran`
+- serial smoke/library build validated with GNU Fortran and LLVM Flang
 - serial pFUnit tests with `gfortran` plus a matching pFUnit install
-- MPI builds through GNU Fortran MPI wrapper compilers, with CI coverage for OpenMPI and MPICH
+- MPI builds through GNU Fortran MPI wrapper compilers, with CI smoke/install-consumer coverage for OpenMPI and MPICH
 - OpenMP builds with `gfortran`
 - benchmark harness builds with `FTIMER_BUILD_BENCH=ON`
 
@@ -248,7 +248,7 @@ The current test inventory is:
 
 - smoke tests in `tests/test_phase0_smoke.F90`, runtime execution of `basic_usage`, MPI example execution when `FTIMER_USE_MPI=ON`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
 - serial pFUnit tests for core behavior, summaries, callbacks, reset behavior, call-stack behavior, and procedural parity
-- MPI pFUnit tests under `tests/mpi/`, validated in CI with GNU Fortran against both OpenMPI and MPICH
+- MPI pFUnit tests under `tests/mpi/`, validated in CI with GNU Fortran against OpenMPI
 - OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`, covering the master-thread-only carve-out rather than general threaded timing support
 
 The default repository baseline is still the smoke/build-contract path. The full behavioral suite is enabled explicitly with `FTIMER_BUILD_TESTS=ON`.
@@ -259,19 +259,17 @@ The default repository baseline is still the smoke/build-contract path. The full
 
 - `build-serial`
 - `build-serial-flang`
-- `build-serial-nvhpc`
 - `build-mpi`
 - `build-mpi-mpich`
 - `test-serial`
 - `test-mpi`
-- `test-mpi-mpich`
 - `build-openmp`
 - `test-openmp`
 - `build-contract-regressions`
 - `build-bench`
 - `lint`
 
-That means pFUnit-backed serial, OpenMPI MPI, MPICH MPI, and OpenMP test jobs are part of current CI now; they are not deferred future work. The NVHPC job is intentionally limited to serial smoke and installed-package consumer coverage. The contract-regression job also verifies the configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
+That means pFUnit-backed serial, OpenMPI MPI, and OpenMP test jobs are part of current CI now; they are not deferred future work. MPICH coverage is currently smoke/install-consumer only: a GitHub-hosted MPICH pFUnit trial in issue #245 launched the test executables but pFUnit reported `Insufficient processes to run this test. (PE=0)` under the MPICH launcher. A GitHub-hosted NVHPC 26.3 serial smoke/install-consumer trial installed and built successfully, but the generated executables aborted at runtime with `DEALLOCATE: memory at (nil) not allocated`, so NVHPC validation remains deferred rather than claimed. The contract-regression job also verifies the configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
 
 ## Maintainer Workflow
 

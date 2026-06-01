@@ -57,7 +57,7 @@ Supported toolchain matrix:
 
 - Serial smoke/library build: GNU Fortran and LLVM Flang are the validated automation paths.
 - Serial + pFUnit tests: GNU Fortran (`gfortran`) with a pFUnit installation built for the same compiler/toolchain.
-- MPI: an MPI wrapper compiler such as `mpifort`. `FTIMER_USE_MPI=ON` now runs a configure-time `mpi_f08` probe and fails early if the active compiler cannot consume the discovered MPI module files.
+- MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH. MPICH coverage is smoke/install-consumer only; MPI pFUnit coverage remains on OpenMPI. `FTIMER_USE_MPI=ON` now runs a configure-time `mpi_f08` probe and fails early if the active compiler cannot consume the discovered MPI module files.
 - OpenMP: GNU Fortran (`gfortran`) only for the documented/supported path.
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
