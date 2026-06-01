@@ -18,11 +18,18 @@ The installed MPI-enabled package uses `MPI_Wtime()` as its build-default clock
 and its MPI summary/report entry points use MPI collectives, so pre-init or
 post-finalize use is outside the supported runtime contract.
 
-`init(comm=...)` stores the selected communicator as a non-owning handle. fTimer
-does not duplicate caller-provided communicators and does not free them. Code
-that passes a subcommunicator must keep that communicator valid until all fTimer
-MPI summaries, MPI reports, `finalize()`, or `init()` reinitialization that may
-use that communicator are complete.
+`init(comm=...)` stores the selected communicator as a non-owning handle. The
+selected communicator is an `mpi_f08` `type(MPI_Comm)` value; legacy integer
+communicator handles are not part of the installed MPI API. fTimer does not
+duplicate caller-provided communicators and does not free them. Code that passes
+a subcommunicator must keep that communicator valid until all fTimer MPI
+summaries, MPI reports, `finalize()`, or `init()` reinitialization that may use
+that communicator are complete.
+
+Integer `init` options such as `mismatch_mode` and `ierr` are keyword-only at
+the installed source API boundary. Positional integer `init` arguments are
+rejected so removed legacy communicator handles cannot silently bind to
+non-communicator options.
 
 The checked module-level public-symbol boundary for those modules is
 `tests/public_symbol_allowlist.txt`. Any module-level public symbol added to

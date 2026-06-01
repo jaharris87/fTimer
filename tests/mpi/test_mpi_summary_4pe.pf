@@ -474,56 +474,6 @@ contains
    end subroutine test_procedural_mpi_summary_supports_split_communicators
 
    @test
-   subroutine test_transitional_integer_comm_supports_split_communicators(this)
-      class(mpi_summary_4pe_case), intent(inout) :: this
-      type(ftimer_t) :: oop_timer
-      type(ftimer_mpi_summary_t) :: oop_summary
-      type(ftimer_mpi_summary_t) :: procedural_summary
-      integer :: color
-      integer :: ierr
-      integer :: legacy_comm
-      integer :: rank
-      type(MPI_F08_Comm) :: subcomm
-      integer :: subrank
-
-      rank = this%getProcessRank()
-      color = rank/2
-      call MPI_F08_Comm_split(MPI_F08_COMM_WORLD, color, rank, subcomm, ierr)
-      @assertEqual(MPI_F08_SUCCESS, ierr)
-      call MPI_F08_Comm_rank(subcomm, subrank, ierr)
-      @assertEqual(MPI_F08_SUCCESS, ierr)
-      legacy_comm = subcomm%MPI_VAL
-
-      call oop_timer%init(comm=legacy_comm, ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call attach_mock_clock(oop_timer)
-
-      call ftimer_init(comm=legacy_comm, ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call attach_mock_clock(ftimer_default_instance)
-
-      call build_split_comm_timer(oop_timer, color, subrank, ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call build_split_comm_timer_procedural(color, subrank, ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-
-      call oop_timer%mpi_summary(oop_summary, ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call ftimer_mpi_summary(procedural_summary, ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-
-      call assert_split_work_summary(oop_summary, color)
-      call assert_split_work_summary(procedural_summary, color)
-
-      call oop_timer%finalize(ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call ftimer_finalize(ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call MPI_F08_Comm_free(subcomm, ierr)
-      @assertEqual(MPI_F08_SUCCESS, ierr)
-   end subroutine test_transitional_integer_comm_supports_split_communicators
-
-   @test
    subroutine test_mpi_union_summary_reduces_one_rank_and_subset_timers(this)
       class(mpi_summary_4pe_case), intent(inout) :: this
       type(ftimer_t) :: timer

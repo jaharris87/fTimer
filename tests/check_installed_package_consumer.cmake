@@ -228,6 +228,151 @@ function(ftimer_verify_installed_artifacts)
   endif()
 endfunction()
 
+function(ftimer_expect_integer_mpi_comm_rejected probe_name probe_source)
+  set(probe_source_dir "${TEST_BINARY_DIR}/integer-mpi-comm-rejection-src-${probe_name}")
+  set(probe_build_dir "${TEST_BINARY_DIR}/integer-mpi-comm-rejection-build-${probe_name}")
+
+  file(REMOVE_RECURSE "${probe_source_dir}" "${probe_build_dir}")
+  file(MAKE_DIRECTORY "${probe_source_dir}")
+  file(WRITE "${probe_source_dir}/CMakeLists.txt" [=[
+cmake_minimum_required(VERSION 3.16)
+project(ftimer_integer_mpi_comm_rejection LANGUAGES Fortran)
+
+find_package(fTimer CONFIG REQUIRED)
+
+add_executable(ftimer_integer_mpi_comm_rejection main.F90)
+target_link_libraries(ftimer_integer_mpi_comm_rejection PRIVATE fTimer::ftimer)
+]=])
+  file(WRITE "${probe_source_dir}/main.F90" "${probe_source}")
+
+  set(probe_configure_args
+    -S "${probe_source_dir}"
+    -B "${probe_build_dir}"
+    -G "${CMAKE_GENERATOR}"
+    -DCMAKE_PREFIX_PATH=${install_prefix}
+  )
+  if(DEFINED CMAKE_MAKE_PROGRAM AND NOT CMAKE_MAKE_PROGRAM STREQUAL "")
+    list(APPEND probe_configure_args -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM})
+  endif()
+  if(DEFINED test_fortran_compiler AND NOT test_fortran_compiler STREQUAL "")
+    list(APPEND probe_configure_args -DCMAKE_Fortran_COMPILER=${test_fortran_compiler})
+  endif()
+  if(DEFINED TEST_BUILD_TYPE AND NOT TEST_BUILD_TYPE STREQUAL "")
+    list(APPEND probe_configure_args -DCMAKE_BUILD_TYPE=${TEST_BUILD_TYPE})
+  endif()
+
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" ${probe_configure_args}
+    RESULT_VARIABLE probe_configure_result
+    OUTPUT_VARIABLE probe_configure_output
+    ERROR_VARIABLE probe_configure_error
+  )
+  if(NOT probe_configure_result EQUAL 0)
+    message(FATAL_ERROR
+      "Failed to configure the installed integer-MPI-comm rejection probe '${probe_name}'.\n"
+      "stdout:\n${probe_configure_output}\n"
+      "stderr:\n${probe_configure_error}"
+    )
+  endif()
+
+  set(probe_build_args --build "${probe_build_dir}")
+  if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
+    list(APPEND probe_build_args --config "${TEST_CONFIG}")
+  endif()
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" ${probe_build_args}
+    RESULT_VARIABLE probe_build_result
+    OUTPUT_VARIABLE probe_build_output
+    ERROR_VARIABLE probe_build_error
+  )
+  if(probe_build_result EQUAL 0)
+    message(FATAL_ERROR
+      "Installed MPI package accepted legacy integer MPI comm probe '${probe_name}'; expected the build to fail."
+    )
+  endif()
+endfunction()
+
+function(ftimer_expect_integer_mpi_comm_rejected_cases)
+  ftimer_expect_integer_mpi_comm_rejected(oop-keyword [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_core, only: ftimer_t
+   implicit none
+
+   type(ftimer_t) :: timer
+   integer :: ierr
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call timer%init(comm=legacy_comm, ierr=ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(procedural-keyword [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer, only: ftimer_init
+   implicit none
+
+   integer :: ierr
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call ftimer_init(comm=legacy_comm, ierr=ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(oop-positional-single [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_core, only: ftimer_t
+   implicit none
+
+   type(ftimer_t) :: timer
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call timer%init(legacy_comm)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(procedural-positional-single [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer, only: ftimer_init
+   implicit none
+
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call ftimer_init(legacy_comm)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(oop-positional-two-arg [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_core, only: ftimer_t
+   implicit none
+
+   type(ftimer_t) :: timer
+   integer :: ierr
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call timer%init(legacy_comm, ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(procedural-positional-two-arg [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer, only: ftimer_init
+   implicit none
+
+   integer :: ierr
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call ftimer_init(legacy_comm, ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+endfunction()
+
 if(TEST_INSTALL_ONLY)
   ftimer_verify_installed_artifacts()
   return()
@@ -415,6 +560,10 @@ ftimer_check_package_version_request(
 
 ftimer_verify_installed_artifacts()
 
+if(TEST_ENABLE_MPI)
+  ftimer_expect_integer_mpi_comm_rejected_cases()
+endif()
+
 set(consumer_configure_args
   -S "${consumer_source_dir}"
   -B "${consumer_build_dir}"
@@ -515,19 +664,12 @@ endif()
 
 if(TEST_ENABLE_MPI)
   set(mpi_consumer_executable "${consumer_build_dir}/ftimer_installed_mpi_consumer${TEST_EXECUTABLE_SUFFIX}")
-  set(legacy_mpi_consumer_executable "${consumer_build_dir}/ftimer_installed_legacy_mpi_consumer${TEST_EXECUTABLE_SUFFIX}")
   if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
     set(configured_mpi_consumer_executable
       "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_mpi_consumer${TEST_EXECUTABLE_SUFFIX}"
     )
     if(EXISTS "${configured_mpi_consumer_executable}")
       set(mpi_consumer_executable "${configured_mpi_consumer_executable}")
-    endif()
-    set(configured_legacy_mpi_consumer_executable
-      "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_legacy_mpi_consumer${TEST_EXECUTABLE_SUFFIX}"
-    )
-    if(EXISTS "${configured_legacy_mpi_consumer_executable}")
-      set(legacy_mpi_consumer_executable "${configured_legacy_mpi_consumer_executable}")
     endif()
   endif()
 
@@ -582,32 +724,5 @@ if(TEST_ENABLE_MPI)
   endif()
   if(NOT ftimer_consumer_union_csv_text MATCHES "consumer_mpi_work")
     message(FATAL_ERROR "Installed-package MPI union CSV does not contain the expected consumer_mpi_work entry.")
-  endif()
-
-  set(ftimer_legacy_mpi_launch_command "${ftimer_mpiexec}")
-  if(DEFINED TEST_MPIEXEC_NUMPROC_FLAG AND NOT TEST_MPIEXEC_NUMPROC_FLAG STREQUAL "")
-    list(APPEND ftimer_legacy_mpi_launch_command "${TEST_MPIEXEC_NUMPROC_FLAG}" 2)
-  else()
-    list(APPEND ftimer_legacy_mpi_launch_command -n 2)
-  endif()
-  if(DEFINED TEST_MPIEXEC_PREFLAGS AND NOT TEST_MPIEXEC_PREFLAGS STREQUAL "")
-    list(APPEND ftimer_legacy_mpi_launch_command ${TEST_MPIEXEC_PREFLAGS})
-  endif()
-  list(APPEND ftimer_legacy_mpi_launch_command "${legacy_mpi_consumer_executable}")
-  if(DEFINED TEST_MPIEXEC_POSTFLAGS AND NOT TEST_MPIEXEC_POSTFLAGS STREQUAL "")
-    list(APPEND ftimer_legacy_mpi_launch_command ${TEST_MPIEXEC_POSTFLAGS})
-  endif()
-
-  execute_process(
-    COMMAND ${ftimer_legacy_mpi_launch_command}
-    WORKING_DIRECTORY "${consumer_build_dir}"
-    RESULT_VARIABLE legacy_mpi_consumer_run_result
-  )
-  if(NOT legacy_mpi_consumer_run_result EQUAL 0)
-    message(FATAL_ERROR "Installed-package legacy MPI consumer executable exited with a nonzero status.")
-  endif()
-
-  if(NOT EXISTS "${consumer_build_dir}/consumer_legacy_mpi_summary.txt")
-    message(FATAL_ERROR "Installed-package legacy MPI consumer did not write consumer_legacy_mpi_summary.txt.")
   endif()
 endif()
