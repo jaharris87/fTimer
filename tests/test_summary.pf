@@ -562,6 +562,46 @@ contains
    end subroutine test_format_summary_preserves_metadata_above_legacy_len
 
    @test
+   subroutine test_format_summary_large_report_not_truncated()
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: text
+      character(len=16) :: name
+      integer, parameter :: entry_count = 180
+      integer :: i
+      integer :: line_count
+      logical :: ends_with_newline
+      logical :: first_row_present
+      logical :: last_row_present
+
+      summary%total_time = real(entry_count, wp)
+      summary%num_entries = entry_count
+      allocate (summary%entries(entry_count))
+
+      do i = 1, entry_count
+         write (name, '("timer_",i4.4)') i
+         summary%entries(i)%name = trim(name)
+         summary%entries(i)%inclusive_time = real(i, wp)
+         summary%entries(i)%self_time = real(i, wp)
+         summary%entries(i)%call_count = i
+         summary%entries(i)%avg_time = real(i, wp)
+         summary%entries(i)%pct_time = 100.0_wp*real(i, wp)/real(entry_count, wp)
+      end do
+
+      call format_summary(summary, text)
+
+      line_count = count_lines(text)
+      first_row_present = index(text, 'timer_0001') > 0
+      last_row_present = index(text, 'timer_0180') > 0
+      ends_with_newline = len(text) > 0
+      if (ends_with_newline) ends_with_newline = text(len(text):len(text)) == new_line('a')
+
+      @assertEqual(entry_count + 4, line_count)
+      @assertTrue(first_row_present)
+      @assertTrue(last_row_present)
+      @assertTrue(ends_with_newline)
+   end subroutine test_format_summary_large_report_not_truncated
+
+   @test
    subroutine test_format_summary_handles_unallocated_metadata_fields()
       type(ftimer_metadata_t) :: metadata(3)
       type(ftimer_summary_t) :: summary

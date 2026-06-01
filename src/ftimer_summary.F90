@@ -13,6 +13,13 @@ module ftimer_summary
    public :: format_mpi_union_summary
    public :: ftimer_summary_status
 
+   integer, parameter :: default_text_buffer_capacity = 1024
+
+   type :: text_buffer_t
+      character(len=:), allocatable :: chars
+      integer :: used = 0
+   end type text_buffer_t
+
 contains
 
    subroutine build_summary(summary, segments, init_wtime, init_date, end_time, end_date)
@@ -43,6 +50,7 @@ contains
       type(ftimer_summary_t), intent(in) :: summary
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      type(text_buffer_t) :: buffer
       character(len=64) :: fmt
       character(len=:), allocatable :: header_suffix
       character(len=:), allocatable :: line
@@ -55,7 +63,7 @@ contains
       integer :: name_width
       logical :: has_active_entries
 
-      text = ''
+      call init_text_buffer(buffer, default_text_buffer_capacity)
       has_active_entries = summary_has_active_entries(summary)
       key_width = metadata_key_width(metadata)
       key_width = max(key_width, len('Active timers'))
@@ -66,13 +74,13 @@ contains
 
       write (line, '(f0.6)') summary%total_time
       call set_padded_text(padded, 'Total time (s)', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(line))
 
       if (has_active_entries) then
          active_value = 'yes'
          call set_padded_text(padded, 'Active timers', key_width)
-         call append_line(text, padded(1:key_width)//' : '//trim(active_value))
-         call append_line(text, 'Snapshot note : active timers are included through the snapshot timestamp.')
+         call append_line(buffer, padded(1:key_width)//' : '//trim(active_value))
+         call append_line(buffer, 'Snapshot note : active timers are included through the snapshot timestamp.')
       end if
 
       if (present(metadata)) then
@@ -80,11 +88,11 @@ contains
             if (metadata_key_len(metadata(i)) <= 0) cycle
             if (has_active_entries .and. metadata_key_is_reserved(metadata_key_text(metadata(i)))) cycle
             call set_padded_text(padded, metadata_key_display_text(metadata(i)), key_width)
-            call append_line(text, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
+            call append_line(buffer, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
          end do
       end if
 
-      call append_line(text, '')
+      call append_line(buffer, '')
       call set_padded_text(padded, 'Timer name', name_width)
       line = repeat(' ', len(line))
       header_suffix = summary_header_suffix(has_active_entries, call_width)
@@ -93,8 +101,8 @@ contains
       else
          line(1:name_width + len(header_suffix)) = padded(1:name_width)//header_suffix
       end if
-      call append_line(text, trim(line))
-      call append_line(text, repeat('-', len_trim(line)))
+      call append_line(buffer, trim(line))
+      call append_line(buffer, repeat('-', len_trim(line)))
 
       if (has_active_entries) then
          write (fmt, '("(a",i0,",2x,f12.6,2x,f12.6,2x,i",i0,",2x,f8.2,2x,a)")') &
@@ -104,7 +112,7 @@ contains
             write (line, fmt) padded(1:name_width), summary%entries(i)%inclusive_time, &
                summary%entries(i)%self_time, summary%entries(i)%call_count, summary%entries(i)%pct_time, &
                active_text(summary%entries(i)%is_active)
-            call append_line(text, trim(line))
+            call append_line(buffer, trim(line))
          end do
       else
          write (fmt, '("(a",i0,",2x,f12.6,2x,f12.6,2x,i",i0,",2x,f8.2)")') &
@@ -113,15 +121,17 @@ contains
             call set_padded_text(padded, display_name(summary%entries(i)), name_width)
             write (line, fmt) padded(1:name_width), summary%entries(i)%inclusive_time, &
                summary%entries(i)%self_time, summary%entries(i)%call_count, summary%entries(i)%pct_time
-            call append_line(text, trim(line))
+            call append_line(buffer, trim(line))
          end do
       end if
+      call finish_text_buffer(buffer, text)
    end subroutine format_summary
 
    subroutine format_mpi_summary(summary, text, metadata)
       type(ftimer_mpi_summary_t), intent(in) :: summary
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      type(text_buffer_t) :: buffer
       character(len=128) :: fmt
       character(len=:), allocatable :: header_suffix
       character(len=64) :: value_line
@@ -133,7 +143,7 @@ contains
       integer :: line_width
       integer :: name_width
 
-      text = ''
+      call init_text_buffer(buffer, default_text_buffer_capacity)
       key_width = metadata_key_width(metadata)
       key_width = max(key_width, len('MPI ranks'))
       key_width = max(key_width, len('Min total time (s)'))
@@ -145,47 +155,47 @@ contains
 
       call set_padded_text(padded, 'MPI ranks', key_width)
       write (value_line, '(i0)') summary%num_ranks
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(f0.6)') summary%min_total_time
       call set_padded_text(padded, 'Min total time (s)', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(f0.6)') summary%avg_total_time
       call set_padded_text(padded, 'Avg total time (s)', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(f0.6)') summary%max_total_time
       call set_padded_text(padded, 'Max total time (s)', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(i0)') summary%min_total_time_rank
       call set_padded_text(padded, 'Min total rank', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(i0)') summary%max_total_time_rank
       call set_padded_text(padded, 'Max total rank', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(f0.6)') summary%total_time_imbalance
       call set_padded_text(padded, 'Total imbalance', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       if (present(metadata)) then
          do i = 1, size(metadata)
             if (metadata_key_len(metadata(i)) <= 0) cycle
             call set_padded_text(padded, metadata_key_display_text(metadata(i)), key_width)
-            call append_line(text, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
+            call append_line(buffer, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
          end do
       end if
 
-      call append_line(text, '')
-      call append_line(text, 'Report note: per-entry table is an abbreviated view of ftimer_mpi_summary_t; '// &
+      call append_line(buffer, '')
+      call append_line(buffer, 'Report note: per-entry table is an abbreviated view of ftimer_mpi_summary_t; '// &
                        'use mpi_summary() for all min/max self, call, percent, and tree fields.')
-      call append_line(text, 'Avg % is the arithmetic mean of rank-local % Total values, '// &
+      call append_line(buffer, 'Avg % is the arithmetic mean of rank-local % Total values, '// &
                        'not 100*Avg Incl/Avg total time.')
 
-      call append_line(text, '')
+      call append_line(buffer, '')
       name_width = mpi_summary_name_width(summary)
       avg_call_width = mpi_avg_call_count_width(summary)
       line_width = mpi_summary_line_width(name_width, avg_call_width)
@@ -195,8 +205,8 @@ contains
       line = repeat(' ', len(line))
       header_suffix = mpi_header_suffix(avg_call_width)
       line(1:name_width + len(header_suffix)) = padded(1:name_width)//header_suffix
-      call append_line(text, trim(line))
-      call append_line(text, repeat('-', len_trim(line)))
+      call append_line(buffer, trim(line))
+      call append_line(buffer, repeat('-', len_trim(line)))
 
       write (fmt, '("(a",i0,",2x,f12.6,2x,i8,2x,f12.6,2x,f12.6,2x,i8,2x,f6.3,2x,f12.6,2x,f",i0,".3,2x,f8.2)")') &
          name_width, avg_call_width
@@ -207,14 +217,16 @@ contains
             summary%entries(i)%max_inclusive_time, summary%entries(i)%max_inclusive_time_rank, &
             summary%entries(i)%inclusive_imbalance, summary%entries(i)%avg_self_time, &
             summary%entries(i)%avg_call_count, summary%entries(i)%avg_pct_time
-         call append_line(text, trim(line))
+         call append_line(buffer, trim(line))
       end do
+      call finish_text_buffer(buffer, text)
    end subroutine format_mpi_summary
 
    subroutine format_mpi_union_summary(summary, text, metadata)
       type(ftimer_mpi_union_summary_t), intent(in) :: summary
       character(len=:), allocatable, intent(out) :: text
       type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      type(text_buffer_t) :: buffer
       character(len=128) :: fmt
       character(len=:), allocatable :: header_suffix
       character(len=64) :: value_line
@@ -227,8 +239,8 @@ contains
       integer :: missing_rank_count
       integer :: name_width
 
-      text = ''
-      call append_line(text, 'Sparse MPI union summary')
+      call init_text_buffer(buffer, default_text_buffer_capacity)
+      call append_line(buffer, 'Sparse MPI union summary')
 
       key_width = metadata_key_width(metadata)
       key_width = max(key_width, len('MPI ranks'))
@@ -241,49 +253,49 @@ contains
 
       call set_padded_text(padded, 'MPI ranks', key_width)
       write (value_line, '(i0)') summary%num_ranks
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(f0.6)') summary%min_total_time
       call set_padded_text(padded, 'Min total time (s)', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(f0.6)') summary%avg_total_time
       call set_padded_text(padded, 'Avg total time (s)', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(f0.6)') summary%max_total_time
       call set_padded_text(padded, 'Max total time (s)', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(i0)') summary%min_total_time_rank
       call set_padded_text(padded, 'Min total rank', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(i0)') summary%max_total_time_rank
       call set_padded_text(padded, 'Max total rank', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       write (value_line, '(f0.6)') summary%total_time_imbalance
       call set_padded_text(padded, 'Total imbalance', key_width)
-      call append_line(text, padded(1:key_width)//' : '//trim(value_line))
+      call append_line(buffer, padded(1:key_width)//' : '//trim(value_line))
 
       if (present(metadata)) then
          do i = 1, size(metadata)
             if (metadata_key_len(metadata(i)) <= 0) cycle
             call set_padded_text(padded, metadata_key_display_text(metadata(i)), key_width)
-            call append_line(text, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
+            call append_line(buffer, padded(1:key_width)//' : '//metadata_value_display_text(metadata(i)))
          end do
       end if
 
-      call append_line(text, '')
-      call append_line(text, 'Report note: sparse entry min/avg/max fields are over participating ranks only; '// &
+      call append_line(buffer, '')
+      call append_line(buffer, 'Report note: sparse entry min/avg/max fields are over participating ranks only; '// &
                        'missing ranks are not zero-filled.')
-      call append_line(text, 'Missing ranks = MPI ranks - Participating; absent ranks do not contribute '// &
+      call append_line(buffer, 'Missing ranks = MPI ranks - Participating; absent ranks do not contribute '// &
                        'zero-call or zero-time samples.')
-      call append_line(text, 'Avg % is the arithmetic mean of participating rank-local % Total values, '// &
+      call append_line(buffer, 'Avg % is the arithmetic mean of participating rank-local % Total values, '// &
                        'not 100*Avg Incl/Avg total time.')
 
-      call append_line(text, '')
+      call append_line(buffer, '')
       name_width = mpi_union_summary_name_width(summary)
       avg_call_width = mpi_union_avg_call_count_width(summary)
       line_width = mpi_union_summary_line_width(name_width, avg_call_width)
@@ -293,8 +305,8 @@ contains
       line = repeat(' ', len(line))
       header_suffix = mpi_union_header_suffix(avg_call_width)
       line(1:name_width + len(header_suffix)) = padded(1:name_width)//header_suffix
-      call append_line(text, trim(line))
-      call append_line(text, repeat('-', len_trim(line)))
+      call append_line(buffer, trim(line))
+      call append_line(buffer, repeat('-', len_trim(line)))
 
       write (fmt, '("(a",i0,",2x,i13,2x,i7,2x,f12.6,2x,i8,2x,f12.6,2x,f12.6,2x,i8,2x,f6.3,2x,f12.6,2x,f",i0,".3,2x,f8.2)")') &
          name_width, avg_call_width
@@ -306,8 +318,9 @@ contains
             summary%entries(i)%avg_inclusive_time, summary%entries(i)%max_inclusive_time, &
             summary%entries(i)%max_inclusive_time_rank, summary%entries(i)%inclusive_imbalance, &
             summary%entries(i)%avg_self_time, summary%entries(i)%avg_call_count, summary%entries(i)%avg_pct_time
-         call append_line(text, trim(line))
+         call append_line(buffer, trim(line))
       end do
+      call finish_text_buffer(buffer, text)
    end subroutine format_mpi_union_summary
 
    function ftimer_summary_status(summary) result(status)
@@ -317,12 +330,78 @@ contains
       status = summary%num_entries
    end function ftimer_summary_status
 
-   subroutine append_line(text, line)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_line(buffer, line)
+      type(text_buffer_t), intent(inout) :: buffer
       character(len=*), intent(in) :: line
 
-      text = text//trim(line)//new_line('a')
+      call append_text(buffer, trim(line))
+      call append_text(buffer, new_line('a'))
    end subroutine append_line
+
+   subroutine init_text_buffer(buffer, initial_capacity)
+      type(text_buffer_t), intent(out) :: buffer
+      integer, intent(in) :: initial_capacity
+      integer :: capacity
+
+      capacity = max(1, initial_capacity)
+      allocate (character(len=capacity) :: buffer%chars)
+      buffer%used = 0
+   end subroutine init_text_buffer
+
+   subroutine append_text(buffer, fragment)
+      type(text_buffer_t), intent(inout) :: buffer
+      character(len=*), intent(in) :: fragment
+      integer :: fragment_len
+      integer :: next_used
+
+      fragment_len = len(fragment)
+      if (fragment_len <= 0) return
+
+      next_used = buffer%used + fragment_len
+      call ensure_text_capacity(buffer, next_used)
+      buffer%chars(buffer%used + 1:next_used) = fragment
+      buffer%used = next_used
+   end subroutine append_text
+
+   subroutine finish_text_buffer(buffer, text)
+      type(text_buffer_t), intent(in) :: buffer
+      character(len=:), allocatable, intent(out) :: text
+
+      if (buffer%used > 0) then
+         text = buffer%chars(1:buffer%used)
+      else
+         text = ''
+      end if
+   end subroutine finish_text_buffer
+
+   subroutine ensure_text_capacity(buffer, required_capacity)
+      type(text_buffer_t), intent(inout) :: buffer
+      integer, intent(in) :: required_capacity
+      character(len=:), allocatable :: grown
+      integer :: current_capacity
+      integer :: new_capacity
+
+      if (allocated(buffer%chars)) then
+         current_capacity = len(buffer%chars)
+      else
+         current_capacity = 0
+      end if
+      if (current_capacity >= required_capacity) return
+
+      new_capacity = max(default_text_buffer_capacity, current_capacity)
+      if (new_capacity <= 0) new_capacity = default_text_buffer_capacity
+      do while (new_capacity < required_capacity)
+         if (new_capacity > huge(new_capacity)/2) then
+            new_capacity = required_capacity
+         else
+            new_capacity = new_capacity*2
+         end if
+      end do
+
+      allocate (character(len=new_capacity) :: grown)
+      if (buffer%used > 0) grown(1:buffer%used) = buffer%chars(1:buffer%used)
+      call move_alloc(grown, buffer%chars)
+   end subroutine ensure_text_capacity
 
    subroutine clear_summary(summary)
       type(ftimer_summary_t), intent(out) :: summary
@@ -1078,24 +1157,25 @@ contains
       character(len=*), intent(in) :: raw_text
       character(len=*), intent(in) :: blank_text
       character(len=:), allocatable :: escaped
+      type(text_buffer_t) :: buffer
       integer :: i
       integer :: seq_len
       integer :: visible_len
       logical :: leading_space
 
-      escaped = ''
       visible_len = len_trim(raw_text)
       if (visible_len <= 0) then
          escaped = blank_text
          return
       end if
 
+      call init_text_buffer(buffer, max(default_text_buffer_capacity, visible_len))
       leading_space = .true.
 
       i = 1
       do while (i <= visible_len)
          if (leading_space .and. (raw_text(i:i) == ' ')) then
-            escaped = escaped//'\x20'
+            call append_text(buffer, '\x20')
             i = i + 1
             cycle
          end if
@@ -1104,17 +1184,18 @@ contains
          seq_len = valid_utf8_sequence_len(raw_text, i, visible_len)
          if (seq_len > 0) then
             if (is_utf8_encoded_c1_control(raw_text, i, seq_len)) then
-               call append_escaped_bytes(escaped, raw_text(i:i + seq_len - 1))
+               call append_escaped_bytes(buffer, raw_text(i:i + seq_len - 1))
             else
-               escaped = escaped//raw_text(i:i + seq_len - 1)
+               call append_text(buffer, raw_text(i:i + seq_len - 1))
             end if
             i = i + seq_len
             cycle
          end if
 
-         call append_escaped_char(escaped, raw_text(i:i))
+         call append_escaped_char(buffer, raw_text(i:i))
          i = i + 1
       end do
+      call finish_text_buffer(buffer, escaped)
    end function escaped_report_text
 
    integer function valid_utf8_sequence_len(text, start, visible_len) result(seq_len)
@@ -1200,40 +1281,40 @@ contains
       is_control = (b1 == 194) .and. (b2 >= 128) .and. (b2 <= 159)
    end function is_utf8_encoded_c1_control
 
-   subroutine append_escaped_bytes(text, bytes)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_escaped_bytes(buffer, bytes)
+      type(text_buffer_t), intent(inout) :: buffer
       character(len=*), intent(in) :: bytes
       integer :: i
 
       do i = 1, len(bytes)
-         call append_hex_escape(text, iachar(bytes(i:i)))
+         call append_hex_escape(buffer, iachar(bytes(i:i)))
       end do
    end subroutine append_escaped_bytes
 
-   subroutine append_escaped_char(text, ch)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_escaped_char(buffer, ch)
+      type(text_buffer_t), intent(inout) :: buffer
       character(len=1), intent(in) :: ch
       integer :: code
 
       code = iachar(ch)
       select case (code)
       case (9)
-         text = text//'\t'
+         call append_text(buffer, '\t')
       case (10)
-         text = text//'\n'
+         call append_text(buffer, '\n')
       case (13)
-         text = text//'\r'
+         call append_text(buffer, '\r')
       case (92)
-         text = text//'\\'
+         call append_text(buffer, '\\')
       case (0:8, 11:12, 14:31, 127:159)
-         call append_hex_escape(text, code)
+         call append_hex_escape(buffer, code)
       case default
-         text = text//ch
+         call append_text(buffer, ch)
       end select
    end subroutine append_escaped_char
 
-   subroutine append_hex_escape(text, code)
-      character(len=:), allocatable, intent(inout) :: text
+   subroutine append_hex_escape(buffer, code)
+      type(text_buffer_t), intent(inout) :: buffer
       integer, intent(in) :: code
       character(len=*), parameter :: hex_digits = '0123456789ABCDEF'
       integer :: high_nibble
@@ -1241,7 +1322,8 @@ contains
 
       high_nibble = code/16
       low_nibble = mod(code, 16)
-      text = text//'\x'//hex_digits(high_nibble + 1:high_nibble + 1)//hex_digits(low_nibble + 1:low_nibble + 1)
+      call append_text(buffer, '\x'//hex_digits(high_nibble + 1:high_nibble + 1)// &
+                       hex_digits(low_nibble + 1:low_nibble + 1))
    end subroutine append_hex_escape
 
 end module ftimer_summary
