@@ -182,8 +182,10 @@ The currently exported procedural entry points are:
 
 Important current-state API notes:
 
-- `ierr` is now the last optional argument in the `init` signatures. Keywords are recommended for readability.
-- In MPI builds, the primary communicator argument is `type(MPI_Comm)` from `mpi_f08`; integer communicator handles are accepted only as transitional compatibility pending #187.
+- `ierr` is now the last optional argument in the `init` signatures. Integer
+  `init` options such as `mismatch_mode` and `ierr` must be passed by keyword.
+  Keywords are recommended for readability on all `init` calls.
+- In MPI builds, the communicator argument is `type(MPI_Comm)` from `mpi_f08`; legacy integer communicator handles are not accepted.
 - In MPI builds, fTimer must be used after `MPI_Init` and before
   `MPI_Finalize`; communicator arguments are borrowed, not duplicated or owned.
 - `init`, `reset`, and `finalize` treat active timers as an error in both API styles. With `ierr` they return `FTIMER_ERR_ACTIVE`; without `ierr` they warn and leave state untouched rather than force-stopping or cleaning up implicitly. In `FTIMER_USE_OPENMP=ON` builds, that lifecycle-diagnostic contract applies on the master thread; non-master lifecycle calls remain suppressed no-ops.

@@ -1291,43 +1291,6 @@ contains
    end subroutine test_mpi_union_summary_handles_empty_trees
 
    @test
-   subroutine test_transitional_integer_comm_compatibility(this)
-      class(mpi_summary_case), intent(inout) :: this
-      type(ftimer_t) :: oop_timer
-      type(ftimer_mpi_summary_t) :: oop_summary
-      type(ftimer_mpi_summary_t) :: procedural_summary
-      integer :: ierr
-      integer :: legacy_comm
-
-      legacy_comm = MPI_F08_COMM_WORLD%MPI_VAL
-
-      call oop_timer%init(comm=legacy_comm, ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call attach_mock_clock(oop_timer)
-
-      call ftimer_init(comm=legacy_comm, ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call attach_mock_clock(ftimer_default_instance)
-
-      call build_nested_timers(oop_timer, this%getProcessRank(), ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call build_nested_timers_procedural(this%getProcessRank(), ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-
-      call oop_timer%mpi_summary(oop_summary, ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call ftimer_mpi_summary(procedural_summary, ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-
-      call assert_summary_equal(procedural_summary, oop_summary)
-
-      call oop_timer%finalize(ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-      call ftimer_finalize(ierr=ierr)
-      @assertEqual(FTIMER_SUCCESS, ierr)
-   end subroutine test_transitional_integer_comm_compatibility
-
-   @test
    subroutine test_mpi_print_summary_emits_global_report(this)
       class(mpi_summary_case), intent(inout) :: this
       type(ftimer_t) :: timer

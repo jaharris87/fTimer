@@ -15,7 +15,4 @@ target_link_libraries(ftimer_installed_oop_consumer PRIVATE fTimer::ftimer)
 if(FTIMER_CONSUMER_ENABLE_MPI)
   add_executable(ftimer_installed_mpi_consumer mpi_main.F90)
   target_link_libraries(ftimer_installed_mpi_consumer PRIVATE fTimer::ftimer)
-
-  add_executable(ftimer_installed_legacy_mpi_consumer legacy_mpi_main.F90)
-  target_link_libraries(ftimer_installed_legacy_mpi_consumer PRIVATE fTimer::ftimer)
 endif()
