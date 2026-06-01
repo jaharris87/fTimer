@@ -199,7 +199,7 @@ The repository includes a worked example under `examples/instrumentation_facade_
 
 The public API supports two styles:
 
-- Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_scope`, `ftimer_guard_t`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_mpi_union_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, `ftimer_print_mpi_union_summary`, `ftimer_write_mpi_union_summary`, and `ftimer_default_instance`
+- Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_scope`, `ftimer_guard_t`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_mpi_union_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, `ftimer_print_mpi_union_summary`, `ftimer_write_mpi_union_summary`, `ftimer_write_mpi_union_summary_csv`, and `ftimer_default_instance`
 - OOP API through `type(ftimer_t)` in `ftimer_core`, including the explicit configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`
 - Shared stable types, constants, and callback/clock interfaces from `ftimer_types`, including the summary/result types and `FTIMER_*` status, event, and mismatch constants
 
@@ -239,8 +239,8 @@ Operational notes:
 - Sparse/union MPI summaries use the separate `mpi_union_summary()` / `ftimer_mpi_union_summary()` API and `ftimer_mpi_union_summary_t` result type. This opt-in path builds a canonical descriptor union across ranks instead of weakening strict `mpi_summary()`.
 - `ftimer_mpi_union_summary_t` keeps communicator total-time fields as all-rank statistics. Each entry records `participating_rank_count`; missing rank count is derived as `num_ranks - participating_rank_count`, and entry min/avg/max statistics are defined over participating ranks only.
 - Sparse entries are materialized from descriptors emitted by each rank's local summary. Lookup-only timer definitions are not a first-class sparse-registration contract, absent ranks are not zero-filled, and no all-rank amortized compatibility fields are included in the initial result model.
-- `print_mpi_union_summary()` / `ftimer_print_mpi_union_summary()` and `write_mpi_union_summary()` / `ftimer_write_mpi_union_summary()` are the explicit sparse text report paths. They build `ftimer_mpi_union_summary_t`, emit one communicator-root report, and display `Participating` plus derived `Missing` rank counts so absent ranks are not confused with zero work.
-- Sparse union report entry statistics are over participating ranks only. A present zero-elapsed timer with a real start/stop contributes to participation and call-count statistics; lookup-only names are still not sparse registrations. Sparse CSV export is not part of the current API and is tracked separately in #194.
+- `print_mpi_union_summary()` / `ftimer_print_mpi_union_summary()` and `write_mpi_union_summary()` / `ftimer_write_mpi_union_summary()` are the explicit sparse text report paths. `write_mpi_union_summary_csv()` / `ftimer_write_mpi_union_summary_csv()` is the explicit sparse CSV export path. They build `ftimer_mpi_union_summary_t`, emit one communicator-root artifact, and expose `Participating` plus derived `Missing` rank counts so absent ranks are not confused with zero work.
+- Sparse union report entry statistics are over participating ranks only. A present zero-elapsed timer with a real start/stop contributes to participation and call-count statistics; lookup-only names are still not sparse registrations. Sparse CSV export keeps those same participation-only semantics in explicitly named columns.
 - `print_mpi_summary()` and `write_mpi_summary()` are the first-class strict MPI reporting paths. They perform the collective strict MPI summary build, emit one abbreviated report from communicator root, and synchronize root output failures so every participant observes `FTIMER_ERR_IO`. The printed per-entry table is not a serialization of every `ftimer_mpi_summary_t` field; inspect `mpi_summary()` results for min/max self time, self imbalance, min/max call counts, min/max rank-local `% Total`, and explicit `node_id`/`parent_id` tree links.
 - `write_mpi_summary_csv()` and `ftimer_write_mpi_summary_csv()` perform the same collective MPI summary build and write one CSV artifact from communicator root. The CSV includes the complete reduced MPI entry fields, including explicit tree links and inclusive-time extrema ranks.
 - In MPI text reports, `Avg %` means the arithmetic mean of each rank's local `% Total` for that timer, not `100*Avg Incl/Avg total time`.
@@ -258,7 +258,7 @@ Operational notes:
 
 ## CSV Export
 
-The first stable machine-readable export format is CSV, chosen because fTimer summaries are snapshot tables rather than event streams. The schema is versioned by the `format_version` column and currently uses version `2`.
+The first stable machine-readable export format is CSV, chosen because fTimer summaries are snapshot tables rather than event streams. The local and strict MPI schema is versioned by the `format_version` column and currently uses version `2`. Sparse union MPI CSV uses a separate participation-aware schema with `format_version=1` and `summary_kind=mpi_union`; it is intentionally not append-compatible with the local/strict MPI v2 header.
 
 Each CSV starts with one header row followed by typed records:
 
@@ -266,9 +266,11 @@ Each CSV starts with one header row followed by typed records:
 - `record_type=metadata` carries caller-supplied metadata as `key`/`value`.
 - `record_type=entry` carries one timer node per row.
 
-Common columns include `summary_kind`, `node_id`, `parent_id`, `depth`, and `name`. Local entry rows populate `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. MPI entry rows populate the reduced fields from `ftimer_mpi_summary_t`, including min/avg/max inclusive and self time, call count extrema, rank-local percent extrema, imbalance fields, and inclusive-time extrema ranks. Local `call_count` and MPI `min_call_count`/`max_call_count` are `integer(int64)` values and are emitted as decimal text without narrowing to default integer. MPI `avg_call_count` remains a real-valued CSV field. CSV format version `2` is the compatibility signal for those widened integer count ranges; consumers should parse local `call_count` and MPI call-count extrema fields as at least signed 64-bit decimal integers.
+Common local/strict columns include `summary_kind`, `node_id`, `parent_id`, `depth`, and `name`. Local entry rows populate `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. Strict MPI entry rows keep `summary_kind=mpi` and populate the reduced fields from `ftimer_mpi_summary_t`, including min/avg/max inclusive and self time, call count extrema, rank-local percent extrema, imbalance fields, and inclusive-time extrema ranks. Local `call_count` and MPI `min_call_count`/`max_call_count` are `integer(int64)` values and are emitted as decimal text without narrowing to default integer. MPI `avg_call_count` remains a real-valued CSV field. CSV format version `2` is the compatibility signal for those widened integer count ranges; consumers should parse local `call_count` and MPI call-count extrema fields as at least signed 64-bit decimal integers.
 
-Appending to an existing non-empty CSV requires the existing first row to match the fTimer CSV format-version-2 header, existing rows to be well-formed CSV logical records with the exact v2 header field count and recognized `summary_kind`/`record_type` combinations, and the target to end with a newline; mismatched headers, older-format records, malformed v2 record shape or quote placement, or unterminated final records are rejected instead of mixing schemas silently. Append validation is a schema-shape and CSV-syntax guard for existing files, not a semantic reparse of every numeric, logical, or timing payload field already present. CSV text fields emit trimmed raw timer names and metadata key/value text with standard CSV quoting; unlike human-readable text reports, they do not apply the visible `\t`/`\n`/`\xNN` display escaping. They are not spreadsheet-formula-sanitized, so treat CSV opened in spreadsheet software as data from the generating program.
+Sparse union CSV rows use `summary_kind=mpi_union`. Entry rows include `participating_rank_count` and explicit `missing_rank_count`, derived as `num_ranks - participating_rank_count`. Per-entry statistic columns are deliberately labeled as participating-rank fields, for example `min_participating_inclusive_time`, `avg_participating_self_time`, and `max_participating_call_count`. Participating call-count extrema are emitted as signed-64-bit decimal text. Missing ranks are not zero-filled, and no all-rank amortized entry view is emitted.
+
+Appending to an existing non-empty CSV requires the existing first row to match the exact header for the API being used, existing rows to be well-formed CSV logical records with that header's field count and recognized `summary_kind`/`record_type` combinations, and the target to end with a newline; mismatched headers, older-format records, malformed record shape or quote placement, or unterminated final records are rejected instead of mixing schemas silently. Append validation is a schema-shape and CSV-syntax guard for existing files, not a semantic reparse of every numeric, logical, or timing payload field already present. CSV text fields emit trimmed raw timer names and metadata key/value text with standard CSV quoting; unlike human-readable text reports, they do not apply the visible `\t`/`\n`/`\xNN` display escaping. They are not spreadsheet-formula-sanitized, so treat CSV opened in spreadsheet software as data from the generating program.
 
 Example:
 
@@ -277,9 +279,10 @@ call ftimer_write_summary_csv("ftimer-summary.csv", ierr=ierr)
 
 ! In an FTIMER_USE_MPI=ON build, collectively writes from communicator root.
 call ftimer_write_mpi_summary_csv("ftimer-mpi-summary.csv", ierr=ierr)
-```
 
-Sparse/union MPI summaries currently expose machine-readable data through `ftimer_mpi_union_summary_t`. Use `ftimer_write_mpi_union_summary()` for human-readable sparse text reports; sparse CSV export is intentionally deferred to #194 until the CSV schema has explicit participation columns.
+! For rank-conditional timer trees, use the explicit sparse union CSV schema.
+call ftimer_write_mpi_union_summary_csv("ftimer-mpi-union-summary.csv", ierr=ierr)
+```
 
 ## Build And Test
 
@@ -352,7 +355,7 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - The OpenMP path does not make fTimer thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.
 - Future real hybrid MPI+OpenMP timing is deferred pending concrete adopter demand; see [`docs/openmp-hybrid-strategy-decision.md`](docs/openmp-hybrid-strategy-decision.md).
 - `on_event` remains a lightweight intra-run hook, not a serious profiler-backend integration contract with stable semantic timer identity.
-- If `FTIMER_USE_MPI=OFF`, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` and leave their MPI result objects empty. MPI report APIs, including the sparse union report APIs, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output or creating/replacing report files.
+- If `FTIMER_USE_MPI=OFF`, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` and leave their MPI result objects empty. MPI report APIs, including the sparse union report and CSV APIs, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output or creating/replacing report files.
 - Formatted local and MPI report output are separate paths: `print_summary()`/`write_summary()` are local, `print_mpi_summary()`/`write_mpi_summary()` are strict MPI reports, and `print_mpi_union_summary()`/`write_mpi_union_summary()` are opt-in sparse MPI union reports. MPI reports are deliberately abbreviated; `ftimer_mpi_summary_t` and `ftimer_mpi_union_summary_t` remain the complete structured data models.
 
 ## Performance Measurement

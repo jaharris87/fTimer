@@ -1,7 +1,8 @@
 program ftimer_installed_mpi_consumer
    use, intrinsic :: iso_fortran_env, only: int64
    use ftimer, only: ftimer_finalize, ftimer_init, ftimer_mpi_summary, ftimer_mpi_union_summary, &
-                     ftimer_write_mpi_summary, ftimer_write_mpi_union_summary, ftimer_start, ftimer_stop
+                     ftimer_write_mpi_summary, ftimer_write_mpi_union_summary, &
+                     ftimer_write_mpi_union_summary_csv, ftimer_start, ftimer_stop
    use ftimer_types, only: ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, wp
    use mpi_f08
    implicit none
@@ -63,11 +64,14 @@ program ftimer_installed_mpi_consumer
    call ftimer_write_mpi_union_summary("consumer_mpi_union_summary.txt", ierr=ierr)
    if (ierr /= 0) error stop 25
 
-   call ftimer_finalize(ierr=ierr)
+   call ftimer_write_mpi_union_summary_csv("consumer_mpi_union_summary.csv", ierr=ierr)
    if (ierr /= 0) error stop 26
 
+   call ftimer_finalize(ierr=ierr)
+   if (ierr /= 0) error stop 27
+
    call MPI_Finalize(ierr)
-   if (ierr /= MPI_SUCCESS) error stop 27
+   if (ierr /= MPI_SUCCESS) error stop 28
 
    if (accumulator < 0.0) print *, accumulator
 end program ftimer_installed_mpi_consumer

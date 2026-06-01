@@ -11,7 +11,8 @@ module test_mpi_summary
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
                      ftimer_mpi_union_summary, ftimer_print_mpi_summary, ftimer_start, ftimer_start_id, &
                      ftimer_stop, ftimer_stop_id, ftimer_lookup, ftimer_print_mpi_union_summary, &
-                     ftimer_write_mpi_summary_csv, ftimer_write_mpi_union_summary
+                     ftimer_write_mpi_summary_csv, ftimer_write_mpi_union_summary, &
+                     ftimer_write_mpi_union_summary_csv
    use ftimer_core, only: ftimer_t, ftimer_test_set_call_count
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MPI_INCON, FTIMER_NAME_LEN, &
                            FTIMER_SUCCESS, ftimer_metadata_t, ftimer_mpi_summary_t, &
@@ -2556,6 +2557,353 @@ contains
       call ftimer_finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_procedural_mpi_union_write_summary_matches_oop_report
+
+   @test
+   subroutine test_mpi_union_write_summary_csv_emits_participation_records(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=:), allocatable :: common_line
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: metadata_line
+      character(len=:), allocatable :: rank_zero_line
+      character(len=:), allocatable :: summary_line
+      character(len=*), parameter :: csv_path = 'test_mpi_union_summary_export.csv'
+      integer :: avg_call_count_col
+      integer :: avg_inclusive_col
+      integer :: flags(37)
+      integer :: format_col
+      integer :: ierr
+      integer :: max_call_count_col
+      integer :: max_inclusive_col
+      integer :: max_rank_col
+      integer :: max_total_col
+      integer :: max_total_rank_col
+      integer :: min_call_count_col
+      integer :: min_inclusive_col
+      integer :: min_rank_col
+      integer :: min_total_col
+      integer :: min_total_rank_col
+      integer :: missing_col
+      integer :: name_col
+      integer :: num_entries_col
+      integer :: num_ranks_col
+      integer :: participating_col
+      integer :: rank
+      integer :: record_type_col
+      integer :: strict_min_inclusive_col
+      integer :: summary_kind_col
+      integer :: value_col
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_common_plus_sparse_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      metadata(1)%key = 'Mode'
+      metadata(1)%value = 'union, "csv"'
+
+      if (rank == 0) call delete_if_exists(csv_path)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_union_summary_csv(csv_path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         csv_text = read_file_text(csv_path)
+         if (csv_record_count(csv_text) == 5) flags(1) = 1
+
+         header = csv_line_at(csv_text, 1)
+         summary_line = csv_line_at(csv_text, 2)
+         metadata_line = csv_line_at(csv_text, 3)
+         common_line = csv_line_at(csv_text, 4)
+         rank_zero_line = csv_line_at(csv_text, 5)
+
+         format_col = csv_column_index(header, 'format_version')
+         summary_kind_col = csv_column_index(header, 'summary_kind')
+         record_type_col = csv_column_index(header, 'record_type')
+         value_col = csv_column_index(header, 'value')
+         num_entries_col = csv_column_index(header, 'num_entries')
+         num_ranks_col = csv_column_index(header, 'num_ranks')
+         min_total_col = csv_column_index(header, 'min_total_time')
+         max_total_col = csv_column_index(header, 'max_total_time')
+         min_total_rank_col = csv_column_index(header, 'min_total_time_rank')
+         max_total_rank_col = csv_column_index(header, 'max_total_time_rank')
+         name_col = csv_column_index(header, 'name')
+         participating_col = csv_column_index(header, 'participating_rank_count')
+         missing_col = csv_column_index(header, 'missing_rank_count')
+         min_inclusive_col = csv_column_index(header, 'min_participating_inclusive_time')
+         avg_inclusive_col = csv_column_index(header, 'avg_participating_inclusive_time')
+         max_inclusive_col = csv_column_index(header, 'max_participating_inclusive_time')
+         min_rank_col = csv_column_index(header, 'min_participating_inclusive_time_rank')
+         max_rank_col = csv_column_index(header, 'max_participating_inclusive_time_rank')
+         min_call_count_col = csv_column_index(header, 'min_participating_call_count')
+         avg_call_count_col = csv_column_index(header, 'avg_participating_call_count')
+         max_call_count_col = csv_column_index(header, 'max_participating_call_count')
+         strict_min_inclusive_col = csv_column_index(header, 'min_inclusive_time')
+
+         if (format_col > 0) flags(2) = 1
+         if (csv_text_field_equals(summary_line, summary_kind_col, 'mpi_union')) flags(3) = 1
+         if (csv_text_field_equals(summary_line, format_col, '1')) flags(4) = 1
+         if (csv_text_field_equals(summary_line, record_type_col, 'summary')) flags(5) = 1
+         if (csv_text_field_equals(summary_line, num_ranks_col, '2')) flags(6) = 1
+         if (csv_text_field_equals(summary_line, num_entries_col, '2')) flags(7) = 1
+         if (csv_real_field_close(summary_line, min_total_col, 6.0_wp)) flags(8) = 1
+         if (csv_real_field_close(summary_line, max_total_col, 7.0_wp)) flags(9) = 1
+         if (csv_text_field_equals(summary_line, min_total_rank_col, '1')) flags(10) = 1
+         if (csv_text_field_equals(summary_line, max_total_rank_col, '0')) flags(11) = 1
+         if (csv_text_field_equals(metadata_line, summary_kind_col, 'mpi_union')) flags(12) = 1
+         if (csv_text_field_equals(metadata_line, value_col, 'union, "csv"')) flags(13) = 1
+         if (csv_text_field_equals(common_line, summary_kind_col, 'mpi_union')) flags(14) = 1
+         if (csv_text_field_equals(common_line, name_col, 'common')) flags(15) = 1
+         if (csv_text_field_equals(common_line, participating_col, '2')) flags(16) = 1
+         if (csv_text_field_equals(common_line, missing_col, '0')) flags(17) = 1
+         if (csv_real_field_close(common_line, min_inclusive_col, 4.0_wp)) flags(18) = 1
+         if (csv_real_field_close(common_line, avg_inclusive_col, 5.0_wp)) flags(19) = 1
+         if (csv_real_field_close(common_line, max_inclusive_col, 6.0_wp)) flags(20) = 1
+         if (csv_text_field_equals(common_line, min_rank_col, '0')) flags(21) = 1
+         if (csv_text_field_equals(common_line, max_rank_col, '1')) flags(22) = 1
+         if (csv_text_field_equals(rank_zero_line, name_col, 'rank_zero')) flags(23) = 1
+         if (csv_text_field_equals(rank_zero_line, participating_col, '1')) flags(24) = 1
+         if (csv_text_field_equals(rank_zero_line, missing_col, '1')) flags(25) = 1
+         if (csv_real_field_close(rank_zero_line, min_inclusive_col, 3.0_wp)) flags(26) = 1
+         if (csv_real_field_close(rank_zero_line, avg_inclusive_col, 3.0_wp)) flags(27) = 1
+         if (csv_real_field_close(rank_zero_line, max_inclusive_col, 3.0_wp)) flags(28) = 1
+         if (csv_text_field_equals(rank_zero_line, min_rank_col, '0')) flags(29) = 1
+         if (csv_text_field_equals(rank_zero_line, max_rank_col, '0')) flags(30) = 1
+         if (csv_text_field_equals(rank_zero_line, min_call_count_col, '1')) flags(31) = 1
+         if (csv_real_field_close(rank_zero_line, avg_call_count_col, 1.0_wp)) flags(32) = 1
+         if (csv_text_field_equals(rank_zero_line, max_call_count_col, '1')) flags(33) = 1
+         if (strict_min_inclusive_col == 0) flags(34) = 1
+         if (min_inclusive_col > 0) flags(35) = 1
+         if (missing_col > 0) flags(36) = 1
+         if (csv_text_field_equals(rank_zero_line, record_type_col, 'entry')) flags(37) = 1
+         call delete_if_exists(csv_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
+      @assertEqual(1, flags(7))
+      @assertEqual(1, flags(8))
+      @assertEqual(1, flags(9))
+      @assertEqual(1, flags(10))
+      @assertEqual(1, flags(11))
+      @assertEqual(1, flags(12))
+      @assertEqual(1, flags(13))
+      @assertEqual(1, flags(14))
+      @assertEqual(1, flags(15))
+      @assertEqual(1, flags(16))
+      @assertEqual(1, flags(17))
+      @assertEqual(1, flags(18))
+      @assertEqual(1, flags(19))
+      @assertEqual(1, flags(20))
+      @assertEqual(1, flags(21))
+      @assertEqual(1, flags(22))
+      @assertEqual(1, flags(23))
+      @assertEqual(1, flags(24))
+      @assertEqual(1, flags(25))
+      @assertEqual(1, flags(26))
+      @assertEqual(1, flags(27))
+      @assertEqual(1, flags(28))
+      @assertEqual(1, flags(29))
+      @assertEqual(1, flags(30))
+      @assertEqual(1, flags(31))
+      @assertEqual(1, flags(32))
+      @assertEqual(1, flags(33))
+      @assertEqual(1, flags(34))
+      @assertEqual(1, flags(35))
+      @assertEqual(1, flags(36))
+      @assertEqual(1, flags(37))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_write_summary_csv_emits_participation_records
+
+   @test
+   subroutine test_mpi_union_write_summary_csv_rejects_strict_append_target(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: timer
+      character(len=:), allocatable :: before_text
+      character(len=*), parameter :: csv_path = 'test_mpi_union_csv_rejects_strict_append.csv'
+      integer :: ierr
+      integer :: max_err
+      integer :: min_err
+      integer :: mpierr
+      integer :: rank
+      integer :: unchanged_flag
+
+      rank = this%getProcessRank()
+      unchanged_flag = 0
+
+      call timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+
+      call build_nested_timers(timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) call delete_if_exists(csv_path)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_summary_csv(csv_path, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) call capture_raw_file_text(csv_path, before_text)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call timer%write_mpi_union_summary_csv(csv_path, append=.true., ierr=ierr)
+      @assertEqual(FTIMER_ERR_IO, ierr)
+
+      call MPI_F08_Allreduce(ierr, min_err, 1, MPI_F08_INTEGER, MPI_F08_MIN, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      call MPI_F08_Allreduce(ierr, max_err, 1, MPI_F08_INTEGER, MPI_F08_MAX, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+
+      @assertEqual(FTIMER_ERR_IO, min_err)
+      @assertEqual(FTIMER_ERR_IO, max_err)
+
+      if (rank == 0) unchanged_flag = raw_file_unchanged_flag(csv_path, before_text)
+      call MPI_F08_Bcast(unchanged_flag, 1, MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, mpierr)
+      @assertEqual(MPI_F08_SUCCESS, mpierr)
+      @assertEqual(1, unchanged_flag)
+
+      if (rank == 0) call delete_if_exists(csv_path)
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_mpi_union_write_summary_csv_rejects_strict_append_target
+
+   @test
+   subroutine test_procedural_mpi_union_write_summary_csv_matches_oop_append(this)
+      class(mpi_summary_case), intent(inout) :: this
+      type(ftimer_t) :: oop_timer
+      type(ftimer_metadata_t) :: metadata(1)
+      character(len=:), allocatable :: oop_header
+      character(len=:), allocatable :: oop_text
+      character(len=:), allocatable :: procedural_header
+      character(len=:), allocatable :: procedural_text
+      character(len=*), parameter :: oop_path = 'test_mpi_union_oop_csv_parity.csv'
+      character(len=*), parameter :: procedural_path = 'test_mpi_union_procedural_csv_parity.csv'
+      integer :: flags(14)
+      integer :: ierr
+      integer :: name_col
+      integer :: rank
+      integer :: record_type_col
+      integer :: summary_kind_col
+      integer :: value_col
+
+      rank = this%getProcessRank()
+      flags = 0
+
+      metadata(1)%key = 'Case'
+      metadata(1)%value = 'procedural-union-csv'
+
+      call oop_timer%init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(oop_timer)
+
+      call build_common_plus_sparse_timers(oop_timer, rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      if (rank == 0) then
+         call delete_if_exists(oop_path)
+         call delete_if_exists(procedural_path)
+      end if
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      call oop_timer%write_mpi_union_summary_csv(oop_path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call oop_timer%write_mpi_union_summary_csv(oop_path, append=.true., metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      fake_time = 0.0_wp
+      call ftimer_default_instance%set_clock(mock_clock, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_init(comm=MPI_F08_COMM_WORLD, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call build_common_plus_sparse_timers_procedural(rank, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_write_mpi_union_summary_csv(procedural_path, metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_write_mpi_union_summary_csv(procedural_path, append=.true., metadata=metadata, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call MPI_F08_Barrier(MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      if (rank == 0) then
+         oop_text = read_file_text(oop_path)
+         procedural_text = read_file_text(procedural_path)
+         oop_header = csv_line_at(oop_text, 1)
+         procedural_header = csv_line_at(procedural_text, 1)
+         summary_kind_col = csv_column_index(procedural_header, 'summary_kind')
+         record_type_col = csv_column_index(procedural_header, 'record_type')
+         value_col = csv_column_index(procedural_header, 'value')
+         name_col = csv_column_index(procedural_header, 'name')
+
+         if (procedural_header == oop_header) flags(1) = 1
+         if (csv_record_count(procedural_text) == csv_record_count(oop_text)) flags(2) = 1
+         if (csv_record_count(procedural_text) == 9) flags(3) = 1
+         if (count_csv_header_records(procedural_text, procedural_header) == 1) flags(4) = 1
+         if (csv_text_field_equals(csv_line_at(procedural_text, 2), summary_kind_col, 'mpi_union')) flags(5) = 1
+         if (csv_text_field_equals(csv_line_at(procedural_text, 2), record_type_col, 'summary')) flags(6) = 1
+         if (csv_text_field_equals(csv_line_at(procedural_text, 3), record_type_col, 'metadata')) flags(7) = 1
+         if (csv_text_field_equals(csv_line_at(procedural_text, 3), value_col, 'procedural-union-csv')) flags(8) = 1
+         if (csv_text_field_equals(csv_line_at(procedural_text, 4), name_col, 'common')) flags(9) = 1
+         if (csv_text_field_equals(csv_line_at(procedural_text, 5), name_col, 'rank_zero')) flags(10) = 1
+         if (csv_line_at(procedural_text, 4) == csv_line_at(oop_text, 4)) flags(11) = 1
+         if (csv_line_at(procedural_text, 5) == csv_line_at(oop_text, 5)) flags(12) = 1
+         if (csv_line_at(procedural_text, 8) == csv_line_at(oop_text, 8)) flags(13) = 1
+         if (csv_line_at(procedural_text, 9) == csv_line_at(oop_text, 9)) flags(14) = 1
+         call delete_if_exists(oop_path)
+         call delete_if_exists(procedural_path)
+      end if
+
+      call MPI_F08_Bcast(flags, size(flags), MPI_F08_INTEGER, 0, MPI_F08_COMM_WORLD, ierr)
+      @assertEqual(MPI_F08_SUCCESS, ierr)
+
+      @assertEqual(1, flags(1))
+      @assertEqual(1, flags(2))
+      @assertEqual(1, flags(3))
+      @assertEqual(1, flags(4))
+      @assertEqual(1, flags(5))
+      @assertEqual(1, flags(6))
+      @assertEqual(1, flags(7))
+      @assertEqual(1, flags(8))
+      @assertEqual(1, flags(9))
+      @assertEqual(1, flags(10))
+      @assertEqual(1, flags(11))
+      @assertEqual(1, flags(12))
+      @assertEqual(1, flags(13))
+      @assertEqual(1, flags(14))
+
+      call oop_timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_procedural_mpi_union_write_summary_csv_matches_oop_append
 
    @test
    subroutine test_mpi_write_summary_csv_emits_parseable_global_records(this)

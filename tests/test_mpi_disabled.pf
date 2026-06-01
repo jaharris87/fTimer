@@ -2,7 +2,7 @@ module test_mpi_disabled
    use pfunit
    use ftimer, only: ftimer_default_instance, ftimer_finalize, ftimer_init, ftimer_mpi_summary, &
                      ftimer_mpi_union_summary, ftimer_print_mpi_union_summary, ftimer_start, ftimer_stop, &
-                     ftimer_write_mpi_union_summary
+                     ftimer_write_mpi_union_summary, ftimer_write_mpi_union_summary_csv
    use ftimer_core, only: ftimer_t
    use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_NOT_INIT, FTIMER_SUCCESS, ftimer_mpi_summary_t, &
                            ftimer_mpi_union_summary_t, wp
@@ -112,10 +112,13 @@ contains
       character(len=:), allocatable :: existing_text
       character(len=:), allocatable :: print_text
       character(len=*), parameter :: existing_path = 'test_disabled_mpi_union_existing_report.txt'
+      character(len=*), parameter :: existing_csv_path = 'test_disabled_mpi_union_existing_report.csv'
       character(len=*), parameter :: oop_print_path = 'test_disabled_mpi_union_oop_print.txt'
       character(len=*), parameter :: oop_write_path = 'test_disabled_mpi_union_report.txt'
+      character(len=*), parameter :: oop_write_csv_path = 'test_disabled_mpi_union_report.csv'
       character(len=*), parameter :: proc_print_path = 'test_disabled_mpi_union_proc_print.txt'
       character(len=*), parameter :: proc_write_path = 'test_disabled_proc_mpi_union_report.txt'
+      character(len=*), parameter :: proc_write_csv_path = 'test_disabled_proc_mpi_union_report.csv'
       integer :: ierr
       integer :: io
       integer :: text_len
@@ -153,6 +156,12 @@ contains
       inquire (file=oop_write_path, exist=file_exists)
       @assertFalse(file_exists)
 
+      call delete_if_exists(oop_write_csv_path)
+      call oop_timer%write_mpi_union_summary_csv(oop_write_csv_path, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+      inquire (file=oop_write_csv_path, exist=file_exists)
+      @assertFalse(file_exists)
+
       call delete_if_exists(proc_print_path)
       open (newunit=unit, file=proc_print_path, status='replace', action='write', iostat=io)
       @assertEqual(0, io)
@@ -169,6 +178,12 @@ contains
       inquire (file=proc_write_path, exist=file_exists)
       @assertFalse(file_exists)
 
+      call delete_if_exists(proc_write_csv_path)
+      call ftimer_write_mpi_union_summary_csv(proc_write_csv_path, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+      inquire (file=proc_write_csv_path, exist=file_exists)
+      @assertFalse(file_exists)
+
       call delete_if_exists(existing_path)
       open (newunit=unit, file=existing_path, status='replace', action='write', iostat=io)
       @assertEqual(0, io)
@@ -183,9 +198,24 @@ contains
       @assertTrue(marker_present)
       @assertTrue(report_absent)
 
+      call delete_if_exists(existing_csv_path)
+      open (newunit=unit, file=existing_csv_path, status='replace', action='write', iostat=io)
+      @assertEqual(0, io)
+      write (unit, '(a)', iostat=io) 'existing marker'
+      @assertEqual(0, io)
+      close (unit)
+      call ftimer_write_mpi_union_summary_csv(existing_csv_path, ierr=ierr)
+      @assertEqual(FTIMER_ERR_NOT_IMPLEMENTED, ierr)
+      existing_text = read_file_text(existing_csv_path)
+      marker_present = index(existing_text, 'existing marker') > 0
+      report_absent = index(existing_text, 'mpi_union') == 0
+      @assertTrue(marker_present)
+      @assertTrue(report_absent)
+
       call delete_if_exists(oop_print_path)
       call delete_if_exists(proc_print_path)
       call delete_if_exists(existing_path)
+      call delete_if_exists(existing_csv_path)
 
       call oop_timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
