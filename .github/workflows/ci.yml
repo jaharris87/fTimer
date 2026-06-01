@@ -98,7 +98,12 @@ jobs:
         run: cmake --build build -j$(nproc)
 
       - name: Smoke test
-        run: ctest --test-dir build --output-on-failure
+        # Serial smoke executables call fTimer without MPI_Init. In an
+        # FTIMER_USE_MPI=ON build, keep this job to tests that either document
+        # the lifecycle contract or enter the MPI lifetime explicitly.
+        run: >
+          ctest --test-dir build --output-on-failure
+          -R "ftimer_(init_contract_docs|mpi_lifecycle_contract_docs|public_symbol_allowlist|release_docs_contract|installed_package_consumer|installed_package_consumer_absolute_includedir|absolute_includedir_destdir_install|installed_package_consumer_mpi|mpi_example_smoke)$"
 
   build-mpi-mpich:
     # Ubuntu 24.04's MPICH package currently has an incorrect PMI/Hydra
