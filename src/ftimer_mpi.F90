@@ -4,12 +4,12 @@ module ftimer_mpi
                            FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, &
                            ftimer_summary_entry_t, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
-   use mpi_f08, only: MPI_Allgather, MPI_Allreduce, MPI_Bcast, MPI_CHARACTER, MPI_Comm, MPI_COMM_NULL, &
-                      MPI_COMM_SELF, MPI_COMM_WORLD, MPI_Datatype, MPI_DATATYPE_NULL, MPI_Errhandler, &
-                      MPI_ERRORS_RETURN, MPI_INTEGER, MPI_MAX, MPI_MIN, MPI_Op, MPI_SUCCESS, MPI_SUM, &
-                      MPI_TYPECLASS_INTEGER, MPI_TYPECLASS_REAL, MPI_Comm_get_errhandler, MPI_Comm_rank, &
-                      MPI_Comm_set_errhandler, MPI_Comm_size, MPI_Errhandler_free, MPI_Type_match_size, &
-                      MPI_Type_size
+   use mpi_f08, only: MPI_Allgather, MPI_Allgatherv, MPI_Allreduce, MPI_Bcast, MPI_CHARACTER, MPI_Comm, &
+                      MPI_COMM_NULL, MPI_COMM_SELF, MPI_COMM_WORLD, MPI_Datatype, MPI_DATATYPE_NULL, &
+                      MPI_Errhandler, MPI_ERRORS_RETURN, MPI_INTEGER, MPI_MAX, MPI_MIN, MPI_Op, MPI_SUCCESS, &
+                      MPI_SUM, MPI_TYPECLASS_INTEGER, MPI_TYPECLASS_REAL, MPI_Comm_get_errhandler, &
+                      MPI_Comm_rank, MPI_Comm_set_errhandler, MPI_Comm_size, MPI_Errhandler_free, &
+                      MPI_Type_match_size, MPI_Type_size
 #endif
    implicit none
    private
@@ -23,7 +23,10 @@ module ftimer_mpi
 #ifdef FTIMER_USE_MPI
    public :: ftimer_test_get_mpi_preflight_collectives
    public :: ftimer_test_get_mpi_preflight_mismatch_flags
+   public :: ftimer_test_get_mpi_union_descriptor_exchange
    public :: ftimer_test_reset_mpi_preflight_collectives
+   public :: ftimer_test_reset_mpi_union_descriptor_exchange
+   public :: ftimer_test_set_mpi_union_descriptor_count_limit
 #endif
 #endif
 
@@ -34,6 +37,12 @@ module ftimer_mpi
    integer :: test_preflight_summary_reduction_count = 0
    integer, allocatable :: test_preflight_mismatch_flags(:)
    logical :: test_preflight_after_descriptor_check = .false.
+   integer :: test_union_descriptor_local_count = 0
+   integer :: test_union_descriptor_local_chars = 0
+   integer :: test_union_descriptor_packed_chars = 0
+   integer :: test_union_descriptor_dense_chars = 0
+   integer :: test_union_descriptor_total_count = 0
+   integer :: test_union_descriptor_count_limit = huge(0)
 #endif
 #endif
 
@@ -45,6 +54,10 @@ module ftimer_mpi
       module procedure ftimer_mpi_allreduce_real_scalar
       module procedure ftimer_mpi_allreduce_real_array
    end interface
+
+   type :: descriptor_string_t
+      character(len=:), allocatable :: value
+   end type descriptor_string_t
 #endif
 
 contains
@@ -565,13 +578,9 @@ contains
       integer :: entry_count
       integer :: datatypes_ready
       integer :: i
-      integer :: local_descriptor_count
       integer :: local_idx
-      integer :: local_max_descriptor_len
       integer :: local_max_total_rank
       integer :: local_min_total_rank
-      integer :: max_descriptor_count
-      integer :: max_descriptor_len
       integer :: max_total_time_rank
       integer :: min_total_time_rank
       integer :: mpierr
@@ -582,10 +591,10 @@ contains
       integer :: union_idx
       type(MPI_Datatype) :: mpi_int64_type
       type(MPI_Datatype) :: mpi_wp_type
+      type(descriptor_string_t), allocatable :: union_descriptors(:)
       character(len=:), allocatable :: descriptors(:)
       character(len=:), allocatable :: entry_name
       character(len=:), allocatable :: parent_descriptor
-      character(len=:), allocatable :: union_descriptors(:)
       integer, allocatable :: local_max_inclusive_ranks(:)
       integer, allocatable :: local_min_inclusive_ranks(:)
       integer, allocatable :: local_present(:)
@@ -683,28 +692,8 @@ contains
       entry_count = local_summary%num_entries
       call build_descriptor_order(local_summary, descriptors, permutation)
 
-      local_descriptor_count = size(permutation)
-      local_max_descriptor_len = 1
-      do i = 1, local_descriptor_count
-         local_max_descriptor_len = max(local_max_descriptor_len, len_trim(descriptors(permutation(i))))
-      end do
-
-      call ftimer_mpi_allreduce(local_descriptor_count, max_descriptor_count, 1, MPI_INTEGER, MPI_MAX, &
-                                active_comm, mpierr)
-      if (mpierr /= MPI_SUCCESS) then
-         status = FTIMER_ERR_UNKNOWN
-         return
-      end if
-
-      call ftimer_mpi_allreduce(local_max_descriptor_len, max_descriptor_len, 1, MPI_INTEGER, MPI_MAX, &
-                                active_comm, mpierr)
-      if (mpierr /= MPI_SUCCESS) then
-         status = FTIMER_ERR_UNKNOWN
-         return
-      end if
-
-      call build_union_descriptor_list(descriptors, permutation, max_descriptor_count, max_descriptor_len, &
-                                       nprocs, active_comm, union_descriptors, union_count, local_to_union, mpierr)
+      call build_union_descriptor_list(descriptors, permutation, nprocs, active_comm, union_descriptors, &
+                                       union_count, local_to_union, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          call clear_mpi_union_summary(summary)
          status = FTIMER_ERR_UNKNOWN
@@ -916,7 +905,8 @@ contains
 
       allocate (summary%entries(union_count))
       do i = 1, union_count
-         call decode_descriptor_metadata(union_descriptors(i), entry_name, parent_descriptor, summary%entries(i)%depth)
+         call decode_descriptor_metadata(union_descriptors(i)%value, entry_name, parent_descriptor, &
+                                         summary%entries(i)%depth)
          parent_id = 0
          if (len_trim(parent_descriptor) > 0) parent_id = find_descriptor_index(union_descriptors, union_count, &
                                                                                 parent_descriptor)
@@ -1002,117 +992,277 @@ contains
       ok = .true.
    end function checked_multiply_int
 
-   subroutine build_union_descriptor_list(descriptors, permutation, max_descriptor_count, max_descriptor_len, &
-                                          nprocs, active_comm, union_descriptors, union_count, local_to_union, mpierr)
+   logical function checked_add_int(lhs, rhs, sum_value) result(ok)
+      integer, intent(in) :: lhs
+      integer, intent(in) :: rhs
+      integer, intent(out) :: sum_value
+      integer(int64) :: wide_sum
+
+      ok = .false.
+      sum_value = 0
+      if ((lhs < 0) .or. (rhs < 0)) return
+
+      wide_sum = int(lhs, int64) + int(rhs, int64)
+      if (wide_sum > int(huge(sum_value), int64)) return
+
+      sum_value = int(wide_sum)
+      ok = .true.
+   end function checked_add_int
+
+   logical function checked_add_union_descriptor_count(lhs, rhs, sum_value) result(ok)
+      integer, intent(in) :: lhs
+      integer, intent(in) :: rhs
+      integer, intent(out) :: sum_value
+
+      ok = checked_add_int(lhs, rhs, sum_value)
+#ifdef FTIMER_BUILD_TESTS
+      if (ok) ok = sum_value <= test_union_descriptor_count_limit
+#endif
+   end function checked_add_union_descriptor_count
+
+   subroutine build_displacements_from_counts(counts, displacements, total_count, ok)
+      integer, intent(in) :: counts(:)
+      integer, intent(out) :: displacements(:)
+      integer, intent(out) :: total_count
+      logical, intent(out) :: ok
+      integer :: i
+      integer :: next_total
+
+      ok = .false.
+      total_count = 0
+      do i = 1, size(counts)
+         if (counts(i) < 0) return
+         displacements(i) = total_count
+         if (.not. checked_add_int(total_count, counts(i), next_total)) return
+         total_count = next_total
+      end do
+
+      ok = .true.
+   end subroutine build_displacements_from_counts
+
+   subroutine build_union_descriptor_list(descriptors, permutation, nprocs, active_comm, union_descriptors, &
+                                          union_count, local_to_union, mpierr)
       character(len=*), intent(in) :: descriptors(:)
       integer, intent(in) :: permutation(:)
-      integer, intent(in) :: max_descriptor_count
-      integer, intent(in) :: max_descriptor_len
       integer, intent(in) :: nprocs
       type(MPI_Comm), intent(in) :: active_comm
-      character(len=:), allocatable, intent(out) :: union_descriptors(:)
+      type(descriptor_string_t), allocatable, intent(out) :: union_descriptors(:)
       integer, intent(out) :: union_count
       integer, allocatable, intent(out) :: local_to_union(:)
       integer, intent(out) :: mpierr
-      character(len=max_descriptor_len) :: descriptor_value
       character(len=1), allocatable :: all_descriptor_chars(:)
       character(len=1), allocatable :: local_descriptor_chars(:)
-      integer :: char_count
+      character(len=:), allocatable :: descriptor_value
+#ifdef FTIMER_BUILD_TESTS
+      integer :: dense_char_count
+      integer :: dense_entry_chars
+#endif
+      integer :: all_mapping_ready
+      integer :: all_pack_ready
       integer :: descriptor_len
+      integer :: descriptor_offset
       integer :: i
       integer :: j
+      integer :: local_char_count
+      integer :: local_descriptor_count
       integer :: local_idx
+      integer :: local_mapping_ready
+      integer :: local_pack_ready
+#ifdef FTIMER_BUILD_TESTS
+      integer :: max_descriptor_count
+      integer :: max_descriptor_len
+#endif
+      integer :: next_count
       integer :: offset
       integer :: rank_slot
       integer :: slot
-      integer :: union_capacity
+      integer :: total_char_count
+      integer :: total_descriptor_count
+      logical :: counts_ok
       integer, allocatable :: all_descriptor_lengths(:)
+      integer, allocatable :: char_counts(:)
+      integer, allocatable :: char_displacements(:)
+      integer, allocatable :: descriptor_counts(:)
+      integer, allocatable :: descriptor_displacements(:)
       integer, allocatable :: local_descriptor_lengths(:)
 
       allocate (local_to_union(size(permutation)))
       local_to_union = 0
       union_count = 0
       mpierr = MPI_SUCCESS
+      local_descriptor_count = size(permutation)
 
-      if (max_descriptor_count <= 0) then
-         allocate (character(len=1) :: union_descriptors(0))
-         return
-      end if
+      allocate (descriptor_counts(nprocs))
+      allocate (descriptor_displacements(nprocs))
+      allocate (char_counts(nprocs))
+      allocate (char_displacements(nprocs))
 
-      if (.not. checked_multiply_int(max_descriptor_count, nprocs, union_capacity)) then
+      call MPI_Allgather(local_descriptor_count, 1, MPI_INTEGER, descriptor_counts, 1, MPI_INTEGER, &
+                         active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) return
+
+      call build_displacements_from_counts(descriptor_counts, descriptor_displacements, total_descriptor_count, &
+                                           counts_ok)
+      if (.not. counts_ok) then
          mpierr = FTIMER_ERR_UNKNOWN
          return
       end if
 
-      if (.not. checked_multiply_int(max_descriptor_count, max_descriptor_len, char_count)) then
-         mpierr = FTIMER_ERR_UNKNOWN
+      if (total_descriptor_count <= 0) then
+         allocate (union_descriptors(0))
+#ifdef FTIMER_BUILD_TESTS
+         test_union_descriptor_local_count = 0
+         test_union_descriptor_local_chars = 0
+         test_union_descriptor_packed_chars = 0
+         test_union_descriptor_dense_chars = 0
+         test_union_descriptor_total_count = 0
+#endif
          return
       end if
 
-      allocate (character(len=max_descriptor_len) :: union_descriptors(union_capacity))
-      union_descriptors = ''
+      allocate (union_descriptors(total_descriptor_count))
+      allocate (local_descriptor_lengths(max(local_descriptor_count, 1)))
+      allocate (all_descriptor_lengths(total_descriptor_count))
 
-      allocate (local_descriptor_lengths(max_descriptor_count))
-      allocate (all_descriptor_lengths(union_capacity))
-      local_descriptor_lengths = 0
-
-      if (.not. checked_multiply_int(char_count, nprocs, union_capacity)) then
-         mpierr = FTIMER_ERR_UNKNOWN
-         return
-      end if
-
-      allocate (local_descriptor_chars(char_count))
-      allocate (all_descriptor_chars(union_capacity))
-      local_descriptor_chars = ' '
-
+      local_char_count = 0
+      local_pack_ready = 1
       do i = 1, size(permutation)
          local_idx = permutation(i)
          descriptor_len = len_trim(descriptors(local_idx))
          local_descriptor_lengths(i) = descriptor_len
-         offset = (i - 1)*max_descriptor_len
-         do j = 1, descriptor_len
-            local_descriptor_chars(offset + j) = descriptors(local_idx) (j:j)
+         if (local_pack_ready == 1) then
+            if (checked_add_union_descriptor_count(local_char_count, descriptor_len, next_count)) then
+               local_char_count = next_count
+            else
+               local_pack_ready = 0
+            end if
+         end if
+      end do
+
+      call MPI_Allreduce(local_pack_ready, all_pack_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) return
+      if (all_pack_ready /= 1) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+#ifdef FTIMER_BUILD_TESTS
+      test_union_descriptor_local_count = local_descriptor_count
+      test_union_descriptor_total_count = total_descriptor_count
+#endif
+      call MPI_Allgatherv(local_descriptor_lengths, local_descriptor_count, MPI_INTEGER, all_descriptor_lengths, &
+                          descriptor_counts, descriptor_displacements, MPI_INTEGER, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) return
+
+#ifdef FTIMER_BUILD_TESTS
+      max_descriptor_count = maxval(descriptor_counts)
+      max_descriptor_len = 1
+#endif
+      do i = 1, total_descriptor_count
+         if (all_descriptor_lengths(i) < 0) then
+            mpierr = FTIMER_ERR_UNKNOWN
+            return
+         end if
+#ifdef FTIMER_BUILD_TESTS
+         max_descriptor_len = max(max_descriptor_len, all_descriptor_lengths(i))
+#endif
+      end do
+
+      do rank_slot = 1, nprocs
+         char_counts(rank_slot) = 0
+         descriptor_offset = descriptor_displacements(rank_slot)
+         do slot = 1, descriptor_counts(rank_slot)
+            descriptor_len = all_descriptor_lengths(descriptor_offset + slot)
+            if (.not. checked_add_int(char_counts(rank_slot), descriptor_len, next_count)) then
+               mpierr = FTIMER_ERR_UNKNOWN
+               return
+            end if
+            char_counts(rank_slot) = next_count
          end do
       end do
 
-      call MPI_Allgather(local_descriptor_lengths, max_descriptor_count, MPI_INTEGER, &
-                         all_descriptor_lengths, max_descriptor_count, MPI_INTEGER, active_comm, mpierr)
-      if (mpierr /= MPI_SUCCESS) return
+      call build_displacements_from_counts(char_counts, char_displacements, total_char_count, counts_ok)
+      if (.not. counts_ok) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
 
-      call MPI_Allgather(local_descriptor_chars, char_count, MPI_CHARACTER, &
-                         all_descriptor_chars, char_count, MPI_CHARACTER, active_comm, mpierr)
+      allocate (local_descriptor_chars(max(local_char_count, 1)))
+      allocate (all_descriptor_chars(max(total_char_count, 1)))
+      local_descriptor_chars = ' '
+
+      offset = 0
+      do i = 1, local_descriptor_count
+         local_idx = permutation(i)
+         descriptor_len = local_descriptor_lengths(i)
+         do j = 1, descriptor_len
+            local_descriptor_chars(offset + j) = descriptors(local_idx) (j:j)
+         end do
+         offset = offset + descriptor_len
+      end do
+
+      call MPI_Allgatherv(local_descriptor_chars, local_char_count, MPI_CHARACTER, all_descriptor_chars, &
+                          char_counts, char_displacements, MPI_CHARACTER, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) return
 
       do rank_slot = 1, nprocs
-         do slot = 1, max_descriptor_count
-            descriptor_len = all_descriptor_lengths((rank_slot - 1)*max_descriptor_count + slot)
+         offset = char_displacements(rank_slot)
+         descriptor_offset = descriptor_displacements(rank_slot)
+         do slot = 1, descriptor_counts(rank_slot)
+            descriptor_len = all_descriptor_lengths(descriptor_offset + slot)
             if (descriptor_len <= 0) cycle
 
-            descriptor_value = ''
-            offset = ((rank_slot - 1)*char_count) + (slot - 1)*max_descriptor_len
+            if (allocated(descriptor_value)) deallocate (descriptor_value)
+            allocate (character(len=descriptor_len) :: descriptor_value)
+            descriptor_value = repeat(' ', descriptor_len)
             do j = 1, descriptor_len
                descriptor_value(j:j) = all_descriptor_chars(offset + j)
             end do
+            offset = offset + descriptor_len
             call add_union_descriptor(descriptor_value, union_descriptors, union_count)
          end do
       end do
 
+      local_mapping_ready = 1
       do i = 1, size(permutation)
          local_to_union(i) = find_descriptor_index(union_descriptors, union_count, descriptors(permutation(i)))
+         if (local_to_union(i) <= 0) local_mapping_ready = 0
       end do
+
+      call MPI_Allreduce(local_mapping_ready, all_mapping_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) return
+      if (all_mapping_ready /= 1) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+#ifdef FTIMER_BUILD_TESTS
+      test_union_descriptor_local_chars = local_char_count
+      test_union_descriptor_packed_chars = total_char_count
+      test_union_descriptor_total_count = total_descriptor_count
+      if (checked_multiply_int(max_descriptor_count, max_descriptor_len, dense_entry_chars)) then
+         if (checked_multiply_int(dense_entry_chars, nprocs, dense_char_count)) then
+            test_union_descriptor_dense_chars = dense_char_count
+         else
+            test_union_descriptor_dense_chars = huge(test_union_descriptor_dense_chars)
+         end if
+      else
+         test_union_descriptor_dense_chars = huge(test_union_descriptor_dense_chars)
+      end if
+#endif
    end subroutine build_union_descriptor_list
 
    subroutine add_union_descriptor(descriptor, union_descriptors, union_count)
       character(len=*), intent(in) :: descriptor
-      character(len=*), intent(inout) :: union_descriptors(:)
+      type(descriptor_string_t), intent(inout) :: union_descriptors(:)
       integer, intent(inout) :: union_count
       integer :: insert_pos
       integer :: j
 
       insert_pos = union_count + 1
       do j = 1, union_count
-         if (descriptor == union_descriptors(j)) return
-         if (descriptor < union_descriptors(j)) then
+         if (descriptor == union_descriptors(j)%value) return
+         if (descriptor < union_descriptors(j)%value) then
             insert_pos = j
             exit
          end if
@@ -1122,18 +1272,18 @@ contains
       do j = union_count, insert_pos + 1, -1
          union_descriptors(j) = union_descriptors(j - 1)
       end do
-      union_descriptors(insert_pos) = descriptor
+      union_descriptors(insert_pos)%value = descriptor
    end subroutine add_union_descriptor
 
    integer function find_descriptor_index(descriptors, descriptor_count, descriptor) result(index_value)
-      character(len=*), intent(in) :: descriptors(:)
+      type(descriptor_string_t), intent(in) :: descriptors(:)
       integer, intent(in) :: descriptor_count
       character(len=*), intent(in) :: descriptor
       integer :: i
 
       index_value = 0
       do i = 1, descriptor_count
-         if (descriptors(i) == descriptor) then
+         if (descriptors(i)%value == descriptor) then
             index_value = i
             return
          end if
@@ -1719,6 +1869,15 @@ contains
       if (allocated(test_preflight_mismatch_flags)) deallocate (test_preflight_mismatch_flags)
    end subroutine ftimer_test_reset_mpi_preflight_collectives
 
+   subroutine ftimer_test_reset_mpi_union_descriptor_exchange()
+      test_union_descriptor_local_count = 0
+      test_union_descriptor_local_chars = 0
+      test_union_descriptor_packed_chars = 0
+      test_union_descriptor_dense_chars = 0
+      test_union_descriptor_total_count = 0
+      test_union_descriptor_count_limit = huge(0)
+   end subroutine ftimer_test_reset_mpi_union_descriptor_exchange
+
    subroutine ftimer_test_get_mpi_preflight_collectives(allgather_count, mismatch_flag_allgather_count, &
                                                         summary_reduction_count)
       integer, intent(out) :: allgather_count
@@ -1729,6 +1888,28 @@ contains
       mismatch_flag_allgather_count = test_preflight_mismatch_flag_allgather_count
       summary_reduction_count = test_preflight_summary_reduction_count
    end subroutine ftimer_test_get_mpi_preflight_collectives
+
+   subroutine ftimer_test_set_mpi_union_descriptor_count_limit(count_limit)
+      integer, intent(in) :: count_limit
+
+      test_union_descriptor_count_limit = max(count_limit, 0)
+   end subroutine ftimer_test_set_mpi_union_descriptor_count_limit
+
+   subroutine ftimer_test_get_mpi_union_descriptor_exchange(local_descriptor_count, local_char_count, &
+                                                            packed_char_count, dense_char_count, &
+                                                            total_descriptor_count)
+      integer, intent(out) :: local_descriptor_count
+      integer, intent(out) :: local_char_count
+      integer, intent(out) :: packed_char_count
+      integer, intent(out) :: dense_char_count
+      integer, intent(out) :: total_descriptor_count
+
+      local_descriptor_count = test_union_descriptor_local_count
+      local_char_count = test_union_descriptor_local_chars
+      packed_char_count = test_union_descriptor_packed_chars
+      dense_char_count = test_union_descriptor_dense_chars
+      total_descriptor_count = test_union_descriptor_total_count
+   end subroutine ftimer_test_get_mpi_union_descriptor_exchange
 
    subroutine ftimer_test_get_mpi_preflight_mismatch_flags(mismatch_flags)
       integer, allocatable, intent(out) :: mismatch_flags(:)
