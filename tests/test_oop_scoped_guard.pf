@@ -259,6 +259,61 @@ contains
    end subroutine test_oop_scope_assignment_does_not_copy_active_ownership
 
    @test
+   subroutine test_oop_scope_assignment_preserves_active_lhs()
+      type(ftimer_t), target :: timer_storage
+      type(ftimer_t), pointer :: timer
+      type(ftimer_test_state_t) :: state
+      type(ftimer_call_stack_t) :: root_stack
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: ctx
+      integer :: ierr
+      integer :: saved_fd
+      logical :: has_warning
+
+      timer => timer_storage
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer_storage)
+
+      call begin_stderr_capture('test_oop_scope_assignment_preserves_active_lhs.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      assignment_scope: block
+         type(ftimer_oop_guard_t) :: owner
+         type(ftimer_oop_guard_t) :: inactive
+
+         call ftimer_oop_scope(timer, owner, "oop_lhs_assigned", ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+         owner = inactive
+
+         call snapshot_timer(timer_storage, state)
+         ctx = find_context_idx(state, 1, root_stack)
+         @assertEqual(1, state%call_stack%depth)
+         @assertEqual(1, state%call_stack%top())
+         @assertTrue(state%segments(1)%is_running(ctx))
+
+         fake_time = 5.0_wp
+         call owner%stop(ierr=ierr)
+         @assertEqual(FTIMER_SUCCESS, ierr)
+      end block assignment_scope
+
+      call end_stderr_capture('test_oop_scope_assignment_preserves_active_lhs.err', saved_fd, stderr_text, &
+                              capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      call snapshot_timer(timer_storage, state)
+      ctx = find_context_idx(state, 1, root_stack)
+      has_warning = index(stderr_text, 'ftimer OOP guard assignment is unsupported') > 0
+      @assertTrue(has_warning)
+      @assertEqual(0, state%call_stack%depth)
+      @assertEqual(5.0_wp, state%segments(1)%time(ctx))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_oop_scope_assignment_preserves_active_lhs
+
+   @test
    subroutine test_oop_scope_rejects_stale_same_name_activation()
       type(ftimer_t), target :: timer_storage
       type(ftimer_t), pointer :: timer
@@ -516,6 +571,64 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_oop_scope_active_guard_blocks_reset_and_finalize
+
+   @test
+   subroutine test_oop_scope_rejected_stop_does_not_fire_callback()
+      type(ftimer_t), target :: timer_storage
+      type(ftimer_t), pointer :: timer
+      type(ftimer_oop_guard_t) :: outer
+      integer :: child_id
+      integer :: ierr
+      integer :: outer_id
+
+      timer => timer_storage
+      call reset_oop_scope_callback_log()
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer_storage)
+      call timer%set_callback(record_oop_scope_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      outer_id = timer%lookup("oop_callback_outer", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      child_id = timer%lookup("oop_callback_child", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call ftimer_oop_scope(timer, outer, "oop_callback_outer", ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 1.0_wp
+      call timer%start_id(child_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, oop_scope_callback_count)
+
+      fake_time = 2.0_wp
+      call outer%stop(ierr=ierr)
+      @assertEqual(FTIMER_ERR_MISMATCH, ierr)
+      @assertEqual(2, oop_scope_callback_count)
+
+      fake_time = 3.0_wp
+      call timer%stop_id(child_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 4.0_wp
+      call outer%stop(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      @assertEqual(4, oop_scope_callback_count)
+      @assertEqual(FTIMER_EVENT_START, oop_scope_callback_events(1))
+      @assertEqual(FTIMER_EVENT_START, oop_scope_callback_events(2))
+      @assertEqual(FTIMER_EVENT_STOP, oop_scope_callback_events(3))
+      @assertEqual(FTIMER_EVENT_STOP, oop_scope_callback_events(4))
+      @assertEqual(outer_id, oop_scope_callback_timer_ids(1))
+      @assertEqual(child_id, oop_scope_callback_timer_ids(2))
+      @assertEqual(child_id, oop_scope_callback_timer_ids(3))
+      @assertEqual(outer_id, oop_scope_callback_timer_ids(4))
+      @assertEqual(0.0_wp, oop_scope_callback_timestamps(1))
+      @assertEqual(1.0_wp, oop_scope_callback_timestamps(2))
+      @assertEqual(3.0_wp, oop_scope_callback_timestamps(3))
+      @assertEqual(4.0_wp, oop_scope_callback_timestamps(4))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_oop_scope_rejected_stop_does_not_fire_callback
 
    @test
    subroutine test_oop_scope_callbacks_match_normal_start_stop_events()

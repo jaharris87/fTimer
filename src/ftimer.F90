@@ -6,6 +6,9 @@ module ftimer
 #ifdef FTIMER_USE_MPI
    use mpi_f08, only: MPI_Comm
 #endif
+#ifdef FTIMER_USE_OPENMP
+   use omp_lib, only: omp_get_thread_num
+#endif
    implicit none
    private
 
@@ -67,6 +70,10 @@ contains
       integer, intent(out), optional :: ierr
       integer :: id
       integer(int64) :: activation_token
+
+#ifdef FTIMER_USE_OPENMP
+      if (omp_get_thread_num() /= 0) return
+#endif
 
       if (guard%active) then
          call report_guard_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_scope called with an active guard; state unchanged")
