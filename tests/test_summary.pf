@@ -1132,6 +1132,45 @@ contains
    end subroutine test_build_summary_skips_visible_child_without_visible_parent
 
    @test
+   subroutine test_build_summary_can_skip_named_context_diagnostics()
+      type(ftimer_call_stack_t) :: root_stack
+      type(ftimer_segment_t) :: segments(3)
+      type(ftimer_summary_t) :: summary
+      integer :: ctx
+
+      segments(1)%name = 'A'
+      ctx = segments(1)%contexts%add(root_stack)
+      allocate (segments(1)%call_count(1))
+      allocate (segments(1)%time(1))
+      segments(1)%call_count(ctx) = 1
+      segments(1)%time(ctx) = 4.0_wp
+
+      segments(2)%name = 'B'
+      ctx = segments(2)%contexts%add(root_stack)
+      allocate (segments(2)%call_count(1))
+      allocate (segments(2)%time(1))
+      segments(2)%call_count(ctx) = 1
+      segments(2)%time(ctx) = 3.0_wp
+
+      segments(3)%name = 'work'
+      ctx = segments(3)%contexts%add(root_stack)
+      ctx = segments(3)%contexts%add(build_stack([1]))
+      ctx = segments(3)%contexts%add(build_stack([2]))
+      allocate (segments(3)%call_count(3))
+      allocate (segments(3)%time(3))
+      segments(3)%call_count = 1
+      segments(3)%time = 1.0_wp
+
+      call build_summary(summary, segments, 0.0_wp, 'start', 7.0_wp, 'end', &
+                         include_context_diagnostics=.false.)
+
+      @assertEqual(0, summary%num_context_diagnostics)
+      @assertFalse(allocated(summary%context_diagnostics))
+      @assertEqual(5, summary%total_contexts)
+      @assertEqual(3, summary%max_contexts_per_timer)
+   end subroutine test_build_summary_can_skip_named_context_diagnostics
+
+   @test
    subroutine test_format_summary_escapes_unsafe_names()
       type(ftimer_summary_t) :: summary
       character(len=:), allocatable :: text
