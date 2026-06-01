@@ -51,6 +51,7 @@ ftimer_types|FTIMER_EVENT_START|stable
 ftimer_types|FTIMER_EVENT_STOP|stable
 ftimer_types|wp|stable
 ftimer_types|ftimer_metadata_t|stable
+ftimer_types|ftimer_context_diagnostic_t|stable
 ftimer_types|ftimer_summary_entry_t|stable
 ftimer_types|ftimer_summary_t|stable
 ftimer_types|ftimer_mpi_summary_entry_t|stable

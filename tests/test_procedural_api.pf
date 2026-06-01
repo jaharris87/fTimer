@@ -1364,8 +1364,15 @@ contains
       @assertEqual(rhs%has_active_timers, lhs%has_active_timers)
       @assertEqual(rhs%total_contexts, lhs%total_contexts)
       @assertEqual(rhs%max_contexts_per_timer, lhs%max_contexts_per_timer)
+      @assertEqual(rhs%num_context_diagnostics, lhs%num_context_diagnostics)
       @assertTrue(summary_node_ids_unique(lhs))
       @assertTrue(summary_node_ids_unique(rhs))
+
+      do i = 1, lhs%num_context_diagnostics
+         names_match = trim(lhs%context_diagnostics(i)%name) == trim(rhs%context_diagnostics(i)%name)
+         @assertTrue(names_match)
+         @assertEqual(rhs%context_diagnostics(i)%context_count, lhs%context_diagnostics(i)%context_count)
+      end do
 
       do i = 1, lhs%num_entries
          names_match = trim(lhs%entries(i)%name) == trim(rhs%entries(i)%name)

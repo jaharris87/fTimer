@@ -2,7 +2,7 @@
 
 Stable source-level modules: `ftimer`, `ftimer_core`, `ftimer_types`.
 
-Pre-1.0 CMake package version compatibility is limited to the same minor release line. A `0.2.z` package can satisfy `find_package(fTimer 0.2 CONFIG REQUIRED)` and compatible `0.2.x` requests, but different `0.x` minor lines are not considered compatible. This package does not promise all-`0.x` source or compiler-module compatibility. The `0.2` package line is the compatibility boundary for the production-readiness call-count widening: local `ftimer_summary_entry_t%call_count` plus MPI `min_call_count`/`max_call_count` summary/result fields are `integer(int64)` on this line. MPI `avg_call_count` remains `real(wp)` and may differ from the exact integer average by representable real rounding for signed-64-bit values that `real(wp)` cannot represent exactly. Local structured summaries also expose context-cardinality diagnostics through `ftimer_summary_t%total_contexts`, `ftimer_summary_t%max_contexts_per_timer`, and `ftimer_summary_entry_t%timer_context_count`; these fields do not change text or CSV schemas.
+Pre-1.0 CMake package version compatibility is limited to the same minor release line. A `0.2.z` package can satisfy `find_package(fTimer 0.2 CONFIG REQUIRED)` and compatible `0.2.x` requests, but different `0.x` minor lines are not considered compatible. This package does not promise all-`0.x` source or compiler-module compatibility. The `0.2` package line is the compatibility boundary for the production-readiness call-count widening: local `ftimer_summary_entry_t%call_count` plus MPI `min_call_count`/`max_call_count` summary/result fields are `integer(int64)` on this line. MPI `avg_call_count` remains `real(wp)` and may differ from the exact integer average by representable real rounding for signed-64-bit values that `real(wp)` cannot represent exactly. Local structured summaries also expose context-cardinality diagnostics through `ftimer_summary_t%total_contexts`, `ftimer_summary_t%max_contexts_per_timer`, `ftimer_summary_t%context_diagnostics`, `ftimer_summary_t%num_context_diagnostics`, and `ftimer_summary_entry_t%timer_context_count`; these fields do not change text or CSV schemas.
 
 The supported source-level import surface is intentionally narrow:
 
@@ -83,6 +83,7 @@ Stable public symbols in `ftimer_types`:
 - `FTIMER_EVENT_STOP`
 - `wp`
 - `ftimer_metadata_t`
+- `ftimer_context_diagnostic_t`
 - `ftimer_summary_entry_t`
 - `ftimer_summary_t`
 - `ftimer_mpi_summary_entry_t`

@@ -35,6 +35,8 @@ contains
       else
          summary%num_entries = 0
          allocate (summary%entries(0))
+         summary%num_context_diagnostics = 0
+         allocate (summary%context_diagnostics(0))
       end if
       summary%has_active_timers = summary_has_active_entries(summary)
       if (summary%num_entries <= 0) return
@@ -329,6 +331,7 @@ contains
       type(ftimer_summary_t), intent(out) :: summary
 
       if (allocated(summary%entries)) deallocate (summary%entries)
+      if (allocated(summary%context_diagnostics)) deallocate (summary%context_diagnostics)
       summary%start_date = ''
       summary%end_date = ''
       summary%total_time = 0.0_wp
@@ -336,6 +339,7 @@ contains
       summary%has_active_timers = .false.
       summary%total_contexts = 0
       summary%max_contexts_per_timer = 0
+      summary%num_context_diagnostics = 0
    end subroutine clear_summary
 
    subroutine populate_context_cardinality(summary, segments)
@@ -346,10 +350,14 @@ contains
 
       summary%total_contexts = 0
       summary%max_contexts_per_timer = 0
+      summary%num_context_diagnostics = size(segments)
+      allocate (summary%context_diagnostics(summary%num_context_diagnostics))
       do i = 1, size(segments)
          context_count = segments(i)%contexts%count
          summary%total_contexts = summary%total_contexts + context_count
          summary%max_contexts_per_timer = max(summary%max_contexts_per_timer, context_count)
+         summary%context_diagnostics(i)%name = segments(i)%name
+         summary%context_diagnostics(i)%context_count = context_count
       end do
    end subroutine populate_context_cardinality
 

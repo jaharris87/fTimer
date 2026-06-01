@@ -5,8 +5,9 @@ module test_summary
    use ftimer_summary, only: build_summary, format_mpi_summary, format_mpi_union_summary, format_summary
    use ftimer_types, only: FTIMER_EVENT_START, FTIMER_EVENT_STOP, FTIMER_MISMATCH_REPAIR, FTIMER_NAME_LEN, &
                            FTIMER_SUCCESS, &
-                           ftimer_call_stack_t, ftimer_metadata_t, ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, &
-                           ftimer_segment_t, ftimer_summary_entry_t, &
+                           ftimer_call_stack_t, ftimer_context_diagnostic_t, ftimer_metadata_t, &
+                           ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, ftimer_segment_t, &
+                           ftimer_summary_entry_t, &
                            ftimer_summary_t, wp
    use test_support, only: attach_mock_clock, begin_stderr_capture, build_stack, end_stderr_capture, fake_time, &
                            mock_clock, reset_mock_clock_state, read_unit_text
@@ -119,6 +120,16 @@ contains
    end subroutine test_summary_entry_positional_ctor_keeps_legacy_order
 
    @test
+   subroutine test_context_diagnostic_positional_ctor_keeps_legacy_order()
+      type(ftimer_context_diagnostic_t) :: diagnostic
+
+      diagnostic = ftimer_context_diagnostic_t('work')
+
+      @assertEqual('work', trim(diagnostic%name))
+      @assertEqual(0, diagnostic%context_count)
+   end subroutine test_context_diagnostic_positional_ctor_keeps_legacy_order
+
+   @test
    subroutine test_summary_positional_ctor_keeps_legacy_order()
       type(ftimer_summary_entry_t), allocatable :: entries(:)
       type(ftimer_summary_t) :: summary
@@ -136,6 +147,8 @@ contains
       @assertFalse(summary%has_active_timers)
       @assertEqual(0, summary%total_contexts)
       @assertEqual(0, summary%max_contexts_per_timer)
+      @assertEqual(0, summary%num_context_diagnostics)
+      @assertFalse(allocated(summary%context_diagnostics))
    end subroutine test_summary_positional_ctor_keeps_legacy_order
 
    @test
@@ -856,9 +869,12 @@ contains
    subroutine test_get_summary_reports_context_cardinality()
       type(ftimer_t) :: timer
       type(ftimer_summary_t) :: summary
+      integer :: a_diag_idx
+      integer :: b_diag_idx
       integer :: ierr
       integer :: i
       integer :: parent_entry_count
+      integer :: work_diag_idx
       integer :: work_entry_count
 
       call timer%init(ierr=ierr)
@@ -890,6 +906,17 @@ contains
       @assertEqual(5, summary%num_entries)
       @assertEqual(5, summary%total_contexts)
       @assertEqual(3, summary%max_contexts_per_timer)
+      @assertEqual(3, summary%num_context_diagnostics)
+
+      work_diag_idx = find_context_diagnostic(summary, 'work')
+      a_diag_idx = find_context_diagnostic(summary, 'A')
+      b_diag_idx = find_context_diagnostic(summary, 'B')
+      @assertTrue(work_diag_idx > 0)
+      @assertTrue(a_diag_idx > 0)
+      @assertTrue(b_diag_idx > 0)
+      @assertEqual(3, summary%context_diagnostics(work_diag_idx)%context_count)
+      @assertEqual(1, summary%context_diagnostics(a_diag_idx)%context_count)
+      @assertEqual(1, summary%context_diagnostics(b_diag_idx)%context_count)
 
       work_entry_count = 0
       parent_entry_count = 0
@@ -914,7 +941,10 @@ contains
       character(len=:), allocatable :: captured
       character(len=*), parameter :: stderr_path = 'context_cardinality_default_stderr.txt'
       integer :: capture_ierr
+      integer :: hot_diag_idx
       integer :: ierr
+      integer :: outer_a_diag_idx
+      integer :: outer_b_diag_idx
       integer :: saved_fd
       logical :: no_warning_emitted
 
@@ -948,7 +978,68 @@ contains
       @assertTrue(no_warning_emitted)
       @assertEqual(4, summary%total_contexts)
       @assertEqual(2, summary%max_contexts_per_timer)
+      @assertEqual(3, summary%num_context_diagnostics)
+
+      hot_diag_idx = find_context_diagnostic(summary, 'hot')
+      outer_a_diag_idx = find_context_diagnostic(summary, 'outer_a')
+      outer_b_diag_idx = find_context_diagnostic(summary, 'outer_b')
+      @assertTrue(hot_diag_idx > 0)
+      @assertTrue(outer_a_diag_idx > 0)
+      @assertTrue(outer_b_diag_idx > 0)
+      @assertEqual(2, summary%context_diagnostics(hot_diag_idx)%context_count)
+      @assertEqual(1, summary%context_diagnostics(outer_a_diag_idx)%context_count)
+      @assertEqual(1, summary%context_diagnostics(outer_b_diag_idx)%context_count)
    end subroutine test_context_cardinality_diagnostics_do_not_warn_by_default
+
+   @test
+   subroutine test_context_diagnostics_name_hidden_contexts_after_reset()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: hot_diag_idx
+      integer :: ierr
+      integer :: outer_a_diag_idx
+      integer :: outer_b_diag_idx
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("outer_a", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("hot", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%stop("hot", ierr=ierr)
+      fake_time = 3.0_wp
+      call timer%stop("outer_a", ierr=ierr)
+
+      call timer%start("outer_b", ierr=ierr)
+      fake_time = 4.0_wp
+      call timer%start("hot", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%stop("hot", ierr=ierr)
+      fake_time = 6.0_wp
+      call timer%stop("outer_b", ierr=ierr)
+
+      call timer%reset(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(0, summary%num_entries)
+      @assertEqual(4, summary%total_contexts)
+      @assertEqual(2, summary%max_contexts_per_timer)
+      @assertEqual(3, summary%num_context_diagnostics)
+
+      hot_diag_idx = find_context_diagnostic(summary, 'hot')
+      outer_a_diag_idx = find_context_diagnostic(summary, 'outer_a')
+      outer_b_diag_idx = find_context_diagnostic(summary, 'outer_b')
+      @assertTrue(hot_diag_idx > 0)
+      @assertTrue(outer_a_diag_idx > 0)
+      @assertTrue(outer_b_diag_idx > 0)
+      @assertEqual(2, summary%context_diagnostics(hot_diag_idx)%context_count)
+      @assertEqual(1, summary%context_diagnostics(outer_a_diag_idx)%context_count)
+      @assertEqual(1, summary%context_diagnostics(outer_b_diag_idx)%context_count)
+   end subroutine test_context_diagnostics_name_hidden_contexts_after_reset
 
    @test
    subroutine test_get_summary_preserves_large_time_precision()
@@ -997,6 +1088,8 @@ contains
       type(ftimer_call_stack_t) :: root_stack
       type(ftimer_segment_t) :: segments(2)
       type(ftimer_summary_t) :: summary
+      integer :: a_diag_idx
+      integer :: b_diag_idx
       integer :: ctx
 
       segments(1)%name = 'A'
@@ -1017,6 +1110,16 @@ contains
 
       @assertEqual(0, summary%num_entries)
       @assertEqual(2.0_wp, summary%total_time)
+      @assertEqual(2, summary%total_contexts)
+      @assertEqual(1, summary%max_contexts_per_timer)
+      @assertEqual(2, summary%num_context_diagnostics)
+
+      a_diag_idx = find_context_diagnostic(summary, 'A')
+      b_diag_idx = find_context_diagnostic(summary, 'B')
+      @assertTrue(a_diag_idx > 0)
+      @assertTrue(b_diag_idx > 0)
+      @assertEqual(1, summary%context_diagnostics(a_diag_idx)%context_count)
+      @assertEqual(1, summary%context_diagnostics(b_diag_idx)%context_count)
    end subroutine test_build_summary_skips_visible_child_without_visible_parent
 
    @test
@@ -1160,6 +1263,20 @@ contains
          end if
       end do
    end function find_summary_entry
+
+   integer function find_context_diagnostic(summary, name) result(idx)
+      type(ftimer_summary_t), intent(in) :: summary
+      character(len=*), intent(in) :: name
+      integer :: i
+
+      idx = 0
+      do i = 1, summary%num_context_diagnostics
+         if (trim(summary%context_diagnostics(i)%name) == name) then
+            idx = i
+            return
+         end if
+      end do
+   end function find_context_diagnostic
 
    integer function count_lines(text) result(count)
       character(len=*), intent(in) :: text

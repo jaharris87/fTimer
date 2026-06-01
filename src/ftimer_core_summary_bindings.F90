@@ -1313,11 +1313,15 @@ contains
       type(ftimer_summary_t), intent(out) :: summary
 
       if (allocated(summary%entries)) deallocate (summary%entries)
+      if (allocated(summary%context_diagnostics)) deallocate (summary%context_diagnostics)
       summary%start_date = ''
       summary%end_date = ''
       summary%total_time = 0.0_wp
       summary%num_entries = 0
       summary%has_active_timers = .false.
+      summary%total_contexts = 0
+      summary%max_contexts_per_timer = 0
+      summary%num_context_diagnostics = 0
    end subroutine reset_summary
 
    subroutine reset_mpi_summary(summary)
