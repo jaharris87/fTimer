@@ -8,7 +8,8 @@ module test_summary
                            ftimer_call_stack_t, ftimer_metadata_t, ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, &
                            ftimer_segment_t, ftimer_summary_entry_t, &
                            ftimer_summary_t, wp
-   use test_support, only: attach_mock_clock, build_stack, fake_time, mock_clock, reset_mock_clock_state, read_unit_text
+   use test_support, only: attach_mock_clock, begin_stderr_capture, build_stack, end_stderr_capture, fake_time, &
+                           mock_clock, reset_mock_clock_state, read_unit_text
    implicit none
 
    integer, save :: snapshot_callback_count = 0
@@ -114,6 +115,7 @@ contains
       @assertEqual(0, entry%node_id)
       @assertEqual(0, entry%parent_id)
       @assertFalse(entry%is_active)
+      @assertEqual(0, entry%timer_context_count)
    end subroutine test_summary_entry_positional_ctor_keeps_legacy_order
 
    @test
@@ -132,6 +134,8 @@ contains
       @assertEqual(1, summary%num_entries)
       @assertEqual('work', trim(summary%entries(1)%name))
       @assertFalse(summary%has_active_timers)
+      @assertEqual(0, summary%total_contexts)
+      @assertEqual(0, summary%max_contexts_per_timer)
    end subroutine test_summary_positional_ctor_keeps_legacy_order
 
    @test
@@ -847,6 +851,104 @@ contains
       @assertEqual(3.0_wp, summary%entries(4)%self_time)
       @assertTrue(summary%entries(2)%node_id /= summary%entries(4)%node_id)
    end subroutine test_get_summary_keeps_same_timer_distinct_across_parents
+
+   @test
+   subroutine test_get_summary_reports_context_cardinality()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      integer :: ierr
+      integer :: i
+      integer :: parent_entry_count
+      integer :: work_entry_count
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("work", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%stop("work", ierr=ierr)
+
+      call timer%start("A", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%start("work", ierr=ierr)
+      fake_time = 3.0_wp
+      call timer%stop("work", ierr=ierr)
+      fake_time = 4.0_wp
+      call timer%stop("A", ierr=ierr)
+
+      call timer%start("B", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%start("work", ierr=ierr)
+      fake_time = 6.0_wp
+      call timer%stop("work", ierr=ierr)
+      fake_time = 7.0_wp
+      call timer%stop("B", ierr=ierr)
+
+      call timer%get_summary(summary, ierr=ierr)
+
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(5, summary%num_entries)
+      @assertEqual(5, summary%total_contexts)
+      @assertEqual(3, summary%max_contexts_per_timer)
+
+      work_entry_count = 0
+      parent_entry_count = 0
+      do i = 1, summary%num_entries
+         if (trim(summary%entries(i)%name) == 'work') then
+            work_entry_count = work_entry_count + 1
+            @assertEqual(3, summary%entries(i)%timer_context_count)
+         else
+            parent_entry_count = parent_entry_count + 1
+            @assertEqual(1, summary%entries(i)%timer_context_count)
+         end if
+      end do
+
+      @assertEqual(3, work_entry_count)
+      @assertEqual(2, parent_entry_count)
+   end subroutine test_get_summary_reports_context_cardinality
+
+   @test
+   subroutine test_context_cardinality_diagnostics_do_not_warn_by_default()
+      type(ftimer_t) :: timer
+      type(ftimer_summary_t) :: summary
+      character(len=:), allocatable :: captured
+      character(len=*), parameter :: stderr_path = 'context_cardinality_default_stderr.txt'
+      integer :: capture_ierr
+      integer :: ierr
+      integer :: saved_fd
+      logical :: no_warning_emitted
+
+      call timer%init(ierr=ierr)
+      call attach_mock_clock(timer)
+
+      call timer%start("outer_a", ierr=ierr)
+      fake_time = 1.0_wp
+      call timer%start("hot", ierr=ierr)
+      fake_time = 2.0_wp
+      call timer%stop("hot", ierr=ierr)
+      fake_time = 3.0_wp
+      call timer%stop("outer_a", ierr=ierr)
+
+      call timer%start("outer_b", ierr=ierr)
+      fake_time = 4.0_wp
+      call timer%start("hot", ierr=ierr)
+      fake_time = 5.0_wp
+      call timer%stop("hot", ierr=ierr)
+      fake_time = 6.0_wp
+      call timer%stop("outer_b", ierr=ierr)
+
+      call begin_stderr_capture(stderr_path, saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%get_summary(summary)
+      call end_stderr_capture(stderr_path, saved_fd, captured, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      no_warning_emitted = len_trim(captured) == 0
+
+      @assertTrue(no_warning_emitted)
+      @assertEqual(4, summary%total_contexts)
+      @assertEqual(2, summary%max_contexts_per_timer)
+   end subroutine test_context_cardinality_diagnostics_do_not_warn_by_default
 
    @test
    subroutine test_get_summary_preserves_large_time_precision()

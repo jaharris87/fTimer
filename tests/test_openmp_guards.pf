@@ -837,6 +837,8 @@ contains
       @assertEqual(rhs%num_entries, lhs%num_entries)
       @assertEqual(rhs%total_time, lhs%total_time)
       @assertEqual(rhs%has_active_timers, lhs%has_active_timers)
+      @assertEqual(rhs%total_contexts, lhs%total_contexts)
+      @assertEqual(rhs%max_contexts_per_timer, lhs%max_contexts_per_timer)
       @assertTrue(summary_node_ids_unique(lhs))
       @assertTrue(summary_node_ids_unique(rhs))
 
@@ -854,6 +856,7 @@ contains
          @assertEqual(rhs%entries(i)%call_count, lhs%entries(i)%call_count)
          @assertEqual(rhs%entries(i)%avg_time, lhs%entries(i)%avg_time)
          @assertEqual(rhs%entries(i)%is_active, lhs%entries(i)%is_active)
+         @assertEqual(rhs%entries(i)%timer_context_count, lhs%entries(i)%timer_context_count)
          pct_diff = abs(lhs%entries(i)%pct_time - rhs%entries(i)%pct_time)
          @assertTrue(pct_diff < 1.0e-12_wp)
       end do

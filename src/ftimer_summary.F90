@@ -29,6 +29,7 @@ contains
       summary%total_time = end_time - init_wtime
 
       if (present(segments)) then
+         call populate_context_cardinality(summary, segments)
          call populate_summary_entries(summary%entries, summary%num_entries, &
                                        segments, summary%total_time, end_time)
       else
@@ -333,7 +334,24 @@ contains
       summary%total_time = 0.0_wp
       summary%num_entries = 0
       summary%has_active_timers = .false.
+      summary%total_contexts = 0
+      summary%max_contexts_per_timer = 0
    end subroutine clear_summary
+
+   subroutine populate_context_cardinality(summary, segments)
+      type(ftimer_summary_t), intent(inout) :: summary
+      type(ftimer_segment_t), intent(in) :: segments(:)
+      integer :: context_count
+      integer :: i
+
+      summary%total_contexts = 0
+      summary%max_contexts_per_timer = 0
+      do i = 1, size(segments)
+         context_count = segments(i)%contexts%count
+         summary%total_contexts = summary%total_contexts + context_count
+         summary%max_contexts_per_timer = max(summary%max_contexts_per_timer, context_count)
+      end do
+   end subroutine populate_context_cardinality
 
    subroutine populate_summary_entries(entries, num_entries, segments, total_time, end_time)
       type(ftimer_summary_entry_t), allocatable, intent(out) :: entries(:)
@@ -438,6 +456,7 @@ contains
          entries(position)%inclusive_time = node_inclusive(node)
          entries(position)%call_count = node_call_count(node)
          entries(position)%is_active = context_is_active(segments(node_segment(node)), node_ctx(node))
+         entries(position)%timer_context_count = segments(node_segment(node))%contexts%count
          if (entries(position)%call_count > 0) then
             entries(position)%avg_time = entries(position)%inclusive_time/ &
                                          real(entries(position)%call_count, wp)

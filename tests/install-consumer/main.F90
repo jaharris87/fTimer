@@ -34,9 +34,12 @@ program ftimer_installed_consumer
    if (summary%entries(1)%call_count /= 1) error stop 8
    if (kind(summary%entries(1)%call_count) /= int64) error stop 9
    if (summary%entries(1)%inclusive_time < 0.0_wp) error stop 10
+   if (summary%total_contexts /= 1) error stop 11
+   if (summary%max_contexts_per_timer /= 1) error stop 12
+   if (summary%entries(1)%timer_context_count /= 1) error stop 13
 
    call ftimer_finalize(ierr=ierr)
-   if (ierr /= 0) error stop 11
+   if (ierr /= 0) error stop 14
 
    if (accumulator < 0.0) print *, accumulator
 end program ftimer_installed_consumer

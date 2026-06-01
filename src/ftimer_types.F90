@@ -75,6 +75,7 @@ module ftimer_types
       integer :: node_id = 0
       integer :: parent_id = 0
       logical :: is_active = .false.
+      integer :: timer_context_count = 0
    end type ftimer_summary_entry_t
 
    type :: ftimer_summary_t
@@ -84,6 +85,8 @@ module ftimer_types
       integer :: num_entries = 0
       type(ftimer_summary_entry_t), allocatable :: entries(:)
       logical :: has_active_timers = .false.
+      integer :: total_contexts = 0
+      integer :: max_contexts_per_timer = 0
    end type ftimer_summary_t
 
    type :: ftimer_mpi_summary_entry_t
