@@ -11,7 +11,7 @@ For a first release, the focus is a small, dependable core:
 - inclusive and self time in structured summaries with explicit tree linkage
 - a small procedural scoped guard for lexical blocks with early exits
 - procedural wrappers and an OOP core API
-- optional MPI global summaries plus first-class strict text/CSV and sparse text report output
+- optional MPI global summaries plus first-class strict text/CSV and sparse text/CSV report output
 - an installable CMake package for downstream projects
 
 ## Why Use fTimer
@@ -25,7 +25,7 @@ fTimer fits best when you want timing behavior you can trust:
 - local summaries are live snapshots: active timers are included explicitly and marked in the data model/report output
 - local summary entries retain formatter-friendly preorder `name`/`depth` data and also expose explicit `node_id`/`parent_id` tree links
 - pure-MPI reductions return a distinct `ftimer_mpi_summary_t` with globally meaningful fields on every participating rank
-- rank-conditional MPI reductions and text reports are available through opt-in sparse/union APIs and `ftimer_mpi_union_summary_t`
+- rank-conditional MPI reductions and reports are available through opt-in sparse/union APIs and `ftimer_mpi_union_summary_t`
 - an injectable clock supports deterministic tests and controlled benchmarking
 - optional callback hooks let in-process code observe normal timer start/stop events during a run
 

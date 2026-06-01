@@ -19,7 +19,7 @@ Implemented capabilities include:
 - structured local summaries plus formatted local report output and CSV export
 - procedural wrappers over an OOP core
 - MPI-reduced global summary fields on every participating rank after a descriptor-hash preflight
-- sparse MPI union summaries plus explicit sparse text reports
+- sparse MPI union summaries plus explicit sparse text and CSV reports
 - limited OpenMP master-thread-only timer guards
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
@@ -177,6 +177,7 @@ The currently exported procedural entry points are:
 - `ftimer_write_mpi_summary_csv`
 - `ftimer_print_mpi_union_summary`
 - `ftimer_write_mpi_union_summary`
+- `ftimer_write_mpi_union_summary_csv`
 - `ftimer_default_instance`
 
 Important current-state API notes:
