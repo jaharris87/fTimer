@@ -646,7 +646,11 @@ contains
       segment_idx = self%find_or_create_segment(name(1:trimmed_len))
       call start_trace_mark("start_impl: after find_or_create_segment")
       call start_trace_mark("start_impl: before start_segment_impl")
-      call start_segment_impl(self, segment_idx, ierr=ierr, activation_token=activation_token)
+      if (present(activation_token)) then
+         call start_segment_impl(self, segment_idx, ierr=ierr, activation_token=activation_token)
+      else
+         call start_segment_impl(self, segment_idx, ierr=ierr)
+      end if
       call start_trace_mark("start_impl: after start_segment_impl")
    end subroutine start_impl
 
