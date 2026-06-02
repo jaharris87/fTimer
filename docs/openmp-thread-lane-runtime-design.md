@@ -37,8 +37,9 @@ Object-level state:
 - clock pointer and summary-window timestamps;
 - optional MPI communicator capture for later hybrid work;
 - an append-only timer catalog mapping public timer ids to validated names;
-- configuration such as maximum lanes, expected timer count, expected stack
-  depth, dynamic-registration policy, and diagnostic capacity;
+- configuration for maximum lanes and bounded worker diagnostics;
+- private reserve and warm-up policy for lane-local timers, contexts, and stack
+  depth, unless #243 demonstrates that public tuning knobs are needed;
 - bounded aggregate diagnostic counters for worker calls without `ierr`.
 
 Lane-level state:
@@ -73,11 +74,21 @@ global thread-local default:
   reports a mismatch and the original lane remains active until the matching
   lane stops or the runtime reports active timers at a merge point.
 
-`config%max_lanes` should bound the allocated lane table. The default can be
-derived from `omp_get_max_threads()` at `init`, but callers that use runtime
-thread-count changes should pass an explicit capacity. A call from a team
-thread whose computed lane id exceeds the configured capacity must return an
-error and leave state unchanged.
+`config%max_lanes` is a lane count that includes the serial lane. Valid lane
+ids are `0 <= lane_id < config%max_lanes`. The default must therefore be at
+least `1 + omp_get_max_threads()` at `init`, so an `N`-thread level-1 team has
+capacity for lane ids `0..N`. Callers that use runtime thread-count changes
+should pass an explicit capacity. A call from a team thread whose computed lane
+id is outside the configured table must return an error and leave state
+unchanged.
+
+Worker timing intervals must be contained within one dynamic level-1 parallel
+region and must be stopped by the same lane before that region ends. A later
+parallel region reusing the same `omp_get_thread_num()` value is not a valid
+way to complete an earlier worker timer. Until the API gains an explicit
+parallel-region guard or epoch handle, implementations should treat active
+worker stacks discovered at serial merge/lifecycle points as contract
+violations rather than silently carrying them into later regions.
 
 ## Valid Operations
 
@@ -95,10 +106,8 @@ Timing calls are valid from serial context and from level-1 parallel teams:
 
 - `start_id`
 - `stop_id`
-- `start`
-- `stop`
-- `lookup`, if the implementation chooses to allow dynamic registration inside
-  a parallel region
+- `start` and `stop`, only if they resolve already-registered names without
+  catalog mutation
 
 The first implementation should treat summary/report/reset/finalize/config
 calls from inside an active parallel region as invalid. They must not attempt to
@@ -115,19 +124,24 @@ Recommended path:
 
 1. Register timer names outside a parallel region with `lookup` or a future
    explicit registration helper.
-2. Pass the returned ids into the parallel region.
-3. Use `start_id` and `stop_id` on worker lanes.
+2. Warm or reserve lane-local context storage for the intended timing patterns
+   when the implementation provides such a helper.
+3. Pass the returned ids into the parallel region.
+4. Use `start_id` and `stop_id` on worker lanes.
 
 For this path, `start_id` and `stop_id` need no global lock after `init` and
-registration. They read the catalog, update only the current lane, and grow only
-lane-local storage if the caller exceeded configured reserves.
+serial registration/warm-up. They read the catalog and update only the current
+lane. Any lane-local context creation or array growth is cold first-touch work,
+not the warmed steady-state hot path.
 
 Name-based `start` and `stop` may remain convenience calls, but they are not the
-recommended hot path. If dynamic name creation is allowed inside a parallel
-region, the shared catalog lookup/create operation must be protected by one
-short critical section because catalog growth can reallocate name and id tables.
-That critical section is acceptable for first-touch registration, not for
-per-iteration timing in a hot loop.
+recommended hot path. The first implementation should make catalog mutation
+serial-only: inside a parallel region, name-based calls may perform read-only
+lookup of already-registered names or may be rejected outright. Unknown names
+inside a parallel region should return an error and leave state unchanged.
+Dynamic worker registration can be reconsidered later only if #243 or a later
+measurement issue shows that the extra catalog-locking path is worth the API,
+allocation, and test burden.
 
 Unknown-id `start_id` and `stop_id` calls should return an error. They must not
 create unnamed catalog entries.
@@ -140,9 +154,11 @@ On `start_id(timer_id)`:
 
 1. Resolve `lane_id`.
 2. Verify initialized state and timer id.
-3. Find or create the lane-local context for `(timer_id, lane_stack_before_start)`.
+3. Find the warmed lane-local context for
+   `(timer_id, lane_stack_before_start)`, or create it as an explicitly cold
+   first-touch path before recording the start timestamp.
 4. Increment the lane-local call count.
-5. Push `timer_id` and an activation token onto that lane stack.
+5. Push `timer_id` onto that lane stack.
 6. Record the lane-local start timestamp.
 
 On `stop_id(timer_id)`:
@@ -281,12 +297,17 @@ these synchronization properties:
 - one clock read per start and one clock read per successful stop;
 - lane-local context lookup and lane-local stack mutation only.
 
-The remaining costs are lane-local hash/context lookup, possible lane-local
-array growth, and the clock call. To keep those costs bounded in hot loops, the
-config object should offer reservations for expected timers, contexts, and stack
-depth. If a lane exceeds those reservations, lane-local allocation is allowed
-but should be documented as a first-touch or growth cost, not the steady-state
-hot path.
+The warmed steady-state path assumes names are registered and the relevant
+lane-local contexts have either been reserved or touched once before the
+measured loop. The remaining costs are lane-local hash/context lookup and the
+clock call. Lane-local array growth is allowed only as a cold first-touch or
+growth path and must be documented separately from steady-state timing cost.
+
+The first public config surface should stay lean: `max_lanes` plus bounded
+diagnostic policy are enough for correctness. Expected timer counts, context
+counts, and stack-depth reserves should remain private implementation details,
+or become public only after #243 measurements show that users need direct
+control.
 
 Name-based calls inside parallel regions are explicitly slower unless the
 implementation can prove a lock-free read-only catalog lookup with no concurrent
@@ -308,8 +329,8 @@ Implementation guidance:
 - preserve catalog ids so merge-time descriptor construction does not need to
   compare timer names from every lane in the hot path.
 
-#243 should measure the steady-state `start_id`/`stop_id` overhead after
-pre-registration and after lane/context reserves are warmed.
+#243 should measure both cold first-touch overhead and warmed steady-state
+`start_id`/`stop_id` overhead after pre-registration and lane/context warm-up.
 
 ## Interaction With Later Child Issues
 
@@ -332,7 +353,8 @@ pre-registration and after lane/context reserves are warmed.
 - Adding MPI+OpenMP reductions in this issue.
 - Supporting nested OpenMP teams or OpenMP task migration.
 - Making callbacks from worker timing calls.
-- Treating catalog locks in name-based `start` as the recommended hot path.
+- Adding dynamic worker name registration or treating name-based `start` as the
+  recommended hot path.
 
 ## Validation For This Design
 
