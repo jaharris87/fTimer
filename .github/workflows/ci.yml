@@ -129,7 +129,14 @@ jobs:
             fi
           done
 
+      - name: Diagnose phase0 smoke with NVHPC runtime traceback
+        env:
+          NVCOMPILER_TERM: trace,abort
+        run: ./build/tests/ftimer_phase0_smoke
+
       - name: Serial smoke and installed-consumer checks
+        env:
+          NVCOMPILER_TERM: trace,abort
         run: |
           ctest --test-dir build --output-on-failure --no-tests=error -R '^(ftimer_phase0_smoke|ftimer_installed_package_consumer|ftimer_installed_package_consumer_absolute_includedir|ftimer_absolute_includedir_destdir_install|ftimer_basic_usage_smoke|ftimer_instrumentation_facade_enabled_smoke|ftimer_instrumentation_facade_disabled_smoke)$'
 
