@@ -1,0 +1,254 @@
+> **When to read this:** When designing or implementing true OpenMP or hybrid
+> MPI+OpenMP timing beyond the current master-thread-only OpenMP compatibility
+> mode.
+
+# Opt-In OpenMP Timing API Design
+
+Issue #238 settles the API and compatibility direction for the OpenMP/hybrid
+umbrella in #237. It is a design contract only: it does not implement per-thread
+stacks, threaded summaries, hybrid MPI reductions, or new public runtime APIs.
+
+## Decision
+
+True OpenMP worker-thread timing should use a separate, explicit API surface:
+
+- a future `ftimer_openmp` module;
+- a future `type(ftimer_openmp_t)` runtime object;
+- a future `type(ftimer_openmp_config_t)` configuration object;
+- explicit named mode constants in that new module, with the first true timing
+  mode defined around OpenMP thread lanes;
+- future hybrid summary/result entry points that are separate from today's
+  `get_summary()`, `mpi_summary()`, and `mpi_union_summary()` contracts.
+
+The current `ftimer` procedural API, `type(ftimer_t)`, and pure-MPI APIs remain
+unchanged. `FTIMER_USE_OPENMP=ON` continues to mean the existing
+master-thread-only compatibility mode for those current APIs unless a caller
+uses the future OpenMP-specific API. A build option by itself must not silently
+turn existing `start`/`stop` calls into true worker-thread timing.
+
+## Current Compatibility Contract
+
+Current `main` remains the source of truth until later child issues implement
+the new API.
+
+- Serial users keep the current `use ftimer` and `type(ftimer_t)` behavior.
+- Pure-MPI users keep the current `mpi_f08` `comm=` capture, strict
+  `mpi_summary()`, sparse `mpi_union_summary()`, and report/CSV APIs.
+- `FTIMER_USE_OPENMP=OFF` does not activate OpenMP guard behavior, even when a
+  parent build uses global OpenMP compiler flags.
+- `FTIMER_USE_OPENMP=ON` keeps the current master-thread-only carve-out:
+  guarded timer operations run on OpenMP thread 0, non-master calls are silent
+  no-ops, worker calls leave caller-provided `ierr` values unchanged, and worker
+  calls do not create summary entries or callback events.
+- The current OpenMP guard tests that defend worker no-op behavior remain
+  compatibility tests, not tests to weaken during true OpenMP implementation.
+
+## Recommended API Shape
+
+The first implementation should be object-explicit and keyword-heavy:
+
+The snippets below are proposed interface sketches, not compiling examples on
+current `main`. They name the future source shape so later implementation issues
+can add real API symbols and compile-checked examples without changing the
+compatibility decision recorded here.
+
+```fortran
+! Proposed future API shape. Not implemented on current main.
+use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, &
+                         ftimer_openmp_config_t, ftimer_openmp_t
+
+type(ftimer_openmp_config_t) :: config
+type(ftimer_openmp_t) :: timer
+integer :: ierr
+
+config%mode = FTIMER_OPENMP_MODE_THREAD_LANES
+call timer%init(config=config, ierr=ierr)
+
+!$omp parallel private(ierr)
+call timer%start("cell_update", ierr=ierr)
+! worker-thread work
+call timer%stop("cell_update", ierr=ierr)
+!$omp end parallel
+
+call timer%get_openmp_summary(summary, ierr=ierr)
+call timer%finalize(ierr=ierr)
+```
+
+The proposed `THREAD_LANES` mode means "one strict nesting stack per
+participating OpenMP execution lane," initially defined as one lane per OpenMP
+thread id in a parallel region. OpenMP task migration, task dependency tracing,
+accelerator/device timing, and profiler event streams remain out of scope.
+
+For hybrid runs, the communicator contract should stay keyword-based:
+
+```fortran
+! Proposed future hybrid shape. Not implemented on current main.
+call timer%init(config=config, comm=comm, ierr=ierr)
+call timer%mpi_openmp_summary(summary, ierr=ierr)
+```
+
+The future hybrid result type must be separate from `ftimer_mpi_summary_t` and
+`ftimer_mpi_union_summary_t` so existing strict and sparse MPI callers do not
+silently receive a rank/thread result shape.
+
+## Procedural And OOP Interaction
+
+The true OpenMP timing API should be OOP-first. The current procedural default
+instance must never participate in true worker-thread timing.
+
+That rule avoids three compatibility hazards:
+
+- `ftimer_default_instance` is a single saved object with one mutable runtime
+  state today.
+- Existing procedural calls are often used as low-friction instrumentation in
+  serial and pure-MPI code, where users do not expect per-thread allocation,
+  synchronization, or a new summary shape.
+- A global threaded default would be hard to configure safely for MPI
+  communicator ownership, per-thread diagnostics, and report lifecycle.
+
+If procedural helpers are later added for ergonomics, they should live in the
+future `ftimer_openmp` module and take an explicit `type(ftimer_openmp_t)`
+object argument. They must not add a second global default instance and must not
+overload the current `ftimer_init`, `ftimer_start`, or `ftimer_stop` names.
+
+## Positional Compatibility Rules
+
+No new OpenMP timing option should be added as a positional argument to current
+`ftimer_init` or `type(ftimer_t)%init` signatures. In particular, do not add an
+optional integer `openmp_mode` argument to the existing init overloads.
+
+Future OpenMP options should be carried through a config object and passed by
+keyword:
+
+- `config=config` for OpenMP timing mode and lane policy;
+- `comm=comm` for MPI communicator capture in MPI-enabled builds;
+- `mismatch_mode=...` and `ierr=...` preserved as keyword-friendly arguments.
+
+This keeps removed integer communicator handles, existing mismatch-mode
+arguments, and status arguments from becoming ambiguous.
+
+## Threaded Error Policy
+
+The current `ierr` contract remains unchanged for current APIs. For the future
+true OpenMP API:
+
+- Examples and tests should pass a thread-private `ierr` in worker timing paths.
+- With `ierr` present, each call reports the status observed by that calling
+  lane and does not write to stderr.
+- With `ierr` absent from a worker timing call, the runtime should not emit
+  unordered per-thread stderr diagnostics. It should record bounded,
+  thread-safe diagnostics on the timer object and expose an aggregate status
+  through later summary/finalize/diagnostic APIs.
+- Serial or master-thread lifecycle calls that observe queued diagnostics may
+  emit one deterministic aggregate stderr diagnostic when their own `ierr` is
+  omitted.
+- Cross-thread start/stop mismatches are lane-local errors by default. A stop on
+  a lane whose own stack top does not match must not repair or pop another
+  lane's stack.
+
+The exact diagnostic storage, overflow behavior, and aggregate status values
+belong to #239 and #240, but the first implementation must not solve stderr
+noise by silently treating worker errors as success.
+
+## Callback Policy
+
+Current `type(ftimer_t)%set_callback()` behavior stays unchanged for serial,
+pure-MPI, and master-thread-only compatibility mode.
+
+True OpenMP worker timing should not fire callbacks through today's
+`ftimer_hook_proc` interface in the first implementation. The current callback
+signature has only runtime-local timer/context ids and no rank, thread, lane, or
+task identity. Reusing it for worker events would make callback consumers see
+plausible but ambiguous event streams.
+
+If callbacks are later approved for true OpenMP timing, they need a separate
+callback interface that explicitly carries rank/lane identity, reentrancy rules,
+ordering guarantees, and unsupported callback-side mutations.
+
+## Summary And Report Direction
+
+The future OpenMP summary model should distinguish at least these quantities:
+
+- wall-clock envelope time for a region;
+- summed lane work time;
+- per-lane call counts and inclusive/self time;
+- lane participation count and missing-lane semantics;
+- rank/lane hierarchy for hybrid MPI+OpenMP summaries.
+
+Existing local summaries remain local runtime snapshots. Existing strict MPI
+summaries remain rank-only reductions over identical rank timer trees. Existing
+sparse MPI summaries remain rank-participation unions. Hybrid rank/lane
+summaries need their own result types and report/CSV schemas instead of
+overloading those current meanings.
+
+## Migration Story
+
+Existing users do not need to change source code.
+
+- Serial and pure-MPI code can keep current imports and APIs.
+- Current OpenMP users who bracket parallel regions as a whole can keep
+  `FTIMER_USE_OPENMP=ON` and the existing example pattern.
+- Applications that want both compatibility mode and future true worker timing
+  should put that choice behind an application-owned instrumentation facade.
+- Users adopting true OpenMP timing should explicitly import `ftimer_openmp`,
+  construct a `ftimer_openmp_t`, initialize it with `config=...`, and consume
+  the new OpenMP/hybrid summary type.
+
+Documentation under #242 should keep the current `examples/openmp_example.F90`
+as the compatibility example and add a separate true OpenMP example only after
+#239 and #240 define enough runtime and summary behavior for that example to
+compile.
+
+## Rejected Alternatives
+
+- **Silently change `ftimer_t` when `FTIMER_USE_OPENMP=ON`.** This would break
+  current master-thread-only users and could add overhead or new summary shapes
+  to existing serial and pure-MPI instrumentation.
+- **Add an optional integer mode to existing `ftimer_init`.** This would
+  recreate the positional ambiguity that the current init contract deliberately
+  avoids.
+- **Use a thread-local procedural default instance.** This would make summary,
+  lifecycle, MPI communicator ownership, and callback configuration ambiguous
+  for callers that currently rely on one default instance.
+- **Protect the existing single stack with locks.** A synchronized shared stack
+  still cannot represent independent worker-thread nesting and would serialize
+  hot timing paths without producing a credible thread summary model.
+- **Record worker starts/stops now and aggregate them into existing summaries.**
+  Partial worker timing without a new summary contract would make missing lanes,
+  summed work, wall-clock envelope time, and self-time boundaries ambiguous.
+- **Reuse the current callback hook for worker events.** The old callback
+  interface lacks thread identity and ordering semantics.
+
+## Dependencies On Later Child Issues
+
+- #239 must design and implement the runtime concurrency model, including
+  per-lane stacks, lane identity, lifecycle boundaries, mismatch behavior, and
+  diagnostic storage.
+- #240 must define the OpenMP local summary model, including envelope time,
+  summed work, participation, self-time boundaries, and CSV/report schemas.
+- #241 must define hybrid MPI+OpenMP reductions without changing current
+  `mpi_summary()` or `mpi_union_summary()` semantics by accident.
+- #243 must add deterministic OpenMP and hybrid validation, including
+  compatibility tests that prove current worker no-op behavior still holds for
+  existing APIs.
+- #242 must update user-facing docs and examples after the runtime and summary
+  APIs exist, keeping compatibility and true worker timing examples separate.
+
+## Non-Goals
+
+- Implementing threaded runtime behavior in #238.
+- Adding per-thread stacks or thread-local timer objects in this design PR.
+- Changing current OpenMP guard semantics or test expectations.
+- Changing serial or pure-MPI public API names, signatures, or result types.
+- Adding hybrid MPI+OpenMP reductions before the summary model is settled.
+- Supporting OpenMP tasks, accelerator/device timing, hardware counters,
+  profiler traces, automatic MPI barriers, or stable callback identity.
+
+## Validation For This Design
+
+Because this document records a future API contract without adding public
+symbols or changing runtime behavior, validation for #238 is limited to Markdown
+and diff checks. The proposed OpenMP snippets above are intentionally not
+compile targets yet. Later implementation issues must add compiling examples and
+focused build/test coverage for the new API surface before claiming runtime API
+support.

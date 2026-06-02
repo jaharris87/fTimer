@@ -18,7 +18,14 @@ Answer each of these explicitly. If a question is not applicable, say so and why
 - **Timestamp consistency in repair**: All unwound timers and the target must use a single `now` value. Independent clock reads during repair create timing gaps.
 - **Context matching correctness**: Call stack comparison must be exact (depth + all IDs). Off-by-one in stack comparison silently creates duplicate contexts.
 - **MPI collective safety**: Hash preflight must complete before any MPI_Reduce. Timer descriptor ordering must be canonical (sorted, not insertion-order). Collective buffer sizes must match across ranks.
-- **OpenMP master-only access**: Timer operations must be guarded by `!$omp master`. Non-master threads calling timer routines is undefined behavior that may corrupt shared state.
+- **OpenMP master-only access**: When `FTIMER_USE_OPENMP=ON`, guarded timer
+  operations must preserve the documented master-thread-only compatibility
+  model. Master-thread calls may mutate timer state; non-master calls to
+  guarded core timer operations must be silent no-ops that do not create
+  entries, do not increment call counts, do not fire callbacks, and leave
+  caller-provided `ierr` values unchanged. Summary/report generation and other
+  shared access inside threaded regions remain outside the supported contract
+  unless a future explicit OpenMP timing API says otherwise.
 - **Summary tree walk boundaries**: Child iteration must stop at the next sibling (same or lesser depth), not continue into cousins. Getting this wrong corrupts self-time for every parent timer.
 
 ### How to Report
