@@ -17,6 +17,14 @@ if(FTIMER_BUILD_SMOKE_TESTS)
       -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_api_ierr_silence.cmake
   )
 
+  add_executable(ftimer_openmp_api_serial_diagnostics test_openmp_api_serial_diagnostics.F90)
+  target_link_libraries(ftimer_openmp_api_serial_diagnostics PRIVATE ftimer)
+  add_test(NAME ftimer_openmp_api_serial_diagnostics
+    COMMAND ${CMAKE_COMMAND}
+      -DTEST_EXECUTABLE=$<TARGET_FILE:ftimer_openmp_api_serial_diagnostics>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_api_serial_diagnostics.cmake
+  )
+
   if(FTIMER_USE_OPENMP)
     add_executable(ftimer_openmp_api_diagnostics test_openmp_api_diagnostics.F90)
     target_link_libraries(ftimer_openmp_api_diagnostics PRIVATE ftimer)

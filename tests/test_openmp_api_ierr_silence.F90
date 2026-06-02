@@ -40,8 +40,7 @@ program ftimer_openmp_api_ierr_silence
    call check_parallel_ierr_silence(timer, timer_id)
 #endif
 
-   call timer%finalize(ierr=ierr)
-   if (ierr /= FTIMER_SUCCESS) error stop 8
+   call timer%finalize()
 
 contains
 
