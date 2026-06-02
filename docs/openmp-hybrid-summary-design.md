@@ -27,7 +27,7 @@ Recommended future entry points:
 
 - `timer%get_openmp_summary(summary, ierr=ierr)` for local aggregate summaries;
 - `timer%print_openmp_summary(...)`, `timer%write_openmp_summary(...)`, and
-  `timer%write_openmp_summary_csv(...)` for local lane reports;
+  `timer%write_openmp_summary_csv(...)` for local aggregate reports;
 - `timer%mpi_openmp_summary(summary, ierr=ierr)` plus explicit hybrid text and
   CSV writers for MPI+OpenMP summaries.
 
