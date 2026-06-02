@@ -107,7 +107,9 @@ below is retained as historical context and maps onto #238 through #243:
   aggregation, call-count semantics, self-time rules, and MPI reduction behavior.
 - Prototype the core concurrency model. Compare thread-local stacks plus
   post-region aggregation against a synchronized shared instance and document
-  the overhead and correctness tradeoffs.
+  the overhead and correctness tradeoffs. The #239 thread-lane runtime decision
+  is now recorded in
+  [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md).
 - Add deterministic OpenMP tests. Preserve the existing worker no-op tests for
   the default mode, then add opt-in tests for worker-only timers, all-thread
   timers, nested per-thread stacks, callbacks, and summary generation.

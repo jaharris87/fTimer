@@ -221,9 +221,11 @@ compile.
 
 ## Dependencies On Later Child Issues
 
-- #239 must design and implement the runtime concurrency model, including
-  per-lane stacks, lane identity, lifecycle boundaries, mismatch behavior, and
-  diagnostic storage.
+- #239 defines the runtime concurrency model in
+  [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md),
+  including per-lane stacks, lane identity, lifecycle boundaries, mismatch
+  behavior, merge points, hot-path synchronization bounds, and diagnostic
+  storage.
 - #240 must define the OpenMP local summary model, including envelope time,
   summed work, participation, self-time boundaries, and CSV/report schemas.
 - #241 must define hybrid MPI+OpenMP reductions without changing current
