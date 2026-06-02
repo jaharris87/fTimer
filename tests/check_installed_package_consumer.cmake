@@ -991,19 +991,51 @@ if(TEST_ENABLE_MPI)
     string(REPLACE "\r\n" "\n" openmp_api_mpi_openmp_consumer_stderr_normalized
       "${openmp_api_mpi_openmp_consumer_stderr}"
     )
-    string(CONCAT openmp_api_mpi_openmp_expected_stderr
-      "ftimer_openmp recorded 1 worker diagnostics; first status 2, overflow 0\n"
-      "ftimer_openmp recorded 1 worker diagnostics; first status 2, overflow 0"
-    )
-    string(STRIP
+    string(REPLACE
+      "\n" ";"
+      openmp_api_mpi_openmp_stderr_lines
       "${openmp_api_mpi_openmp_consumer_stderr_normalized}"
-      openmp_api_mpi_openmp_consumer_stderr_stripped
     )
-    if(NOT "${openmp_api_mpi_openmp_consumer_stderr_stripped}"
-        STREQUAL "${openmp_api_mpi_openmp_expected_stderr}")
+    set(openmp_api_mpi_openmp_all_diagnostic_count 0)
+    foreach(stderr_line IN LISTS openmp_api_mpi_openmp_stderr_lines)
+      if(stderr_line MATCHES "ftimer_openmp recorded")
+        math(EXPR
+          openmp_api_mpi_openmp_all_diagnostic_count
+          "${openmp_api_mpi_openmp_all_diagnostic_count} + 1"
+        )
+      endif()
+    endforeach()
+    string(REGEX MATCHALL
+      "ftimer_openmp recorded 1 worker diagnostics"
+      openmp_api_mpi_openmp_expected_diagnostic_prefixes
+      "${openmp_api_mpi_openmp_consumer_stderr_normalized}"
+    )
+    string(REGEX MATCHALL
+      "first status 2, overflow 0"
+      openmp_api_mpi_openmp_expected_diagnostic_suffixes
+      "${openmp_api_mpi_openmp_consumer_stderr_normalized}"
+    )
+    list(LENGTH
+      openmp_api_mpi_openmp_expected_diagnostic_prefixes
+      openmp_api_mpi_openmp_expected_diagnostic_prefix_count
+    )
+    list(LENGTH
+      openmp_api_mpi_openmp_expected_diagnostic_suffixes
+      openmp_api_mpi_openmp_expected_diagnostic_suffix_count
+    )
+    if((NOT "${openmp_api_mpi_openmp_all_diagnostic_count}" STREQUAL "2")
+        OR (NOT "${openmp_api_mpi_openmp_expected_diagnostic_prefix_count}" STREQUAL "2")
+        OR (NOT "${openmp_api_mpi_openmp_expected_diagnostic_suffix_count}" STREQUAL "2"))
       message(FATAL_ERROR
         "Unexpected OpenMP API MPI+OpenMP diagnostic stderr.\n"
-        "Expected exactly two lines matching:\n${openmp_api_mpi_openmp_expected_stderr}\n"
+        "Expected exactly two ftimer_openmp diagnostic messages matching:\n"
+        "ftimer_openmp recorded 1 worker diagnostics; first status 2, overflow 0\n"
+        "Observed ftimer_openmp diagnostic count: "
+        "${openmp_api_mpi_openmp_all_diagnostic_count}\n"
+        "Observed expected-prefix count: "
+        "${openmp_api_mpi_openmp_expected_diagnostic_prefix_count}\n"
+        "Observed expected-suffix count: "
+        "${openmp_api_mpi_openmp_expected_diagnostic_suffix_count}\n"
         "Actual:\n${openmp_api_mpi_openmp_consumer_stderr_normalized}"
       )
     endif()

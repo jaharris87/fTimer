@@ -23,6 +23,9 @@ string(REPLACE "\r\n" "\n" diagnostic_stderr_normalized "${diagnostic_stderr}")
 string(CONCAT expected_stderr
   "ftimer_openmp recorded 1 worker diagnostics; first status 2, overflow 2\n"
   "ftimer_openmp recorded 0 worker diagnostics; first status 2, overflow 2\n"
+  "ftimer_openmp recorded 2 worker diagnostics; first status 2, overflow 4\n"
+  "ftimer_openmp recorded 1 worker diagnostics; first status 2, overflow 1\n"
+  "ftimer_openmp recorded 1 worker diagnostics; first status 2, overflow 1\n"
 )
 if(NOT diagnostic_stderr_normalized STREQUAL expected_stderr)
   message(FATAL_ERROR
