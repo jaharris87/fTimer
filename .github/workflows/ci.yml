@@ -92,6 +92,66 @@ jobs:
       - name: Smoke test
         run: ctest --test-dir build --output-on-failure
 
+  build-mpi-mpich:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake mpich libmpich-dev
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Resolve MPICH tools
+        run: |
+          if command -v mpifort.mpich >/dev/null 2>&1; then
+            mpich_fc="$(command -v mpifort.mpich)"
+          elif command -v mpif90.mpich >/dev/null 2>&1; then
+            mpich_fc="$(command -v mpif90.mpich)"
+          else
+            echo "No MPICH Fortran wrapper found on PATH." >&2
+            exit 1
+          fi
+
+          if command -v mpiexec.mpich >/dev/null 2>&1; then
+            mpich_mpiexec="$(command -v mpiexec.mpich)"
+          elif command -v mpirun.mpich >/dev/null 2>&1; then
+            mpich_mpiexec="$(command -v mpirun.mpich)"
+          else
+            echo "No MPICH launcher found on PATH." >&2
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/mpich-bin"
+          ln -sf "$mpich_fc" "$RUNNER_TEMP/mpich-bin/mpifort"
+          ln -sf "$mpich_mpiexec" "$RUNNER_TEMP/mpich-bin/mpiexec"
+          echo "$RUNNER_TEMP/mpich-bin" >> "$GITHUB_PATH"
+          echo "FTIMER_MPICH_FC=$mpich_fc" >> "$GITHUB_ENV"
+          echo "FTIMER_MPICH_MPIEXEC=$mpich_mpiexec" >> "$GITHUB_ENV"
+
+      - name: Show MPICH toolchain
+        run: |
+          "$FTIMER_MPICH_FC" --version
+          "$FTIMER_MPICH_MPIEXEC" --version
+
+      # MPICH smoke coverage uses the wrapper compiler explicitly, including
+      # the configure-time mpi_f08 probe and installed MPI consumer check.
+      - name: Configure (MPICH MPI)
+        run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DMPIEXEC_EXECUTABLE="$FTIMER_MPICH_MPIEXEC"
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Smoke test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Verify MPICH example and installed-consumer coverage
+        run: |
+          ctest --test-dir build --output-on-failure --no-tests=error -R '^ftimer_mpi_example_smoke$'
+          ctest --test-dir build --output-on-failure --no-tests=error -R '^ftimer_installed_package_consumer_mpi$'
+
   test-serial:
     runs-on: ubuntu-latest
     steps:

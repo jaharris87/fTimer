@@ -2,10 +2,19 @@ program basic_usage
    use ftimer, only: ftimer_finalize, ftimer_get_summary, ftimer_init, &
                      ftimer_print_summary, ftimer_start, ftimer_stop
    use ftimer_types, only: ftimer_summary_t, wp
+#ifdef FTIMER_USE_MPI
+   use mpi_f08, only: MPI_Finalize, MPI_Init
+#endif
    implicit none
    integer :: i
+   integer :: ierr
    real :: accumulator
    type(ftimer_summary_t) :: summary
+
+#ifdef FTIMER_USE_MPI
+   call MPI_Init(ierr)
+   if (ierr /= 0) error stop 7
+#endif
 
    call ftimer_init()
    call ftimer_start("work")
@@ -28,5 +37,9 @@ program basic_usage
    print '(a,i0)', "Recorded timers: ", summary%num_entries
    call ftimer_print_summary()
    call ftimer_finalize()
+#ifdef FTIMER_USE_MPI
+   call MPI_Finalize(ierr)
+   if (ierr /= 0) error stop 8
+#endif
    if (accumulator < 0.0) print *, accumulator
 end program basic_usage
