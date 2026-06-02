@@ -224,7 +224,7 @@ Supported local build paths today are:
 - serial smoke/library build validated with GNU Fortran and LLVM Flang
 - serial pFUnit tests with `gfortran` plus a matching pFUnit install
 - MPI builds through GNU Fortran MPI wrapper compilers, with CI smoke/install-consumer coverage for OpenMPI and MPICH and MPI pFUnit coverage for OpenMPI plus MPICH on hosted Ubuntu 22.04
-- OpenMP builds with `gfortran`
+- OpenMP builds with GNU Fortran and LLVM Flang for the master-thread-only carve-out; pFUnit OpenMP guard coverage remains on `gfortran`
 - benchmark harness builds with `FTIMER_BUILD_BENCH=ON`
 
 The top-level CMake options that shape those paths are:
@@ -240,7 +240,7 @@ The MPI and OpenMP enablement paths are guarded at configure time:
 
 - `FTIMER_USE_MPI=ON` requires a compiler/toolchain pair that can compile a minimal `mpi_f08` probe against the discovered MPI installation.
 - MPI builds also require the same `mpi_f08` path to compile the `MPI_Type_match_size`/`MPI_ERRORS_RETURN` validation calls used to select reduction datatypes for `real(wp)` and `integer(int64)`.
-- `FTIMER_USE_OPENMP=ON` is currently supported only with GNU Fortran and requires `OpenMP::OpenMP_Fortran` to resolve successfully.
+- `FTIMER_USE_OPENMP=ON` is admitted only for validated compiler IDs (`GNU` and `LLVMFlang` today), requires `OpenMP::OpenMP_Fortran` to resolve successfully, and runs a configure-time probe that compiles, links, and executes `omp_lib`, a two-thread parallel region, and `!$omp master` semantics.
 
 ### Test Categories
 
@@ -265,12 +265,13 @@ The default repository baseline is still the smoke/build-contract path. The full
 - `test-mpi`
 - `test-mpi-mpich`
 - `build-openmp`
+- `build-openmp-flang`
 - `test-openmp`
 - `build-contract-regressions`
 - `build-bench`
 - `lint`
 
-That means pFUnit-backed serial, OpenMPI MPI, MPICH MPI, and OpenMP test jobs are part of current CI now; they are not deferred future work. The issue #255 hosted-runner investigation found that Ubuntu 24.04's apt MPICH 4.2.0/Hydra launcher can start `/usr/bin/mpiexec.mpich -n 2` Fortran MPI programs as two singleton `MPI_COMM_WORLD` ranks on hosted runners, which made pFUnit report `Insufficient processes to run this test. (PE=0)` for `[npes=2]` cases. The MPICH CI jobs now run on hosted Ubuntu 22.04 and guard the launcher with a raw two-rank MPI probe before claiming coverage. The MPICH pFUnit job builds pFUnit v4.16.0 with `/usr/bin/mpifort.mpich`, verifies the installed package reports `PFUNIT_MPI_FOUND "TRUE"`, and runs both `ftimer_mpi_tests` and `ftimer_mpi_tests_4pe` through `/usr/bin/mpiexec.mpich`. The separate `build-mpi-mpich` job covers MPICH smoke/install-consumer behavior on the same runner family after the launcher probe. Local Homebrew MPICH 5.0.1 was not a valid reproduction path because it does not install `mpi_f08.mod`, so it fails fTimer's configure-time MPI contract probe. A GitHub-hosted NVHPC 26.3 serial smoke/install-consumer trial installed and built successfully, but the generated executables aborted at runtime with `DEALLOCATE: memory at (nil) not allocated`, so NVHPC validation remains deferred rather than claimed. The contract-regression job also verifies the configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
+That means pFUnit-backed serial, OpenMPI MPI, MPICH MPI, GNU OpenMP guard, and LLVM Flang OpenMP smoke jobs are part of current CI now; they are not deferred future work. The issue #255 hosted-runner investigation found that Ubuntu 24.04's apt MPICH 4.2.0/Hydra launcher can start `/usr/bin/mpiexec.mpich -n 2` Fortran MPI programs as two singleton `MPI_COMM_WORLD` ranks on hosted runners, which made pFUnit report `Insufficient processes to run this test. (PE=0)` for `[npes=2]` cases. The MPICH CI jobs now run on hosted Ubuntu 22.04 and guard the launcher with a raw two-rank MPI probe before claiming coverage. The MPICH pFUnit job builds pFUnit v4.16.0 with `/usr/bin/mpifort.mpich`, verifies the installed package reports `PFUNIT_MPI_FOUND "TRUE"`, and runs both `ftimer_mpi_tests` and `ftimer_mpi_tests_4pe` through `/usr/bin/mpiexec.mpich`. The separate `build-mpi-mpich` job covers MPICH smoke/install-consumer behavior on the same runner family after the launcher probe. Local Homebrew MPICH 5.0.1 was not a valid reproduction path because it does not install `mpi_f08.mod`, so it fails fTimer's configure-time MPI contract probe. A GitHub-hosted NVHPC 26.3 serial smoke/install-consumer trial installed and built successfully, but the generated executables aborted at runtime with `DEALLOCATE: memory at (nil) not allocated`, so NVHPC validation remains deferred rather than claimed. The contract-regression job also verifies the configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
 
 ## Maintainer Workflow
 

@@ -55,6 +55,35 @@ function(ftimer_expect_configure_failure label compiler required_text)
   endif()
 endfunction()
 
+function(ftimer_expect_configure_success label compiler)
+  set(extra_args ${ARGN})
+  set(build_dir "${TEST_BINARY_DIR}/${label}")
+
+  file(REMOVE_RECURSE "${build_dir}")
+
+  ftimer_append_common_configure_args(configure_args)
+  list(APPEND configure_args
+    -B "${build_dir}"
+    -DCMAKE_Fortran_COMPILER=${compiler}
+  )
+  list(APPEND configure_args ${extra_args})
+
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" ${configure_args}
+    RESULT_VARIABLE configure_result
+    OUTPUT_VARIABLE configure_stdout
+    ERROR_VARIABLE configure_stderr
+  )
+
+  string(CONCAT configure_output "${configure_stdout}" "\n" "${configure_stderr}")
+
+  if(NOT configure_result EQUAL 0)
+    message(FATAL_ERROR
+      "Expected '${label}' configure to succeed, but it failed.\n${configure_output}"
+    )
+  endif()
+endfunction()
+
 function(ftimer_try_configure_failure out_var label compiler required_text)
   set(extra_args ${ARGN})
   set(build_dir "${TEST_BINARY_DIR}/${label}")
@@ -119,12 +148,14 @@ endif()
 
 find_program(ftimer_mpifort_compiler NAMES mpifort mpif90 mpif77)
 find_program(ftimer_gfortran_compiler NAMES gfortran)
-find_program(ftimer_unsupported_compiler NAMES flang-new-19 flang-19 flang-new-18 flang-18 flang-new flang)
+find_program(ftimer_plain_nonmpi_compiler NAMES flang-new-19 flang-19 flang-new-18 flang-18 flang-new flang)
+find_program(ftimer_flang_compiler NAMES flang-19 flang-new-19 flang-new flang)
+find_program(ftimer_unvalidated_openmp_compiler NAMES nvfortran ifx ifort nagfor lfortran)
 
-if(ftimer_unsupported_compiler AND ftimer_mpifort_compiler)
+if(ftimer_plain_nonmpi_compiler AND ftimer_mpifort_compiler)
   ftimer_expect_configure_failure(
     mpi_requires_wrapper_compiler
-    "${ftimer_unsupported_compiler}"
+    "${ftimer_plain_nonmpi_compiler}"
     "failed a configure-time MPI probe"
     -DFTIMER_USE_MPI=ON
   )
@@ -148,15 +179,74 @@ else()
   )
 endif()
 
-if(ftimer_unsupported_compiler)
-  ftimer_expect_configure_failure(
-    openmp_requires_gnu
-    "${ftimer_unsupported_compiler}"
-    "FTIMER_USE_OPENMP=ON is currently supported only with GNU Fortran"
+if(NOT ftimer_root_cmake MATCHES "FTIMER_VALIDATED_OPENMP_COMPILER_IDS[^\n]*GNU[^\n]*LLVMFlang")
+  message(FATAL_ERROR
+    "FTIMER_USE_OPENMP=ON configure coverage must keep the validated compiler-ID policy explicit for GNU and LLVMFlang."
+  )
+endif()
+if(NOT ftimer_root_cmake MATCHES "ftimer_try_run_openmp_master_probe")
+  message(FATAL_ERROR
+    "FTIMER_USE_OPENMP=ON configure coverage must run fTimer's OpenMP master-thread capability probe."
+  )
+endif()
+if(NOT ftimer_root_cmake MATCHES "use omp_lib")
+  message(FATAL_ERROR
+    "FTIMER_USE_OPENMP=ON configure coverage must probe omp_lib availability."
+  )
+endif()
+if(NOT ftimer_root_cmake MATCHES "!\\$omp parallel")
+  message(FATAL_ERROR
+    "FTIMER_USE_OPENMP=ON configure coverage must probe an OpenMP parallel region."
+  )
+endif()
+if(NOT ftimer_root_cmake MATCHES "!\\$omp master")
+  message(FATAL_ERROR
+    "FTIMER_USE_OPENMP=ON configure coverage must probe OpenMP master semantics."
+  )
+endif()
+
+if(ftimer_gfortran_compiler)
+  ftimer_expect_configure_success(
+    openmp_allows_validated_gnu
+    "${ftimer_gfortran_compiler}"
     -DFTIMER_USE_OPENMP=ON
   )
 else()
   message(STATUS
-    "Skipping OpenMP configure gate regression: no unsupported non-GNU Fortran compiler found on PATH."
+    "Skipping GNU OpenMP configure success regression: gfortran is not available on PATH."
+  )
+endif()
+
+if(ftimer_flang_compiler)
+  set(ftimer_flang_openmp_args -DFTIMER_USE_OPENMP=ON)
+  if(EXISTS "/opt/homebrew/opt/libomp")
+    list(APPEND ftimer_flang_openmp_args -DOpenMP_ROOT=/opt/homebrew/opt/libomp)
+  elseif(EXISTS "/usr/local/opt/libomp")
+    list(APPEND ftimer_flang_openmp_args -DOpenMP_ROOT=/usr/local/opt/libomp)
+  elseif(EXISTS "/usr/lib/llvm-19")
+    list(APPEND ftimer_flang_openmp_args -DOpenMP_ROOT=/usr/lib/llvm-19)
+  endif()
+
+  ftimer_expect_configure_success(
+    openmp_allows_validated_flang
+    "${ftimer_flang_compiler}"
+    ${ftimer_flang_openmp_args}
+  )
+else()
+  message(STATUS
+    "Skipping LLVM Flang OpenMP configure success regression: flang-19/flang-new/flang is not available on PATH."
+  )
+endif()
+
+if(ftimer_unvalidated_openmp_compiler)
+  ftimer_expect_configure_failure(
+    openmp_rejects_unvalidated_compiler
+    "${ftimer_unvalidated_openmp_compiler}"
+    "not currently validated for compiler ID"
+    -DFTIMER_USE_OPENMP=ON
+  )
+else()
+  message(STATUS
+    "Skipping unvalidated OpenMP compiler rejection regression: no nvfortran/ifx/ifort/nagfor/lfortran compiler found on PATH."
   )
 endif()

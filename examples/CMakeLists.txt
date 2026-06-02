@@ -58,4 +58,8 @@ endif()
 if(FTIMER_USE_OPENMP)
   add_executable(openmp_example openmp_example.F90)
   target_link_libraries(openmp_example PRIVATE ftimer)
+
+  if(FTIMER_BUILD_SMOKE_TESTS)
+    add_test(NAME ftimer_openmp_example_smoke COMMAND openmp_example)
+  endif()
 endif()

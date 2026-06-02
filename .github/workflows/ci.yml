@@ -467,6 +467,38 @@ jobs:
       - name: Smoke test
         run: ctest --test-dir build --output-on-failure
 
+  build-openmp-flang:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flang-19 libomp-19-dev cmake
+
+      - name: Resolve Flang
+        run: |
+          if command -v flang-19 >/dev/null 2>&1; then
+            echo "FTIMER_FLANG_COMPILER=flang-19" >> "$GITHUB_ENV"
+          elif command -v flang-new-19 >/dev/null 2>&1; then
+            echo "FTIMER_FLANG_COMPILER=flang-new-19" >> "$GITHUB_ENV"
+          elif command -v flang >/dev/null 2>&1; then
+            echo "FTIMER_FLANG_COMPILER=flang" >> "$GITHUB_ENV"
+          else
+            echo "No supported Flang executable found on PATH." >&2
+            exit 1
+          fi
+
+      - name: Configure (Flang OpenMP)
+        run: FC=${{ env.FTIMER_FLANG_COMPILER }} cmake -B build -DFTIMER_USE_OPENMP=ON -DOpenMP_ROOT=/usr/lib/llvm-19
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: OpenMP example smoke test
+        run: ctest --test-dir build --output-on-failure --no-tests=error -R '^ftimer_openmp_example_smoke$'
+
   build-contract-regressions:
     runs-on: ubuntu-latest
     steps:
@@ -475,7 +507,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gfortran cmake make libopenmpi-dev openmpi-bin flang-19
+          sudo apt-get install -y gfortran cmake make libopenmpi-dev openmpi-bin flang-19 libomp-19-dev
 
       # These checks cover the configure-time negative gates and the Makefile
       # wrapper defaults that Issue #51 tracks as automated regressions.
