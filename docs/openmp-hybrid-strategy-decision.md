@@ -4,13 +4,20 @@
 
 # Hybrid OpenMP Timing Strategy Decision
 
+Update: #237 reopened the product strategy as an explicit OpenMP/hybrid
+umbrella, while preserving this document's compatibility conclusion for current
+`main`. The opt-in API direction for that reopened work is recorded in
+[`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md).
+
 Issue #160 asked whether fTimer should ever support real hybrid MPI+OpenMP
 timing beyond the documented master-thread-only carve-out.
 
 ## Decision
 
-Real hybrid MPI+OpenMP timing is deferred pending concrete adopter demand. It is
-not planned for the current release path, but it is not rejected forever.
+Real hybrid MPI+OpenMP timing was deferred pending concrete adopter demand under
+#160. It was not planned for that release path, but it was not rejected forever.
+Issue #237 now reopens the direction as future work with child issues, starting
+with the API and compatibility model in #238.
 
 The current `FTIMER_USE_OPENMP=ON` behavior stays unchanged: timer operations in
 OpenMP parallel regions run only on the master thread, and worker-thread calls
@@ -18,9 +25,9 @@ remain silent no-ops. fTimer should not add partial worker-thread timing until a
 future issue defines an explicit opt-in API, aggregation model, summary data
 contract, migration story, and test plan.
 
-No child implementation issues are opened from #160 because implementation is
-not planned yet. If a real adopter need turns this into planned work later, use
-the potential breakdown below to split that work before code changes begin.
+No child implementation issues were opened from #160. The later #237 umbrella is
+the place that now tracks child design, runtime, summary, reduction, validation,
+and docs work before code changes begin.
 
 ## Evidence
 
