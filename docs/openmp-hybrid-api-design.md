@@ -55,20 +55,26 @@ compatibility decision recorded here.
 ```fortran
 ! Proposed future API shape. Not implemented on current main.
 use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, &
-                         ftimer_openmp_config_t, ftimer_openmp_t
+                         ftimer_openmp_config_t, &
+                         ftimer_openmp_parallel_region_t, &
+                         ftimer_openmp_t
 
 type(ftimer_openmp_config_t) :: config
+type(ftimer_openmp_parallel_region_t) :: region
 type(ftimer_openmp_t) :: timer
-integer :: ierr
+integer :: cell_update_id, ierr
 
 config%mode = FTIMER_OPENMP_MODE_THREAD_LANES
 call timer%init(config=config, ierr=ierr)
+call timer%register_timer("cell_update", cell_update_id, ierr=ierr)
 
+call timer%begin_parallel_region(region, ierr=ierr)
 !$omp parallel private(ierr)
-call timer%start("cell_update", ierr=ierr)
+call timer%start_id(cell_update_id, ierr=ierr)
 ! worker-thread work
-call timer%stop("cell_update", ierr=ierr)
+call timer%stop_id(cell_update_id, ierr=ierr)
 !$omp end parallel
+call timer%end_parallel_region(region, ierr=ierr)
 
 call timer%get_openmp_summary(summary, ierr=ierr)
 call timer%finalize(ierr=ierr)
@@ -78,6 +84,12 @@ The proposed `THREAD_LANES` mode means "one strict nesting stack per
 participating OpenMP execution lane," initially defined as one lane per OpenMP
 thread id in a parallel region. OpenMP task migration, task dependency tracing,
 accelerator/device timing, and profiler event streams remain out of scope.
+Worker timing should be id-first in the first implementation: names are
+registered from serial context, ids are passed into the team, and
+`start_id`/`stop_id` run inside an explicitly opened timed parallel-region
+epoch. Name-based worker calls may be added only as read-only lookup of
+already-registered names, and they must not create catalog entries from inside
+the team.
 
 For hybrid runs, the communicator contract should stay keyword-based:
 
@@ -221,9 +233,11 @@ compile.
 
 ## Dependencies On Later Child Issues
 
-- #239 must design and implement the runtime concurrency model, including
-  per-lane stacks, lane identity, lifecycle boundaries, mismatch behavior, and
-  diagnostic storage.
+- #239 defines the runtime concurrency model in
+  [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md),
+  including per-lane stacks, lane identity, lifecycle boundaries, mismatch
+  behavior, merge points, hot-path synchronization bounds, and diagnostic
+  storage.
 - #240 must define the OpenMP local summary model, including envelope time,
   summed work, participation, self-time boundaries, and CSV/report schemas.
 - #241 must define hybrid MPI+OpenMP reductions without changing current
