@@ -72,7 +72,15 @@ Without an adopter-backed use case, choosing those answers now would risk a
 large API and data-model commitment for a capability outside fTimer's strongest
 current niche.
 
-## Reconsideration Gate
+## Historical #160 Reconsideration Gate
+
+The gate below records the condition that kept #160 from starting
+implementation. Issue #237 has since reopened the strategy and created child
+issues, so the gate is no longer a reason to treat true OpenMP timing as
+hypothetical. It remains useful implementation evidence: later child issues
+should still collect representative instrumentation patterns, summary
+expectations, hybrid reduction needs, overhead constraints, and compatibility
+requirements before landing runtime behavior.
 
 Revisit this decision when there is a concrete adopter or benchmark that needs
 timing inside OpenMP parallel regions and can state which data they expect. A
@@ -87,9 +95,10 @@ useful request should include:
 Until that evidence exists, keep the documented master-thread-only carve-out and
 do not infer worker-thread timing from `FTIMER_USE_OPENMP=ON`.
 
-## Potential Work Breakdown If Support Becomes Planned
+## Historical Potential Work Breakdown
 
-If the reconsideration gate is met, split the work before implementation:
+The #237 umbrella now tracks this work explicitly. The original #160 breakdown
+below is retained as historical context and maps onto #238 through #243:
 
 - Define the opt-in hybrid API and compatibility model. Decide whether worker
   timing is a new mode, a new timer type, a new summary entry point, or a new

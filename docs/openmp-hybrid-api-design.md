@@ -47,6 +47,11 @@ the new API.
 
 The first implementation should be object-explicit and keyword-heavy:
 
+The snippets below are proposed interface sketches, not compiling examples on
+current `main`. They name the future source shape so later implementation issues
+can add real API symbols and compile-checked examples without changing the
+compatibility decision recorded here.
+
 ```fortran
 ! Proposed future API shape. Not implemented on current main.
 use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, &
@@ -243,5 +248,7 @@ compile.
 
 Because this document records a future API contract without adding public
 symbols or changing runtime behavior, validation for #238 is limited to Markdown
-and diff checks. Later implementation issues must add compiling examples and
-focused build/test coverage for the new API surface.
+and diff checks. The proposed OpenMP snippets above are intentionally not
+compile targets yet. Later implementation issues must add compiling examples and
+focused build/test coverage for the new API surface before claiming runtime API
+support.
