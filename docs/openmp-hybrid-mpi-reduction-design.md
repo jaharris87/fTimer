@@ -21,8 +21,8 @@ the future `ftimer_openmp_t` API:
   types as the proposed future result family;
 - explicit hybrid text and CSV writers over that result shape;
 - one participation-aware hybrid result model by default;
-- an explicit strict validation policy, if needed, rather than extending the
-  existing rank-only `mpi_summary()` result type.
+- strict-identical participant semantics defined here for validation and later
+  adopter-driven use, but not exposed as a required first public policy.
 
 Those names are proposed source shapes for later implementation issues, not
 symbols available on current `main`.
@@ -77,9 +77,10 @@ call timer%mpi_openmp_summary(summary, ierr=ierr)
 call timer%finalize(ierr=ierr)
 ```
 
-The implementation issue may choose the exact keyword for strict validation,
-for example a `participation_policy=` or config value. It must be keyword-only
-and must not add positional mode arguments to current `ftimer_t%init`,
+The first implementation should expose the participation-aware path only unless
+#243 measurements or a concrete adopter need justifies a public strict policy.
+If strict validation is later exposed, that control must be keyword-only and
+must not add positional mode arguments to current `ftimer_t%init`,
 `ftimer_init`, `mpi_summary()`, or `mpi_union_summary()` signatures.
 
 No `ftimer_mpi_openmp_summary()` procedural wrapper should be added to the
@@ -92,16 +93,23 @@ they should live in the future `ftimer_openmp` module and take an explicit
 Hybrid reductions consume stopped local OpenMP summary state, not the current
 rank-only local summary tree.
 
-Before any descriptor hash, descriptor union, or timing-data reduction, every
-participant must complete a pre-collective status phase:
+Some preconditions are not collectively recoverable. All intended participants
+must call the hybrid MPI entry point from serial context, with an initialized
+object, the same valid init-captured communicator, and the MPI runtime inside
+the supported `MPI_Init` to `MPI_Finalize` lifetime. Calling from inside an
+OpenMP parallel region, calling with an invalid communicator, or letting only a
+subset of ranks enter the collective is outside the supported contract and may
+hang like any divergent MPI collective. Implementations should reject a local
+worker-thread call without entering MPI, but cannot make inconsistent
+caller-side collective entry safe.
 
-1. Verify the call is made from serial context, outside an OpenMP parallel
-   region.
-2. Verify the timer is initialized, the MPI communicator is valid, and the MPI
-   runtime is inside the supported `MPI_Init` to `MPI_Finalize` lifetime.
-3. Verify no timed OpenMP region epoch is still open.
-4. Scan every configured lane for active stacks.
-5. Exchange the local status over the init-captured communicator so all ranks
+After those caller-side preconditions hold, every participant must complete a
+pre-collective status phase before any descriptor hash, descriptor union, or
+timing-data reduction:
+
+1. Verify no timed OpenMP region epoch is still open.
+2. Scan every configured lane for active stacks.
+3. Exchange the local status over the init-captured communicator so all ranks
    return the same collective outcome.
 
 If any rank has an active lane stack, every participant returns
@@ -166,6 +174,13 @@ the aggregate descriptor union plus per-rank eligibility and participation
 counts. In both modes, serial-lane descriptors and worker-team descriptors must
 remain distinguishable even if they use the same timer name.
 
+Hybrid result ordering must be deterministic across all ranks. Canonical entry
+order should come from sorted aggregate descriptor strings, not from local
+creation order. `node_id` values are assigned from that canonical order and are
+stable only within the produced result object. `parent_id` values are assigned
+by canonical parent-descriptor lookup. If a non-root parent descriptor is
+missing, summary construction should fail before exposing a structured result.
+
 Future nested-team support should add a team-path component to the descriptor
 schema before any reduction attempts to merge nested-team data.
 
@@ -192,7 +207,12 @@ contract:
   rank/lane local summary input.
 - Missing ranks are derived from `num_ranks - participating_rank_count`.
 - Missing lanes are derived only within participating ranks from that entry's
-  eligible lane set, not from configured lane capacity.
+  eligible lane set, not from configured lane capacity. The default aggregate
+  should report `missing_lane_count` only when the timed-region epochs
+  contributing to that descriptor have a stable eligible-lane universe on that
+  rank. If multiple epochs with different eligible sets are aggregated, expose
+  eligible and participating counts and leave detailed missing-lane
+  interpretation to epoch-aware or rank/lane detail output.
 - Entry min/avg/max, call-count, percent, and imbalance fields are over
   participating rank/lane samples unless a field name explicitly says
   otherwise.
@@ -201,17 +221,22 @@ contract:
   contributes real zero values.
 
 Ranks may use different OpenMP team sizes in this policy. Different thread
-counts become visible through eligible-lane and missing-lane counts instead of
-causing a reduction failure.
+counts become visible through eligible-lane and participating-lane counts, and
+through missing-lane counts where the eligible-lane universe is unambiguous,
+instead of causing a reduction failure.
 
 This policy is the recommended first implementation because it can represent
 rank-conditional work, uneven OpenMP participation, and different per-rank
 thread counts without adding a second public result family.
 
-### Strict Validation Policy
+### Strict Validation Semantics
 
 Strict validation remains useful when users expect identical instrumentation
-and identical worker participation on every rank.
+and identical worker participation on every rank. This issue defines the
+semantics for tests, internal invariants, and possible future adopter-driven
+use, but strict validation should not become a required first public policy
+until #243 validation or a concrete adopter demonstrates that the added API,
+CSV, and test surface is worth carrying.
 
 If implemented, strict validation should require:
 
@@ -228,11 +253,11 @@ status should be `FTIMER_ERR_MPI_INCON`, the result should remain empty, and
 the omitted-`ierr` diagnostic should identify disagreeing communicator-local
 ranks where practical.
 
-Strict validation should be a named policy or config value passed by keyword,
-not a positional mode argument and not a change to current `mpi_summary()`.
-It may return the same `ftimer_mpi_openmp_summary_t` shape as the
-participation-aware policy, with participation counts all complete by
-construction.
+If strict validation is exposed later, it should be a named policy or config
+value passed by keyword, not a positional mode argument and not a change to
+current `mpi_summary()`. It may return the same
+`ftimer_mpi_openmp_summary_t` shape as the participation-aware policy, with
+participation counts all complete by construction.
 
 ## Rank-Level Aggregation And Detail Staging
 
@@ -256,16 +281,18 @@ burden.
 
 ## Result Type Expectations
 
-The future `ftimer_mpi_openmp_summary_t` should expose communicator-level
-fields such as:
+The future `ftimer_mpi_openmp_summary_t` should start with a small durable
+payload. A successful `mpi_openmp_summary()` call should populate the same
+globally meaningful structured result on every participating rank. Text and
+CSV file emission may remain communicator-root artifacts, but the in-memory
+summary should not become root-only data.
+
+Recommended communicator-level fields:
 
 - `num_ranks` and `num_entries`;
 - min/avg/max rank `summary_window_time`;
 - min/avg/max rank `timed_region_envelope_time`;
-- min/avg/max rank `sum_lane_root_inclusive_time`;
-- min/avg/max rank `sum_lane_self_time`;
-- communicator-local ranks for the major rank-level extrema;
-- imbalance fields for envelope time and summed lane work.
+- min/avg/max rank `sum_lane_root_inclusive_time`.
 
 It should also retain rank-level rows with:
 
@@ -282,19 +309,23 @@ Entry rows should retain explicit tree links and participation semantics:
 - `name`, `depth`, `node_id`, and `parent_id`;
 - execution domain;
 - `participating_rank_count` and derived missing-rank semantics;
-- eligible, participating, and missing rank/lane sample counts;
+- eligible, participating, and missing rank/lane sample counts, with missing
+  counts populated only where the eligible participant universe is
+  unambiguous;
 - summed participating-lane inclusive and self time;
 - min/avg/max participating-lane inclusive and self time;
-- lane inclusive and self imbalance;
 - min/max participating-lane call-count extrema as `integer(int64)`;
-- participating-lane average call count as `real(wp)`;
-- optional extrema rank/lane attribution for inclusive time if implementation
-  can keep the tie-breaking contract clear.
+- participating-lane average call count as `real(wp)`.
 
 Field names should make participant semantics visible. For example, use names
 like `sum_participating_lane_inclusive_time` and
 `avg_participating_lane_call_count`, not unqualified `inclusive_time` or
 `avg_time`.
+
+Secondary fields such as imbalance values, communicator-local rank/lane extrema
+attribution, and extra self-time extrema should initially be derived by report
+writers or helper routines unless #243 validation or concrete consumers justify
+making them stable stored fields.
 
 ## Text Reports
 
@@ -308,7 +339,8 @@ Recommended sections:
   and summed lane work;
 - a rank-level section with one row per communicator rank;
 - a descriptor aggregate table with participating/missing ranks and
-  participating/missing rank/lane sample counts;
+  eligible/participating rank/lane sample counts, plus missing counts only
+  where the eligible participant universe is unambiguous;
 - optional rank/lane detail output only in an explicit detail mode.
 
 The default text report may be abbreviated, but it must not hide participation
@@ -344,7 +376,8 @@ Column names should make semantics visible:
   participation;
 - use `eligible_rank_lane_sample_count`,
   `participating_rank_lane_sample_count`, and
-  `missing_rank_lane_sample_count` for rank/lane participation;
+  `missing_rank_lane_sample_count` where the eligible participant universe is
+  unambiguous;
 - use `avg_participating_lane_*` names for averages over participating lanes.
 
 ## Error And Diagnostic Policy
@@ -359,6 +392,10 @@ principles:
   descriptor-inconsistency paths.
 - In `FTIMER_USE_MPI=OFF` builds, future hybrid MPI entry points should return
   `FTIMER_ERR_NOT_IMPLEMENTED` and leave their result objects empty.
+- Do not attempt MPI collectives from OpenMP worker threads. Calls made inside
+  a parallel region should fail locally without MPI; inconsistent rank entry
+  where other ranks enter the collective is caller misuse outside the supported
+  contract.
 - Do not insert automatic `MPI_Barrier` calls around timed user regions.
 - Do not repair active or mismatched lane stacks during summary construction.
 
@@ -376,13 +413,18 @@ The implementation issue that adds hybrid reductions should include tests for:
 - lane-conditional descriptors where some eligible lanes are missing within a
   participating rank;
 - different OpenMP team sizes across ranks under participation-aware policy;
-- strict validation failure for different descriptor sets, different eligible
-  lane sets, missing ranks, and missing lanes;
+- strict-semantics validation coverage for different descriptor sets,
+  different eligible lane sets, missing ranks, and missing lanes, even if strict
+  remains an internal invariant rather than the first public policy;
 - active lane stacks before the collective, proving every rank returns
   `FTIMER_ERR_ACTIVE` without entering descriptor reductions;
-- invalid calls from inside OpenMP parallel regions;
+- invalid calls from inside OpenMP parallel regions, proving the local worker
+  path does not enter MPI and documenting that inconsistent rank entry is
+  unsupported caller misuse;
 - deterministic descriptor identity for same timer names under different parent
   paths and for serial versus worker execution domains;
+- deterministic canonical entry order and `node_id`/`parent_id` assignment when
+  local timer creation order differs across ranks;
 - report and CSV golden output, including schema-append rejection for local,
   strict MPI, sparse MPI, and incompatible hybrid headers;
 - compatibility tests proving current `mpi_summary()`, `mpi_union_summary()`,
@@ -402,8 +444,13 @@ worker `start_id`/`stop_id` overhead separately.
   type is rank-participation specific. Hybrid summaries need to distinguish
   missing ranks from missing lanes inside participating ranks.
 - **Create separate strict and sparse hybrid result families immediately.**
-  Hybrid has no existing callers, so one participation-aware result plus an
-  optional strict validation policy is a smaller and clearer first contract.
+  Hybrid has no existing callers, so one participation-aware result plus
+  documented strict semantics for tests and future adopter-driven use is a
+  smaller and clearer first contract.
+- **Publish detailed missing-lane semantics for mixed-epoch aggregates by
+  default.** When one aggregate row combines epochs with different eligible
+  lane sets, a precise missing-lane interpretation belongs in epoch-aware or
+  rank/lane detail output rather than in an overconfident aggregate count.
 - **Reduce full rank/lane rows by default.** Full detail is useful for
   validation, but default summaries should avoid unconditional
   `num_ranks * lane_count * descriptor_count` storage.
@@ -424,7 +471,7 @@ worker `start_id`/`stop_id` overhead separately.
   all-lane active scan, and bounded diagnostics consumed by hybrid preflight.
 - #240 provides the local OpenMP summary shape, self-time semantics, envelope
   fields, participation model, and optional lane detail input.
-- #243 must add deterministic MPI+OpenMP validation, strict and
+- #243 must add deterministic MPI+OpenMP validation, strict-semantics and
   participation-aware test matrices, report/CSV golden output, installed
   consumer checks for `mpi_f08` plus OpenMP, and overhead measurements.
 - #242 must update user-facing documentation and examples after the runtime,

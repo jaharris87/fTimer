@@ -227,9 +227,10 @@ Consequences:
 - If one summary row combines multiple timed-region epochs with different team
   sizes, `eligible_lane_count` is the count of distinct lane ids that were
   eligible in at least one contributing epoch. If that union would hide an
-  important epoch-level difference, the implementation should expose epoch
-  detail through the optional lane/detail diagnostics rather than overloading
-  the aggregate row.
+  important epoch-level difference, the default aggregate row should avoid
+  claiming a precise missing-lane interpretation and the implementation should
+  expose epoch detail through the optional lane/detail diagnostics rather than
+  overloading the aggregate row.
 - Missing lanes are not zero-filled for per-entry min, max, average, call
   count, percent, or imbalance fields.
 - A materialized zero-call or zero-time entry participates if the runtime emits
@@ -295,10 +296,11 @@ Hybrid summaries should distinguish:
 
 Because hybrid OpenMP has no existing callers, #241 chooses one
 participation-aware result that can represent rank and lane absence explicitly.
-Strict identical-participant behavior is a validation policy over that result
-shape rather than a separate rank-only family. Whatever implementation follows
-that design must not weaken current `mpi_summary()` or `mpi_union_summary()` by
-accident.
+Strict identical-participant behavior is documented for tests and future
+adopter-driven use, but should not become required first public policy unless
+#243 validation or a concrete adopter justifies the added API, CSV, and test
+burden. Whatever implementation follows that design must not weaken current
+`mpi_summary()` or `mpi_union_summary()` by accident.
 
 ## Text Reports
 
