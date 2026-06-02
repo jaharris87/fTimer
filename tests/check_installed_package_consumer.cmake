@@ -118,6 +118,12 @@ execute_process(
   RESULT_VARIABLE producer_configure_result
 )
 if(NOT producer_configure_result EQUAL 0)
+  if(TEST_ALLOW_CONFIGURE_SKIP)
+    message(STATUS
+      "Skipping ${test_name}: producer configure failed for the optional compiler/runtime path."
+    )
+    return()
+  endif()
   message(FATAL_ERROR "Failed to configure the producer install tree.")
 endif()
 

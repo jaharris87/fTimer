@@ -8,6 +8,7 @@ endif()
 
 function(ftimer_add_installed_consumer_test test_name test_binary_dir)
   set(options
+    ALLOW_CONFIGURE_SKIP
     CLEAN_INSTALL_INCLUDEDIR
     ENABLE_MPI
     ENABLE_OPENMP
@@ -35,6 +36,7 @@ function(ftimer_add_installed_consumer_test test_name test_binary_dir)
       -DTEST_ENABLE_MPI=${FTIMER_CONSUMER_ENABLE_MPI}
       -DTEST_ENABLE_OPENMP=${FTIMER_CONSUMER_ENABLE_OPENMP}
       -DTEST_OPENMP_ROOT=${FTIMER_CONSUMER_OPENMP_ROOT}
+      -DTEST_ALLOW_CONFIGURE_SKIP=${FTIMER_CONSUMER_ALLOW_CONFIGURE_SKIP}
       -DTEST_EXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
       -DTEST_PACKAGE_VERSION=${PROJECT_VERSION}
       -DTEST_PACKAGE_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
@@ -138,6 +140,9 @@ if(FTIMER_BUILD_SMOKE_TESTS)
     )
     if(DEFINED OpenMP_ROOT AND NOT OpenMP_ROOT STREQUAL "")
       list(APPEND ftimer_openmp_flang_consumer_args OPENMP_ROOT ${OpenMP_ROOT})
+    endif()
+    if(NOT FTIMER_REQUIRE_FLANG_OPENMP_CONTRACT)
+      list(APPEND ftimer_openmp_flang_consumer_args ALLOW_CONFIGURE_SKIP)
     endif()
 
     ftimer_add_installed_consumer_test(

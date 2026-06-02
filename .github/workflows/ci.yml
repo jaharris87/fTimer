@@ -491,7 +491,7 @@ jobs:
           fi
 
       - name: Configure (Flang OpenMP)
-        run: FC=${{ env.FTIMER_FLANG_COMPILER }} cmake -B build -DFTIMER_USE_OPENMP=ON -DOpenMP_ROOT=/usr/lib/llvm-19
+        run: FC=${{ env.FTIMER_FLANG_COMPILER }} cmake -B build -DFTIMER_USE_OPENMP=ON -DFTIMER_REQUIRE_FLANG_OPENMP_CONTRACT=ON -DOpenMP_ROOT=/usr/lib/llvm-19
 
       - name: Build
         run: cmake --build build -j$(nproc)
