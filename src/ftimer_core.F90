@@ -5,7 +5,8 @@ module ftimer_core
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
                            FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_SUCCESS, &
-                           ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_metadata_t, &
+                           ftimer_call_stack_t, ftimer_clock_func, ftimer_context_list_add_impl, &
+                           ftimer_context_list_find_impl, ftimer_hook_proc, ftimer_metadata_t, &
                            ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, ftimer_segment_t, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi_f08, only: MPI_Comm, MPI_COMM_WORLD
@@ -1672,7 +1673,7 @@ contains
          end if
       end if
 
-      ctx = self%segments(segment_id)%contexts%find(stack)
+      ctx = ftimer_context_list_find_impl(self%segments(segment_id)%contexts, stack)
       call start_trace_mark("find_segment_context: after contexts find")
       if (ctx > 0) then
          call ensure_segment_context_index(self, segment_id, self%segments(segment_id)%contexts%count)
@@ -1700,7 +1701,7 @@ contains
       call ensure_segment_context_index(self, segment_id, self%segments(segment_id)%contexts%count + 1)
       call start_trace_mark("find_or_create_segment_context: after ensure_segment_context_index")
       call start_trace_mark("find_or_create_segment_context: before contexts add")
-      ctx = self%segments(segment_id)%contexts%add(stack)
+      ctx = ftimer_context_list_add_impl(self%segments(segment_id)%contexts, stack)
       call start_trace_mark("find_or_create_segment_context: after contexts add")
       call start_trace_mark("find_or_create_segment_context: before insert_segment_context_slot")
       call insert_segment_context_slot(self%segments(segment_id), &

@@ -30,6 +30,8 @@ module ftimer_types
    public :: ftimer_mpi_union_summary_t
    public :: ftimer_call_stack_t
    public :: ftimer_context_list_t
+   public :: ftimer_context_list_find_impl
+   public :: ftimer_context_list_add_impl
    public :: ftimer_segment_t
    public :: ftimer_clock_func
    public :: ftimer_hook_proc
@@ -327,6 +329,13 @@ contains
    integer function ftimer_context_list_find(self, stack) result(idx)
       class(ftimer_context_list_t), intent(in) :: self
       type(ftimer_call_stack_t), intent(in) :: stack
+
+      idx = ftimer_context_list_find_impl(self, stack)
+   end function ftimer_context_list_find
+
+   integer function ftimer_context_list_find_impl(self, stack) result(idx)
+      type(ftimer_context_list_t), intent(in) :: self
+      type(ftimer_call_stack_t), intent(in) :: stack
       integer :: i
 
       idx = 0
@@ -336,16 +345,23 @@ contains
             return
          end if
       end do
-   end function ftimer_context_list_find
+   end function ftimer_context_list_find_impl
 
    integer function ftimer_context_list_add(self, stack) result(idx)
       class(ftimer_context_list_t), intent(inout) :: self
+      type(ftimer_call_stack_t), intent(in) :: stack
+
+      idx = ftimer_context_list_add_impl(self, stack)
+   end function ftimer_context_list_add
+
+   integer function ftimer_context_list_add_impl(self, stack) result(idx)
+      type(ftimer_context_list_t), intent(inout) :: self
       type(ftimer_call_stack_t), intent(in) :: stack
       integer :: existing
 
       call context_trace_mark("context_list_add: enter")
 
-      existing = self%find(stack)
+      existing = ftimer_context_list_find_impl(self, stack)
       call context_trace_mark("context_list_add: after find")
       if (existing > 0) then
          idx = existing
@@ -377,7 +393,7 @@ contains
       call context_trace_mark("context_list_add: after inline stack copy")
       idx = self%count
       call context_trace_mark("context_list_add: exit")
-   end function ftimer_context_list_add
+   end function ftimer_context_list_add_impl
 
    subroutine grow_context_list_stacks(self)
       class(ftimer_context_list_t), intent(inout) :: self
