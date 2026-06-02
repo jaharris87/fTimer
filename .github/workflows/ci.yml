@@ -358,6 +358,7 @@ jobs:
           find_package(PFUNIT REQUIRED HINTS "$ENV{PFUNIT_ROOT}" "$ENV{PFUNIT_ROOT}/..")
           add_executable(pfunit_context_probe context_probe.F90)
           target_link_libraries(pfunit_context_probe PRIVATE PFUNIT::pfunit MPI::MPI_Fortran)
+          target_compile_options(pfunit_context_probe PRIVATE -ffree-line-length-none)
           EOF
           cat > "$RUNNER_TEMP/pfunit-context-probe/context_probe.F90" <<'EOF'
           program pfunit_context_probe
@@ -370,6 +371,8 @@ jobs:
             integer :: ierr
             integer :: rank
             integer :: size
+            integer :: context_rank
+            integer :: context_size
 
             call initialize(stub)
             call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
@@ -377,9 +380,11 @@ jobs:
             allocate(context, source=get_context())
             select type (context)
             type is (MpiContext)
-              print *, 'context_probe rank=', rank, 'world_size=', size, 'context_rank=', context%processRank(), 'context_size=', context%getNumProcesses()
+              context_rank = context%processRank()
+              context_size = context%getNumProcesses()
+              print *, 'context_probe', rank, size, context_rank, context_size
             class default
-              print *, 'context_probe rank=', rank, 'world_size=', size, 'context_is_mpi=F'
+              print *, 'context_probe_not_mpi', rank, size
             end select
             call finalize(stub, .true.)
           end program pfunit_context_probe
@@ -398,6 +403,7 @@ jobs:
           find_package(PFUNIT REQUIRED HINTS "$ENV{PFUNIT_ROOT}" "$ENV{PFUNIT_ROOT}/..")
           add_executable(pfunit_driver_probe driver_probe.F90)
           target_link_libraries(pfunit_driver_probe PRIVATE PFUNIT::pfunit MPI::MPI_Fortran)
+          target_compile_options(pfunit_driver_probe PRIVATE -ffree-line-length-none)
           EOF
           cat > "$RUNNER_TEMP/pfunit-driver-probe/driver_probe.F90" <<'EOF'
           program pfunit_driver_probe
