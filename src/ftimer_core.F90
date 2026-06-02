@@ -1628,9 +1628,16 @@ contains
       integer :: slot
       integer :: start_slot
 
+      call start_trace_mark("find_segment_context: enter")
       ctx = 0
-      if ((segment_id < 1) .or. (segment_id > self%num_segments)) return
-      if (self%segments(segment_id)%contexts%count <= 0) return
+      if ((segment_id < 1) .or. (segment_id > self%num_segments)) then
+         call start_trace_mark("find_segment_context: invalid segment")
+         return
+      end if
+      if (self%segments(segment_id)%contexts%count <= 0) then
+         call start_trace_mark("find_segment_context: no contexts")
+         return
+      end if
 
       if (allocated(self%segment_context_indices)) then
          if ((segment_id >= 1) .and. (segment_id <= size(self%segment_context_indices))) then
@@ -1656,13 +1663,17 @@ contains
       end if
 
       ctx = self%segments(segment_id)%contexts%find(stack)
+      call start_trace_mark("find_segment_context: after contexts find")
       if (ctx > 0) then
          call ensure_segment_context_index(self, segment_id, self%segments(segment_id)%contexts%count)
+         call start_trace_mark("find_segment_context: after ensure index")
          if (allocated(self%segment_context_indices(segment_id)%slots)) then
             call insert_segment_context_slot(self%segments(segment_id), &
                                              self%segment_context_indices(segment_id)%slots, stack, ctx)
+            call start_trace_mark("find_segment_context: after insert slot")
          end if
       end if
+      call start_trace_mark("find_segment_context: exit")
    end function find_segment_context
 
    integer function find_or_create_segment_context(self, segment_id, stack) result(ctx)
@@ -1670,13 +1681,22 @@ contains
       integer, intent(in) :: segment_id
       type(ftimer_call_stack_t), intent(in) :: stack
 
+      call start_trace_mark("find_or_create_segment_context: enter")
       ctx = find_segment_context(self, segment_id, stack)
+      call start_trace_mark("find_or_create_segment_context: after find_segment_context")
       if (ctx > 0) return
 
+      call start_trace_mark("find_or_create_segment_context: before ensure_segment_context_index")
       call ensure_segment_context_index(self, segment_id, self%segments(segment_id)%contexts%count + 1)
+      call start_trace_mark("find_or_create_segment_context: after ensure_segment_context_index")
+      call start_trace_mark("find_or_create_segment_context: before contexts add")
       ctx = self%segments(segment_id)%contexts%add(stack)
+      call start_trace_mark("find_or_create_segment_context: after contexts add")
+      call start_trace_mark("find_or_create_segment_context: before insert_segment_context_slot")
       call insert_segment_context_slot(self%segments(segment_id), &
                                        self%segment_context_indices(segment_id)%slots, stack, ctx)
+      call start_trace_mark("find_or_create_segment_context: after insert_segment_context_slot")
+      call start_trace_mark("find_or_create_segment_context: exit")
    end function find_or_create_segment_context
 
    integer function hash_name_slot(name, table_size) result(slot)
