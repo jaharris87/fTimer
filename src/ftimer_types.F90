@@ -288,7 +288,7 @@ contains
 
    logical function ftimer_call_stack_equals(self, other) result(is_equal)
       class(ftimer_call_stack_t), intent(in) :: self
-      class(ftimer_call_stack_t), intent(in) :: other
+      class(ftimer_call_stack_t), intent(inout) :: other
 
       is_equal = .false.
       if (self%depth /= other%depth) return
@@ -326,7 +326,7 @@ contains
 
    integer function ftimer_context_list_find(self, stack) result(idx)
       class(ftimer_context_list_t), intent(in) :: self
-      type(ftimer_call_stack_t), intent(in) :: stack
+      type(ftimer_call_stack_t), intent(inout) :: stack
       integer :: i
 
       idx = 0
@@ -340,7 +340,7 @@ contains
 
    integer function ftimer_context_list_add(self, stack) result(idx)
       class(ftimer_context_list_t), intent(inout) :: self
-      type(ftimer_call_stack_t), intent(in) :: stack
+      type(ftimer_call_stack_t), intent(inout) :: stack
       integer :: existing
 
       call context_trace_mark("context_list_add: enter")

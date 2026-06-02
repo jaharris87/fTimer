@@ -1506,7 +1506,7 @@ contains
    subroutine insert_segment_context_slot(segment, slots, stack, ctx)
       type(ftimer_segment_t), intent(in) :: segment
       integer, intent(inout) :: slots(:)
-      type(ftimer_call_stack_t), intent(in) :: stack
+      type(ftimer_call_stack_t), intent(inout) :: stack
       integer, intent(in) :: ctx
       integer :: candidate_ctx
       integer :: slot
@@ -1633,7 +1633,7 @@ contains
    integer function find_segment_context(self, segment_id, stack) result(ctx)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_id
-      type(ftimer_call_stack_t), intent(in) :: stack
+      type(ftimer_call_stack_t), intent(inout) :: stack
       integer :: candidate_ctx
       integer :: slot
       integer :: start_slot
@@ -1689,7 +1689,7 @@ contains
    integer function find_or_create_segment_context(self, segment_id, stack) result(ctx)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_id
-      type(ftimer_call_stack_t), intent(in) :: stack
+      type(ftimer_call_stack_t), intent(inout) :: stack
 
       call start_trace_mark("find_or_create_segment_context: enter")
       ctx = find_segment_context(self, segment_id, stack)
@@ -1750,7 +1750,7 @@ contains
    end function hash_id_slot
 
    integer function hash_context_slot(stack, table_size) result(slot)
-      type(ftimer_call_stack_t), intent(in) :: stack
+      type(ftimer_call_stack_t), intent(inout) :: stack
       integer, intent(in) :: table_size
       integer(int64) :: hash
       integer :: i
@@ -1840,7 +1840,7 @@ contains
    end subroutine start_trace_mark
 
    logical function stack_contains(stack, id) result(found)
-      type(ftimer_call_stack_t), intent(in) :: stack
+      type(ftimer_call_stack_t), intent(inout) :: stack
       integer, intent(in) :: id
 
       found = .false.
