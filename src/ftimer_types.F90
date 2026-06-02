@@ -1,6 +1,6 @@
 module ftimer_types
    use, intrinsic :: iso_c_binding, only: c_ptr
-   use, intrinsic :: iso_fortran_env, only: int64
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64
    implicit none
    private
 
@@ -304,19 +304,24 @@ contains
       class(ftimer_call_stack_t), intent(inout) :: self
       class(ftimer_call_stack_t), intent(in) :: other
 
+      call context_trace_mark("call_stack_copy: enter")
       self%depth = other%depth
       if (allocated(self%ids)) deallocate (self%ids)
       if (allocated(self%activation_tokens)) deallocate (self%activation_tokens)
+      call context_trace_mark("call_stack_copy: after deallocate")
 
       if (other%depth > 0) then
+         call context_trace_mark("call_stack_copy: before positive-depth allocate")
          allocate (self%ids(other%depth))
          allocate (self%activation_tokens(other%depth))
          self%ids = other%ids(1:other%depth)
          self%activation_tokens = other%activation_tokens(1:other%depth)
       else if (allocated(other%ids)) then
+         call context_trace_mark("call_stack_copy: before zero-depth allocate")
          allocate (self%ids(0))
          allocate (self%activation_tokens(0))
       end if
+      call context_trace_mark("call_stack_copy: exit")
    end subroutine ftimer_call_stack_copy
 
    integer function ftimer_context_list_find(self, stack) result(idx)
@@ -340,29 +345,54 @@ contains
       integer :: existing
       integer :: new_capacity
 
+      call context_trace_mark("context_list_add: enter")
       allocate (new_stacks(0))
+      call context_trace_mark("context_list_add: after scratch allocate")
 
       existing = self%find(stack)
+      call context_trace_mark("context_list_add: after find")
       if (existing > 0) then
          idx = existing
          return
       end if
 
       if (.not. allocated(self%stacks)) then
+         call context_trace_mark("context_list_add: before initial stacks allocate")
          allocate (self%stacks(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY))
+         call context_trace_mark("context_list_add: after initial stacks allocate")
       else if (self%count >= size(self%stacks)) then
          new_capacity = max(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY, 2*size(self%stacks))
          deallocate (new_stacks)
+         call context_trace_mark("context_list_add: after scratch deallocate")
          allocate (new_stacks(new_capacity))
+         call context_trace_mark("context_list_add: after growth scratch allocate")
          if (self%count > 0) then
             new_stacks(1:self%count) = self%stacks(1:self%count)
          end if
          call move_alloc(new_stacks, self%stacks)
+         call context_trace_mark("context_list_add: after growth move_alloc")
       end if
 
       self%count = self%count + 1
+      call context_trace_mark("context_list_add: before stack copy")
       call self%stacks(self%count)%copy(stack)
+      call context_trace_mark("context_list_add: after stack copy")
       idx = self%count
+      call context_trace_mark("context_list_add: exit")
    end function ftimer_context_list_add
+
+   subroutine context_trace_mark(message)
+      character(len=*), intent(in) :: message
+      character(len=8) :: enabled
+      integer :: length
+      integer :: status
+
+      call get_environment_variable("FTIMER_START_TRACE", enabled, length=length, status=status)
+      if ((status /= 0) .or. (length <= 0)) return
+      if (enabled(1:1) == '0') return
+
+      write (error_unit, '(a)') "ftimer-types: "//message
+      flush (error_unit)
+   end subroutine context_trace_mark
 
 end module ftimer_types
