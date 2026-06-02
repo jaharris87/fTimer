@@ -264,7 +264,7 @@ jobs:
   test-mpi-mpich:
     runs-on: ubuntu-latest
     env:
-      UCX_TLS: tcp,self
+      UCX_TLS: tcp,self,sm
     steps:
       - uses: actions/checkout@v6
 
@@ -301,6 +301,28 @@ jobs:
           echo "$RUNNER_TEMP/mpich-bin" >> "$GITHUB_PATH"
           echo "FTIMER_MPICH_FC=$mpich_fc" >> "$GITHUB_ENV"
           echo "FTIMER_MPICH_MPIEXEC=$mpich_mpiexec" >> "$GITHUB_ENV"
+
+      - name: Probe MPICH launcher world size
+        run: |
+          cat > "$RUNNER_TEMP/mpich_world_probe.F90" <<'EOF'
+          program mpich_world_probe
+            use mpi_f08
+            implicit none
+            integer :: ierr
+            integer :: rank
+            integer :: size
+
+            call MPI_Init(ierr)
+            call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
+            call MPI_Comm_size(MPI_COMM_WORLD, size, ierr)
+            print *, 'mpich_world_probe', rank, size
+            call MPI_Finalize(ierr)
+
+            if (size /= 2) error stop 'MPICH launcher did not create a two-rank MPI_COMM_WORLD'
+          end program mpich_world_probe
+          EOF
+          "$FTIMER_MPICH_FC" "$RUNNER_TEMP/mpich_world_probe.F90" -o "$RUNNER_TEMP/mpich_world_probe"
+          "$FTIMER_MPICH_MPIEXEC" -n 2 "$RUNNER_TEMP/mpich_world_probe"
 
       - name: Capture MPICH pFUnit cache identity
         id: pfunit-mpich-identity
@@ -376,6 +398,8 @@ jobs:
             integer :: context_rank
             integer :: context_size
 
+            context_rank = -1
+            context_size = -1
             call initialize(stub)
             call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
             call MPI_Comm_size(MPI_COMM_WORLD, size, ierr)
@@ -389,6 +413,10 @@ jobs:
               print *, 'context_probe_not_mpi', rank, size
             end select
             call finalize(stub, .true.)
+
+            if (size /= 2 .or. context_size /= 2) then
+              error stop 'pFUnit MPI context did not preserve the two-rank MPICH world'
+            end if
           end program pfunit_context_probe
           EOF
           FC=mpifort cmake -B "$RUNNER_TEMP/pfunit-context-probe/build" -S "$RUNNER_TEMP/pfunit-context-probe" -DPFUNIT_DIR="$PFUNIT_ROOT"
@@ -430,6 +458,7 @@ jobs:
                 call MPI_Comm_size(MPI_COMM_WORLD, size, ierr)
               end if
               print *, 'driver_probe initialized=', initialized, 'rank=', rank, 'world_size=', size
+              if (size /= 2) error stop 'pFUnit driver did not preserve the two-rank MPICH world'
             end subroutine extra_initialize
           end program pfunit_driver_probe
           EOF
