@@ -30,6 +30,7 @@ module ftimer_core
    integer, parameter :: FTIMER_NAME_INDEX_INITIAL_CAPACITY = 32
    integer, parameter :: FTIMER_NAME_INDEX_LOAD_NUMERATOR = 7
    integer, parameter :: FTIMER_NAME_INDEX_LOAD_DENOMINATOR = 10
+   integer, parameter :: FTIMER_STATUS_MESSAGE_LEN = 2048
    integer(int64), parameter :: FTIMER_NAME_HASH_MODULUS = 2147483629_int64
    integer(int64), parameter :: FTIMER_NAME_HASH_MULTIPLIER = 131_int64
    integer(int64), parameter :: FTIMER_NAME_HASH_MIX_MULTIPLIER = 1597334677_int64
@@ -623,7 +624,7 @@ contains
       integer :: segment_idx
       integer :: status
       integer :: trimmed_len
-      character(len=:), allocatable :: message
+      character(len=FTIMER_STATUS_MESSAGE_LEN) :: message
 
       if (present(activation_token)) activation_token = 0_int64
 
@@ -634,7 +635,7 @@ contains
 
       call normalize_name(name, trimmed_len, status, message)
       if (status /= FTIMER_SUCCESS) then
-         call report_status(ierr, status, message)
+         call report_status(ierr, status, trim(message))
          return
       end if
 
@@ -663,7 +664,7 @@ contains
       integer :: segment_idx
       integer :: status
       integer :: trimmed_len
-      character(len=:), allocatable :: message
+      character(len=FTIMER_STATUS_MESSAGE_LEN) :: message
 
       if (.not. self%initialized) then
          call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer stop before init")
@@ -672,7 +673,7 @@ contains
 
       call normalize_name(name, trimmed_len, status, message)
       if (status /= FTIMER_SUCCESS) then
-         call report_status(ierr, status, message)
+         call report_status(ierr, status, trim(message))
          return
       end if
 
@@ -795,7 +796,7 @@ contains
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_idx
       integer, intent(out), optional :: ierr
-      character(len=:), allocatable :: message
+      character(len=FTIMER_STATUS_MESSAGE_LEN) :: message
 
       if (self%call_stack%depth <= 0) then
          call report_status(ierr, FTIMER_ERR_MISMATCH, "ftimer stop mismatch on empty call stack")
@@ -858,7 +859,7 @@ contains
       integer, intent(out), optional :: ierr
       integer :: status
       integer :: trimmed_len
-      character(len=:), allocatable :: message
+      character(len=FTIMER_STATUS_MESSAGE_LEN) :: message
 
       id = 0
       if (.not. self%initialized) then
@@ -868,7 +869,7 @@ contains
 
       call normalize_name(name, trimmed_len, status, message)
       if (status /= FTIMER_SUCCESS) then
-         call report_status(ierr, status, message)
+         call report_status(ierr, status, trim(message))
          return
       end if
 
@@ -980,7 +981,7 @@ contains
       integer, intent(in) :: id
       integer(int64), intent(in) :: activation_token
       integer, intent(out), optional :: ierr
-      character(len=:), allocatable :: message
+      character(len=FTIMER_STATUS_MESSAGE_LEN) :: message
       integer :: top_id
 
       if (.not. self%initialized) then
@@ -1707,12 +1708,12 @@ contains
       character(len=*), intent(in) :: name
       integer, intent(out) :: trimmed_len
       integer, intent(out) :: status
-      character(len=:), allocatable, intent(inout) :: message
+      character(len=*), intent(out) :: message
       integer :: i
       integer :: code
       character(len=32) :: position_text
 
-      if (allocated(message)) deallocate (message)
+      message = ''
       trimmed_len = len_trim(name)
 
       if (trimmed_len <= 0) then
