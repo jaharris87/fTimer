@@ -23,7 +23,7 @@ program ftimer_installed_openmp_api_mpi_openmp_consumer
    call omp_set_dynamic(.false.)
 
    config%max_lanes = 0
-   config%max_worker_diagnostics = 1
+   config%max_worker_diagnostics = rank + 1
 
    call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop 3
@@ -46,6 +46,7 @@ program ftimer_installed_openmp_api_mpi_openmp_consumer
       if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) worker_bad = worker_bad + 1
 
       call timer%stop_id(timer_id)
+      if (rank == 1) call timer%stop_id(timer_id)
    end if
 !$omp end parallel
 

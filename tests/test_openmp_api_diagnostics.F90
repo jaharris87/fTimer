@@ -8,11 +8,24 @@ program ftimer_openmp_api_diagnostics
 
    call run_diagnostic_case(retained_count=1, worker_count=1, omitted_call_count=3, drain_mode=1)
    call run_diagnostic_case(retained_count=0, worker_count=1, omitted_call_count=2, drain_mode=1)
-   call run_diagnostic_case(retained_count=2, worker_count=3, omitted_call_count=2, drain_mode=1)
+   if (available_worker_count(3) >= 3) then
+      call run_diagnostic_case(retained_count=2, worker_count=3, omitted_call_count=2, drain_mode=1)
+   else
+      call run_diagnostic_case(retained_count=2, worker_count=1, omitted_call_count=6, drain_mode=1)
+   end if
    call run_diagnostic_case(retained_count=1, worker_count=1, omitted_call_count=2, drain_mode=2)
    call run_diagnostic_case(retained_count=1, worker_count=1, omitted_call_count=2, drain_mode=3)
 
 contains
+
+   integer function available_worker_count(requested_worker_count) result(worker_count)
+      integer, intent(in) :: requested_worker_count
+
+      worker_count = 0
+!$omp parallel num_threads(requested_worker_count + 1) default(shared) reduction(+:worker_count)
+      if (omp_get_thread_num() /= 0) worker_count = worker_count + 1
+!$omp end parallel
+   end function available_worker_count
 
    subroutine run_diagnostic_case(retained_count, worker_count, omitted_call_count, drain_mode)
       integer, intent(in) :: retained_count

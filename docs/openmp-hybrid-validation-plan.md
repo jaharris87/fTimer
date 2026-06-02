@@ -136,9 +136,13 @@ Installed-package checks should verify the public package story at each stage:
 - current OpenMP installed consumers using the master-thread-only package
   contract;
 - current MPI+OpenMP installed consumers proving that exported MPI and OpenMP
-  dependencies can coexist; and
+  dependencies can coexist;
+- current `ftimer_openmp` installed consumers for serial, MPI, OpenMP, and
+  MPI+OpenMP package modes, proving that the lifecycle/catalog surface imports,
+  links, validates keyword-only init shape, and keeps worker timing
+  non-functional with `FTIMER_ERR_NOT_IMPLEMENTED`; and
 - future true OpenMP/hybrid installed consumers only after the public
-  `ftimer_openmp` module, config object, and result types exist.
+  runtime, summary, and reduction result types exist.
 
 Future installed consumers should compile the documented source shapes, run the
 supported examples, and assert the exported CMake package resolves only the

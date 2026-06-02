@@ -59,6 +59,7 @@ contains
    end subroutine check_preinit_and_config
 
    subroutine check_catalog_lifecycle()
+      integer :: after_direct_reinit_id
       integer :: duplicate_id
       integer :: direct_reinit_id
       integer :: i
@@ -176,12 +177,12 @@ contains
       call timer%start_id(timer_id, ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_UNKNOWN, 49)
 
-      call timer%register_timer("after_direct_reinit", reset_id, ierr=ierr)
+      call timer%register_timer("after_direct_reinit", after_direct_reinit_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 50)
-      if (reset_id == timer_id) error stop 51
-      if (reset_id == direct_reinit_id) error stop 52
+      if (after_direct_reinit_id == timer_id) error stop 51
+      if (after_direct_reinit_id == direct_reinit_id) error stop 52
       do i = 1, size(ids)
-         if (reset_id == ids(i)) error stop 53
+         if (after_direct_reinit_id == ids(i)) error stop 53
       end do
 
       call timer%finalize(ierr=ierr)
@@ -193,21 +194,32 @@ contains
       call timer%start_id(timer_id, ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_UNKNOWN, 56)
 
+      call timer%lookup_timer("after_direct_reinit", lookup_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 57)
+      if (lookup_id /= 0) error stop 58
+
+      call timer%start_id(after_direct_reinit_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 59)
+
+      call timer%stop_id(after_direct_reinit_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 60)
+
       do i = 1, 3
          call timer%stop_id(ids(i), ierr=ierr)
-         call expect_status(ierr, FTIMER_ERR_UNKNOWN, 57)
+         call expect_status(ierr, FTIMER_ERR_UNKNOWN, 61)
       end do
 
       call timer%register_timer("after_reinit", reset_id, ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 58)
-      if (reset_id == timer_id) error stop 59
-      if (reset_id == direct_reinit_id) error stop 60
+      call expect_status(ierr, FTIMER_SUCCESS, 62)
+      if (reset_id == timer_id) error stop 63
+      if (reset_id == direct_reinit_id) error stop 64
+      if (reset_id == after_direct_reinit_id) error stop 65
       do i = 1, size(ids)
-         if (reset_id == ids(i)) error stop 61
+         if (reset_id == ids(i)) error stop 66
       end do
 
       call timer%finalize(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 62)
+      call expect_status(ierr, FTIMER_SUCCESS, 67)
    end subroutine check_catalog_lifecycle
 
 #ifdef FTIMER_USE_OPENMP
