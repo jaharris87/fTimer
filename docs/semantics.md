@@ -346,6 +346,8 @@ enforcement should pass `ierr` and check it.
   [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md), plus the
   OpenMP/hybrid summary model in
   [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md)
+  and the MPI+OpenMP reduction model in
+  [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md)
 
 ### Consequences for timing data
 

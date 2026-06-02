@@ -246,8 +246,10 @@ compile.
   [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md),
   including envelope time, summed work, participation, self-time boundaries,
   and CSV/report schemas.
-- #241 must define hybrid MPI+OpenMP reductions without changing current
-  `mpi_summary()` or `mpi_union_summary()` semantics by accident.
+- #241 defines hybrid MPI+OpenMP reductions in
+  [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md)
+  without changing current `mpi_summary()` or `mpi_union_summary()` semantics
+  by accident.
 - #243 must add deterministic OpenMP and hybrid validation, including
   compatibility tests that prove current worker no-op behavior still holds for
   existing APIs.

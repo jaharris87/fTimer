@@ -21,7 +21,8 @@ Recommended future type family:
 - optional `ftimer_openmp_lane_entry_t` detail records for explicit diagnostic
   or detail exports, not for the default aggregate summary path;
 - `ftimer_mpi_openmp_summary_t` and related entry types for hybrid
-  MPI+OpenMP reductions in #241.
+  MPI+OpenMP reductions defined by #241 in
+  [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md).
 
 Recommended future entry points:
 
@@ -271,8 +272,10 @@ any lane is active and exchange that status so all participants return
 
 ## Hybrid MPI+OpenMP Shape
 
-#241 owns the MPI reduction implementation, but it should reduce over the #240
-result shape instead of reusing current rank-only summaries.
+#241 owns the MPI reduction design in
+[`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md),
+and later implementation should reduce over the #240 result shape instead of
+reusing current rank-only summaries.
 
 The first hybrid result should preserve these levels:
 
@@ -290,14 +293,12 @@ Hybrid summaries should distinguish:
 - per-entry participating rank/lane sample count;
 - missing ranks versus missing lanes within participating ranks.
 
-Because hybrid OpenMP has no existing callers, #241 should not pre-commit to
-separate strict and sparse/union hybrid result families just to mirror current
-MPI history. The recommended first hybrid shape is one participation-aware
-result that can represent rank and lane absence explicitly. If a strict
-identical-descriptor contract is still useful, #241 should make it an explicit
-validation mode or separately named entry point after weighing the added API,
-CSV, and test burden. Whatever shape #241 chooses must not weaken current
-`mpi_summary()` or `mpi_union_summary()` by accident.
+Because hybrid OpenMP has no existing callers, #241 chooses one
+participation-aware result that can represent rank and lane absence explicitly.
+Strict identical-participant behavior is a validation policy over that result
+shape rather than a separate rank-only family. Whatever implementation follows
+that design must not weaken current `mpi_summary()` or `mpi_union_summary()` by
+accident.
 
 ## Text Reports
 
@@ -413,10 +414,11 @@ separately from hot-path `start_id`/`stop_id` overhead.
 - #239 provides the lane-owned runtime state, timed-region epoch model,
   lane-local stacks, merge points, and diagnostic storage that this summary
   design consumes.
-- #241 defines and implements MPI+OpenMP reductions over the OpenMP summary
-  shape, including whether one participation-aware hybrid path is enough or
-  whether a separately named strict validation path is worth the added API and
-  test burden.
+- #241 defines MPI+OpenMP reductions in
+  [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md)
+  over the OpenMP summary shape, including participation-aware union behavior,
+  strict validation, descriptor identity, active-lane preflight, and
+  report/CSV expectations.
 - #243 adds deterministic validation, active-lane tests, report/CSV golden
   output, and overhead measurements.
 - #242 updates user-facing documentation and examples after runtime and summary
