@@ -1707,11 +1707,12 @@ contains
       character(len=*), intent(in) :: name
       integer, intent(out) :: trimmed_len
       integer, intent(out) :: status
-      character(len=:), allocatable, intent(out) :: message
+      character(len=:), allocatable, intent(inout) :: message
       integer :: i
       integer :: code
       character(len=32) :: position_text
 
+      if (allocated(message)) deallocate (message)
       trimmed_len = len_trim(name)
 
       if (trimmed_len <= 0) then
