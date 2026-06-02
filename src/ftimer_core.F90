@@ -934,6 +934,7 @@ contains
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       if (allocated(self%call_stack%activation_tokens)) deallocate (self%call_stack%activation_tokens)
       self%call_stack%depth = 0
+      call allocate_empty_call_stack(self%call_stack)
       self%init_wtime = self%wtime()
       self%init_date = ftimer_date_string()
 
@@ -1197,6 +1198,7 @@ contains
       if (allocated(self%call_stack%ids)) deallocate (self%call_stack%ids)
       if (allocated(self%call_stack%activation_tokens)) deallocate (self%call_stack%activation_tokens)
       self%call_stack%depth = 0
+      call allocate_empty_call_stack(self%call_stack)
       self%num_segments = 0
       self%init_wtime = 0.0_wp
       self%init_date = ''
@@ -1213,6 +1215,14 @@ contains
          call clear_callback_state(self)
       end if
    end subroutine clear_runtime_state
+
+   subroutine allocate_empty_call_stack(stack)
+      type(ftimer_call_stack_t), intent(inout) :: stack
+
+      stack%depth = 0
+      if (.not. allocated(stack%ids)) allocate (stack%ids(0))
+      if (.not. allocated(stack%activation_tokens)) allocate (stack%activation_tokens(0))
+   end subroutine allocate_empty_call_stack
 
    subroutine restore_default_clock(self)
       class(ftimer_t), intent(inout) :: self
