@@ -341,13 +341,9 @@ contains
    integer function ftimer_context_list_add(self, stack) result(idx)
       class(ftimer_context_list_t), intent(inout) :: self
       type(ftimer_call_stack_t), intent(in) :: stack
-      type(ftimer_call_stack_t), allocatable :: new_stacks(:)
       integer :: existing
-      integer :: new_capacity
 
       call context_trace_mark("context_list_add: enter")
-      allocate (new_stacks(0))
-      call context_trace_mark("context_list_add: after scratch allocate")
 
       existing = self%find(stack)
       call context_trace_mark("context_list_add: after find")
@@ -361,16 +357,7 @@ contains
          allocate (self%stacks(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY))
          call context_trace_mark("context_list_add: after initial stacks allocate")
       else if (self%count >= size(self%stacks)) then
-         new_capacity = max(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY, 2*size(self%stacks))
-         deallocate (new_stacks)
-         call context_trace_mark("context_list_add: after scratch deallocate")
-         allocate (new_stacks(new_capacity))
-         call context_trace_mark("context_list_add: after growth scratch allocate")
-         if (self%count > 0) then
-            new_stacks(1:self%count) = self%stacks(1:self%count)
-         end if
-         call move_alloc(new_stacks, self%stacks)
-         call context_trace_mark("context_list_add: after growth move_alloc")
+         call grow_context_list_stacks(self)
       end if
 
       self%count = self%count + 1
@@ -391,6 +378,19 @@ contains
       idx = self%count
       call context_trace_mark("context_list_add: exit")
    end function ftimer_context_list_add
+
+   subroutine grow_context_list_stacks(self)
+      class(ftimer_context_list_t), intent(inout) :: self
+      type(ftimer_call_stack_t), allocatable :: new_stacks(:)
+      integer :: new_capacity
+
+      new_capacity = max(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY, 2*size(self%stacks))
+      allocate (new_stacks(new_capacity))
+      if (self%count > 0) then
+         new_stacks(1:self%count) = self%stacks(1:self%count)
+      end if
+      call move_alloc(new_stacks, self%stacks)
+   end subroutine grow_context_list_stacks
 
    subroutine context_trace_mark(message)
       character(len=*), intent(in) :: message
