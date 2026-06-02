@@ -16,6 +16,8 @@ runtime state behind the future `ftimer_openmp_t` object:
 
 - one serial lane for calls made outside an OpenMP parallel region;
 - one lane per OpenMP thread in a level-1 parallel team;
+- one explicit timed-region epoch for each worker-timed level-1 parallel
+  region;
 - one strict nesting stack per lane;
 - per-lane timer/context statistics keyed by a shared immutable timer catalog;
 - summary/reset/finalize merge points that scan all lanes outside parallel
@@ -37,6 +39,8 @@ Object-level state:
 - clock pointer and summary-window timestamps;
 - optional MPI communicator capture for later hybrid work;
 - an append-only timer catalog mapping public timer ids to validated names;
+- timed parallel-region epoch state, including whether a worker-timed region is
+  open and the current epoch id;
 - configuration for maximum lanes and bounded worker diagnostics;
 - private reserve and warm-up policy for lane-local timers, contexts, and stack
   depth, unless #243 demonstrates that public tuning knobs are needed;
@@ -45,7 +49,8 @@ Object-level state:
 Lane-level state:
 
 - lane identity and participation flag;
-- lane-local `ftimer_call_stack_t`, using global timer ids in stack entries;
+- lane-local `ftimer_call_stack_t`, using global timer ids and region epochs in
+  stack entries;
 - lane-local segment/context tables, keyed by the shared timer id;
 - lane-local inclusive time, start time, running flag, and call count arrays;
 - lane-local diagnostic buffer and overflow count;
@@ -82,13 +87,24 @@ should pass an explicit capacity. A call from a team thread whose computed lane
 id is outside the configured table must return an error and leave state
 unchanged.
 
-Worker timing intervals must be contained within one dynamic level-1 parallel
-region and must be stopped by the same lane before that region ends. A later
-parallel region reusing the same `omp_get_thread_num()` value is not a valid
-way to complete an earlier worker timer. Until the API gains an explicit
-parallel-region guard or epoch handle, implementations should treat active
-worker stacks discovered at serial merge/lifecycle points as contract
-violations rather than silently carrying them into later regions.
+Worker timing intervals must be contained within one explicit timed level-1
+parallel-region epoch and must be stopped by the same lane before that region
+ends. The first implementation should provide a small serial-context region
+guard or begin/end helper that opens a monotonically increasing epoch before
+the `!$omp parallel` region and closes it after the region. Worker stack entries
+record that epoch. A later parallel region reusing the same
+`omp_get_thread_num()` value is not a valid way to complete an earlier worker
+timer because the top stack entry's epoch will not match the currently open
+epoch.
+
+Opening a new timed region must fail if any lane already has an active stack.
+Closing a timed region must retire the current epoch so no later worker call can
+use it, then scan the worker lanes for active stacks. If active stacks remain,
+the close returns an error and preserves the lane stack metadata for diagnostics
+or later summary-contract handling. A later worker stop without an open epoch,
+or with a newer epoch than the stack entry, must not close the earlier
+activation. This makes forgotten worker stops fail at the region boundary
+instead of lingering until an unrelated later summary/reset/finalize operation.
 
 ## Valid Operations
 
@@ -99,6 +115,7 @@ active timers on any lane:
 - `finalize`
 - `reset`
 - clock configuration
+- opening or closing a timed parallel-region epoch
 - timer registration intended to avoid hot-path name lookups
 - summary/report construction
 
@@ -108,6 +125,10 @@ Timing calls are valid from serial context and from level-1 parallel teams:
 - `stop_id`
 - `start` and `stop`, only if they resolve already-registered names without
   catalog mutation
+
+Worker timing calls inside a level-1 team are valid only while a timed
+parallel-region epoch is open for that object. A worker timing call without an
+open epoch returns an invalid-operation status and leaves state unchanged.
 
 The first implementation should treat summary/report/reset/finalize/config
 calls from inside an active parallel region as invalid. They must not attempt to
@@ -126,8 +147,10 @@ Recommended path:
    explicit registration helper.
 2. Warm or reserve lane-local context storage for the intended timing patterns
    when the implementation provides such a helper.
-3. Pass the returned ids into the parallel region.
-4. Use `start_id` and `stop_id` on worker lanes.
+3. Open a timed parallel-region epoch in serial context.
+4. Pass the returned ids into the parallel region.
+5. Use `start_id` and `stop_id` on worker lanes.
+6. Close the timed region after the parallel region ends.
 
 For this path, `start_id` and `stop_id` need no global lock after `init` and
 serial registration/warm-up. They read the catalog and update only the current
@@ -153,22 +176,26 @@ Context-sensitive accounting remains stack based, but the stack is lane-local.
 On `start_id(timer_id)`:
 
 1. Resolve `lane_id`.
-2. Verify initialized state and timer id.
-3. Find the warmed lane-local context for
+2. Resolve the active region epoch. Serial-lane calls use a serial epoch;
+   worker-lane calls require an open timed parallel-region epoch.
+3. Verify initialized state and timer id.
+4. Find the warmed lane-local context for
    `(timer_id, lane_stack_before_start)`, or create it as an explicitly cold
    first-touch path before recording the start timestamp.
-4. Increment the lane-local call count.
-5. Push `timer_id` onto that lane stack.
-6. Record the lane-local start timestamp.
+5. Increment the lane-local call count.
+6. Push `timer_id` and the resolved epoch onto that lane stack.
+7. Record the lane-local start timestamp.
 
 On `stop_id(timer_id)`:
 
 1. Resolve `lane_id`.
-2. Verify initialized state and timer id.
-3. Compare only the current lane's stack top.
-4. If the top matches, capture one `now`, pop the lane stack, then look up the
+2. Resolve the active region epoch. Serial-lane calls use a serial epoch;
+   worker-lane calls require an open timed parallel-region epoch.
+3. Verify initialized state and timer id.
+4. Compare only the current lane's stack top, including both timer id and epoch.
+5. If the top matches, capture one `now`, pop the lane stack, then look up the
    now-current parent context before accumulating elapsed time.
-5. If the top does not match, apply the configured mismatch mode only within
+6. If the top does not match, apply the configured mismatch mode only within
    that lane.
 
 The existing ordering rule still matters: stop must pop the lane stack before
@@ -182,22 +209,24 @@ Strict nesting is per lane.
 - A stop on an empty lane stack is `FTIMER_ERR_MISMATCH`.
 - A stop for a different timer id than the current lane stack top is
   `FTIMER_ERR_MISMATCH` in strict mode.
+- A worker stop for a matching timer id from a different timed-region epoch is
+  `FTIMER_ERR_MISMATCH` in strict mode.
 - Warn and repair modes may unwind/restart timers only on the current lane.
 - Repair must capture one timestamp and use it for every unwound timer on that
   lane.
 - Repair must not fire callbacks.
 - Repair must never inspect, pop, stop, or restart another lane's stack.
 
-Cross-thread start/stop pairing is therefore a mismatch, not a migration event.
-The lane that started the timer remains active. Summary/reset/finalize must
-detect that active lane and fail or report active-timer state according to the
-future summary contract.
+Cross-thread and cross-region start/stop pairing is therefore a mismatch, not a
+migration event. The lane that started the timer remains active. Region close,
+summary, reset, and finalize must detect that active lane and fail or report
+active-timer state according to the future summary contract.
 
 ## Merge Points
 
-Summary construction, reset, finalize, and future hybrid MPI summary/reduction
-entry points are merge points. They should run only outside OpenMP parallel
-regions.
+Timed-region close, summary construction, reset, finalize, and future hybrid
+MPI summary/reduction entry points are merge points. They should run only
+outside OpenMP parallel regions.
 
 At a merge point, the runtime should:
 
@@ -217,8 +246,10 @@ input must preserve enough information for #240 to define correct semantics:
 - enough tree/link information to compute self time without crossing sibling
   or cousin boundaries.
 
-`reset` and `finalize` must reject active lanes before clearing state. They must
-not force-stop active worker timers or synthesize elapsed time silently.
+Timed-region close must retire the current epoch and return an error if active
+worker lanes remain. `reset` and `finalize` must reject active lanes before
+clearing state. They must not force-stop active worker timers or synthesize
+elapsed time silently.
 
 Future MPI+OpenMP collectives must run the same active-lane scan before entering
 any MPI collective. If any lane is active, the call must return an error on all
@@ -291,6 +322,7 @@ these synchronization properties:
 - no global locks;
 - no writes to shared catalog state;
 - no writes to another lane's state;
+- no writes to region epoch state;
 - no MPI calls;
 - no stderr writes;
 - no callback calls;
@@ -339,8 +371,8 @@ Implementation guidance:
 - #241 defines MPI+OpenMP reductions over the #240 result shape without
   changing current strict or sparse MPI APIs by accident.
 - #243 supplies deterministic mock-clock tests, targeted OpenMP worker tests,
-  nested/task rejection tests, active-lane lifecycle tests, and overhead
-  measurements.
+  nested/task rejection tests, active-lane lifecycle and region-epoch tests,
+  and overhead measurements.
 - #242 updates examples and user-facing docs after #239 and #240 provide enough
   runtime and summary behavior for compile-checked examples.
 
