@@ -320,8 +320,6 @@ contains
          call context_trace_mark("call_stack_copy: before empty allocate")
          allocate (self%ids(1))
          allocate (self%activation_tokens(1))
-         self%ids = 0
-         self%activation_tokens = 0_int64
       end if
       call context_trace_mark("call_stack_copy: exit")
    end subroutine ftimer_call_stack_copy
@@ -371,7 +369,6 @@ contains
       if (.not. allocated(self%stacks)) then
          call context_trace_mark("context_list_add_impl: before initial stacks allocate")
          allocate (self%stacks(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY))
-         call initialize_empty_context_stacks(self%stacks)
          call context_trace_mark("context_list_add_impl: after initial stacks allocate")
       else if (self%count >= size(self%stacks)) then
          call grow_context_list_stacks(self)
@@ -403,25 +400,11 @@ contains
 
       new_capacity = max(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY, 2*size(self%stacks))
       allocate (new_stacks(new_capacity))
-      call initialize_empty_context_stacks(new_stacks)
       if (self%count > 0) then
          new_stacks(1:self%count) = self%stacks(1:self%count)
       end if
       call move_alloc(new_stacks, self%stacks)
    end subroutine grow_context_list_stacks
-
-   subroutine initialize_empty_context_stacks(stacks)
-      type(ftimer_call_stack_t), intent(inout) :: stacks(:)
-      integer :: i
-
-      do i = 1, size(stacks)
-         stacks(i)%depth = 0
-         if (.not. allocated(stacks(i)%ids)) allocate (stacks(i)%ids(1))
-         if (.not. allocated(stacks(i)%activation_tokens)) allocate (stacks(i)%activation_tokens(1))
-         stacks(i)%ids = 0
-         stacks(i)%activation_tokens = 0_int64
-      end do
-   end subroutine initialize_empty_context_stacks
 
    subroutine context_trace_mark(message)
       character(len=*), intent(in) :: message
