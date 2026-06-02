@@ -236,8 +236,10 @@ At a merge point, the runtime should:
 4. Materialize lane-local descriptors and statistics.
 5. Merge or package those lane summaries according to #240.
 
-#240 owns the public OpenMP summary result type. For #239, the internal merge
-input must preserve enough information for #240 to define correct semantics:
+#240 owns the public OpenMP summary result type, recorded in
+[`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md). For
+#239, the internal merge input must preserve enough information for #240 to
+define correct semantics:
 
 - lane id and participation;
 - timer id and name;
@@ -366,8 +368,10 @@ Implementation guidance:
 
 ## Interaction With Later Child Issues
 
-- #240 defines the public OpenMP summary type, self-time boundaries, wall-clock
-  envelope fields, summed lane work, lane participation, and report/CSV shape.
+- #240 defines the public OpenMP summary type in
+  [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md),
+  including self-time boundaries, wall-clock envelope fields, summed lane work,
+  lane participation, and report/CSV shape.
 - #241 defines MPI+OpenMP reductions over the #240 result shape without
   changing current strict or sparse MPI APIs by accident.
 - #243 supplies deterministic mock-clock tests, targeted OpenMP worker tests,

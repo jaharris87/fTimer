@@ -183,7 +183,8 @@ The future OpenMP summary model should distinguish at least these quantities:
 
 - wall-clock envelope time for a region;
 - summed lane work time;
-- per-lane call counts and inclusive/self time;
+- aggregate lane statistics for call counts and inclusive/self time;
+- optional per-lane detail only through an explicit detail or diagnostic path;
 - lane participation count and missing-lane semantics;
 - rank/lane hierarchy for hybrid MPI+OpenMP summaries.
 
@@ -192,6 +193,9 @@ summaries remain rank-only reductions over identical rank timer trees. Existing
 sparse MPI summaries remain rank-participation unions. Hybrid rank/lane
 summaries need their own result types and report/CSV schemas instead of
 overloading those current meanings.
+
+The #240 summary/self-time decision is recorded in
+[`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md).
 
 ## Migration Story
 
@@ -238,8 +242,10 @@ compile.
   including per-lane stacks, lane identity, lifecycle boundaries, mismatch
   behavior, merge points, hot-path synchronization bounds, and diagnostic
   storage.
-- #240 must define the OpenMP local summary model, including envelope time,
-  summed work, participation, self-time boundaries, and CSV/report schemas.
+- #240 defines the OpenMP local summary model in
+  [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md),
+  including envelope time, summed work, participation, self-time boundaries,
+  and CSV/report schemas.
 - #241 must define hybrid MPI+OpenMP reductions without changing current
   `mpi_summary()` or `mpi_union_summary()` semantics by accident.
 - #243 must add deterministic OpenMP and hybrid validation, including

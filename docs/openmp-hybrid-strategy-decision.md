@@ -8,6 +8,10 @@ Update: #237 reopened the product strategy as an explicit OpenMP/hybrid
 umbrella, while preserving this document's compatibility conclusion for current
 `main`. The opt-in API direction for that reopened work is recorded in
 [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md).
+The #239 runtime model is recorded in
+[`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md),
+and the #240 summary/self-time model is recorded in
+[`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md).
 
 Issue #160 asked whether fTimer should ever support real hybrid MPI+OpenMP
 timing beyond the documented master-thread-only carve-out.
@@ -105,6 +109,8 @@ below is retained as historical context and maps onto #238 through #243:
   explicit thread-local instance pattern.
 - Define the hybrid summary data contract. Specify per-thread participation,
   aggregation, call-count semantics, self-time rules, and MPI reduction behavior.
+  The #240 summary decision is now recorded in
+  [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md).
 - Prototype the core concurrency model. Compare thread-local stacks plus
   post-region aggregation against a synchronized shared instance and document
   the overhead and correctness tradeoffs. The #239 thread-lane runtime decision
