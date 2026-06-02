@@ -340,6 +340,8 @@ contains
       integer :: existing
       integer :: new_capacity
 
+      allocate (new_stacks(0))
+
       existing = self%find(stack)
       if (existing > 0) then
          idx = existing
@@ -350,6 +352,7 @@ contains
          allocate (self%stacks(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY))
       else if (self%count >= size(self%stacks)) then
          new_capacity = max(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY, 2*size(self%stacks))
+         deallocate (new_stacks)
          allocate (new_stacks(new_capacity))
          if (self%count > 0) then
             new_stacks(1:self%count) = self%stacks(1:self%count)
