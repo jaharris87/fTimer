@@ -17,9 +17,12 @@ The supported source-level import surface is intentionally narrow:
   accepts `comm=` only by keyword in MPI builds. Registered timer ids remain
   valid across `reset()` and are invalidated across `finalize()`/reinit without
   being recycled in the same object. OpenMP-region rejection and bounded worker
-  diagnostics require a package built with `FTIMER_USE_OPENMP=ON`; in
-  non-OpenMP packages, this module is supported only for serial-context
-  lifecycle/catalog use.
+  diagnostics require a package built with `FTIMER_USE_OPENMP=ON`. Worker
+  calls that omit `ierr` queue bounded diagnostics; lifecycle calls that clear
+  them emit one aggregate diagnostic when `ierr` is absent, or return the first
+  queued worker status without stderr when `ierr` is present. In non-OpenMP
+  packages, this module is supported only for serial-context lifecycle/catalog
+  use.
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
 ## MPI lifecycle and communicator ownership

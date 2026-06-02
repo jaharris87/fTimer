@@ -350,7 +350,9 @@ enforcement should pass `ierr` and check it.
   `FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime implementation
   lands. Worker calls in this explicit OpenMP API that omit `ierr` queue
   bounded diagnostics; a later serial lifecycle call without `ierr` emits one
-  aggregate diagnostic when fTimer itself is built with `FTIMER_USE_OPENMP=ON`.
+  aggregate diagnostic when fTimer itself is built with `FTIMER_USE_OPENMP=ON`;
+  with `ierr`, lifecycle calls that clear queued diagnostics return the first
+  queued worker status without writing stderr.
   In non-OpenMP fTimer builds, `ftimer_openmp` is exposed for serial-context
   lifecycle/catalog adoption only; using that package from a downstream OpenMP
   parallel region is outside the supported contract because the library was not

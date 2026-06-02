@@ -120,6 +120,7 @@ contains
       integer, intent(in), optional :: comm
 #endif
       type(ftimer_openmp_config_t) :: effective_config
+      integer :: lifecycle_status
 
       if (is_inside_parallel_region()) then
          call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
@@ -139,6 +140,7 @@ contains
          return
       end if
 
+      lifecycle_status = worker_diagnostic_status(self)
       if (.not. present(ierr)) call emit_worker_diagnostics(self)
       call clear_state(self)
       self%initialized = .true.
@@ -152,12 +154,13 @@ contains
       end if
 #endif
 
-      if (present(ierr)) ierr = FTIMER_SUCCESS
+      if (present(ierr)) ierr = lifecycle_status
    end subroutine init_impl
 
    subroutine finalize(self, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
+      integer :: lifecycle_status
 
       if (is_inside_parallel_region()) then
          call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
@@ -171,15 +174,17 @@ contains
          return
       end if
 
+      lifecycle_status = worker_diagnostic_status(self)
       if (.not. present(ierr)) call emit_worker_diagnostics(self)
       call clear_state(self)
-      if (present(ierr)) ierr = FTIMER_SUCCESS
+      if (present(ierr)) ierr = lifecycle_status
    end subroutine finalize
 
    subroutine reset(self, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
       type(ftimer_openmp_config_t) :: saved_config
+      integer :: lifecycle_status
 #ifdef FTIMER_USE_MPI
       type(MPI_Comm) :: saved_mpi_comm
       logical :: saved_mpi_comm_was_present
@@ -207,6 +212,7 @@ contains
       saved_mpi_comm = self%mpi_comm
       saved_mpi_comm_was_present = self%mpi_comm_was_present
 #endif
+      lifecycle_status = worker_diagnostic_status(self)
       if (.not. present(ierr)) call emit_worker_diagnostics(self)
       self%initialized = .true.
       self%config = saved_config
@@ -218,7 +224,7 @@ contains
       self%mpi_comm = saved_mpi_comm
       self%mpi_comm_was_present = saved_mpi_comm_was_present
 #endif
-      if (present(ierr)) ierr = FTIMER_SUCCESS
+      if (present(ierr)) ierr = lifecycle_status
    end subroutine reset
 
    subroutine register_timer(self, name, id, ierr)
@@ -561,6 +567,18 @@ contains
       self%worker_diagnostic_overflow = 0
       self%first_worker_status = FTIMER_SUCCESS
    end subroutine clear_worker_diagnostics
+
+   integer function worker_diagnostic_status(self) result(status)
+      class(ftimer_openmp_t), intent(in) :: self
+
+      if ((self%queued_worker_diagnostics <= 0) .and. (self%worker_diagnostic_overflow <= 0)) then
+         status = FTIMER_SUCCESS
+      elseif (self%first_worker_status /= FTIMER_SUCCESS) then
+         status = self%first_worker_status
+      else
+         status = FTIMER_ERR_UNKNOWN
+      end if
+   end function worker_diagnostic_status
 
    subroutine queue_worker_diagnostic(self, code)
       class(ftimer_openmp_t), intent(inout) :: self
