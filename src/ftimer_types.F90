@@ -316,7 +316,7 @@ contains
          allocate (self%activation_tokens(other%depth))
          self%ids = other%ids(1:other%depth)
          self%activation_tokens = other%activation_tokens(1:other%depth)
-      else if (allocated(other%ids)) then
+      else
          call context_trace_mark("call_stack_copy: before zero-depth allocate")
          allocate (self%ids(0))
          allocate (self%activation_tokens(0))
