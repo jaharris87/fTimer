@@ -374,9 +374,20 @@ contains
       end if
 
       self%count = self%count + 1
-      call context_trace_mark("context_list_add: before stack copy")
-      call self%stacks(self%count)%copy(stack)
-      call context_trace_mark("context_list_add: after stack copy")
+      call context_trace_mark("context_list_add: before inline stack copy")
+      self%stacks(self%count)%depth = stack%depth
+      if (allocated(self%stacks(self%count)%ids)) deallocate (self%stacks(self%count)%ids)
+      if (allocated(self%stacks(self%count)%activation_tokens)) deallocate (self%stacks(self%count)%activation_tokens)
+      if (stack%depth > 0) then
+         allocate (self%stacks(self%count)%ids(stack%depth))
+         allocate (self%stacks(self%count)%activation_tokens(stack%depth))
+         self%stacks(self%count)%ids = stack%ids(1:stack%depth)
+         self%stacks(self%count)%activation_tokens = stack%activation_tokens(1:stack%depth)
+      else
+         allocate (self%stacks(self%count)%ids(0))
+         allocate (self%stacks(self%count)%activation_tokens(0))
+      end if
+      call context_trace_mark("context_list_add: after inline stack copy")
       idx = self%count
       call context_trace_mark("context_list_add: exit")
    end function ftimer_context_list_add
