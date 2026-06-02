@@ -197,8 +197,9 @@ comparisons are meaningful.
   tests.
 - #241 provides the hybrid reduction contract that MPI+OpenMP pFUnit and CSV
   tests must enforce.
-- #242 provides user-facing examples and documentation that installed-consumer
-  and example smoke tests can compile once the future public API exists.
+- #242 records user-facing timing modes and migration guidance. Later
+  implementation issues add compile-checked future OpenMP/hybrid examples and
+  installed consumers once the future public API exists.
 
 ## Validation For This Plan
 

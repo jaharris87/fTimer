@@ -33,6 +33,9 @@ Before starting a release candidate:
   smoke/contract checks in the same release-prep PR.
 - Treat release notes as part of the compatibility contract: describe
   user-visible behavior changes, limitations, and migration notes directly.
+- If future OpenMP or MPI+OpenMP APIs become available, update
+  `docs/openmp-timing-modes.md` and name the supported examples, validation
+  matrix, and remaining non-goals in the release notes.
 
 ## Validation Matrix
 

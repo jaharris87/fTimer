@@ -385,8 +385,10 @@ validation plan.
   implementation issues supply deterministic mock-clock tests, targeted OpenMP
   worker tests, nested/task rejection tests, active-lane lifecycle and
   region-epoch tests, and overhead measurements.
-- #242 updates examples and user-facing docs after #239 and #240 provide enough
-  runtime and summary behavior for compile-checked examples.
+- #242 records the user-facing timing modes and migration guide in
+  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Later
+  implementation issues should add compile-checked worker-timing examples after
+  this runtime model and the summary surface become real public APIs.
 
 ## Non-Goals
 

@@ -210,10 +210,10 @@ Existing users do not need to change source code.
   construct a `ftimer_openmp_t`, initialize it with `config=...`, and consume
   the new OpenMP/hybrid summary type.
 
-Documentation under #242 should keep the current `examples/openmp_example.F90`
-as the compatibility example and add a separate true OpenMP example only after
-#239 and #240 define enough runtime and summary behavior for that example to
-compile.
+The #242 migration guide keeps `examples/openmp_example.F90` as the
+compatibility example. Later implementation issues should add a separate true
+OpenMP example only after #239 and #240 define enough runtime and summary
+behavior for that example to compile.
 
 ## Rejected Alternatives
 
@@ -256,8 +256,10 @@ compile.
   implementation issues must add deterministic OpenMP and hybrid tests,
   including compatibility tests that prove current worker no-op behavior still
   holds for existing APIs.
-- #242 must update user-facing docs and examples after the runtime and summary
-  APIs exist, keeping compatibility and true worker timing examples separate.
+- #242 records the user-facing timing modes and migration guide in
+  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Later
+  implementation issues must add compile-checked true OpenMP and hybrid
+  examples only after the corresponding public APIs exist.
 
 ## Non-Goals
 

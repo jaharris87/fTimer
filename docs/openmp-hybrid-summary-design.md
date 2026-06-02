@@ -432,8 +432,10 @@ overhead, following the validation plan introduced by #243.
   and starts current MPI+OpenMP compatibility smoke coverage. Later
   implementation issues must add deterministic validation, active-lane tests,
   report/CSV golden output, and overhead measurements.
-- #242 updates user-facing documentation and examples after runtime and summary
-  APIs exist.
+- #242 records the user-facing timing modes and migration guide in
+  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Later
+  implementation issues should add compile-checked OpenMP summary examples
+  after runtime and summary APIs exist.
 
 ## Non-Goals
 

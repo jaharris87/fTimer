@@ -281,7 +281,7 @@ Operational notes:
 - `examples/nested_timers.F90`: nested timers and metadata headers
 - `examples/instrumentation_facade_*.F90`: enabled and disabled application-owned timing facade implementations that demonstrate the supported compile-out/no-op pattern
 - `examples/mpi_example.F90`: pure-MPI timing with a global MPI summary object and first-class MPI report output
-- `examples/openmp_example.F90`: the narrow OpenMP carve-out, where timers bracket the parallel region instead of running inside worker threads
+- `examples/openmp_example.F90`: the narrow OpenMP carve-out, where timers bracket the parallel region instead of running inside worker threads. See [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md) for the current OpenMP/MPI+OpenMP migration guide.
 
 ## CSV Export
 
@@ -404,7 +404,10 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - `FTIMER_USE_OPENMP=ON` enables only limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
 - `FTIMER_USE_OPENMP` is the source-level switch for that carve-out; global OpenMP compiler flags alone do not enable the guards when the option is `OFF`.
 - The OpenMP path does not make fTimer thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.
-- Future real hybrid MPI+OpenMP timing is tracked separately from the current
+- OpenMP mode selection, accepted instrumentation patterns, and migration
+  guidance are collected in
+  [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md). Future real
+  hybrid MPI+OpenMP timing is tracked separately from the current
   compatibility mode; see
   [`docs/openmp-hybrid-strategy-decision.md`](docs/openmp-hybrid-strategy-decision.md),
   the opt-in API direction in
@@ -444,6 +447,7 @@ The benchmark harness also includes reporting-scale rows for local text reports,
 
 - Runtime semantics: [`docs/semantics.md`](docs/semantics.md)
 - Current architecture reference: [`docs/design.md`](docs/design.md)
+- OpenMP timing modes and migration guide: [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md)
 - Release checklist and artifact policy: [`docs/release.md`](docs/release.md)
 - Contributor guidance: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Support and security reporting: [`SUPPORT.md`](SUPPORT.md), [`SECURITY.md`](SECURITY.md)

@@ -14,6 +14,8 @@ and the #240 summary/self-time model is recorded in
 [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md).
 The #241 MPI+OpenMP reduction model is recorded in
 [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md).
+The #242 user-facing timing modes and migration guide is recorded in
+[`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
 
 Issue #160 asked whether fTimer should ever support real hybrid MPI+OpenMP
 timing beyond the documented master-thread-only carve-out.
@@ -130,7 +132,8 @@ below is retained as historical context and maps onto #238 through #243:
   [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md),
   alongside current MPI+OpenMP compatibility smoke coverage.
 - Update user-facing docs and examples. Keep the current region-bracketing
-  example, add a clearly separate hybrid example, and explain migration risks.
+  example, explain migration risks, and add clearly separate true OpenMP or
+  hybrid examples only after future public APIs exist.
 
 ## Non-Goals
 
