@@ -14,12 +14,13 @@ Current `main` still has no true worker-thread timing behavior. The first
 timed-region worker calls, OpenMP summaries, and hybrid MPI+OpenMP reductions
 remain deferred to later implementation issues.
 
-The `ftimer_openmp` module is installed in serial and OpenMP-enabled packages.
-Serial packages support its lifecycle/configuration and timer catalog entry
-points only from serial context. OpenMP-region rejection and bounded worker
-diagnostics require an fTimer package built with `FTIMER_USE_OPENMP=ON`; global
-OpenMP flags in a downstream application do not retrofit OpenMP runtime
-introspection into a serial fTimer package.
+The `ftimer_openmp` module is installed in all package modes: serial, MPI,
+OpenMP, and MPI+OpenMP. Packages built without `FTIMER_USE_OPENMP=ON` support
+its lifecycle/configuration and timer catalog entry points only from serial
+context. OpenMP-region rejection and bounded worker diagnostics require an
+fTimer package built with `FTIMER_USE_OPENMP=ON`; global OpenMP flags in a
+downstream application do not retrofit OpenMP runtime introspection into a
+non-OpenMP fTimer package.
 
 ## Mode Summary
 

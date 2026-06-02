@@ -997,17 +997,17 @@ if(TEST_ENABLE_MPI)
     string(REPLACE "\n" ";" openmp_api_mpi_openmp_stderr_lines
       "${openmp_api_mpi_openmp_consumer_stderr_escaped}"
     )
-    set(openmp_api_mpi_openmp_nonempty_line_count 0)
+    set(openmp_api_mpi_openmp_diagnostic_line_count 0)
     set(openmp_api_mpi_openmp_rank0_line_count 0)
     set(openmp_api_mpi_openmp_rank1_line_count 0)
     foreach(openmp_api_mpi_openmp_stderr_line IN LISTS openmp_api_mpi_openmp_stderr_lines)
       string(STRIP "${openmp_api_mpi_openmp_stderr_line}" openmp_api_mpi_openmp_stderr_line_stripped)
-      if(openmp_api_mpi_openmp_stderr_line_stripped STREQUAL "")
+      if(NOT openmp_api_mpi_openmp_stderr_line_stripped MATCHES "ftimer_openmp recorded")
         continue()
       endif()
 
-      math(EXPR openmp_api_mpi_openmp_nonempty_line_count
-        "${openmp_api_mpi_openmp_nonempty_line_count} + 1"
+      math(EXPR openmp_api_mpi_openmp_diagnostic_line_count
+        "${openmp_api_mpi_openmp_diagnostic_line_count} + 1"
       )
       if((openmp_api_mpi_openmp_stderr_line_stripped MATCHES
             "ftimer_openmp recorded 1 worker diagnostics")
@@ -1026,15 +1026,15 @@ if(TEST_ENABLE_MPI)
       endif()
     endforeach()
 
-    if((NOT "${openmp_api_mpi_openmp_nonempty_line_count}" STREQUAL "2")
+    if((NOT "${openmp_api_mpi_openmp_diagnostic_line_count}" STREQUAL "2")
         OR (NOT "${openmp_api_mpi_openmp_rank0_line_count}" STREQUAL "1")
         OR (NOT "${openmp_api_mpi_openmp_rank1_line_count}" STREQUAL "1"))
       message(FATAL_ERROR
         "Unexpected OpenMP API MPI+OpenMP diagnostic stderr.\n"
         "Expected one rank diagnostic with 1 retained worker diagnostic and "
         "one rank diagnostic with 2 retained worker diagnostics.\n"
-        "Observed nonempty stderr line count: "
-        "${openmp_api_mpi_openmp_nonempty_line_count}\n"
+        "Observed ftimer_openmp diagnostic line count: "
+        "${openmp_api_mpi_openmp_diagnostic_line_count}\n"
         "Observed rank-0-style diagnostic line count: "
         "${openmp_api_mpi_openmp_rank0_line_count}\n"
         "Observed rank-1-style diagnostic line count: "
