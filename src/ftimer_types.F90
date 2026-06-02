@@ -30,8 +30,6 @@ module ftimer_types
    public :: ftimer_mpi_union_summary_t
    public :: ftimer_call_stack_t
    public :: ftimer_context_list_t
-   public :: ftimer_context_list_find_impl
-   public :: ftimer_context_list_add_impl
    public :: ftimer_segment_t
    public :: ftimer_clock_func
    public :: ftimer_hook_proc

@@ -5,8 +5,7 @@ module ftimer_core
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_EVENT_START, FTIMER_EVENT_STOP, &
                            FTIMER_MISMATCH_REPAIR, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_SUCCESS, &
-                           ftimer_call_stack_t, ftimer_clock_func, ftimer_context_list_add_impl, &
-                           ftimer_context_list_find_impl, ftimer_hook_proc, ftimer_metadata_t, &
+                           ftimer_call_stack_t, ftimer_clock_func, ftimer_hook_proc, ftimer_metadata_t, &
                            ftimer_mpi_summary_t, ftimer_mpi_union_summary_t, ftimer_segment_t, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi_f08, only: MPI_Comm, MPI_COMM_WORLD
@@ -1249,6 +1248,22 @@ contains
       self%user_data = c_null_ptr
    end subroutine clear_callback_state
 
+   subroutine grow_segment_context_stacks(self, segment_id)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: segment_id
+      type(ftimer_call_stack_t), allocatable :: new_stacks(:)
+      integer :: new_capacity
+
+      new_capacity = max(FTIMER_CONTEXT_STORAGE_INITIAL_CAPACITY, &
+                         2*size(self%segments(segment_id)%contexts%stacks))
+      allocate (new_stacks(new_capacity))
+      if (self%segments(segment_id)%contexts%count > 0) then
+         new_stacks(1:self%segments(segment_id)%contexts%count) = &
+            self%segments(segment_id)%contexts%stacks(1:self%segments(segment_id)%contexts%count)
+      end if
+      call move_alloc(new_stacks, self%segments(segment_id)%contexts%stacks)
+   end subroutine grow_segment_context_stacks
+
    subroutine ensure_context_storage(segment, required_size)
       type(ftimer_segment_t), intent(inout) :: segment
       integer, intent(in) :: required_size
@@ -1673,7 +1688,7 @@ contains
          end if
       end if
 
-      ctx = ftimer_context_list_find_impl(self%segments(segment_id)%contexts, stack)
+      ctx = self%segments(segment_id)%contexts%find(stack)
       call start_trace_mark("find_segment_context: after contexts find")
       if (ctx > 0) then
          call ensure_segment_context_index(self, segment_id, self%segments(segment_id)%contexts%count)
@@ -1701,7 +1716,31 @@ contains
       call ensure_segment_context_index(self, segment_id, self%segments(segment_id)%contexts%count + 1)
       call start_trace_mark("find_or_create_segment_context: after ensure_segment_context_index")
       call start_trace_mark("find_or_create_segment_context: before contexts add")
-      ctx = ftimer_context_list_add_impl(self%segments(segment_id)%contexts, stack)
+      if (.not. allocated(self%segments(segment_id)%contexts%stacks)) then
+         allocate (self%segments(segment_id)%contexts%stacks(FTIMER_CONTEXT_STORAGE_INITIAL_CAPACITY))
+      else if (self%segments(segment_id)%contexts%count >= &
+               size(self%segments(segment_id)%contexts%stacks)) then
+         call grow_segment_context_stacks(self, segment_id)
+      end if
+
+      ctx = self%segments(segment_id)%contexts%count + 1
+      self%segments(segment_id)%contexts%count = ctx
+      self%segments(segment_id)%contexts%stacks(ctx)%depth = stack%depth
+      if (allocated(self%segments(segment_id)%contexts%stacks(ctx)%ids)) then
+         deallocate (self%segments(segment_id)%contexts%stacks(ctx)%ids)
+      end if
+      if (allocated(self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens)) then
+         deallocate (self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens)
+      end if
+      if (stack%depth > 0) then
+         allocate (self%segments(segment_id)%contexts%stacks(ctx)%ids(stack%depth))
+         allocate (self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens(stack%depth))
+         self%segments(segment_id)%contexts%stacks(ctx)%ids = stack%ids(1:stack%depth)
+         self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens = stack%activation_tokens(1:stack%depth)
+      else
+         allocate (self%segments(segment_id)%contexts%stacks(ctx)%ids(1))
+         allocate (self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens(1))
+      end if
       call start_trace_mark("find_or_create_segment_context: after contexts add")
       call start_trace_mark("find_or_create_segment_context: before insert_segment_context_slot")
       call insert_segment_context_slot(self%segments(segment_id), &
