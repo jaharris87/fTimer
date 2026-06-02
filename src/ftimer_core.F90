@@ -741,6 +741,7 @@ contains
       integer, intent(out), optional :: ierr
       integer(int64), intent(out), optional :: activation_token
       integer :: ctx
+      integer :: i
       integer(int64) :: token
       real(wp) :: now
 
@@ -757,7 +758,13 @@ contains
          call start_trace_mark("start_segment_impl: before contexts add")
          if (.not. allocated(self%segments(segment_idx)%contexts%stacks)) then
             allocate (self%segments(segment_idx)%contexts%stacks(FTIMER_CONTEXT_STORAGE_INITIAL_CAPACITY))
-            call allocate_empty_call_stack_slots(self%segments(segment_idx)%contexts%stacks)
+            do i = 1, size(self%segments(segment_idx)%contexts%stacks)
+               self%segments(segment_idx)%contexts%stacks(i)%depth = 0
+               allocate (self%segments(segment_idx)%contexts%stacks(i)%ids(1))
+               allocate (self%segments(segment_idx)%contexts%stacks(i)%activation_tokens(1))
+               self%segments(segment_idx)%contexts%stacks(i)%ids = 0
+               self%segments(segment_idx)%contexts%stacks(i)%activation_tokens = 0_int64
+            end do
          else if (self%segments(segment_idx)%contexts%count >= &
                   size(self%segments(segment_idx)%contexts%stacks)) then
             call grow_segment_context_stacks(self, segment_idx)
