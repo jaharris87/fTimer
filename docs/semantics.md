@@ -348,6 +348,8 @@ enforcement should pass `ierr` and check it.
   [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md)
   and the MPI+OpenMP reduction model in
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md)
+  plus the validation plan in
+  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
 
 ### Consequences for timing data
 

@@ -250,9 +250,12 @@ compile.
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md)
   without changing current `mpi_summary()` or `mpi_union_summary()` semantics
   by accident.
-- #243 must add deterministic OpenMP and hybrid validation, including
-  compatibility tests that prove current worker no-op behavior still holds for
-  existing APIs.
+- #243 records the OpenMP/hybrid validation plan in
+  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
+  and adds current MPI+OpenMP compatibility smoke coverage. Later
+  implementation issues must add deterministic OpenMP and hybrid tests,
+  including compatibility tests that prove current worker no-op behavior still
+  holds for existing APIs.
 - #242 must update user-facing docs and examples after the runtime and summary
   APIs exist, keeping compatibility and true worker timing examples separate.
 

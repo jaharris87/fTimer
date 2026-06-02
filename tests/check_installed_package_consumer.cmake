@@ -586,6 +586,7 @@ set(consumer_configure_args
   -G "${CMAKE_GENERATOR}"
   -DCMAKE_PREFIX_PATH=${install_prefix}
   -DFTIMER_CONSUMER_ENABLE_MPI=${TEST_ENABLE_MPI}
+  -DFTIMER_CONSUMER_ENABLE_OPENMP=${TEST_ENABLE_OPENMP}
 )
 
 if(DEFINED TEST_OPENMP_ROOT AND NOT TEST_OPENMP_ROOT STREQUAL "")
@@ -699,19 +700,27 @@ if(TEST_ENABLE_MPI)
     find_program(ftimer_mpiexec NAMES mpiexec mpirun)
   endif()
   if(NOT ftimer_mpiexec)
-    message(STATUS "Skipping ${test_name} MPI run: no mpiexec/mpirun found on PATH.")
-    return()
+    if(TEST_ENABLE_OPENMP)
+      message(FATAL_ERROR
+        "${test_name} requires mpiexec/mpirun so the MPI+OpenMP installed consumer is executed."
+      )
+    else()
+      message(STATUS "Skipping ${test_name} MPI run: no mpiexec/mpirun found on PATH.")
+      return()
+    endif()
   endif()
 
-  set(ftimer_mpi_launch_command "${ftimer_mpiexec}")
+  set(ftimer_mpi_launch_prefix "${ftimer_mpiexec}")
   if(DEFINED TEST_MPIEXEC_NUMPROC_FLAG AND NOT TEST_MPIEXEC_NUMPROC_FLAG STREQUAL "")
-    list(APPEND ftimer_mpi_launch_command "${TEST_MPIEXEC_NUMPROC_FLAG}" 2)
+    list(APPEND ftimer_mpi_launch_prefix "${TEST_MPIEXEC_NUMPROC_FLAG}" 2)
   else()
-    list(APPEND ftimer_mpi_launch_command -n 2)
+    list(APPEND ftimer_mpi_launch_prefix -n 2)
   endif()
   if(DEFINED TEST_MPIEXEC_PREFLAGS AND NOT TEST_MPIEXEC_PREFLAGS STREQUAL "")
-    list(APPEND ftimer_mpi_launch_command ${TEST_MPIEXEC_PREFLAGS})
+    list(APPEND ftimer_mpi_launch_prefix ${TEST_MPIEXEC_PREFLAGS})
   endif()
+
+  set(ftimer_mpi_launch_command "${ftimer_mpi_launch_prefix}")
   list(APPEND ftimer_mpi_launch_command "${mpi_consumer_executable}")
   if(DEFINED TEST_MPIEXEC_POSTFLAGS AND NOT TEST_MPIEXEC_POSTFLAGS STREQUAL "")
     list(APPEND ftimer_mpi_launch_command ${TEST_MPIEXEC_POSTFLAGS})
@@ -744,5 +753,36 @@ if(TEST_ENABLE_MPI)
   endif()
   if(NOT ftimer_consumer_union_csv_text MATCHES "consumer_mpi_work")
     message(FATAL_ERROR "Installed-package MPI union CSV does not contain the expected consumer_mpi_work entry.")
+  endif()
+
+  if(TEST_ENABLE_OPENMP)
+    set(mpi_openmp_consumer_executable
+      "${consumer_build_dir}/ftimer_installed_mpi_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
+    )
+    if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
+      set(configured_mpi_openmp_consumer_executable
+        "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_mpi_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
+      )
+      if(EXISTS "${configured_mpi_openmp_consumer_executable}")
+        set(mpi_openmp_consumer_executable "${configured_mpi_openmp_consumer_executable}")
+      endif()
+    endif()
+
+    set(ftimer_mpi_openmp_launch_command "${ftimer_mpi_launch_prefix}")
+    list(APPEND ftimer_mpi_openmp_launch_command "${mpi_openmp_consumer_executable}")
+    if(DEFINED TEST_MPIEXEC_POSTFLAGS AND NOT TEST_MPIEXEC_POSTFLAGS STREQUAL "")
+      list(APPEND ftimer_mpi_openmp_launch_command ${TEST_MPIEXEC_POSTFLAGS})
+    endif()
+
+    execute_process(
+      COMMAND ${ftimer_mpi_openmp_launch_command}
+      WORKING_DIRECTORY "${consumer_build_dir}"
+      RESULT_VARIABLE mpi_openmp_consumer_run_result
+    )
+    if(NOT mpi_openmp_consumer_run_result EQUAL 0)
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP consumer executable exited with a nonzero status."
+      )
+    endif()
   endif()
 endif()

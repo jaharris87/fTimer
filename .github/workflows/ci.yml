@@ -178,6 +178,30 @@ jobs:
           ctest --test-dir build --output-on-failure --no-tests=error -R '^ftimer_mpi_example_smoke$'
           ctest --test-dir build --output-on-failure --no-tests=error -R '^ftimer_installed_package_consumer_mpi$'
 
+  build-mpi-openmp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
+
+      # Hybrid smoke validates that the current MPI and OpenMP compatibility
+      # options can coexist. It does not claim true worker-thread timing.
+      - name: Configure (MPI+OpenMP)
+        run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DFTIMER_USE_OPENMP=ON
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Smoke test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Verify MPI+OpenMP installed-consumer coverage
+        run: ctest --test-dir build --output-on-failure --no-tests=error -R '^ftimer_installed_package_consumer_mpi_openmp$'
+
   test-serial:
     runs-on: ubuntu-latest
     steps:

@@ -125,7 +125,10 @@ below is retained as historical context and maps onto #238 through #243:
   [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md).
 - Add deterministic OpenMP tests. Preserve the existing worker no-op tests for
   the default mode, then add opt-in tests for worker-only timers, all-thread
-  timers, nested per-thread stacks, callbacks, and summary generation.
+  timers, nested per-thread stacks, callbacks, and summary generation. The
+  #243 validation plan is now recorded in
+  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md),
+  alongside current MPI+OpenMP compatibility smoke coverage.
 - Update user-facing docs and examples. Keep the current region-bracketing
   example, add a clearly separate hybrid example, and explain migration risks.
 

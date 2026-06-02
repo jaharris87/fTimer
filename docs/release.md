@@ -44,6 +44,7 @@ then require GitHub CI to pass before tagging.
 | Smoke/install path | Yes |
 | Serial pFUnit path | Yes when pFUnit is available |
 | MPI path | Yes when MPI and matching pFUnit are available |
+| MPI+OpenMP compatibility path | Yes when validating the hybrid compatibility matrix; this proves current feature-flag and package coexistence, not true worker timing |
 | OpenMP carve-out | Yes: GNU pFUnit guard coverage when OpenMP and matching pFUnit are available; LLVM Flang smoke/example coverage when validating the OpenMP compiler matrix |
 | Bench harness | Yes for hot-path or summary-performance changes |
 | Formatting | Yes for source/test/example changes |
@@ -76,6 +77,14 @@ FC=/path/to/mpi-mpifort cmake -B build-mpi \
   -DMPIEXEC_EXECUTABLE=/path/to/mpi-mpiexec
 cmake --build build-mpi
 cmake -E chdir build-mpi ctest --output-on-failure -L mpi
+
+FC=mpifort cmake -B build-mpi-openmp \
+  -DFTIMER_USE_MPI=ON \
+  -DFTIMER_USE_OPENMP=ON
+cmake --build build-mpi-openmp
+cmake -E chdir build-mpi-openmp ctest --output-on-failure
+cmake -E chdir build-mpi-openmp ctest --output-on-failure \
+  --no-tests=error -R '^ftimer_installed_package_consumer_mpi_openmp$'
 
 FC=gfortran cmake -B build-openmp \
   -DFTIMER_USE_OPENMP=ON \
