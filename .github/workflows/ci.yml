@@ -263,6 +263,8 @@ jobs:
 
   test-mpi-mpich:
     runs-on: ubuntu-latest
+    env:
+      UCX_TLS: tcp,self
     steps:
       - uses: actions/checkout@v6
 
