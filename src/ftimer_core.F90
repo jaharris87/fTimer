@@ -744,7 +744,7 @@ contains
       if (present(activation_token)) activation_token = 0_int64
 
       call start_trace_mark("start_segment_impl: before find_or_create_segment_context")
-      ctx = find_or_create_segment_context(self, segment_idx, self%call_stack)
+      ctx = find_or_create_segment_context(self, segment_idx)
       call start_trace_mark("start_segment_impl: after find_or_create_segment_context")
       call start_trace_mark("start_segment_impl: before ensure_context_storage")
       call ensure_context_storage(self%segments(segment_idx), ctx)
@@ -970,7 +970,7 @@ contains
       end if
 
       do i = unwind_count, 1, -1
-         restart_ctx = find_or_create_segment_context(self, unwound_ids(i), self%call_stack)
+         restart_ctx = find_or_create_segment_context(self, unwound_ids(i))
          call ensure_context_storage(self%segments(unwound_ids(i)), restart_ctx)
          restart_token = create_activation_token(self)
          call self%call_stack%push(unwound_ids(i), restart_token)
@@ -1646,10 +1646,9 @@ contains
       end if
    end function find_segment_id_index
 
-   integer function find_segment_context(self, segment_id, stack) result(ctx)
+   integer function find_segment_context(self, segment_id) result(ctx)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_id
-      type(ftimer_call_stack_t), intent(in) :: stack
       integer :: candidate_ctx
       integer :: slot
       integer :: start_slot
@@ -1668,13 +1667,13 @@ contains
       if (allocated(self%segment_context_indices)) then
          if ((segment_id >= 1) .and. (segment_id <= size(self%segment_context_indices))) then
             if (allocated(self%segment_context_indices(segment_id)%slots)) then
-               slot = hash_context_slot(stack, size(self%segment_context_indices(segment_id)%slots))
+               slot = hash_context_slot(self%call_stack, size(self%segment_context_indices(segment_id)%slots))
                start_slot = slot
                do
                   candidate_ctx = self%segment_context_indices(segment_id)%slots(slot)
                   if (candidate_ctx == 0) exit
                   if ((candidate_ctx >= 1) .and. (candidate_ctx <= self%segments(segment_id)%contexts%count)) then
-                     if (self%segments(segment_id)%contexts%stacks(candidate_ctx)%equals(stack)) then
+                     if (self%segments(segment_id)%contexts%stacks(candidate_ctx)%equals(self%call_stack)) then
                         ctx = candidate_ctx
                         return
                      end if
@@ -1688,27 +1687,26 @@ contains
          end if
       end if
 
-      ctx = self%segments(segment_id)%contexts%find(stack)
+      ctx = self%segments(segment_id)%contexts%find(self%call_stack)
       call start_trace_mark("find_segment_context: after contexts find")
       if (ctx > 0) then
          call ensure_segment_context_index(self, segment_id, self%segments(segment_id)%contexts%count)
          call start_trace_mark("find_segment_context: after ensure index")
          if (allocated(self%segment_context_indices(segment_id)%slots)) then
             call insert_segment_context_slot(self%segments(segment_id), &
-                                             self%segment_context_indices(segment_id)%slots, stack, ctx)
+                                             self%segment_context_indices(segment_id)%slots, self%call_stack, ctx)
             call start_trace_mark("find_segment_context: after insert slot")
          end if
       end if
       call start_trace_mark("find_segment_context: exit")
    end function find_segment_context
 
-   integer function find_or_create_segment_context(self, segment_id, stack) result(ctx)
+   integer function find_or_create_segment_context(self, segment_id) result(ctx)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_id
-      type(ftimer_call_stack_t), intent(in) :: stack
 
       call start_trace_mark("find_or_create_segment_context: enter")
-      ctx = find_segment_context(self, segment_id, stack)
+      ctx = find_segment_context(self, segment_id)
       call start_trace_mark("find_or_create_segment_context: after find_segment_context")
       if (ctx > 0) return
 
@@ -1725,18 +1723,19 @@ contains
 
       ctx = self%segments(segment_id)%contexts%count + 1
       self%segments(segment_id)%contexts%count = ctx
-      self%segments(segment_id)%contexts%stacks(ctx)%depth = stack%depth
+      self%segments(segment_id)%contexts%stacks(ctx)%depth = self%call_stack%depth
       if (allocated(self%segments(segment_id)%contexts%stacks(ctx)%ids)) then
          deallocate (self%segments(segment_id)%contexts%stacks(ctx)%ids)
       end if
       if (allocated(self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens)) then
          deallocate (self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens)
       end if
-      if (stack%depth > 0) then
-         allocate (self%segments(segment_id)%contexts%stacks(ctx)%ids(stack%depth))
-         allocate (self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens(stack%depth))
-         self%segments(segment_id)%contexts%stacks(ctx)%ids = stack%ids(1:stack%depth)
-         self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens = stack%activation_tokens(1:stack%depth)
+      if (self%call_stack%depth > 0) then
+         allocate (self%segments(segment_id)%contexts%stacks(ctx)%ids(self%call_stack%depth))
+         allocate (self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens(self%call_stack%depth))
+         self%segments(segment_id)%contexts%stacks(ctx)%ids = self%call_stack%ids(1:self%call_stack%depth)
+         self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens = &
+            self%call_stack%activation_tokens(1:self%call_stack%depth)
       else
          allocate (self%segments(segment_id)%contexts%stacks(ctx)%ids(1))
          allocate (self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens(1))
@@ -1744,7 +1743,7 @@ contains
       call start_trace_mark("find_or_create_segment_context: after contexts add")
       call start_trace_mark("find_or_create_segment_context: before insert_segment_context_slot")
       call insert_segment_context_slot(self%segments(segment_id), &
-                                       self%segment_context_indices(segment_id)%slots, stack, ctx)
+                                       self%segment_context_indices(segment_id)%slots, self%call_stack, ctx)
       call start_trace_mark("find_or_create_segment_context: after insert_segment_context_slot")
       call start_trace_mark("find_or_create_segment_context: exit")
    end function find_or_create_segment_context
@@ -1901,7 +1900,7 @@ contains
          error stop "ftimer internal stop_segment_with_now stack corruption"
       end if
 
-      ctx = find_segment_context(self, id, self%call_stack)
+      ctx = find_segment_context(self, id)
       if (ctx <= 0) then
          error stop "ftimer internal stop_segment_with_now missing context"
       end if
