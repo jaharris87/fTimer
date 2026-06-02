@@ -163,7 +163,11 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   build-mpi-mpich:
-    runs-on: ubuntu-latest
+    # Hosted Ubuntu 24.04 currently launches apt MPICH 4.2.0/Hydra jobs as
+    # singleton MPI_COMM_WORLD ranks under mpiexec.mpich -n 2. Keep MPICH
+    # validation on 22.04 until the hosted 24.04 package/launcher pair can
+    # prove a multi-rank MPI_COMM_WORLD.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
 
@@ -200,6 +204,28 @@ jobs:
           echo "$RUNNER_TEMP/mpich-bin" >> "$GITHUB_PATH"
           echo "FTIMER_MPICH_FC=$mpich_fc" >> "$GITHUB_ENV"
           echo "FTIMER_MPICH_MPIEXEC=$mpich_mpiexec" >> "$GITHUB_ENV"
+
+      - name: Probe MPICH launcher world size
+        run: |
+          cat > "$RUNNER_TEMP/mpich_world_probe.F90" <<'EOF'
+          program mpich_world_probe
+            use mpi_f08
+            implicit none
+            integer :: ierr
+            integer :: rank
+            integer :: size
+
+            call MPI_Init(ierr)
+            call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
+            call MPI_Comm_size(MPI_COMM_WORLD, size, ierr)
+            print *, 'mpich_world_probe', rank, size
+            call MPI_Finalize(ierr)
+
+            if (size /= 2) error stop 'MPICH launcher did not create a two-rank MPI_COMM_WORLD'
+          end program mpich_world_probe
+          EOF
+          "$FTIMER_MPICH_FC" "$RUNNER_TEMP/mpich_world_probe.F90" -o "$RUNNER_TEMP/mpich_world_probe"
+          "$FTIMER_MPICH_MPIEXEC" -n 2 "$RUNNER_TEMP/mpich_world_probe"
 
       - name: Show MPICH toolchain
         run: |
@@ -330,6 +356,165 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  test-mpi-mpich:
+    # Hosted Ubuntu 24.04 currently launches apt MPICH 4.2.0/Hydra jobs as
+    # singleton MPI_COMM_WORLD ranks under mpiexec.mpich -n 2, which makes
+    # pFUnit reject [npes=2] tests. Keep MPICH pFUnit validation on 22.04;
+    # build-mpi-mpich separately covers MPICH smoke/install-consumer.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake mpich libmpich-dev
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Resolve CMake for pFUnit
+        run: |
+          required_version="3.24.0"
+          selected_cmake=""
+          seen=""
+
+          version_at_least() {
+            [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]
+          }
+
+          for candidate in /usr/local/bin/cmake "$(command -v cmake || true)" /usr/bin/cmake; do
+            if [ -z "$candidate" ] || [ ! -x "$candidate" ]; then
+              continue
+            fi
+            case " $seen " in
+              *" $candidate "*) continue ;;
+            esac
+            seen="$seen $candidate"
+
+            version="$("$candidate" --version | awk 'NR == 1 { print $3 }')"
+            if version_at_least "$version" "$required_version"; then
+              selected_cmake="$candidate"
+              break
+            fi
+            echo "Ignoring $candidate: CMake $version is older than pFUnit's $required_version requirement."
+          done
+
+          if [ -z "$selected_cmake" ]; then
+            echo "pFUnit $PFUNIT_VERSION requires CMake >= $required_version; no suitable CMake was found." >&2
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/cmake-bin"
+          ln -sf "$selected_cmake" "$RUNNER_TEMP/cmake-bin/cmake"
+          echo "$RUNNER_TEMP/cmake-bin" >> "$GITHUB_PATH"
+          echo "FTIMER_CMAKE=$selected_cmake" >> "$GITHUB_ENV"
+          "$selected_cmake" --version
+
+      - name: Resolve MPICH tools
+        run: |
+          if command -v mpifort.mpich >/dev/null 2>&1; then
+            mpich_fc="$(command -v mpifort.mpich)"
+          elif command -v mpif90.mpich >/dev/null 2>&1; then
+            mpich_fc="$(command -v mpif90.mpich)"
+          else
+            echo "No MPICH Fortran wrapper found on PATH." >&2
+            exit 1
+          fi
+
+          if command -v mpiexec.mpich >/dev/null 2>&1; then
+            mpich_mpiexec="$(command -v mpiexec.mpich)"
+          elif command -v mpirun.mpich >/dev/null 2>&1; then
+            mpich_mpiexec="$(command -v mpirun.mpich)"
+          else
+            echo "No MPICH launcher found on PATH." >&2
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/mpich-bin"
+          ln -sf "$mpich_fc" "$RUNNER_TEMP/mpich-bin/mpifort"
+          ln -sf "$mpich_mpiexec" "$RUNNER_TEMP/mpich-bin/mpiexec"
+          echo "$RUNNER_TEMP/mpich-bin" >> "$GITHUB_PATH"
+          echo "FTIMER_MPICH_FC=$mpich_fc" >> "$GITHUB_ENV"
+          echo "FTIMER_MPICH_MPIEXEC=$mpich_mpiexec" >> "$GITHUB_ENV"
+
+      - name: Probe MPICH launcher world size
+        run: |
+          cat > "$RUNNER_TEMP/mpich_world_probe.F90" <<'EOF'
+          program mpich_world_probe
+            use mpi_f08
+            implicit none
+            integer :: ierr
+            integer :: rank
+            integer :: size
+
+            call MPI_Init(ierr)
+            call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
+            call MPI_Comm_size(MPI_COMM_WORLD, size, ierr)
+            print *, 'mpich_world_probe', rank, size
+            call MPI_Finalize(ierr)
+
+            if (size /= 2) error stop 'MPICH launcher did not create a two-rank MPI_COMM_WORLD'
+          end program mpich_world_probe
+          EOF
+          "$FTIMER_MPICH_FC" "$RUNNER_TEMP/mpich_world_probe.F90" -o "$RUNNER_TEMP/mpich_world_probe"
+          "$FTIMER_MPICH_MPIEXEC" -n 2 "$RUNNER_TEMP/mpich_world_probe"
+
+      - name: Capture MPICH pFUnit cache identity
+        id: pfunit-mpich-identity
+        run: |
+          {
+            cat /etc/os-release
+            uname -a
+            "$FTIMER_MPICH_FC" --version
+            "$FTIMER_MPICH_FC" -show
+            "$FTIMER_MPICH_MPIEXEC" --version
+            cmake --version
+          } > /tmp/pfunit-mpich-cache-identity.txt
+          identity="$(sha256sum /tmp/pfunit-mpich-cache-identity.txt | cut -d ' ' -f1)"
+          echo "key=$identity" >> "$GITHUB_OUTPUT"
+
+      - name: Cache MPICH pFUnit
+        uses: actions/cache@v4
+        id: pfunit-mpich-cache
+        with:
+          path: /opt/pfunit-mpich
+          key: pfunit-mpich-${{ runner.os }}-${{ steps.pfunit-mpich-identity.outputs.key }}-${{ env.PFUNIT_VERSION }}-${{ env.PFUNIT_SHA256 }}
+
+      - name: Build MPICH pFUnit
+        if: steps.pfunit-mpich-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/pfunit-mpich-src
+          curl -fsSL "$PFUNIT_ARCHIVE_URL" -o /tmp/pfunit-mpich.tar
+          printf '%s  %s\n' "$PFUNIT_SHA256" /tmp/pfunit-mpich.tar | sha256sum -c -
+          tar -xf /tmp/pfunit-mpich.tar --strip-components=1 -C /tmp/pfunit-mpich-src
+          FC=mpifort cmake -B /tmp/pfunit-mpich-build -S /tmp/pfunit-mpich-src -DCMAKE_INSTALL_PREFIX=/opt/pfunit-mpich -DSKIP_MPI=NO -DENABLE_MPI_F08=ON
+          cmake --build /tmp/pfunit-mpich-build -j$(nproc)
+          cmake --install /tmp/pfunit-mpich-build
+
+      - name: Verify MPICH pFUnit package
+        run: |
+          pfunit_config="$(find /opt/pfunit-mpich -path '*/cmake/PFUNITConfig.cmake' -print -quit)"
+          if [ -z "$pfunit_config" ]; then
+            echo "No MPICH pFUnit package config was installed." >&2
+            exit 1
+          fi
+          echo "PFUNIT_CONFIG=$pfunit_config"
+          grep 'set (PFUNIT_MPI_FOUND "TRUE")' "$pfunit_config"
+
+      - name: Configure
+        run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DFTIMER_BUILD_SMOKE_TESTS=OFF -DPFUNIT_DIR=/opt/pfunit-mpich -DMPIEXEC_EXECUTABLE="$FTIMER_MPICH_MPIEXEC"
+
+      - name: Build MPI pFUnit tests
+        run: cmake --build build --target ftimer_mpi_tests ftimer_mpi_tests_4pe --verbose -j$(nproc)
+
+      - name: Show MPICH pFUnit tests
+        run: ctest --test-dir build -N -V -R '^ftimer_mpi_tests(_4pe)?$'
+
+      - name: Test MPICH MPI pFUnit
+        run: |
+          ctest --test-dir build --output-on-failure --no-tests=error -R '^ftimer_mpi_tests$'
+          ctest --test-dir build --output-on-failure --no-tests=error -R '^ftimer_mpi_tests_4pe$'
 
   build-openmp:
     runs-on: ubuntu-latest

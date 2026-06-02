@@ -29,8 +29,8 @@ FC=mpifort cmake -B build-mpi-smoke -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=OFF
 cmake --build build-mpi-smoke
 cmake -E chdir build-mpi-smoke ctest --output-on-failure
 
-# MPI pFUnit build (validated path: GNU/OpenMPI wrapper + matching pFUnit install)
-FC=/path/to/openmpi-mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/openmpi-pfunit
+# MPI pFUnit build (validated with GNU OpenMPI and GNU MPICH wrappers)
+FC=/path/to/mpi-mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/mpi-pfunit -DMPIEXEC_EXECUTABLE=/path/to/mpi-mpiexec
 cmake --build build-mpi
 cmake -E chdir build-mpi ctest --output-on-failure -L mpi
 
@@ -62,7 +62,7 @@ Supported toolchain matrix:
 
 - Serial smoke/library build: GNU Fortran, LLVM Flang, and NVIDIA NVHPC `nvfortran` are the validated automation paths.
 - Serial + pFUnit tests: GNU Fortran (`gfortran`) with a pFUnit installation built for the same compiler/toolchain.
-- MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH. MPICH coverage is smoke/install-consumer only; MPI pFUnit coverage remains on OpenMPI. `FTIMER_USE_MPI=ON` now runs a configure-time `mpi_f08` probe and fails early if the active compiler cannot consume the discovered MPI module files.
+- MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH. Smoke/install-consumer coverage runs for both, and MPI pFUnit coverage runs for OpenMPI plus MPICH on hosted Ubuntu 22.04 with a matching MPICH-built pFUnit. `FTIMER_USE_MPI=ON` now runs a configure-time `mpi_f08` probe and fails early if the active compiler cannot consume the discovered MPI module files.
 - OpenMP: GNU Fortran (`gfortran`) only for the documented/supported path.
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
