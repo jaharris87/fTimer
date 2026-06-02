@@ -25,7 +25,7 @@ Recommended future type family:
 
 Recommended future entry points:
 
-- `timer%get_openmp_summary(summary, ierr=ierr)` for local lane summaries;
+- `timer%get_openmp_summary(summary, ierr=ierr)` for local aggregate summaries;
 - `timer%print_openmp_summary(...)`, `timer%write_openmp_summary(...)`, and
   `timer%write_openmp_summary_csv(...)` for local lane reports;
 - `timer%mpi_openmp_summary(summary, ierr=ierr)` plus explicit hybrid text and
@@ -132,8 +132,7 @@ Recommended top-level local OpenMP fields:
   top-level work total;
 - `sum_lane_self_time`: total lane-local self time summed across all materialized
   descriptors;
-- `configured_lane_capacity`, `eligible_lane_count`, and
-  `participating_lane_count`.
+- `configured_lane_capacity` and `observed_participating_lane_count`.
 
 `timed_region_envelope_time` is wall-clock elapsed time. It is not divided by
 or multiplied by the number of lanes. `sum_lane_root_inclusive_time` is the
@@ -144,6 +143,12 @@ nested parent/child intervals on one lane before any parallelism is involved.
 `sum_lane_self_time` is the summed exclusive work represented by all
 materialized descriptor rows; it is useful for checking self-time accounting,
 but it may omit uninstrumented gaps between timers.
+
+Top-level lane counts are diagnostics only. `configured_lane_capacity` is the
+runtime storage limit from #239. `observed_participating_lane_count` is the
+distinct lane ids that materialized at least one descriptor in the summary
+window. Neither field defines global missing-lane semantics. Missing lanes are
+defined per descriptor entry from that entry's eligible participant set.
 
 Recommended per-entry aggregate fields:
 
@@ -302,7 +307,7 @@ be the current serial table.
 Recommended sections:
 
 - a header with summary window time, timed-region envelope time, configured
-  lane capacity, eligible lanes, participating lanes, and summed lane root work;
+  lane capacity, observed participating lanes, and summed lane root work;
 - a descriptor aggregate table with participating/missing lanes, summed lane
   inclusive/self time, min/avg/max lane inclusive time, average lane self time,
   and call-count aggregate fields;
@@ -324,7 +329,8 @@ local/strict version-2 header and not the sparse MPI union header.
 
 Recommended default local OpenMP CSV record types:
 
-- `record_type=summary` for top-level window, envelope, and lane-count fields;
+- `record_type=summary` for top-level window, envelope, configured-capacity, and
+  observed-participation fields;
 - `record_type=metadata` for caller metadata;
 - `record_type=entry` for descriptor aggregate rows.
 
@@ -350,7 +356,7 @@ OpenMP CSV field names should make semantics visible:
 - use `sum_lane_root_inclusive_time`, not `inclusive_time`, for top-level
   summed worker work;
 - use `eligible_lane_count`, `participating_lane_count`, and
-  `missing_lane_count`;
+  `missing_lane_count` on entry rows;
 - use `avg_participating_lane_*` or similar labels for averages over
   participating lanes only.
 

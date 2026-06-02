@@ -183,7 +183,8 @@ The future OpenMP summary model should distinguish at least these quantities:
 
 - wall-clock envelope time for a region;
 - summed lane work time;
-- per-lane call counts and inclusive/self time;
+- aggregate lane statistics for call counts and inclusive/self time;
+- optional per-lane detail only through an explicit detail or diagnostic path;
 - lane participation count and missing-lane semantics;
 - rank/lane hierarchy for hybrid MPI+OpenMP summaries.
 
