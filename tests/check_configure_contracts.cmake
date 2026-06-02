@@ -236,6 +236,11 @@ if(ftimer_openmp_compiler_gate_pos GREATER ftimer_openmp_find_package_pos)
     "FTIMER_USE_OPENMP=ON must reject unvalidated compiler IDs before OpenMP runtime discovery."
   )
 endif()
+if(NOT ftimer_root_cmake MATCHES "FTIMER_USE_OPENMP=ON is not currently validated for compiler ID")
+  message(FATAL_ERROR
+    "FTIMER_USE_OPENMP=ON configure coverage must keep a clear diagnostic for unvalidated compiler IDs."
+  )
+endif()
 if(NOT ftimer_root_cmake MATCHES "ftimer_try_run_openmp_master_probe")
   message(FATAL_ERROR
     "FTIMER_USE_OPENMP=ON configure coverage must run fTimer's OpenMP master-thread capability probe."
