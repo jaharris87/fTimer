@@ -780,6 +780,8 @@ contains
          else
             allocate (self%segments(segment_idx)%contexts%stacks(ctx)%ids(1))
             allocate (self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens(1))
+            self%segments(segment_idx)%contexts%stacks(ctx)%ids = 0
+            self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens = 0_int64
          end if
          call start_trace_mark("start_segment_impl: after contexts add")
          call start_trace_mark("start_segment_impl: before insert_segment_context_slot")
@@ -854,7 +856,7 @@ contains
    end subroutine stop_id_impl
 
    subroutine stop_segment_impl(self, segment_idx, ierr)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_idx
       integer, intent(out), optional :: ierr
       character(len=FTIMER_STATUS_MESSAGE_LEN) :: message
@@ -1097,7 +1099,7 @@ contains
    end function wtime
 
    integer(int64) function create_activation_token(self) result(activation_token)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
 
       if (self%next_activation_token >= huge(self%next_activation_token)) then
          self%next_activation_token = 0_int64
@@ -1108,7 +1110,7 @@ contains
    end function create_activation_token
 
    integer function allocate_segment_id(self) result(id)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
 
       if (self%next_segment_id <= 0) error stop "ftimer timer id space exhausted"
 
@@ -1263,10 +1265,12 @@ contains
       stack%depth = 0
       if (.not. allocated(stack%ids)) allocate (stack%ids(1))
       if (.not. allocated(stack%activation_tokens)) allocate (stack%activation_tokens(1))
+      stack%ids = 0
+      stack%activation_tokens = 0_int64
    end subroutine allocate_empty_call_stack
 
    subroutine restore_default_clock(self)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
 
 #ifdef FTIMER_USE_MPI
       self%clock => ftimer_mpi_clock
@@ -1276,21 +1280,21 @@ contains
    end subroutine restore_default_clock
 
    subroutine rebase_summary_window(self)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
 
       self%init_wtime = self%wtime()
       self%init_date = ftimer_date_string()
    end subroutine rebase_summary_window
 
    subroutine clear_callback_state(self)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
 
       nullify (self%on_event)
       self%user_data = c_null_ptr
    end subroutine clear_callback_state
 
    subroutine grow_segment_context_stacks(self, segment_id)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_id
       type(ftimer_call_stack_t), allocatable :: new_stacks(:)
       integer :: new_capacity
@@ -1351,7 +1355,7 @@ contains
    end subroutine ensure_context_storage
 
    subroutine ensure_segment_capacity(self, required_size)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
       integer, intent(in) :: required_size
       type(ftimer_context_index_t), allocatable :: new_context_indices(:)
       integer, allocatable :: new_ids(:)
@@ -1390,7 +1394,7 @@ contains
    end subroutine ensure_segment_capacity
 
    subroutine ensure_segment_name_index(self, required_count)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
       integer, intent(in) :: required_count
       integer, allocatable :: new_slots(:)
       integer :: current_capacity
@@ -1427,7 +1431,7 @@ contains
    end subroutine ensure_segment_name_index
 
    subroutine ensure_segment_id_index(self, required_count)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
       integer, intent(in) :: required_count
       integer, allocatable :: new_slots(:)
       integer :: current_capacity
@@ -1464,7 +1468,7 @@ contains
    end subroutine ensure_segment_id_index
 
    subroutine ensure_segment_context_index(self, segment_id, required_count)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_id
       integer, intent(in) :: required_count
       integer, allocatable :: new_slots(:)
@@ -1594,7 +1598,7 @@ contains
    end subroutine insert_segment_context_slot
 
    integer function find_segment_index(self, name) result(idx)
-      class(ftimer_t), intent(in) :: self
+      type(ftimer_t), intent(in) :: self
       character(len=*), intent(in) :: name
       integer :: candidate_id
       integer :: i
@@ -1632,7 +1636,7 @@ contains
    end function find_segment_index
 
    integer function public_segment_id(self, segment_idx) result(id)
-      class(ftimer_t), intent(in) :: self
+      type(ftimer_t), intent(in) :: self
       integer, intent(in) :: segment_idx
 
       id = 0
@@ -1648,7 +1652,7 @@ contains
    end function public_segment_id
 
    integer function find_segment_id_index(self, id) result(idx)
-      class(ftimer_t), intent(in) :: self
+      type(ftimer_t), intent(in) :: self
       integer, intent(in) :: id
       integer :: candidate_idx
       integer :: i
@@ -1688,7 +1692,7 @@ contains
    end function find_segment_id_index
 
    integer function find_segment_context(self, segment_id) result(ctx)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_id
       integer :: candidate_ctx
       integer :: slot
@@ -1743,7 +1747,7 @@ contains
    end function find_segment_context
 
    subroutine find_or_create_segment_context(self, segment_id, ctx)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_id
       integer, intent(out) :: ctx
 
@@ -1781,6 +1785,8 @@ contains
       else
          allocate (self%segments(segment_id)%contexts%stacks(ctx)%ids(1))
          allocate (self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens(1))
+         self%segments(segment_id)%contexts%stacks(ctx)%ids = 0
+         self%segments(segment_id)%contexts%stacks(ctx)%activation_tokens = 0_int64
       end if
       call start_trace_mark("find_or_create_segment_context: after contexts add")
       call start_trace_mark("find_or_create_segment_context: before insert_segment_context_slot")
@@ -1852,7 +1858,7 @@ contains
    end function hash_context_slot
 
    logical function has_active_timers(self) result(has_active)
-      class(ftimer_t), intent(in) :: self
+      type(ftimer_t), intent(in) :: self
 
       has_active = self%call_stack%depth > 0
    end function has_active_timers
@@ -1930,7 +1936,7 @@ contains
    end function stack_contains
 
    subroutine stop_segment_with_now(self, id, now, fire_callback)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
       integer, intent(in) :: id
       real(wp), intent(in) :: now
       logical, intent(in) :: fire_callback

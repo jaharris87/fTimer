@@ -320,6 +320,8 @@ contains
          call context_trace_mark("call_stack_copy: before empty allocate")
          allocate (self%ids(1))
          allocate (self%activation_tokens(1))
+         self%ids = 0
+         self%activation_tokens = 0_int64
       end if
       call context_trace_mark("call_stack_copy: exit")
    end subroutine ftimer_call_stack_copy
@@ -387,6 +389,8 @@ contains
       else
          allocate (self%stacks(self%count)%ids(1))
          allocate (self%stacks(self%count)%activation_tokens(1))
+         self%stacks(self%count)%ids = 0
+         self%stacks(self%count)%activation_tokens = 0_int64
       end if
       call context_trace_mark("context_list_add_impl: after inline stack copy")
       idx = self%count
