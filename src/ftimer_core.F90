@@ -743,9 +743,46 @@ contains
       call start_trace_mark("start_segment_impl: enter")
       if (present(activation_token)) activation_token = 0_int64
 
-      call start_trace_mark("start_segment_impl: before find_or_create_segment_context")
-      call find_or_create_segment_context(self, segment_idx, ctx)
-      call start_trace_mark("start_segment_impl: after find_or_create_segment_context")
+      call start_trace_mark("start_segment_impl: before find_segment_context")
+      ctx = find_segment_context(self, segment_idx)
+      call start_trace_mark("start_segment_impl: after find_segment_context")
+      if (ctx <= 0) then
+         call start_trace_mark("start_segment_impl: before ensure_segment_context_index")
+         call ensure_segment_context_index(self, segment_idx, self%segments(segment_idx)%contexts%count + 1)
+         call start_trace_mark("start_segment_impl: after ensure_segment_context_index")
+         call start_trace_mark("start_segment_impl: before contexts add")
+         if (.not. allocated(self%segments(segment_idx)%contexts%stacks)) then
+            allocate (self%segments(segment_idx)%contexts%stacks(FTIMER_CONTEXT_STORAGE_INITIAL_CAPACITY))
+         else if (self%segments(segment_idx)%contexts%count >= &
+                  size(self%segments(segment_idx)%contexts%stacks)) then
+            call grow_segment_context_stacks(self, segment_idx)
+         end if
+
+         ctx = self%segments(segment_idx)%contexts%count + 1
+         self%segments(segment_idx)%contexts%count = ctx
+         self%segments(segment_idx)%contexts%stacks(ctx)%depth = self%call_stack%depth
+         if (allocated(self%segments(segment_idx)%contexts%stacks(ctx)%ids)) then
+            deallocate (self%segments(segment_idx)%contexts%stacks(ctx)%ids)
+         end if
+         if (allocated(self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens)) then
+            deallocate (self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens)
+         end if
+         if (self%call_stack%depth > 0) then
+            allocate (self%segments(segment_idx)%contexts%stacks(ctx)%ids(self%call_stack%depth))
+            allocate (self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens(self%call_stack%depth))
+            self%segments(segment_idx)%contexts%stacks(ctx)%ids = self%call_stack%ids(1:self%call_stack%depth)
+            self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens = &
+               self%call_stack%activation_tokens(1:self%call_stack%depth)
+         else
+            allocate (self%segments(segment_idx)%contexts%stacks(ctx)%ids(1))
+            allocate (self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens(1))
+         end if
+         call start_trace_mark("start_segment_impl: after contexts add")
+         call start_trace_mark("start_segment_impl: before insert_segment_context_slot")
+         call insert_segment_context_slot(self%segments(segment_idx), &
+                                          self%segment_context_indices(segment_idx)%slots, self%call_stack, ctx)
+         call start_trace_mark("start_segment_impl: after insert_segment_context_slot")
+      end if
       call start_trace_mark("start_segment_impl: before ensure_context_storage")
       call ensure_context_storage(self%segments(segment_idx), ctx)
       call start_trace_mark("start_segment_impl: after ensure_context_storage")
