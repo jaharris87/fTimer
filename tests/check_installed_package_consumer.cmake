@@ -385,6 +385,50 @@ program ftimer_integer_mpi_comm_rejection
    call ftimer_init(legacy_comm, ierr)
 end program ftimer_integer_mpi_comm_rejection
 ]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(openmp-keyword [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+   integer :: ierr
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call timer%init(config=config, comm=legacy_comm, ierr=ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(openmp-positional-config-and-int [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call timer%init(config, legacy_comm)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(openmp-positional-config-int-ierr [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+   integer :: ierr
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call timer%init(config, legacy_comm, ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
 endfunction()
 
 if(TEST_INSTALL_ONLY)
@@ -635,6 +679,9 @@ set(mixed_consumer_executable "${consumer_build_dir}/ftimer_installed_mixed_cons
 set(openmp_api_consumer_executable
   "${consumer_build_dir}/ftimer_installed_openmp_api_consumer${TEST_EXECUTABLE_SUFFIX}"
 )
+set(openmp_api_openmp_consumer_executable
+  "${consumer_build_dir}/ftimer_installed_openmp_api_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
+)
 if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   set(configured_consumer_executable
     "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_consumer${TEST_EXECUTABLE_SUFFIX}"
@@ -648,6 +695,9 @@ if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   set(configured_openmp_api_consumer_executable
     "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_openmp_api_consumer${TEST_EXECUTABLE_SUFFIX}"
   )
+  set(configured_openmp_api_openmp_consumer_executable
+    "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_openmp_api_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
+  )
   if(EXISTS "${configured_consumer_executable}")
     set(consumer_executable "${configured_consumer_executable}")
   endif()
@@ -659,6 +709,9 @@ if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   endif()
   if(EXISTS "${configured_openmp_api_consumer_executable}")
     set(openmp_api_consumer_executable "${configured_openmp_api_consumer_executable}")
+  endif()
+  if(EXISTS "${configured_openmp_api_openmp_consumer_executable}")
+    set(openmp_api_openmp_consumer_executable "${configured_openmp_api_openmp_consumer_executable}")
   endif()
 endif()
 
@@ -699,6 +752,19 @@ if(NOT TEST_ENABLE_MPI)
   )
   if(NOT openmp_api_consumer_run_result EQUAL 0)
     message(FATAL_ERROR "Installed-package OpenMP API consumer executable exited with a nonzero status.")
+  endif()
+
+  if(TEST_ENABLE_OPENMP)
+    execute_process(
+      COMMAND "${openmp_api_openmp_consumer_executable}"
+      WORKING_DIRECTORY "${consumer_build_dir}"
+      RESULT_VARIABLE openmp_api_openmp_consumer_run_result
+    )
+    if(NOT openmp_api_openmp_consumer_run_result EQUAL 0)
+      message(FATAL_ERROR
+        "Installed-package OpenMP API OpenMP consumer executable exited with a nonzero status."
+      )
+    endif()
   endif()
 endif()
 

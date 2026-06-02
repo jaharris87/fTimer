@@ -19,6 +19,17 @@ target_link_libraries(ftimer_installed_mixed_consumer PRIVATE fTimer::ftimer)
 add_executable(ftimer_installed_openmp_api_consumer openmp_api_main.F90)
 target_link_libraries(ftimer_installed_openmp_api_consumer PRIVATE fTimer::ftimer)
 
+if(FTIMER_CONSUMER_ENABLE_OPENMP)
+  find_package(OpenMP COMPONENTS Fortran REQUIRED)
+
+  add_executable(ftimer_installed_openmp_api_openmp_consumer openmp_api_openmp_main.F90)
+  target_link_libraries(ftimer_installed_openmp_api_openmp_consumer
+    PRIVATE
+      fTimer::ftimer
+      OpenMP::OpenMP_Fortran
+  )
+endif()
+
 if(FTIMER_CONSUMER_ENABLE_MPI)
   add_executable(ftimer_installed_mpi_consumer mpi_main.F90)
   target_link_libraries(ftimer_installed_mpi_consumer PRIVATE fTimer::ftimer)

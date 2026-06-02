@@ -343,10 +343,14 @@ enforcement should pass `ierr` and check it.
 - `ftimer_openmp` is the explicit opt-in worker-timing module. Its
   `ftimer_openmp_t%init(config=...)`, `finalize`, `reset`,
   `register_timer`, and `lookup_timer` entry points are available now, including
-  `init(config=..., comm=...)` in MPI-enabled builds. Timed parallel-region and
-  worker timing methods are deliberately present but return
+  keyword-only `init(config=..., comm=...)` in MPI-enabled builds. Registered
+  timer ids remain valid across `reset()` and are invalidated across
+  `finalize()`/reinit without being recycled in the same object. Timed
+  parallel-region and worker timing methods are deliberately present but return
   `FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime implementation
-  lands.
+  lands. Worker calls in this explicit OpenMP API that omit `ierr` queue
+  bounded diagnostics; a later serial lifecycle call without `ierr` emits one
+  aggregate diagnostic.
 - For user-facing mode selection, accepted instrumentation patterns, and
   migration guidance, see
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).

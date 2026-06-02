@@ -89,6 +89,9 @@ ftimer_mpi.F90
 ftimer_clock.F90
   └─ default wall clock, MPI wall clock wrapper, date-string helper
 
+ftimer_openmp.F90
+  └─ explicit opt-in OpenMP lifecycle/catalog API surface
+
 ftimer_types.F90
   └─ kinds, constants, summary/container types, and callback interfaces
 ```
@@ -101,7 +104,8 @@ The CMake source order reflects the real dependency order:
 4. `ftimer_summary.F90`
 5. `ftimer_mpi.F90`
 6. `ftimer_core_summary_bindings.F90`
-7. `ftimer.F90`
+7. `ftimer_openmp.F90`
+8. `ftimer.F90`
 
 ### Module Roles
 
@@ -112,6 +116,12 @@ The CMake source order reflects the real dependency order:
 `ftimer_core.F90` owns the mutable timer state in `ftimer_t`: timer definitions, active stack state, mismatch policy, communicator capture, lightweight callback registration, and the guarded timer entry points.
 
 `ftimer_core_summary_bindings.F90` is the submodule-backed binding layer that connects `ftimer_t` to local summary generation, formatted reporting, CSV export formatting, and file-output entry points without collapsing all summary logic into the core module body.
+
+`ftimer_openmp.F90` is the additive, explicit opt-in API surface for future
+true OpenMP worker timing. Its lifecycle/configuration and timer catalog
+operations are usable today; its timed-region and worker timing calls return
+`FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime and summary families
+land under later #267 child issues.
 
 `ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, self-time computation, and strict/sparse MPI text formatting are assembled for reporting.
 

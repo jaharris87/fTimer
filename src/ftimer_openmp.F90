@@ -37,6 +37,9 @@ module ftimer_openmp
       integer :: id = 0
    end type ftimer_openmp_catalog_entry_t
 
+   type :: ftimer_openmp_init_keyword_guard_t
+   end type ftimer_openmp_init_keyword_guard_t
+
    type :: ftimer_openmp_t
       private
       logical :: initialized = .false.
@@ -47,6 +50,9 @@ module ftimer_openmp
       logical :: region_open = .false.
       integer :: current_epoch = 0
       integer :: next_epoch = 1
+      integer :: queued_worker_diagnostics = 0
+      integer :: worker_diagnostic_overflow = 0
+      integer :: first_worker_status = FTIMER_SUCCESS
 #ifdef FTIMER_USE_MPI
       type(MPI_Comm) :: mpi_comm
       logical :: mpi_comm_was_present = .false.
@@ -71,20 +77,34 @@ module ftimer_openmp
 
 contains
 
-   subroutine init_without_comm(self, config, ierr)
+   subroutine init_without_comm(self, keyword_guard, config, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
+      type(ftimer_openmp_init_keyword_guard_t), intent(in), optional :: keyword_guard
       type(ftimer_openmp_config_t), intent(in) :: config
       integer, intent(out), optional :: ierr
+
+      if (present(keyword_guard)) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                  "ftimer_openmp init received an invalid positional guard argument")
+         return
+      end if
 
       call init_impl(self, config, ierr=ierr)
    end subroutine init_without_comm
 
 #ifdef FTIMER_USE_MPI
-   subroutine init_with_mpi_comm(self, config, comm, ierr)
+   subroutine init_with_mpi_comm(self, keyword_guard, config, comm, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
+      type(ftimer_openmp_init_keyword_guard_t), intent(in), optional :: keyword_guard
       type(ftimer_openmp_config_t), intent(in) :: config
       type(MPI_Comm), intent(in) :: comm
       integer, intent(out), optional :: ierr
+
+      if (present(keyword_guard)) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                  "ftimer_openmp init received an invalid positional guard argument")
+         return
+      end if
 
       call init_impl(self, config, comm=comm, ierr=ierr)
    end subroutine init_with_mpi_comm
@@ -102,21 +122,24 @@ contains
       type(ftimer_openmp_config_t) :: effective_config
 
       if (is_inside_parallel_region()) then
-         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp init called inside an OpenMP parallel region")
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp init called inside an OpenMP parallel region")
          return
       end if
 
       if (self%initialized .and. self%region_open) then
-         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp init with an open timed region; state unchanged")
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp init with an open timed region; state unchanged")
          return
       end if
 
       effective_config = config
       if (.not. normalize_config(effective_config)) then
-         call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp init with invalid configuration")
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp init with invalid configuration")
          return
       end if
 
+      if (.not. present(ierr)) call emit_worker_diagnostics(self)
       call clear_state(self)
       self%initialized = .true.
       self%config = effective_config
@@ -137,15 +160,18 @@ contains
       integer, intent(out), optional :: ierr
 
       if (is_inside_parallel_region()) then
-         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp finalize called inside an OpenMP parallel region")
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp finalize called inside an OpenMP parallel region")
          return
       end if
 
       if (self%region_open) then
-         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp finalize with an open timed region; state unchanged")
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp finalize with an open timed region; state unchanged")
          return
       end if
 
+      if (.not. present(ierr)) call emit_worker_diagnostics(self)
       call clear_state(self)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine finalize
@@ -160,17 +186,19 @@ contains
 #endif
 
       if (is_inside_parallel_region()) then
-         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp reset called inside an OpenMP parallel region")
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp reset called inside an OpenMP parallel region")
          return
       end if
 
       if (.not. self%initialized) then
-         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp reset before init")
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp reset before init")
          return
       end if
 
       if (self%region_open) then
-         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp reset with an open timed region; state unchanged")
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp reset with an open timed region; state unchanged")
          return
       end if
 
@@ -179,9 +207,13 @@ contains
       saved_mpi_comm = self%mpi_comm
       saved_mpi_comm_was_present = self%mpi_comm_was_present
 #endif
-      call clear_state(self)
+      if (.not. present(ierr)) call emit_worker_diagnostics(self)
       self%initialized = .true.
       self%config = saved_config
+      self%region_open = .false.
+      self%current_epoch = 0
+      self%next_epoch = 1
+      call clear_worker_diagnostics(self)
 #ifdef FTIMER_USE_MPI
       self%mpi_comm = saved_mpi_comm
       self%mpi_comm_was_present = saved_mpi_comm_was_present
@@ -202,23 +234,25 @@ contains
       id = 0
 
       if (is_inside_parallel_region()) then
-         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp register_timer called inside an OpenMP parallel region")
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp register_timer called inside an OpenMP parallel region")
          return
       end if
 
       if (.not. self%initialized) then
-         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp register_timer before init")
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp register_timer before init")
          return
       end if
 
       if (self%region_open) then
-         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp register_timer with an open timed region")
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp register_timer with an open timed region")
          return
       end if
 
       call normalize_name(name, trimmed_len, status, message)
       if (status /= FTIMER_SUCCESS) then
-         call report_status(ierr, status, message)
+         call report_timer_status(self, ierr, status, message)
          return
       end if
 
@@ -229,18 +263,22 @@ contains
          return
       end if
 
+      id = allocate_timer_id(self)
+      if (id <= 0) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp timer id space exhausted")
+         return
+      end if
+
       call ensure_catalog_capacity(self, self%num_timers + 1)
       self%num_timers = self%num_timers + 1
       self%catalog(self%num_timers)%name = name(1:trimmed_len)
-      self%catalog(self%num_timers)%id = self%next_timer_id
-      id = self%next_timer_id
-      self%next_timer_id = self%next_timer_id + 1
+      self%catalog(self%num_timers)%id = id
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine register_timer
 
    subroutine lookup_timer(self, name, id, ierr)
-      class(ftimer_openmp_t), intent(in) :: self
+      class(ftimer_openmp_t), intent(inout) :: self
       character(len=*), intent(in) :: name
       integer, intent(out) :: id
       integer, intent(out), optional :: ierr
@@ -252,19 +290,19 @@ contains
       id = 0
 
       if (.not. self%initialized) then
-         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp lookup_timer before init")
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp lookup_timer before init")
          return
       end if
 
       call normalize_name(name, trimmed_len, status, message)
       if (status /= FTIMER_SUCCESS) then
-         call report_status(ierr, status, message)
+         call report_timer_status(self, ierr, status, message)
          return
       end if
 
       idx = find_timer_index(self, name(1:trimmed_len))
       if (idx <= 0) then
-         call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp lookup_timer with unknown timer name")
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp lookup_timer with unknown timer name")
          return
       end if
 
@@ -280,21 +318,24 @@ contains
       call clear_region(region)
 
       if (.not. self%initialized) then
-         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp begin_parallel_region before init")
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp begin_parallel_region before init")
          return
       end if
 
       if (is_inside_parallel_region()) then
-         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp begin_parallel_region called inside an OpenMP parallel region")
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp begin_parallel_region called inside an OpenMP parallel region")
          return
       end if
 
       if (self%region_open) then
-         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp begin_parallel_region with another region already open")
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp begin_parallel_region with another region already open")
          return
       end if
 
-      call report_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, "ftimer_openmp timed parallel regions are not implemented yet")
+      call report_timer_status(self, ierr, FTIMER_ERR_NOT_IMPLEMENTED, &
+                               "ftimer_openmp timed parallel regions are not implemented yet")
    end subroutine begin_parallel_region
 
    subroutine end_parallel_region(self, region, ierr)
@@ -304,17 +345,19 @@ contains
 
       if (.not. self%initialized) then
          call clear_region(region)
-         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp end_parallel_region before init")
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp end_parallel_region before init")
          return
       end if
 
       if (is_inside_parallel_region()) then
-         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp end_parallel_region called inside an OpenMP parallel region")
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp end_parallel_region called inside an OpenMP parallel region")
          return
       end if
 
       call clear_region(region)
-      call report_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, "ftimer_openmp timed parallel regions are not implemented yet")
+      call report_timer_status(self, ierr, FTIMER_ERR_NOT_IMPLEMENTED, &
+                               "ftimer_openmp timed parallel regions are not implemented yet")
    end subroutine end_parallel_region
 
    subroutine start_id(self, id, ierr)
@@ -323,16 +366,16 @@ contains
       integer, intent(out), optional :: ierr
 
       if (.not. self%initialized) then
-         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp start_id before init")
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp start_id before init")
          return
       end if
 
       if (find_timer_id_index(self, id) <= 0) then
-         call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp start_id with unknown timer id")
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp start_id with unknown timer id")
          return
       end if
 
-      call report_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, "ftimer_openmp worker timing is not implemented yet")
+      call report_timer_status(self, ierr, FTIMER_ERR_NOT_IMPLEMENTED, "ftimer_openmp worker timing is not implemented yet")
    end subroutine start_id
 
    subroutine stop_id(self, id, ierr)
@@ -341,16 +384,16 @@ contains
       integer, intent(out), optional :: ierr
 
       if (.not. self%initialized) then
-         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp stop_id before init")
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp stop_id before init")
          return
       end if
 
       if (find_timer_id_index(self, id) <= 0) then
-         call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp stop_id with unknown timer id")
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp stop_id with unknown timer id")
          return
       end if
 
-      call report_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, "ftimer_openmp worker timing is not implemented yet")
+      call report_timer_status(self, ierr, FTIMER_ERR_NOT_IMPLEMENTED, "ftimer_openmp worker timing is not implemented yet")
    end subroutine stop_id
 
    subroutine clear_state(self)
@@ -360,10 +403,10 @@ contains
       self%config = ftimer_openmp_config_t()
       if (allocated(self%catalog)) deallocate (self%catalog)
       self%num_timers = 0
-      self%next_timer_id = 1
       self%region_open = .false.
       self%current_epoch = 0
       self%next_epoch = 1
+      call clear_worker_diagnostics(self)
 #ifdef FTIMER_USE_MPI
       self%mpi_comm_was_present = .false.
 #endif
@@ -461,6 +504,22 @@ contains
       end if
    end subroutine ensure_catalog_capacity
 
+   integer function allocate_timer_id(self) result(id)
+      class(ftimer_openmp_t), intent(inout) :: self
+
+      if (self%next_timer_id <= 0) then
+         id = 0
+         return
+      end if
+
+      id = self%next_timer_id
+      if (self%next_timer_id == huge(self%next_timer_id)) then
+         self%next_timer_id = -1
+      else
+         self%next_timer_id = self%next_timer_id + 1
+      end if
+   end function allocate_timer_id
+
    integer function find_timer_index(self, name) result(idx)
       class(ftimer_openmp_t), intent(in) :: self
       character(len=*), intent(in) :: name
@@ -495,16 +554,57 @@ contains
       end do
    end function find_timer_id_index
 
-   subroutine report_status(ierr, code, message)
+   subroutine clear_worker_diagnostics(self)
+      class(ftimer_openmp_t), intent(inout) :: self
+
+      self%queued_worker_diagnostics = 0
+      self%worker_diagnostic_overflow = 0
+      self%first_worker_status = FTIMER_SUCCESS
+   end subroutine clear_worker_diagnostics
+
+   subroutine queue_worker_diagnostic(self, code)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in) :: code
+
+#ifdef FTIMER_USE_OPENMP
+!$omp critical(ftimer_openmp_worker_diagnostics)
+#endif
+      if (self%queued_worker_diagnostics < self%config%max_worker_diagnostics) then
+         self%queued_worker_diagnostics = self%queued_worker_diagnostics + 1
+         if (self%first_worker_status == FTIMER_SUCCESS) self%first_worker_status = code
+      else
+         self%worker_diagnostic_overflow = self%worker_diagnostic_overflow + 1
+      end if
+#ifdef FTIMER_USE_OPENMP
+!$omp end critical(ftimer_openmp_worker_diagnostics)
+#endif
+   end subroutine queue_worker_diagnostic
+
+   subroutine emit_worker_diagnostics(self)
+      class(ftimer_openmp_t), intent(inout) :: self
+
+      if ((self%queued_worker_diagnostics <= 0) .and. (self%worker_diagnostic_overflow <= 0)) return
+
+      write (error_unit, '(a,i0,a,i0,a,i0)') "ftimer_openmp recorded ", &
+         self%queued_worker_diagnostics, " worker diagnostics; first status ", &
+         self%first_worker_status, ", overflow ", self%worker_diagnostic_overflow
+      call clear_worker_diagnostics(self)
+   end subroutine emit_worker_diagnostics
+
+   subroutine report_timer_status(self, ierr, code, message)
+      class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
       integer, intent(in) :: code
       character(len=*), intent(in) :: message
 
       if (present(ierr)) then
          ierr = code
-      elseif (.not. is_inside_parallel_region()) then
+      elseif (is_inside_parallel_region()) then
+         call queue_worker_diagnostic(self, code)
+      else
+         call emit_worker_diagnostics(self)
          write (error_unit, '(a)') trim(message)
       end if
-   end subroutine report_status
+   end subroutine report_timer_status
 
 end module ftimer_openmp

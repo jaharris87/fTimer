@@ -24,7 +24,7 @@ remain deferred to later implementation issues.
 | `FTIMER_USE_OPENMP=ON` compatibility mode | Yes | Current APIs run guarded timer operations only on OpenMP thread 0. Worker-thread calls are silent no-ops. |
 | `FTIMER_USE_MPI=ON` plus `FTIMER_USE_OPENMP=ON` | Yes, as compatibility smoke coverage | MPI and OpenMP package dependencies can coexist. This still uses the current master-thread-only OpenMP behavior. |
 | True OpenMP worker timing | No | Initial opt-in API surface behind `ftimer_openmp`, `ftimer_openmp_t`, and explicit configuration exists; worker timing calls return `FTIMER_ERR_NOT_IMPLEMENTED`. |
-| True MPI+OpenMP rank/lane reductions | No | Future hybrid result family behind the future OpenMP-specific object. |
+| True MPI+OpenMP rank/lane reductions | No | Future hybrid result family behind the OpenMP-specific object. |
 
 ## Current Accepted Patterns
 
@@ -107,8 +107,9 @@ pattern when they want one wall-clock interval for a parallel region. The most
 important migration audit is expectation-setting: if an application currently
 calls fTimer inside a parallel region and expects each worker to contribute,
 that instrumentation is not producing those data today. Move such timing calls
-outside the parallel region for current releases, or plan a future explicit
-worker-timing migration after the OpenMP-specific API lands.
+outside the parallel region for current releases, or plan an explicit
+worker-timing migration after the OpenMP-specific runtime and summary behavior
+land.
 
 Applications that may need both compatibility mode and future true worker
 timing should put fTimer calls behind an application-owned instrumentation

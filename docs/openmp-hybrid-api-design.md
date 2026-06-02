@@ -5,16 +5,18 @@
 # Opt-In OpenMP Timing API Design
 
 Issue #238 settles the API and compatibility direction for the OpenMP/hybrid
-umbrella in #237. It is a design contract only: it does not implement per-thread
-stacks, threaded summaries, hybrid MPI reductions, or new public runtime APIs.
+umbrella in #237. The initial `ftimer_openmp` module added for #268 provides
+the public lifecycle/configuration and timer-catalog surface described here, but
+it does not implement per-thread stacks, threaded summaries, or hybrid MPI
+reductions.
 
 ## Decision
 
 True OpenMP worker-thread timing should use a separate, explicit API surface:
 
-- a future `ftimer_openmp` module;
-- a future `type(ftimer_openmp_t)` runtime object;
-- a future `type(ftimer_openmp_config_t)` configuration object;
+- a `ftimer_openmp` module;
+- a `type(ftimer_openmp_t)` runtime object;
+- a `type(ftimer_openmp_config_t)` configuration object;
 - explicit named mode constants in that new module, with the first true timing
   mode defined around OpenMP thread lanes;
 - future hybrid summary/result entry points that are separate from today's
@@ -28,8 +30,8 @@ turn existing `start`/`stop` calls into true worker-thread timing.
 
 ## Current Compatibility Contract
 
-Current `main` remains the source of truth until later child issues implement
-the new API.
+Current `main` remains the source of truth. The #268 API surface is available
+for compile-time adoption, while later child issues implement runtime behavior.
 
 - Serial users keep the current `use ftimer` and `type(ftimer_t)` behavior.
 - Pure-MPI users keep the current `mpi_f08` `comm=` capture, strict
@@ -40,6 +42,11 @@ the new API.
   guarded timer operations run on OpenMP thread 0, non-master calls are silent
   no-ops, worker calls leave caller-provided `ierr` values unchanged, and worker
   calls do not create summary entries or callback events.
+- `use ftimer_openmp` exposes the opt-in object surface. `init(config=...)`,
+  `register_timer`, `lookup_timer`, `reset`, and `finalize` are real lifecycle
+  and catalog operations. `begin_parallel_region`, `end_parallel_region`,
+  `start_id`, and `stop_id` return `FTIMER_ERR_NOT_IMPLEMENTED` until the
+  thread-lane runtime lands.
 - The current OpenMP guard tests that defend worker no-op behavior remain
   compatibility tests, not tests to weaken during true OpenMP implementation.
 
@@ -77,7 +84,8 @@ call timer%stop_id(cell_update_id, ierr=ierr)
 !$omp end parallel
 call timer%end_parallel_region(region, ierr=ierr)
 
-call timer%get_openmp_summary(summary, ierr=ierr)
+! Later #270:
+! call timer%get_openmp_summary(summary, ierr=ierr)
 call timer%finalize(ierr=ierr)
 ```
 
@@ -97,7 +105,8 @@ For hybrid runs, the communicator contract should stay keyword-based:
 ```fortran
 ! Accepted future hybrid shape. Hybrid summary behavior is implemented later.
 call timer%init(config=config, comm=comm, ierr=ierr)
-call timer%mpi_openmp_summary(summary, ierr=ierr)
+! Later #271/#272:
+! call timer%mpi_openmp_summary(summary, ierr=ierr)
 ```
 
 The future hybrid result type must be separate from `ftimer_mpi_summary_t` and
@@ -120,7 +129,7 @@ That rule avoids three compatibility hazards:
   communicator ownership, per-thread diagnostics, and report lifecycle.
 
 If procedural helpers are later added for ergonomics, they should live in the
-future `ftimer_openmp` module and take an explicit `type(ftimer_openmp_t)`
+`ftimer_openmp` module and take an explicit `type(ftimer_openmp_t)`
 object argument. They must not add a second global default instance and must not
 overload the current `ftimer_init`, `ftimer_start`, or `ftimer_stop` names.
 

@@ -13,7 +13,10 @@ The supported source-level import surface is intentionally narrow:
   this release line, its lifecycle/configuration and timer catalog entry points
   are real, while worker timing and timed parallel-region behavior are
   intentionally present but return `FTIMER_ERR_NOT_IMPLEMENTED` until the
-  thread-lane runtime lands.
+  thread-lane runtime lands. `ftimer_openmp_t%init` requires `config=` and
+  accepts `comm=` only by keyword in MPI builds. Registered timer ids remain
+  valid across `reset()` and are invalidated across `finalize()`/reinit without
+  being recycled in the same object.
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
 ## MPI lifecycle and communicator ownership
