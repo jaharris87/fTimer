@@ -223,7 +223,7 @@ Supported local build paths today are:
 
 - serial smoke/library build validated with GNU Fortran and LLVM Flang
 - serial pFUnit tests with `gfortran` plus a matching pFUnit install
-- MPI builds through GNU Fortran MPI wrapper compilers, with CI smoke/install-consumer coverage for OpenMPI and MPICH
+- MPI builds through GNU Fortran MPI wrapper compilers, with CI smoke/install-consumer coverage for OpenMPI and MPICH and MPI pFUnit coverage for OpenMPI plus MPICH on hosted Ubuntu 22.04
 - OpenMP builds with `gfortran`
 - benchmark harness builds with `FTIMER_BUILD_BENCH=ON`
 
@@ -248,7 +248,7 @@ The current test inventory is:
 
 - smoke tests in `tests/test_phase0_smoke.F90`, runtime execution of `basic_usage`, MPI example execution when `FTIMER_USE_MPI=ON`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
 - serial pFUnit tests for core behavior, summaries, callbacks, reset behavior, call-stack behavior, and procedural parity
-- MPI pFUnit tests under `tests/mpi/`, validated in CI with GNU Fortran against OpenMPI
+- MPI pFUnit tests under `tests/mpi/`, validated in CI with GNU Fortran against OpenMPI and MPICH
 - OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`, covering the master-thread-only carve-out rather than general threaded timing support
 
 The default repository baseline is still the smoke/build-contract path. The full behavioral suite is enabled explicitly with `FTIMER_BUILD_TESTS=ON`.
@@ -263,13 +263,14 @@ The default repository baseline is still the smoke/build-contract path. The full
 - `build-mpi-mpich`
 - `test-serial`
 - `test-mpi`
+- `test-mpi-mpich`
 - `build-openmp`
 - `test-openmp`
 - `build-contract-regressions`
 - `build-bench`
 - `lint`
 
-That means pFUnit-backed serial, OpenMPI MPI, and OpenMP test jobs are part of current CI now; they are not deferred future work. MPICH coverage is currently smoke/install-consumer only. The issue #255 hosted-runner follow-up rebuilt pFUnit v4.16.0 with `/usr/bin/mpifort.mpich`, verified the installed package reported `PFUNIT_MPI_FOUND "TRUE"`, and confirmed CTest generated `/usr/bin/mpiexec.mpich -n 2 .../ftimer_mpi_tests --verbose` plus the four-process analog. On GitHub-hosted Ubuntu 24.04 with MPICH/Hydra 4.2.0, pFUnit still reported `Insufficient processes to run this test. (PE=0)` for all 79 two-process MPI pFUnit cases before the four-process target could run. Local Homebrew MPICH 5.0.1 was not a valid reproduction path because it does not install `mpi_f08.mod`, so it fails fTimer's configure-time MPI contract probe. A GitHub-hosted NVHPC 26.3 serial smoke/install-consumer trial installed and built successfully, but the generated executables aborted at runtime with `DEALLOCATE: memory at (nil) not allocated`, so NVHPC validation remains deferred rather than claimed. The contract-regression job also verifies the configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
+That means pFUnit-backed serial, OpenMPI MPI, MPICH MPI, and OpenMP test jobs are part of current CI now; they are not deferred future work. The issue #255 hosted-runner investigation found that Ubuntu 24.04's apt MPICH 4.2.0/Hydra launcher can start `/usr/bin/mpiexec.mpich -n 2` Fortran MPI programs as two singleton `MPI_COMM_WORLD` ranks on hosted runners, which made pFUnit report `Insufficient processes to run this test. (PE=0)` for `[npes=2]` cases. The MPICH pFUnit CI job now runs on hosted Ubuntu 22.04, builds pFUnit v4.16.0 with `/usr/bin/mpifort.mpich`, verifies the installed package reports `PFUNIT_MPI_FOUND "TRUE"`, guards the launcher with a raw two-rank MPI probe, and runs both `ftimer_mpi_tests` and `ftimer_mpi_tests_4pe` through `/usr/bin/mpiexec.mpich`. The separate `build-mpi-mpich` job remains on `ubuntu-latest` for MPICH smoke/install-consumer coverage. Local Homebrew MPICH 5.0.1 was not a valid reproduction path because it does not install `mpi_f08.mod`, so it fails fTimer's configure-time MPI contract probe. A GitHub-hosted NVHPC 26.3 serial smoke/install-consumer trial installed and built successfully, but the generated executables aborted at runtime with `DEALLOCATE: memory at (nil) not allocated`, so NVHPC validation remains deferred rather than claimed. The contract-regression job also verifies the configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
 
 ## Maintainer Workflow
 

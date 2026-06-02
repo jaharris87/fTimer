@@ -262,9 +262,10 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   test-mpi-mpich:
-    # Ubuntu 24.04's apt MPICH package launches Hydra jobs as singleton
-    # MPI_COMM_WORLD ranks because libmpich and mpiexec.mpich disagree on
-    # PMI/PMIx support. Keep the pFUnit path on 22.04 until that package is fixed.
+    # Hosted Ubuntu 24.04 currently launches apt MPICH 4.2.0/Hydra jobs as
+    # singleton MPI_COMM_WORLD ranks under mpiexec.mpich -n 2, which makes
+    # pFUnit reject [npes=2] tests. Keep MPICH pFUnit validation on 22.04;
+    # build-mpi-mpich still covers MPICH smoke/install-consumer on ubuntu-latest.
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
@@ -344,7 +345,7 @@ jobs:
         id: pfunit-mpich-cache
         with:
           path: /opt/pfunit-mpich
-          key: pfunit-mpich-diagnostic-${{ runner.os }}-${{ steps.pfunit-mpich-identity.outputs.key }}-${{ env.PFUNIT_VERSION }}-${{ env.PFUNIT_SHA256 }}
+          key: pfunit-mpich-${{ runner.os }}-${{ steps.pfunit-mpich-identity.outputs.key }}-${{ env.PFUNIT_VERSION }}-${{ env.PFUNIT_SHA256 }}
 
       - name: Build MPICH pFUnit
         if: steps.pfunit-mpich-cache.outputs.cache-hit != 'true'
@@ -357,115 +358,15 @@ jobs:
           cmake --build /tmp/pfunit-mpich-build -j$(nproc)
           cmake --install /tmp/pfunit-mpich-build
 
-      - name: Diagnose MPICH pFUnit package
+      - name: Verify MPICH pFUnit package
         run: |
           pfunit_config="$(find /opt/pfunit-mpich -path '*/cmake/PFUNITConfig.cmake' -print -quit)"
           if [ -z "$pfunit_config" ]; then
             echo "No MPICH pFUnit package config was installed." >&2
             exit 1
           fi
-          echo "PFUNIT_CONFIG=$pfunit_config" >> "$GITHUB_ENV"
+          echo "PFUNIT_CONFIG=$pfunit_config"
           grep 'set (PFUNIT_MPI_FOUND "TRUE")' "$pfunit_config"
-          "$FTIMER_MPICH_FC" --version
-          "$FTIMER_MPICH_FC" -show
-          "$FTIMER_MPICH_MPIEXEC" --version
-          pfunit_root="$(cd "$(dirname "$pfunit_config")/.." && pwd)"
-          echo "PFUNIT_ROOT=$pfunit_root" >> "$GITHUB_ENV"
-          nm -A "$pfunit_root"/lib/libpfunit.a "$pfunit_root"/lib/libfunit.a | grep -E 'funit_main|__pfunit_MOD_initialize|__funit_MOD_initialize|mpi_init' || true
-
-      - name: Probe pFUnit MPI context
-        run: |
-          mkdir -p "$RUNNER_TEMP/pfunit-context-probe"
-          cat > "$RUNNER_TEMP/pfunit-context-probe/CMakeLists.txt" <<'EOF'
-          cmake_minimum_required(VERSION 3.16)
-          project(pfunit_context_probe LANGUAGES Fortran)
-          find_package(MPI REQUIRED COMPONENTS Fortran)
-          find_package(PFUNIT REQUIRED HINTS "$ENV{PFUNIT_ROOT}" "$ENV{PFUNIT_ROOT}/..")
-          add_executable(pfunit_context_probe context_probe.F90)
-          target_link_libraries(pfunit_context_probe PRIVATE PFUNIT::pfunit MPI::MPI_Fortran)
-          target_compile_options(pfunit_context_probe PRIVATE -ffree-line-length-none)
-          EOF
-          cat > "$RUNNER_TEMP/pfunit-context-probe/context_probe.F90" <<'EOF'
-          program pfunit_context_probe
-            use mpi_f08
-            use PF_ParallelContext, only: ParallelContext
-            use PF_MpiContext, only: MpiContext
-            use pFUnit, only: initialize, finalize, get_context, stub
-            implicit none
-            class(ParallelContext), allocatable :: context
-            integer :: ierr
-            integer :: rank
-            integer :: size
-            integer :: context_rank
-            integer :: context_size
-
-            context_rank = -1
-            context_size = -1
-            call initialize(stub)
-            call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
-            call MPI_Comm_size(MPI_COMM_WORLD, size, ierr)
-            allocate(context, source=get_context())
-            select type (context)
-            type is (MpiContext)
-              context_rank = context%processRank()
-              context_size = context%getNumProcesses()
-              print *, 'context_probe', rank, size, context_rank, context_size
-            class default
-              print *, 'context_probe_not_mpi', rank, size
-            end select
-            call finalize(stub, .true.)
-
-            if (size /= 2 .or. context_size /= 2) then
-              error stop 'pFUnit MPI context did not preserve the two-rank MPICH world'
-            end if
-          end program pfunit_context_probe
-          EOF
-          FC=mpifort cmake -B "$RUNNER_TEMP/pfunit-context-probe/build" -S "$RUNNER_TEMP/pfunit-context-probe" -DPFUNIT_DIR="$PFUNIT_ROOT"
-          cmake --build "$RUNNER_TEMP/pfunit-context-probe/build" --verbose
-          "$FTIMER_MPICH_MPIEXEC" -n 2 "$RUNNER_TEMP/pfunit-context-probe/build/pfunit_context_probe"
-
-      - name: Probe pFUnit driver main
-        run: |
-          mkdir -p "$RUNNER_TEMP/pfunit-driver-probe"
-          cat > "$RUNNER_TEMP/pfunit-driver-probe/CMakeLists.txt" <<'EOF'
-          cmake_minimum_required(VERSION 3.16)
-          project(pfunit_driver_probe LANGUAGES Fortran)
-          find_package(MPI REQUIRED COMPONENTS Fortran)
-          find_package(PFUNIT REQUIRED HINTS "$ENV{PFUNIT_ROOT}" "$ENV{PFUNIT_ROOT}/..")
-          add_executable(pfunit_driver_probe driver_probe.F90)
-          target_link_libraries(pfunit_driver_probe PRIVATE PFUNIT::pfunit MPI::MPI_Fortran)
-          target_compile_options(pfunit_driver_probe PRIVATE -ffree-line-length-none)
-          EOF
-          cat > "$RUNNER_TEMP/pfunit-driver-probe/driver_probe.F90" <<'EOF'
-          program pfunit_driver_probe
-            use FUnit, only: TestSuite, stub
-            implicit none
-            call funit_main(load_tests, extra_initialize, stub)
-          contains
-            subroutine load_tests(suite)
-              type(TestSuite), intent(inout) :: suite
-            end subroutine load_tests
-            subroutine extra_initialize()
-              use mpi_f08
-              logical :: initialized
-              integer :: ierr
-              integer :: rank
-              integer :: size
-              rank = -1
-              size = -1
-              call MPI_Initialized(initialized, ierr)
-              if (initialized) then
-                call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
-                call MPI_Comm_size(MPI_COMM_WORLD, size, ierr)
-              end if
-              print *, 'driver_probe initialized=', initialized, 'rank=', rank, 'world_size=', size
-              if (size /= 2) error stop 'pFUnit driver did not preserve the two-rank MPICH world'
-            end subroutine extra_initialize
-          end program pfunit_driver_probe
-          EOF
-          FC=mpifort cmake -B "$RUNNER_TEMP/pfunit-driver-probe/build" -S "$RUNNER_TEMP/pfunit-driver-probe" -DPFUNIT_DIR="$PFUNIT_ROOT"
-          cmake --build "$RUNNER_TEMP/pfunit-driver-probe/build" --verbose
-          "$FTIMER_MPICH_MPIEXEC" -n 2 "$RUNNER_TEMP/pfunit-driver-probe/build/pfunit_driver_probe"
 
       - name: Configure
         run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=ON -DFTIMER_BUILD_SMOKE_TESTS=OFF -DPFUNIT_DIR=/opt/pfunit-mpich -DMPIEXEC_EXECUTABLE="$FTIMER_MPICH_MPIEXEC"
