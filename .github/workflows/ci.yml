@@ -74,8 +74,8 @@ jobs:
   build-serial-nvhpc:
     runs-on: ubuntu-latest
     env:
-      NVHPC_VERSION: 25.11
-      NVHPC_APT_PACKAGE: nvhpc-25-11
+      NVHPC_VERSION: 26.3
+      NVHPC_APT_PACKAGE: nvhpc-26-3
     steps:
       - uses: actions/checkout@v6
 

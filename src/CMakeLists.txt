@@ -21,6 +21,11 @@ target_include_directories(ftimer
     $<BUILD_INTERFACE:${FTIMER_PUBLIC_MODULE_DIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ftimer>
 )
+
+if(CMAKE_Fortran_COMPILER_ID STREQUAL "NVHPC")
+  target_compile_options(ftimer PRIVATE -Mrecursive)
+endif()
+
 if(FTIMER_USE_MPI)
   target_compile_definitions(ftimer PUBLIC FTIMER_USE_MPI)
   target_link_libraries(ftimer PUBLIC MPI::MPI_Fortran)
@@ -43,6 +48,11 @@ if(FTIMER_BUILD_TESTS)
     PUBLIC
       $<BUILD_INTERFACE:${FTIMER_TEST_LIBRARY_MODULE_DIR}>
   )
+
+  if(CMAKE_Fortran_COMPILER_ID STREQUAL "NVHPC")
+    target_compile_options(ftimer_test PRIVATE -Mrecursive)
+  endif()
+
   if(FTIMER_USE_MPI)
     target_compile_definitions(ftimer_test PUBLIC FTIMER_USE_MPI)
     target_link_libraries(ftimer_test PUBLIC MPI::MPI_Fortran)
