@@ -43,7 +43,8 @@ Object-level state:
   open and the current epoch id;
 - configuration for maximum lanes and bounded worker diagnostics;
 - private reserve and warm-up policy for lane-local timers, contexts, and stack
-  depth, unless #243 demonstrates that public tuning knobs are needed;
+  depth, unless future measurement work demonstrates that public tuning knobs
+  are needed;
 - bounded aggregate diagnostic counters for worker calls without `ierr`.
 
 Lane-level state:
@@ -162,9 +163,9 @@ recommended hot path. The first implementation should make catalog mutation
 serial-only: inside a parallel region, name-based calls may perform read-only
 lookup of already-registered names or may be rejected outright. Unknown names
 inside a parallel region should return an error and leave state unchanged.
-Dynamic worker registration can be reconsidered later only if #243 or a later
-measurement issue shows that the extra catalog-locking path is worth the API,
-allocation, and test burden.
+Dynamic worker registration can be reconsidered later only if a future
+implementation issue shows that the extra catalog-locking path is worth the
+API, allocation, and test burden.
 
 Unknown-id `start_id` and `stop_id` calls should return an error. They must not
 create unnamed catalog entries.
@@ -340,8 +341,8 @@ growth path and must be documented separately from steady-state timing cost.
 The first public config surface should stay lean: `max_lanes` plus bounded
 diagnostic policy are enough for correctness. Expected timer counts, context
 counts, and stack-depth reserves should remain private implementation details,
-or become public only after #243 measurements show that users need direct
-control.
+or become public only after future measurement work shows that users need
+direct control.
 
 Name-based calls inside parallel regions are explicitly slower unless the
 implementation can prove a lock-free read-only catalog lookup with no concurrent
@@ -363,8 +364,10 @@ Implementation guidance:
 - preserve catalog ids so merge-time descriptor construction does not need to
   compare timer names from every lane in the hot path.
 
-#243 should measure both cold first-touch overhead and warmed steady-state
-`start_id`/`stop_id` overhead after pre-registration and lane/context warm-up.
+The implementation issue that first enables true worker timing should measure
+both cold first-touch overhead and warmed steady-state `start_id`/`stop_id`
+overhead after pre-registration and lane/context warm-up, following the #243
+validation plan.
 
 ## Interaction With Later Child Issues
 
@@ -376,9 +379,12 @@ Implementation guidance:
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md)
   over the #240 result shape without changing current strict or sparse MPI
   APIs by accident.
-- #243 supplies deterministic mock-clock tests, targeted OpenMP worker tests,
-  nested/task rejection tests, active-lane lifecycle and region-epoch tests,
-  and overhead measurements.
+- #243 records the validation plan in
+  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
+  and starts current MPI+OpenMP compatibility smoke coverage. Later
+  implementation issues supply deterministic mock-clock tests, targeted OpenMP
+  worker tests, nested/task rejection tests, active-lane lifecycle and
+  region-epoch tests, and overhead measurements.
 - #242 updates examples and user-facing docs after #239 and #240 provide enough
   runtime and summary behavior for compile-checked examples.
 

@@ -78,7 +78,8 @@ call timer%finalize(ierr=ierr)
 ```
 
 The first implementation should expose the participation-aware path only unless
-#243 measurements or a concrete adopter need justifies a public strict policy.
+future implementation measurements or a concrete adopter need justifies a
+public strict policy.
 If strict validation is later exposed, that control must be keyword-only and
 must not add positional mode arguments to current `ftimer_t%init`,
 `ftimer_init`, `mpi_summary()`, or `mpi_union_summary()` signatures.
@@ -235,8 +236,8 @@ Strict validation remains useful when users expect identical instrumentation
 and identical worker participation on every rank. This issue defines the
 semantics for tests, internal invariants, and possible future adopter-driven
 use, but strict validation should not become a required first public policy
-until #243 validation or a concrete adopter demonstrates that the added API,
-CSV, and test surface is worth carrying.
+until future implementation validation or a concrete adopter demonstrates that
+the added API, CSV, and test surface is worth carrying.
 
 If implemented, strict validation should require:
 
@@ -275,9 +276,9 @@ Recommended retained levels:
 This staging preserves enough rank information to interpret hybrid imbalance
 without making every routine result allocate `O(num_ranks * lane_count *
 descriptor_count)` detail rows. Full rank/lane rows remain important for tests,
-debugging, and adoption diagnostics, but they should be opt-in until #243
-demonstrates that always materializing them is worth the memory and report
-burden.
+debugging, and adoption diagnostics, but they should be opt-in until future
+measurement work demonstrates that always materializing them is worth the
+memory and report burden.
 
 ## Result Type Expectations
 
@@ -327,8 +328,8 @@ like `sum_participating_lane_inclusive_time` and
 
 Secondary fields such as imbalance values, communicator-local rank/lane extrema
 attribution, and extra self-time extrema should initially be derived by report
-writers or helper routines unless #243 validation or concrete consumers justify
-making them stable stored fields.
+writers or helper routines unless future implementation validation or concrete
+consumers justify making them stable stored fields.
 
 ## Text Reports
 
@@ -407,8 +408,9 @@ principles:
 - Do not repair active or mismatched lane stacks during summary construction.
 
 The exact diagnostic payload and overflow policy depend on #239's bounded
-diagnostic storage and #243's validation work, but the implementation must not
-solve hybrid error noise by silently treating worker or rank errors as success.
+diagnostic storage and the validation plan introduced by #243, but the
+implementation must not solve hybrid error noise by silently treating worker or
+rank errors as success.
 
 ## Validation Expectations For Implementation
 
@@ -438,9 +440,11 @@ The implementation issue that adds hybrid reductions should include tests for:
   and `FTIMER_USE_OPENMP=ON` master-thread-only behavior are unchanged.
 
 Tests should use the injectable clock or an OpenMP-aware deterministic clock
-model wherever possible. #243 should also measure descriptor-union cost,
-rank-level materialization cost, optional rank/lane detail cost, and warmed
-worker `start_id`/`stop_id` overhead separately.
+model wherever possible. The implementation issue that first adds hybrid
+reductions should also measure descriptor-union cost, rank-level
+materialization cost, optional rank/lane detail cost, and warmed worker
+`start_id`/`stop_id` overhead separately, following the validation plan
+introduced by #243.
 
 ## Rejected Alternatives
 
@@ -478,9 +482,12 @@ worker `start_id`/`stop_id` overhead separately.
   all-lane active scan, and bounded diagnostics consumed by hybrid preflight.
 - #240 provides the local OpenMP summary shape, self-time semantics, envelope
   fields, participation model, and optional lane detail input.
-- #243 must add deterministic MPI+OpenMP validation, strict-semantics and
-  participation-aware test matrices, report/CSV golden output, installed
-  consumer checks for `mpi_f08` plus OpenMP, and overhead measurements.
+- #243 records the validation plan in
+  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
+  and starts current installed-consumer checks for `mpi_f08` plus OpenMP.
+  Later implementation issues must add deterministic MPI+OpenMP validation,
+  strict-semantics and participation-aware test matrices, report/CSV golden
+  output, and overhead measurements.
 - #242 must update user-facing documentation and examples after the runtime,
   summary, and reduction APIs exist.
 

@@ -34,6 +34,11 @@ FC=/path/to/mpi-mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TE
 cmake --build build-mpi
 cmake -E chdir build-mpi ctest --output-on-failure -L mpi
 
+# MPI+OpenMP compatibility smoke build (does not enable true worker timing)
+FC=mpifort cmake -B build-mpi-openmp -DFTIMER_USE_MPI=ON -DFTIMER_USE_OPENMP=ON
+cmake --build build-mpi-openmp
+cmake -E chdir build-mpi-openmp ctest --output-on-failure
+
 # OpenMP guard build with pFUnit coverage (GNU Fortran)
 FC=gfortran cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-openmp
@@ -70,6 +75,7 @@ Supported toolchain matrix:
 - MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH. Smoke/install-consumer coverage runs for both, and MPI pFUnit coverage runs for OpenMPI plus MPICH on hosted Ubuntu 22.04 with a matching MPICH-built pFUnit. `FTIMER_USE_MPI=ON` now runs a configure-time `mpi_f08` probe and fails early if the active compiler cannot consume the discovered MPI module files.
 - OpenMP: GNU Fortran (`gfortran`) with pFUnit guard coverage, plus LLVM Flang smoke/example coverage for the documented master-thread-only carve-out.
   LLVM Flang OpenMP validation requires CMake 3.24 or newer so CMake reports compiler ID `LLVMFlang`.
+- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested for current compatibility mode only, including an MPI-initialized OpenMP installed consumer; this does not validate true worker-thread timing or hybrid rank/lane reductions.
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 

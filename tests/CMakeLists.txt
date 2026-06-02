@@ -126,6 +126,15 @@ if(FTIMER_BUILD_SMOKE_TESTS)
     ENABLE_MPI
   )
 
+  if(FTIMER_USE_MPI AND FTIMER_USE_OPENMP)
+    ftimer_add_installed_consumer_test(
+      ftimer_installed_package_consumer_mpi_openmp
+      ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer_mpi_openmp
+      ENABLE_MPI
+      ENABLE_OPENMP
+    )
+  endif()
+
   ftimer_add_installed_consumer_test(
     ftimer_installed_package_consumer_openmp
     ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer_openmp

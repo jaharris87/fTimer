@@ -225,6 +225,7 @@ Supported local build paths today are:
 - serial pFUnit tests with `gfortran` plus a matching pFUnit install
 - MPI builds through GNU Fortran MPI wrapper compilers, with CI smoke/install-consumer coverage for OpenMPI and MPICH and MPI pFUnit coverage for OpenMPI plus MPICH on hosted Ubuntu 22.04
 - OpenMP builds with GNU Fortran and LLVM Flang for the master-thread-only carve-out; pFUnit OpenMP guard coverage remains on `gfortran`
+- MPI+OpenMP build-only smoke coverage for the current compatibility mode, proving the existing MPI and OpenMP feature flags can coexist without claiming true worker-thread timing
 - benchmark harness builds with `FTIMER_BUILD_BENCH=ON`
 
 The top-level CMake options that shape those paths are:
@@ -250,6 +251,7 @@ The current test inventory is:
 - serial pFUnit tests for core behavior, summaries, callbacks, reset behavior, call-stack behavior, and procedural parity
 - MPI pFUnit tests under `tests/mpi/`, validated in CI with GNU Fortran against OpenMPI and MPICH
 - OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`, covering the master-thread-only carve-out rather than general threaded timing support
+- MPI+OpenMP installed-consumer smoke coverage for the current exported-package dependency story, including an MPI-initialized OpenMP region that preserves worker no-op behavior
 
 The default repository baseline is still the smoke/build-contract path. The full behavioral suite is enabled explicitly with `FTIMER_BUILD_TESTS=ON`.
 
@@ -261,6 +263,7 @@ The default repository baseline is still the smoke/build-contract path. The full
 - `build-serial-flang`
 - `build-mpi`
 - `build-mpi-mpich`
+- `build-mpi-openmp`
 - `test-serial`
 - `test-mpi`
 - `test-mpi-mpich`
@@ -271,7 +274,35 @@ The default repository baseline is still the smoke/build-contract path. The full
 - `build-bench`
 - `lint`
 
-That means pFUnit-backed serial, OpenMPI MPI, MPICH MPI, GNU OpenMP guard, and LLVM Flang OpenMP smoke jobs are part of current CI now; they are not deferred future work. The issue #255 hosted-runner investigation found that Ubuntu 24.04's apt MPICH 4.2.0/Hydra launcher can start `/usr/bin/mpiexec.mpich -n 2` Fortran MPI programs as two singleton `MPI_COMM_WORLD` ranks on hosted runners, which made pFUnit report `Insufficient processes to run this test. (PE=0)` for `[npes=2]` cases. The MPICH CI jobs now run on hosted Ubuntu 22.04 and guard the launcher with a raw two-rank MPI probe before claiming coverage. The MPICH pFUnit job builds pFUnit v4.16.0 with `/usr/bin/mpifort.mpich`, verifies the installed package reports `PFUNIT_MPI_FOUND "TRUE"`, and runs both `ftimer_mpi_tests` and `ftimer_mpi_tests_4pe` through `/usr/bin/mpiexec.mpich`. The separate `build-mpi-mpich` job covers MPICH smoke/install-consumer behavior on the same runner family after the launcher probe. Local Homebrew MPICH 5.0.1 was not a valid reproduction path because it does not install `mpi_f08.mod`, so it fails fTimer's configure-time MPI contract probe. A GitHub-hosted NVHPC 26.3 serial smoke/install-consumer trial installed and built successfully, but the generated executables aborted at runtime with `DEALLOCATE: memory at (nil) not allocated`, so NVHPC validation remains deferred rather than claimed. The contract-regression job also verifies the configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
+That means pFUnit-backed serial, OpenMPI MPI, MPICH MPI, GNU OpenMP
+guard, LLVM Flang OpenMP smoke, and build-only OpenMPI+OpenMP compatibility
+jobs are part of current CI now; they are not deferred future work.
+
+The issue #255 hosted-runner investigation found that Ubuntu 24.04's apt
+MPICH 4.2.0/Hydra launcher can start `/usr/bin/mpiexec.mpich -n 2`
+Fortran MPI programs as two singleton `MPI_COMM_WORLD` ranks on hosted
+runners, which made pFUnit report `Insufficient processes to run this test.
+(PE=0)` for `[npes=2]` cases. The MPICH CI jobs now run on hosted Ubuntu
+22.04 and guard the launcher with a raw two-rank MPI probe before claiming
+coverage. The MPICH pFUnit job builds pFUnit v4.16.0 with
+`/usr/bin/mpifort.mpich`, verifies the installed package reports
+`PFUNIT_MPI_FOUND "TRUE"`, and runs both `ftimer_mpi_tests` and
+`ftimer_mpi_tests_4pe` through `/usr/bin/mpiexec.mpich`. The separate
+`build-mpi-mpich` job covers MPICH smoke/install-consumer behavior on the
+same runner family after the launcher probe.
+
+The hybrid `build-mpi-openmp` job configures both `FTIMER_USE_MPI=ON` and
+`FTIMER_USE_OPENMP=ON`, builds, and runs smoke/install-consumer checks for
+today's compatibility mode only. Local Homebrew MPICH 5.0.1 was not a valid
+reproduction path because it does not install `mpi_f08.mod`, so it fails
+fTimer's configure-time MPI contract probe. A GitHub-hosted NVHPC 26.3 serial
+smoke/install-consumer trial installed and built successfully, but the
+generated executables aborted at runtime with `DEALLOCATE: memory at (nil) not
+allocated`, so NVHPC validation remains deferred rather than claimed. The
+contract-regression job also verifies the configure-time MPI/OpenMP gates and
+the documented Makefile wrapper behavior. Future true OpenMP/hybrid test
+expectations are tracked in
+[`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md).
 
 ## Maintainer Workflow
 
@@ -311,7 +342,20 @@ Future-facing ideas should stay clearly separated from the current architecture 
 
 - built-in hardware counter or power-measurement backends
 - richer export formats beyond summary CSV, such as JSON or trace/event formats
-- broader OpenMP support beyond the documented master-thread-only guard model, with the historical #160 deferral recorded in [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md), the reopened opt-in API direction tracked in [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md), the thread-lane runtime model tracked in [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md), the summary/self-time model tracked in [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md), and the MPI+OpenMP reduction model tracked in [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md) before runtime implementation
+- broader OpenMP support beyond the documented master-thread-only guard model,
+  with the historical #160 deferral recorded in
+  [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md),
+  the reopened opt-in API direction tracked in
+  [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md),
+  the thread-lane runtime model tracked in
+  [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md),
+  the summary/self-time model tracked in
+  [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md),
+  the MPI+OpenMP reduction model tracked in
+  [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md),
+  and the validation plan tracked in
+  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
+  before runtime implementation
 - stable semantic callback identity or a stronger external-profiler integration contract
 - explicit reservation/preallocation APIs for known timer sets, if profiling shows the new internal capacity strategy is still not enough for an adopter workload
 

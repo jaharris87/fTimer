@@ -301,9 +301,9 @@ Because hybrid OpenMP has no existing callers, #241 chooses one
 participation-aware result that can represent rank and lane absence explicitly.
 Strict identical-participant behavior is documented for tests and future
 adopter-driven use, but should not become required first public policy unless
-#243 validation or a concrete adopter justifies the added API, CSV, and test
-burden. Whatever implementation follows that design must not weaken current
-`mpi_summary()` or `mpi_union_summary()` by accident.
+future implementation validation or a concrete adopter justifies the added API,
+CSV, and test burden. Whatever implementation follows that design must not
+weaken current `mpi_summary()` or `mpi_union_summary()` by accident.
 
 ## Text Reports
 
@@ -389,9 +389,10 @@ tests for:
   are unchanged.
 
 Tests should use the injectable clock or an OpenMP-aware deterministic clock
-model wherever possible. Performance validation under #243 should measure the
-merge-time cost of descriptor unioning and lane-detail materialization
-separately from hot-path `start_id`/`stop_id` overhead.
+model wherever possible. The implementation issue that first adds this summary
+surface should measure the merge-time cost of descriptor unioning and
+lane-detail materialization separately from hot-path `start_id`/`stop_id`
+overhead, following the validation plan introduced by #243.
 
 ## Rejected Alternatives
 
@@ -426,8 +427,11 @@ separately from hot-path `start_id`/`stop_id` overhead.
   over the OpenMP summary shape, including participation-aware union behavior,
   strict validation, descriptor identity, active-lane preflight, and
   report/CSV expectations.
-- #243 adds deterministic validation, active-lane tests, report/CSV golden
-  output, and overhead measurements.
+- #243 records the validation plan in
+  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
+  and starts current MPI+OpenMP compatibility smoke coverage. Later
+  implementation issues must add deterministic validation, active-lane tests,
+  report/CSV golden output, and overhead measurements.
 - #242 updates user-facing documentation and examples after runtime and summary
   APIs exist.
 

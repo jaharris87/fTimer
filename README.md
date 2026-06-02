@@ -343,6 +343,11 @@ FC=/path/to/mpi-mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TE
 cmake --build build-mpi
 cmake -E chdir build-mpi ctest --output-on-failure -L mpi
 
+# MPI+OpenMP compatibility smoke build (does not enable true worker timing)
+FC=mpifort cmake -B build-mpi-openmp -DFTIMER_USE_MPI=ON -DFTIMER_USE_OPENMP=ON
+cmake --build build-mpi-openmp
+cmake -E chdir build-mpi-openmp ctest --output-on-failure
+
 # OpenMP build with pFUnit tests (GNU Fortran)
 FC=gfortran cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-openmp
@@ -375,6 +380,7 @@ Supported toolchain matrix:
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
 - MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH; smoke/install-consumer coverage runs for both, and MPI pFUnit coverage runs for OpenMPI plus MPICH on hosted Ubuntu 22.04 with a matching MPICH-built pFUnit
 - OpenMP: GNU Fortran with pFUnit guard coverage, plus LLVM Flang smoke/example coverage for the documented master-thread-only carve-out
+- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested for current compatibility mode only, including an MPI-initialized OpenMP installed consumer; this does not validate true worker-thread timing or hybrid rank/lane reductions
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 
@@ -398,7 +404,19 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - `FTIMER_USE_OPENMP=ON` enables only limited master-thread-only guards. Worker-thread timer calls inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
 - `FTIMER_USE_OPENMP` is the source-level switch for that carve-out; global OpenMP compiler flags alone do not enable the guards when the option is `OFF`.
 - The OpenMP path does not make fTimer thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.
-- Future real hybrid MPI+OpenMP timing is tracked separately from the current compatibility mode; see [`docs/openmp-hybrid-strategy-decision.md`](docs/openmp-hybrid-strategy-decision.md), the opt-in API direction in [`docs/openmp-hybrid-api-design.md`](docs/openmp-hybrid-api-design.md), the thread-lane runtime model in [`docs/openmp-thread-lane-runtime-design.md`](docs/openmp-thread-lane-runtime-design.md), the summary/self-time model in [`docs/openmp-hybrid-summary-design.md`](docs/openmp-hybrid-summary-design.md), and the MPI+OpenMP reduction model in [`docs/openmp-hybrid-mpi-reduction-design.md`](docs/openmp-hybrid-mpi-reduction-design.md).
+- Future real hybrid MPI+OpenMP timing is tracked separately from the current
+  compatibility mode; see
+  [`docs/openmp-hybrid-strategy-decision.md`](docs/openmp-hybrid-strategy-decision.md),
+  the opt-in API direction in
+  [`docs/openmp-hybrid-api-design.md`](docs/openmp-hybrid-api-design.md),
+  the thread-lane runtime model in
+  [`docs/openmp-thread-lane-runtime-design.md`](docs/openmp-thread-lane-runtime-design.md),
+  the summary/self-time model in
+  [`docs/openmp-hybrid-summary-design.md`](docs/openmp-hybrid-summary-design.md),
+  the MPI+OpenMP reduction model in
+  [`docs/openmp-hybrid-mpi-reduction-design.md`](docs/openmp-hybrid-mpi-reduction-design.md),
+  and the validation plan in
+  [`docs/openmp-hybrid-validation-plan.md`](docs/openmp-hybrid-validation-plan.md).
 - `on_event` remains a lightweight intra-run hook, not a serious profiler-backend integration contract with stable semantic timer identity.
 - If `FTIMER_USE_MPI=OFF`, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` and leave their MPI result objects empty. MPI report APIs, including the sparse union report and CSV APIs, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output or creating/replacing report files.
 - Formatted local and MPI report output are separate paths: `print_summary()`/`write_summary()` are local, `print_mpi_summary()`/`write_mpi_summary()` are strict MPI reports, and `print_mpi_union_summary()`/`write_mpi_union_summary()` are opt-in sparse MPI union reports. MPI reports are deliberately abbreviated; `ftimer_mpi_summary_t` and `ftimer_mpi_union_summary_t` remain the complete structured data models.
