@@ -9,6 +9,14 @@ if(FTIMER_BUILD_SMOKE_TESTS)
   target_link_libraries(ftimer_openmp_api_smoke PRIVATE ftimer)
   add_test(NAME ftimer_openmp_api_smoke COMMAND ftimer_openmp_api_smoke)
 
+  add_executable(ftimer_openmp_api_ierr_silence test_openmp_api_ierr_silence.F90)
+  target_link_libraries(ftimer_openmp_api_ierr_silence PRIVATE ftimer)
+  add_test(NAME ftimer_openmp_api_ierr_silence
+    COMMAND ${CMAKE_COMMAND}
+      -DTEST_EXECUTABLE=$<TARGET_FILE:ftimer_openmp_api_ierr_silence>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_api_ierr_silence.cmake
+  )
+
   if(FTIMER_USE_OPENMP)
     add_executable(ftimer_openmp_api_diagnostics test_openmp_api_diagnostics.F90)
     target_link_libraries(ftimer_openmp_api_diagnostics PRIVATE ftimer)

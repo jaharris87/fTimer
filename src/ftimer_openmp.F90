@@ -569,9 +569,9 @@ contains
 #ifdef FTIMER_USE_OPENMP
 !$omp critical(ftimer_openmp_worker_diagnostics)
 #endif
+      if (self%first_worker_status == FTIMER_SUCCESS) self%first_worker_status = code
       if (self%queued_worker_diagnostics < self%config%max_worker_diagnostics) then
          self%queued_worker_diagnostics = self%queued_worker_diagnostics + 1
-         if (self%first_worker_status == FTIMER_SUCCESS) self%first_worker_status = code
       else
          self%worker_diagnostic_overflow = self%worker_diagnostic_overflow + 1
       end if

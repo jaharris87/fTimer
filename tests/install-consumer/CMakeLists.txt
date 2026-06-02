@@ -41,4 +41,11 @@ endif()
 if(FTIMER_CONSUMER_ENABLE_MPI AND FTIMER_CONSUMER_ENABLE_OPENMP)
   add_executable(ftimer_installed_mpi_openmp_consumer mpi_openmp_main.F90)
   target_link_libraries(ftimer_installed_mpi_openmp_consumer PRIVATE fTimer::ftimer)
+
+  add_executable(ftimer_installed_openmp_api_mpi_openmp_consumer openmp_api_mpi_openmp_main.F90)
+  target_link_libraries(ftimer_installed_openmp_api_mpi_openmp_consumer
+    PRIVATE
+      fTimer::ftimer
+      OpenMP::OpenMP_Fortran
+  )
 endif()

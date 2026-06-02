@@ -16,7 +16,10 @@ The supported source-level import surface is intentionally narrow:
   thread-lane runtime lands. `ftimer_openmp_t%init` requires `config=` and
   accepts `comm=` only by keyword in MPI builds. Registered timer ids remain
   valid across `reset()` and are invalidated across `finalize()`/reinit without
-  being recycled in the same object.
+  being recycled in the same object. OpenMP-region rejection and bounded worker
+  diagnostics require a package built with `FTIMER_USE_OPENMP=ON`; in
+  non-OpenMP packages, this module is supported only for serial-context
+  lifecycle/catalog use.
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
 ## MPI lifecycle and communicator ownership

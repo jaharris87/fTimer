@@ -930,12 +930,23 @@ if(TEST_ENABLE_MPI)
     set(mpi_openmp_consumer_executable
       "${consumer_build_dir}/ftimer_installed_mpi_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
     )
+    set(openmp_api_mpi_openmp_consumer_executable
+      "${consumer_build_dir}/ftimer_installed_openmp_api_mpi_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
+    )
     if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
       set(configured_mpi_openmp_consumer_executable
         "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_mpi_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
       )
+      set(configured_openmp_api_mpi_openmp_consumer_executable
+        "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_openmp_api_mpi_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
+      )
       if(EXISTS "${configured_mpi_openmp_consumer_executable}")
         set(mpi_openmp_consumer_executable "${configured_mpi_openmp_consumer_executable}")
+      endif()
+      if(EXISTS "${configured_openmp_api_mpi_openmp_consumer_executable}")
+        set(openmp_api_mpi_openmp_consumer_executable
+          "${configured_openmp_api_mpi_openmp_consumer_executable}"
+        )
       endif()
     endif()
 
@@ -953,6 +964,47 @@ if(TEST_ENABLE_MPI)
     if(NOT mpi_openmp_consumer_run_result EQUAL 0)
       message(FATAL_ERROR
         "Installed-package MPI+OpenMP consumer executable exited with a nonzero status."
+      )
+    endif()
+
+    set(ftimer_openmp_api_mpi_openmp_launch_command "${ftimer_mpi_launch_prefix}")
+    list(APPEND ftimer_openmp_api_mpi_openmp_launch_command
+      "${openmp_api_mpi_openmp_consumer_executable}"
+    )
+    if(DEFINED TEST_MPIEXEC_POSTFLAGS AND NOT TEST_MPIEXEC_POSTFLAGS STREQUAL "")
+      list(APPEND ftimer_openmp_api_mpi_openmp_launch_command ${TEST_MPIEXEC_POSTFLAGS})
+    endif()
+
+    execute_process(
+      COMMAND ${ftimer_openmp_api_mpi_openmp_launch_command}
+      WORKING_DIRECTORY "${consumer_build_dir}"
+      RESULT_VARIABLE openmp_api_mpi_openmp_consumer_run_result
+      ERROR_VARIABLE openmp_api_mpi_openmp_consumer_stderr
+    )
+    if(NOT openmp_api_mpi_openmp_consumer_run_result EQUAL 0)
+      message(FATAL_ERROR
+        "Installed-package OpenMP API MPI+OpenMP consumer executable exited with a nonzero status.\n"
+        "stderr:\n${openmp_api_mpi_openmp_consumer_stderr}"
+      )
+    endif()
+
+    string(REPLACE "\r\n" "\n" openmp_api_mpi_openmp_consumer_stderr_normalized
+      "${openmp_api_mpi_openmp_consumer_stderr}"
+    )
+    string(CONCAT openmp_api_mpi_openmp_expected_stderr
+      "ftimer_openmp recorded 1 worker diagnostics; first status 2, overflow 0\n"
+      "ftimer_openmp recorded 1 worker diagnostics; first status 2, overflow 0"
+    )
+    string(STRIP
+      "${openmp_api_mpi_openmp_consumer_stderr_normalized}"
+      openmp_api_mpi_openmp_consumer_stderr_stripped
+    )
+    if(NOT "${openmp_api_mpi_openmp_consumer_stderr_stripped}"
+        STREQUAL "${openmp_api_mpi_openmp_expected_stderr}")
+      message(FATAL_ERROR
+        "Unexpected OpenMP API MPI+OpenMP diagnostic stderr.\n"
+        "Expected exactly two lines matching:\n${openmp_api_mpi_openmp_expected_stderr}\n"
+        "Actual:\n${openmp_api_mpi_openmp_consumer_stderr_normalized}"
       )
     endif()
   endif()
