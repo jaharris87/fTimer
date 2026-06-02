@@ -359,25 +359,25 @@ contains
       type(ftimer_call_stack_t), intent(in) :: stack
       integer :: existing
 
-      call context_trace_mark("context_list_add: enter")
+      call context_trace_mark("context_list_add_impl: enter")
 
       existing = ftimer_context_list_find_impl(self, stack)
-      call context_trace_mark("context_list_add: after find")
+      call context_trace_mark("context_list_add_impl: after find")
       if (existing > 0) then
          idx = existing
          return
       end if
 
       if (.not. allocated(self%stacks)) then
-         call context_trace_mark("context_list_add: before initial stacks allocate")
+         call context_trace_mark("context_list_add_impl: before initial stacks allocate")
          allocate (self%stacks(FTIMER_CONTEXT_LIST_INITIAL_CAPACITY))
-         call context_trace_mark("context_list_add: after initial stacks allocate")
+         call context_trace_mark("context_list_add_impl: after initial stacks allocate")
       else if (self%count >= size(self%stacks)) then
          call grow_context_list_stacks(self)
       end if
 
       self%count = self%count + 1
-      call context_trace_mark("context_list_add: before inline stack copy")
+      call context_trace_mark("context_list_add_impl: before inline stack copy")
       self%stacks(self%count)%depth = stack%depth
       if (allocated(self%stacks(self%count)%ids)) deallocate (self%stacks(self%count)%ids)
       if (allocated(self%stacks(self%count)%activation_tokens)) deallocate (self%stacks(self%count)%activation_tokens)
@@ -390,9 +390,9 @@ contains
          allocate (self%stacks(self%count)%ids(1))
          allocate (self%stacks(self%count)%activation_tokens(1))
       end if
-      call context_trace_mark("context_list_add: after inline stack copy")
+      call context_trace_mark("context_list_add_impl: after inline stack copy")
       idx = self%count
-      call context_trace_mark("context_list_add: exit")
+      call context_trace_mark("context_list_add_impl: exit")
    end function ftimer_context_list_add_impl
 
    subroutine grow_context_list_stacks(self)
