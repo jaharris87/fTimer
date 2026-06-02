@@ -13,6 +13,7 @@ set(expected_symbols)
 set(stable_symbols)
 set(stable_ftimer_symbols)
 set(stable_ftimer_core_symbols)
+set(stable_ftimer_openmp_symbols)
 set(stable_ftimer_types_symbols)
 set(unstable_symbols)
 set(test_only_symbols)
@@ -50,6 +51,8 @@ foreach(line IN LISTS allowlist_lines)
       list(APPEND stable_ftimer_symbols "${symbol_name}")
     elseif(module_name STREQUAL "ftimer_core")
       list(APPEND stable_ftimer_core_symbols "${symbol_name}")
+    elseif(module_name STREQUAL "ftimer_openmp")
+      list(APPEND stable_ftimer_openmp_symbols "${symbol_name}")
     elseif(module_name STREQUAL "ftimer_types")
       list(APPEND stable_ftimer_types_symbols "${symbol_name}")
     else()
@@ -65,6 +68,7 @@ endforeach()
 set(module_sources
   "ftimer|src/ftimer.F90"
   "ftimer_core|src/ftimer_core.F90"
+  "ftimer_openmp|src/ftimer_openmp.F90"
   "ftimer_types|src/ftimer_types.F90"
 )
 
@@ -265,17 +269,20 @@ ftimer_extract_text_section(unstable_doc "${installed_api_text}" "## Unstable pu
 ftimer_extract_text_section(test_only_doc "${installed_api_text}" "## Test-only public symbols" "## Installed implementation artifacts")
 
 ftimer_extract_text_section(stable_ftimer_doc "${stable_doc}" "Stable public symbols in `ftimer`:" "Stable public symbols in `ftimer_core`:")
-ftimer_extract_text_section(stable_ftimer_core_doc "${stable_doc}" "Stable public symbols in `ftimer_core`:" "Stable public symbols in `ftimer_types`:")
+ftimer_extract_text_section(stable_ftimer_core_doc "${stable_doc}" "Stable public symbols in `ftimer_core`:" "Stable public symbols in `ftimer_openmp`:")
+ftimer_extract_text_section(stable_ftimer_openmp_doc "${stable_doc}" "Stable public symbols in `ftimer_openmp`:" "Stable public symbols in `ftimer_types`:")
 ftimer_extract_text_section(stable_ftimer_types_doc "${stable_doc}" "Stable public symbols in `ftimer_types`:" "$")
 
 ftimer_extract_doc_bullets(doc_stable_ftimer_symbols "${stable_ftimer_doc}")
 ftimer_extract_doc_bullets(doc_stable_ftimer_core_symbols "${stable_ftimer_core_doc}")
+ftimer_extract_doc_bullets(doc_stable_ftimer_openmp_symbols "${stable_ftimer_openmp_doc}")
 ftimer_extract_doc_bullets(doc_stable_ftimer_types_symbols "${stable_ftimer_types_doc}")
 ftimer_extract_doc_bullets(doc_unstable_symbols "${unstable_doc}")
 ftimer_extract_doc_bullets(doc_test_only_symbols "${test_only_doc}")
 
 ftimer_compare_doc_symbols("Stable public symbols in ftimer" stable_ftimer_symbols doc_stable_ftimer_symbols)
 ftimer_compare_doc_symbols("Stable public symbols in ftimer_core" stable_ftimer_core_symbols doc_stable_ftimer_core_symbols)
+ftimer_compare_doc_symbols("Stable public symbols in ftimer_openmp" stable_ftimer_openmp_symbols doc_stable_ftimer_openmp_symbols)
 ftimer_compare_doc_symbols("Stable public symbols in ftimer_types" stable_ftimer_types_symbols doc_stable_ftimer_types_symbols)
 ftimer_compare_doc_symbols("Unstable public-by-necessity symbols" unstable_symbols doc_unstable_symbols)
 ftimer_compare_doc_symbols("Test-only public symbols" test_only_symbols doc_test_only_symbols)

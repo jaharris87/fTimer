@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
+Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`, and the initial explicit `ftimer_openmp` API surface for future opt-in worker timing. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -340,6 +340,13 @@ enforcement should pass `ierr` and check it.
 - Suppressed non-master calls are skipped before normal validation, emit no stderr warning, and leave any caller-provided `ierr` unchanged
 - The OpenMP guards do not broaden support for concurrent access to other APIs; summary/report generation and other shared access remain unsupported in threaded regions
 - Thread-local timer instances, fuller concurrent timing support, and any `suppress_in_parallel` control remain deferred
+- `ftimer_openmp` is the explicit opt-in worker-timing module. Its
+  `ftimer_openmp_t%init(config=...)`, `finalize`, `reset`,
+  `register_timer`, and `lookup_timer` entry points are available now, including
+  `init(config=..., comm=...)` in MPI-enabled builds. Timed parallel-region and
+  worker timing methods are deliberately present but return
+  `FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime implementation
+  lands.
 - For user-facing mode selection, accepted instrumentation patterns, and
   migration guidance, see
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).

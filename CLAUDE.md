@@ -93,6 +93,7 @@ ftimer.F90  (procedural wrappers + default global instance)
         ├─► ftimer_summary.F90 (structured summary building + text formatting)
         ├─► ftimer_mpi.F90    (strict MPI reductions + sparse/union descriptor reductions)
         └─► ftimer_core_summary_bindings.F90 (summary/report/CSV file-output bindings)
+ftimer_openmp.F90 (explicit opt-in OpenMP API surface; worker runtime deferred)
 ```
 
 ### Module Dependency Order (build order)
@@ -103,7 +104,8 @@ ftimer.F90  (procedural wrappers + default global instance)
 4. `ftimer_summary` — depends on `ftimer_types`
 5. `ftimer_mpi` — depends on `ftimer_types`, `ftimer_core`, `ftimer_summary`
 6. `ftimer_core_summary_bindings` — submodule of `ftimer_core`; depends on `ftimer_clock`, `ftimer_summary`, and `ftimer_mpi`
-7. `ftimer` — depends on all above (procedural wrappers)
+7. `ftimer_openmp` — depends on `ftimer_types`; in MPI/OpenMP builds it also imports `mpi_f08` / `omp_lib` behind feature guards
+8. `ftimer` — depends on all above except `ftimer_openmp` (procedural wrappers)
 
 ### Key Design Decisions
 
@@ -117,6 +119,7 @@ ftimer.F90  (procedural wrappers + default global instance)
 - **Scoped guards are explicit lexical helpers**: Procedural `ftimer_scope(guard, name)` uses the saved default instance. OOP scoped timing uses the pointer-based module helper `call ftimer_oop_scope(timer_pointer, guard, name, ierr)` with `type(ftimer_oop_guard_t)`, so the borrowed timer lifetime is visible at the call site without colliding with the procedural helper. The timer target must outlive the guard and remain initialized until the guard is inactive. Explicit `timer%start()` / `timer%stop()` remains the primary OOP API.
 - **MPI interface contract**: The primary validated MPI path is `mpi_f08` with `type(MPI_Comm)` communicator handles captured at `init`. MPI-enabled fTimer must be used after `MPI_Init` and before `MPI_Finalize`; communicator handles are non-owning, so callers must keep subcommunicators valid until all summaries/reports/finalize/reinit operations that may use them are complete. Legacy integer communicator handles and `mpif.h` are not part of the current documented contract. Integer `init` options such as `mismatch_mode` and `ierr` must be passed by keyword so positional integer communicator handles cannot silently bind to non-communicator options.
 - **OpenMP master-thread-only timing**: When built with `FTIMER_USE_OPENMP=ON`, all guarded timer operations run only on the master thread (thread 0). Worker-thread calls are silent no-ops: no summary entry is created, no call count is incremented, and no `ierr` is set. Timer calls made exclusively on worker threads produce no summary entry. The supported pattern is to place `start`/`stop` outside `!$omp parallel` blocks. Placing `start`/`stop` inside a parallel region expecting each thread to contribute is the misleading anti-pattern. See `docs/semantics.md` "Consequences for timing data" for the full contract.
+- **Explicit OpenMP API surface**: `ftimer_openmp.F90` is the additive, OOP-first surface for future true worker timing. Its lifecycle/configuration and timer registration/lookup methods are real; timed-region and worker `start_id`/`stop_id` behavior returns `FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime issues under #267 land. The procedural default instance does not participate in true worker timing.
 
 ### Key Data Flow
 

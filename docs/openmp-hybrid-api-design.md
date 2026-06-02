@@ -47,13 +47,14 @@ the new API.
 
 The first implementation should be object-explicit and keyword-heavy:
 
-The snippets below are proposed interface sketches, not compiling examples on
-current `main`. They name the future source shape so later implementation issues
-can add real API symbols and compile-checked examples without changing the
-compatibility decision recorded here.
+The snippets below show the accepted source shape. The `ftimer_openmp` module,
+configuration type, object type, timer catalog calls, and timed-region/timing
+method names now exist as the initial implementation surface. Worker timing,
+OpenMP summaries, and hybrid reductions remain non-functional until later
+implementation issues add the thread-lane runtime and result families.
 
 ```fortran
-! Proposed future API shape. Not implemented on current main.
+! Accepted future worker-timing shape. Summary behavior is implemented later.
 use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, &
                          ftimer_openmp_config_t, &
                          ftimer_openmp_parallel_region_t, &
@@ -94,7 +95,7 @@ the team.
 For hybrid runs, the communicator contract should stay keyword-based:
 
 ```fortran
-! Proposed future hybrid shape. Not implemented on current main.
+! Accepted future hybrid shape. Hybrid summary behavior is implemented later.
 call timer%init(config=config, comm=comm, ierr=ierr)
 call timer%mpi_openmp_summary(summary, ierr=ierr)
 ```

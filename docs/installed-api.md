@@ -1,6 +1,6 @@
 # fTimer Installed API Stability
 
-Stable source-level modules: `ftimer`, `ftimer_core`, `ftimer_types`.
+Stable source-level modules: `ftimer`, `ftimer_core`, `ftimer_openmp`, `ftimer_types`.
 
 Pre-1.0 CMake package version compatibility is limited to the same minor release line. A `0.2.z` package can satisfy `find_package(fTimer 0.2 CONFIG REQUIRED)` and compatible `0.2.x` requests, but different `0.x` minor lines are not considered compatible. This package does not promise all-`0.x` source or compiler-module compatibility. The `0.2` package line is the compatibility boundary for the production-readiness call-count widening: local `ftimer_summary_entry_t%call_count` plus MPI `min_call_count`/`max_call_count` summary/result fields are `integer(int64)` on this line. MPI `avg_call_count` remains `real(wp)` and may differ from the exact integer average by representable real rounding for signed-64-bit values that `real(wp)` cannot represent exactly. Local structured summaries also expose context-cardinality diagnostics through `ftimer_summary_t%total_contexts`, `ftimer_summary_t%max_contexts_per_timer`, `ftimer_summary_t%context_diagnostics`, `ftimer_summary_t%num_context_diagnostics`, and `ftimer_summary_entry_t%timer_context_count`; these fields do not change text or CSV schemas.
 
@@ -9,6 +9,11 @@ The supported source-level import surface is intentionally narrow:
 - `use ftimer` for the procedural API and default timer instance
 - `use ftimer_core` for `type(ftimer_t)`, its OOP methods, and the
   pointer-based `ftimer_oop_scope` scoped guard helper
+- `use ftimer_openmp` for the explicit opt-in OpenMP timing API surface. In
+  this release line, its lifecycle/configuration and timer catalog entry points
+  are real, while worker timing and timed parallel-region behavior are
+  intentionally present but return `FTIMER_ERR_NOT_IMPLEMENTED` until the
+  thread-lane runtime lands.
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
 ## MPI lifecycle and communicator ownership
@@ -33,12 +38,12 @@ non-communicator options.
 
 The checked module-level public-symbol boundary for those modules is
 `tests/public_symbol_allowlist.txt`. Any module-level public symbol added to
-`src/ftimer.F90`, `src/ftimer_core.F90`, or `src/ftimer_types.F90` must be added
-there intentionally and documented here as either stable API, unstable
-public-by-necessity API, or test-only API. The allowlist check intentionally
-requires default-private modules and standalone `public :: name` declarations so
-new module-level exports cannot bypass the checked boundary through implicit
-visibility or declaration attributes.
+`src/ftimer.F90`, `src/ftimer_core.F90`, `src/ftimer_openmp.F90`, or
+`src/ftimer_types.F90` must be added there intentionally and documented here as
+either stable API, unstable public-by-necessity API, or test-only API. The
+allowlist check intentionally requires default-private modules and standalone
+`public :: name` declarations so new module-level exports cannot bypass the
+checked boundary through implicit visibility or declaration attributes.
 
 ## Stable user API
 
@@ -73,6 +78,13 @@ Stable public symbols in `ftimer_core`:
 - `ftimer_t`
 - `ftimer_oop_guard_t`
 - `ftimer_oop_scope`
+
+Stable public symbols in `ftimer_openmp`:
+
+- `FTIMER_OPENMP_MODE_THREAD_LANES`
+- `ftimer_openmp_config_t`
+- `ftimer_openmp_parallel_region_t`
+- `ftimer_openmp_t`
 
 Stable public symbols in `ftimer_types`:
 

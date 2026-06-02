@@ -171,6 +171,7 @@ function(ftimer_verify_installed_artifacts)
     ftimer_clock.mod
     ftimer_core.mod
     ftimer_mpi.mod
+    ftimer_openmp.mod
     ftimer_summary.mod
     ftimer_types.mod
   )
@@ -631,6 +632,9 @@ endif()
 set(consumer_executable "${consumer_build_dir}/ftimer_installed_consumer${TEST_EXECUTABLE_SUFFIX}")
 set(oop_consumer_executable "${consumer_build_dir}/ftimer_installed_oop_consumer${TEST_EXECUTABLE_SUFFIX}")
 set(mixed_consumer_executable "${consumer_build_dir}/ftimer_installed_mixed_consumer${TEST_EXECUTABLE_SUFFIX}")
+set(openmp_api_consumer_executable
+  "${consumer_build_dir}/ftimer_installed_openmp_api_consumer${TEST_EXECUTABLE_SUFFIX}"
+)
 if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   set(configured_consumer_executable
     "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_consumer${TEST_EXECUTABLE_SUFFIX}"
@@ -641,6 +645,9 @@ if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   set(configured_mixed_consumer_executable
     "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_mixed_consumer${TEST_EXECUTABLE_SUFFIX}"
   )
+  set(configured_openmp_api_consumer_executable
+    "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_openmp_api_consumer${TEST_EXECUTABLE_SUFFIX}"
+  )
   if(EXISTS "${configured_consumer_executable}")
     set(consumer_executable "${configured_consumer_executable}")
   endif()
@@ -649,6 +656,9 @@ if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   endif()
   if(EXISTS "${configured_mixed_consumer_executable}")
     set(mixed_consumer_executable "${configured_mixed_consumer_executable}")
+  endif()
+  if(EXISTS "${configured_openmp_api_consumer_executable}")
+    set(openmp_api_consumer_executable "${configured_openmp_api_consumer_executable}")
   endif()
 endif()
 
@@ -681,16 +691,34 @@ if(NOT TEST_ENABLE_MPI)
   if(NOT mixed_consumer_run_result EQUAL 0)
     message(FATAL_ERROR "Installed-package mixed-module consumer executable exited with a nonzero status.")
   endif()
+
+  execute_process(
+    COMMAND "${openmp_api_consumer_executable}"
+    WORKING_DIRECTORY "${consumer_build_dir}"
+    RESULT_VARIABLE openmp_api_consumer_run_result
+  )
+  if(NOT openmp_api_consumer_run_result EQUAL 0)
+    message(FATAL_ERROR "Installed-package OpenMP API consumer executable exited with a nonzero status.")
+  endif()
 endif()
 
 if(TEST_ENABLE_MPI)
   set(mpi_consumer_executable "${consumer_build_dir}/ftimer_installed_mpi_consumer${TEST_EXECUTABLE_SUFFIX}")
+  set(openmp_api_mpi_consumer_executable
+    "${consumer_build_dir}/ftimer_installed_openmp_api_mpi_consumer${TEST_EXECUTABLE_SUFFIX}"
+  )
   if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
     set(configured_mpi_consumer_executable
       "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_mpi_consumer${TEST_EXECUTABLE_SUFFIX}"
     )
+    set(configured_openmp_api_mpi_consumer_executable
+      "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_openmp_api_mpi_consumer${TEST_EXECUTABLE_SUFFIX}"
+    )
     if(EXISTS "${configured_mpi_consumer_executable}")
       set(mpi_consumer_executable "${configured_mpi_consumer_executable}")
+    endif()
+    if(EXISTS "${configured_openmp_api_mpi_consumer_executable}")
+      set(openmp_api_mpi_consumer_executable "${configured_openmp_api_mpi_consumer_executable}")
     endif()
   endif()
 
@@ -733,6 +761,23 @@ if(TEST_ENABLE_MPI)
   )
   if(NOT mpi_consumer_run_result EQUAL 0)
     message(FATAL_ERROR "Installed-package MPI consumer executable exited with a nonzero status.")
+  endif()
+
+  set(ftimer_openmp_api_mpi_launch_command "${ftimer_mpi_launch_prefix}")
+  list(APPEND ftimer_openmp_api_mpi_launch_command "${openmp_api_mpi_consumer_executable}")
+  if(DEFINED TEST_MPIEXEC_POSTFLAGS AND NOT TEST_MPIEXEC_POSTFLAGS STREQUAL "")
+    list(APPEND ftimer_openmp_api_mpi_launch_command ${TEST_MPIEXEC_POSTFLAGS})
+  endif()
+
+  execute_process(
+    COMMAND ${ftimer_openmp_api_mpi_launch_command}
+    WORKING_DIRECTORY "${consumer_build_dir}"
+    RESULT_VARIABLE openmp_api_mpi_consumer_run_result
+  )
+  if(NOT openmp_api_mpi_consumer_run_result EQUAL 0)
+    message(FATAL_ERROR
+      "Installed-package OpenMP API MPI consumer executable exited with a nonzero status."
+    )
   endif()
 
   if(NOT EXISTS "${consumer_build_dir}/consumer_mpi_summary.txt")
