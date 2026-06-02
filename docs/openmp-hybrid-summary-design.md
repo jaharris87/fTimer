@@ -230,7 +230,10 @@ Consequences:
   important epoch-level difference, the default aggregate row should avoid
   claiming a precise missing-lane interpretation and the implementation should
   expose epoch detail through the optional lane/detail diagnostics rather than
-  overloading the aggregate row.
+  overloading the aggregate row. Future result and CSV schemas should pair such
+  aggregate missing-count fields with explicit known-state fields, for example
+  `missing_lane_count_known`, so an ambiguous aggregate cannot be mistaken for
+  a real zero missing count.
 - Missing lanes are not zero-filled for per-entry min, max, average, call
   count, percent, or imbalance fields.
 - A materialized zero-call or zero-time entry participates if the runtime emits
@@ -360,6 +363,8 @@ OpenMP CSV field names should make semantics visible:
   summed worker work;
 - use `eligible_lane_count`, `participating_lane_count`, and
   `missing_lane_count` on entry rows;
+- include companion `*_known` columns for any missing-count field that can be
+  ambiguous in a mixed-epoch aggregate;
 - use `avg_participating_lane_*` or similar labels for averages over
   participating lanes only.
 

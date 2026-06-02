@@ -309,9 +309,12 @@ Entry rows should retain explicit tree links and participation semantics:
 - `name`, `depth`, `node_id`, and `parent_id`;
 - execution domain;
 - `participating_rank_count` and derived missing-rank semantics;
-- eligible, participating, and missing rank/lane sample counts, with missing
-  counts populated only where the eligible participant universe is
-  unambiguous;
+- eligible and participating rank/lane sample counts;
+- missing rank/lane sample counts paired with explicit known-state fields, for
+  example `missing_rank_lane_sample_count_known`. The numeric missing count is
+  valid only when the companion known field is true. When the eligible
+  participant universe is ambiguous, the known field is false and readers must
+  not interpret the numeric count as a real zero;
 - summed participating-lane inclusive and self time;
 - min/avg/max participating-lane inclusive and self time;
 - min/max participating-lane call-count extrema as `integer(int64)`;
@@ -340,7 +343,8 @@ Recommended sections:
 - a rank-level section with one row per communicator rank;
 - a descriptor aggregate table with participating/missing ranks and
   eligible/participating rank/lane sample counts, plus missing counts only
-  where the eligible participant universe is unambiguous;
+  where the eligible participant universe is unambiguous. Ambiguous missing
+  counts should be shown with an explicit unknown status rather than as `0`;
 - optional rank/lane detail output only in an explicit detail mode.
 
 The default text report may be abbreviated, but it must not hide participation
@@ -376,8 +380,11 @@ Column names should make semantics visible:
   participation;
 - use `eligible_rank_lane_sample_count`,
   `participating_rank_lane_sample_count`, and
-  `missing_rank_lane_sample_count` where the eligible participant universe is
-  unambiguous;
+  `missing_rank_lane_sample_count` for rank/lane participation;
+- include companion `*_known` columns for missing-count fields that can be
+  ambiguous, such as `missing_rank_lane_sample_count_known`. When the known
+  column is false, the corresponding numeric count column remains schema-valid
+  but undefined and must not be read as zero;
 - use `avg_participating_lane_*` names for averages over participating lanes.
 
 ## Error And Diagnostic Policy
