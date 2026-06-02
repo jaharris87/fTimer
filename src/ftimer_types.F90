@@ -301,7 +301,7 @@ contains
    end function ftimer_call_stack_equals
 
    subroutine ftimer_call_stack_copy(self, other)
-      class(ftimer_call_stack_t), intent(out) :: self
+      class(ftimer_call_stack_t), intent(inout) :: self
       class(ftimer_call_stack_t), intent(in) :: other
 
       self%depth = other%depth
