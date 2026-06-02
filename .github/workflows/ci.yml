@@ -334,7 +334,12 @@ jobs:
 
       - name: Verify MPICH pFUnit package
         run: |
-          grep 'set (PFUNIT_MPI_FOUND "TRUE")' /opt/pfunit-mpich/PFUNIT-4.16/cmake/PFUNITConfig.cmake
+          pfunit_config="$(find /opt/pfunit-mpich -path '*/cmake/PFUNITConfig.cmake' -print -quit)"
+          if [ -z "$pfunit_config" ]; then
+            echo "No MPICH pFUnit package config was installed." >&2
+            exit 1
+          fi
+          grep 'set (PFUNIT_MPI_FOUND "TRUE")' "$pfunit_config"
           "$FTIMER_MPICH_FC" --version
           "$FTIMER_MPICH_FC" -show
           "$FTIMER_MPICH_MPIEXEC" --version
