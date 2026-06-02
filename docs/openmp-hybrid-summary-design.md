@@ -1,0 +1,385 @@
+> **When to read this:** When designing or implementing OpenMP or hybrid
+> MPI+OpenMP summary objects, self-time semantics, reports, or CSV exports for
+> the explicit opt-in OpenMP timing API under umbrella issue #237.
+
+# OpenMP And Hybrid Summary Model
+
+Issue #240 defines the summary and self-time contract that should sit between
+the opt-in API direction from #238 and the thread-lane runtime model from #239.
+This is a design contract only. It does not add public Fortran symbols, change
+current report output, implement threaded timing, or add MPI+OpenMP reductions.
+
+## Decision
+
+True OpenMP worker-thread timing should use new summary/result types and new
+report/CSV entry points behind the future `ftimer_openmp_t` API.
+
+Recommended future type family:
+
+- `ftimer_openmp_summary_t` for local OpenMP lane summaries;
+- `ftimer_openmp_summary_entry_t` for logical timer/context aggregate rows;
+- `ftimer_openmp_lane_entry_t` for per-lane data behind each logical row;
+- `ftimer_mpi_openmp_summary_t` and related entry types for hybrid
+  MPI+OpenMP reductions in #241.
+
+Recommended future entry points:
+
+- `timer%get_openmp_summary(summary, ierr=ierr)` for local lane summaries;
+- `timer%print_openmp_summary(...)`, `timer%write_openmp_summary(...)`, and
+  `timer%write_openmp_summary_csv(...)` for local lane reports;
+- `timer%mpi_openmp_summary(summary, ierr=ierr)` plus explicit hybrid text and
+  CSV writers for MPI+OpenMP summaries.
+
+Those names are proposed source shapes for later implementation issues, not
+symbols available on current `main`.
+
+Current `get_summary()`, `mpi_summary()`, `mpi_union_summary()`,
+`ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, and
+the local/strict/sparse CSV schemas remain unchanged. A build configured with
+`FTIMER_USE_OPENMP=ON` must continue to expose the current master-thread-only
+compatibility model through the existing APIs unless the caller opts into the
+future OpenMP-specific API.
+
+## Compatibility Contract
+
+Existing consumers keep their current meaning:
+
+- `get_summary()` returns the current local serial tree snapshot for
+  `type(ftimer_t)`.
+- `mpi_summary()` remains the strict identical-tree rank reduction over
+  `ftimer_mpi_summary_t`.
+- `mpi_union_summary()` remains the sparse rank-participation path over
+  `ftimer_mpi_union_summary_t`.
+- `print_summary()`, `write_summary()`, `write_summary_csv()`, strict MPI
+  report writers, and sparse MPI union report writers keep their current text
+  and CSV schemas.
+- The procedural default instance must not participate in true worker-thread
+  timing and therefore does not need an OpenMP summary object.
+
+The future OpenMP summary family is an additive opt-in surface. It should not
+extend `ftimer_summary_t` with lane fields because that would make current
+serial snapshots appear to be thread-aware and would force downstream code to
+handle fields that cannot be populated meaningfully for the existing runtime.
+It should not extend `ftimer_mpi_summary_t` or `ftimer_mpi_union_summary_t`
+because their rank-only fields are already semantically full.
+
+## Participant Identity
+
+The local OpenMP participant key is the `lane_id` defined by #239:
+
+- `lane_id = 0` for serial-context calls outside OpenMP parallel regions;
+- `lane_id = 1 + omp_get_thread_num()` inside a level-1 OpenMP team;
+- no nested-team path, task id, device id, or OS thread id in the first model.
+
+`lane_id` is stable only within one initialized `ftimer_openmp_t` object and its
+configured lane capacity. It is not a portable identity for a physical thread
+across runs.
+
+Timed-region epoch ids are runtime diagnostics, not the primary participant
+key. Summary objects may expose region or epoch metadata so active or failed
+region-close diagnostics can point to the affected epoch, but aggregate timing
+statistics are keyed by logical timer descriptor plus lane id. A later nested
+team or task model must add an explicit participant descriptor rather than
+reinterpreting the level-1 lane id.
+
+For hybrid summaries, the participant key is
+`(communicator-local rank, lane_id)` with the communicator captured at
+`timer%init(config=config, comm=comm, ierr=ierr)`. The first hybrid result
+should also preserve rank-level participation counts separately from lane-level
+participation counts so "rank absent" and "lane absent on a participating rank"
+remain distinguishable.
+
+## Logical Tree And Lane Detail
+
+The OpenMP summary should have two layers:
+
+1. A canonical logical tree of timer/context descriptors. Each descriptor keeps
+   `name`, `depth`, `node_id`, and `parent_id` for report traversal and for
+   matching the current structured-summary style.
+2. Per-lane records attached to each descriptor. Each record keeps the lane id,
+   inclusive time, self time, call count, active state, and enough diagnostics
+   to identify incomplete worker timing.
+
+The canonical tree is the union of descriptors materialized by participating
+lanes. It is not creation order from one chosen lane. Descriptor matching should
+use the same path-oriented idea as MPI summaries: timer names plus their parent
+context path, not raw runtime array indices and not summary-local node ids from
+one lane.
+
+Structured summaries should expose the lane-detail records even if the default
+text report is abbreviated. The text report can be optimized for humans, but
+the structured result and CSV must keep the exact participation information
+that consumers need for validation and tooling.
+
+## Wall-Clock Envelope And Summed Work
+
+The future summary must name wall-clock quantities separately from summed lane
+work.
+
+Recommended top-level local OpenMP fields:
+
+- `summary_window_time`: elapsed wall-clock time from init/reset to the summary
+  snapshot, matching the current local summary-window idea;
+- `timed_region_envelope_time`: summed wall-clock duration of explicit timed
+  OpenMP region epochs in the summary window, including an active epoch through
+  the snapshot timestamp when a local live snapshot is allowed;
+- `sum_lane_inclusive_time`: total inclusive time summed across lane records;
+- `sum_lane_self_time`: total lane-local self time summed across lane records;
+- `participating_lane_count` and `configured_lane_count`;
+- `has_active_timers` and active-lane diagnostics.
+
+`timed_region_envelope_time` is wall-clock elapsed time. It is not divided by
+or multiplied by the number of lanes. `sum_lane_inclusive_time` and
+`sum_lane_self_time` are work-like totals and can legitimately exceed the
+wall-clock envelope when multiple lanes run at the same time.
+
+Recommended per-entry aggregate fields:
+
+- participating and missing lane counts;
+- summed lane inclusive time and summed lane self time;
+- min/avg/max lane inclusive time over participating lanes;
+- min/avg/max lane self time over participating lanes;
+- min/avg/max lane call count, with integer extrema and a real-valued average;
+- lane inclusive and self imbalance over participating lanes;
+- active lane count for that descriptor.
+
+Per-entry aggregate fields must be named as lane aggregates. Do not call summed
+lane work simply `inclusive_time`, and do not call a lane average simply
+`avg_time` without a lane qualifier.
+
+The first model should not expose a per-entry wall-clock interval union unless
+a later implementation deliberately stores enough interval information to
+compute it. The current summary model is an aggregate table, not a trace. A
+plausible-looking interval union computed from only totals would be worse than
+not exposing the field.
+
+## Self-Time Semantics
+
+Self time is computed per lane.
+
+For one lane and one descriptor:
+
+```text
+lane self time = lane inclusive time - sum(lane direct-child inclusive times)
+```
+
+The direct children are the children that were actually materialized on that
+same lane under that same parent context. Missing children on another lane do
+not participate in the subtraction for this lane.
+
+Aggregate OpenMP self-time fields are then derived from the lane-local self
+values:
+
+- `sum_lane_self_time = sum(lane self time over participating lanes)`;
+- `avg_lane_self_time = average(lane self time over participating lanes)`;
+- `min_lane_self_time` and `max_lane_self_time` over participating lanes;
+- `lane_self_imbalance = max_lane_self_time / avg_lane_self_time`, following
+  the current MPI imbalance convention when the average is nonzero.
+
+Do not compute aggregate self time as:
+
+```text
+aggregate inclusive - sum(aggregate child inclusive)
+```
+
+That subtraction is meaningful for one strict stack. Across lanes it can become
+misleading because parent and child participation can differ by lane and
+because overlapping worker intervals are work totals, not one serial interval.
+
+## Sparse And Missing Lane Participation
+
+A lane participates in a descriptor when that descriptor is materialized in the
+lane-local summary input. A registered timer name, reserved lane storage, or
+pre-warmed capacity is not participation by itself.
+
+Consequences:
+
+- Missing lane count is derived as
+  `configured_lane_count - participating_lane_count` for local OpenMP summaries,
+  or from the explicit rank/lane participation model for hybrid summaries.
+- Missing lanes are not zero-filled for per-entry min, max, average, call
+  count, percent, or imbalance fields.
+- A materialized zero-call or zero-time entry participates if the runtime emits
+  it as a real lane-local descriptor, for example as an active or diagnostic
+  context. It contributes zero values where appropriate.
+- If users later need an all-lane amortized view, that view must be explicitly
+  named as all-lane or amortized and derived from the participation-aware data.
+
+This mirrors the sparse MPI design: absence and real zero work are different
+states, and the summary object must not hide that difference.
+
+## Active Timer Representation
+
+OpenMP summary construction is a merge point and should run outside OpenMP
+parallel regions. It must not read lane state while worker lanes may still be
+mutating it.
+
+Local OpenMP summaries may be live diagnostic snapshots, following the current
+local summary precedent, but active worker state must be explicit:
+
+- top-level `has_active_timers`;
+- per-entry `active_lane_count`;
+- per-lane `is_active`;
+- active timer diagnostics that include lane id, descriptor identity, and
+  timed-region epoch when available.
+
+Active rows are not final stopped-run timing data. A local text report that
+contains active lanes should label itself as an interim or incomplete snapshot.
+`reset`, `finalize`, and timed-region lifecycle calls must not force-stop
+active lane timers or synthesize completed work.
+
+Hybrid MPI+OpenMP summaries should be stopped-run summaries only in the first
+implementation. Before entering MPI reductions, every rank must detect whether
+any lane is active and exchange that status so all participants return
+`FTIMER_ERR_ACTIVE` rather than entering collectives with incomplete lane data.
+
+## Hybrid MPI+OpenMP Shape
+
+#241 owns the MPI reduction implementation, but it should reduce over the #240
+result shape instead of reusing current rank-only summaries.
+
+The first hybrid result should preserve these levels:
+
+- communicator summary fields over ranks;
+- rank-level OpenMP envelope and lane-work fields;
+- logical timer descriptor rows;
+- participant statistics over rank/lane samples;
+- explicit rank participation and lane participation counts.
+
+Hybrid summaries should distinguish:
+
+- rank wall-clock envelope extrema and averages;
+- rank summed-lane-work extrema and averages;
+- per-entry participating rank count;
+- per-entry participating rank/lane sample count;
+- missing ranks versus missing lanes within participating ranks.
+
+Strict hybrid reductions may require each rank to produce the same descriptor
+tree, while sparse/union hybrid reductions may build a descriptor union. In both
+cases, those are new hybrid entry points. They must not weaken current
+`mpi_summary()` or `mpi_union_summary()` by accident.
+
+## Text Reports
+
+Default local OpenMP text reports should be explicit rather than pretending to
+be the current serial table.
+
+Recommended sections:
+
+- a header with summary window time, timed-region envelope time, configured
+  lanes, participating lanes, summed lane work, and active-lane status;
+- a descriptor aggregate table with participating/missing lanes, summed lane
+  inclusive/self time, min/avg/max lane inclusive time, average lane self time,
+  call-count aggregate fields, and active lane count;
+- an optional lane-detail section or detail mode that prints lane rows for each
+  descriptor.
+
+The default report may omit some structured fields for readability, just as the
+current MPI text report is abbreviated, but it must not omit participation or
+label summed lane work as wall time.
+
+Hybrid text reports should be communicator-root artifacts like current MPI
+reports. They should show rank-level envelope fields separately from lane-work
+fields and should label participant counts at the rank and lane levels.
+
+## CSV Expectations
+
+OpenMP and hybrid CSV exports should use dedicated schemas, not the current
+local/strict version-2 header and not the sparse MPI union header.
+
+Recommended local OpenMP CSV record types:
+
+- `record_type=summary` for top-level window, envelope, lane-count, and active
+  state fields;
+- `record_type=metadata` for caller metadata;
+- `record_type=entry` for descriptor aggregate rows;
+- `record_type=lane_entry` for per-lane descriptor rows.
+
+Recommended hybrid CSV record types:
+
+- `record_type=summary` for communicator-level fields;
+- `record_type=rank` for rank-level envelope and summed-lane fields;
+- `record_type=entry` for descriptor aggregate rows;
+- `record_type=rank_lane_entry` for participant detail rows when exported.
+
+CSV columns should include `summary_kind=openmp` or
+`summary_kind=mpi_openmp` and an independent format version. Appending to an
+existing CSV should require the exact header for the chosen OpenMP or hybrid
+schema, following the current CSV append-safety principle.
+
+OpenMP CSV field names should make semantics visible:
+
+- use `timed_region_envelope_time`, not `total_time`, for region-envelope data;
+- use `sum_lane_inclusive_time`, not `inclusive_time`, for summed worker work;
+- use `participating_lane_count` and `missing_lane_count`;
+- use `avg_participating_lane_*` or similar labels for averages over
+  participating lanes only.
+
+## Validation Expectations For Implementation
+
+The implementation issues that add these summaries should include deterministic
+tests for:
+
+- uneven lane participation where missing lanes are not zero-filled;
+- worker-only timers, all-lane timers, and serial-lane timers;
+- per-lane context differences under the same timer name;
+- nested timers where aggregate self time would be wrong if computed after
+  cross-lane aggregation;
+- active worker timers and failed timed-region close diagnostics;
+- report and CSV golden output for local OpenMP summaries;
+- hybrid MPI+OpenMP reductions with differing rank/lane participation;
+- compatibility tests proving existing `get_summary()`, `mpi_summary()`,
+  `mpi_union_summary()`, and `FTIMER_USE_OPENMP=ON` master-thread-only behavior
+  are unchanged.
+
+Tests should use the injectable clock or an OpenMP-aware deterministic clock
+model wherever possible. Performance validation under #243 should measure the
+merge-time cost of descriptor unioning and lane-detail materialization
+separately from hot-path `start_id`/`stop_id` overhead.
+
+## Rejected Alternatives
+
+- **Extend `ftimer_summary_t` with lane fields.** Existing serial consumers
+  would inherit a shape that the current runtime cannot populate meaningfully.
+- **Fold lanes into the current rank-only MPI summaries.** Rank fields and
+  rank-local percent semantics are already defined. Adding lanes there would
+  hide a second participant dimension.
+- **Zero-fill missing lanes by default.** That makes absence look like real
+  zero work and masks uneven participation bugs.
+- **Compute aggregate self time from aggregate inclusive rows.** That is only
+  safe for one strict stack. It becomes misleading when parent and child
+  participation differ by lane.
+- **Make text reports the primary contract.** The durable contract should be
+  structured data and CSV. Text reports can stay human-facing and abbreviated.
+- **Add trace or timeline output in this issue.** Interval traces may be useful
+  later, especially for per-entry envelope unions, but #240 is a summary-table
+  design.
+
+## Dependencies On Later Child Issues
+
+- #239 provides the lane-owned runtime state, timed-region epoch model,
+  lane-local stacks, merge points, and diagnostic storage that this summary
+  design consumes.
+- #241 defines and implements MPI+OpenMP reductions over the OpenMP summary
+  shape, including strict and sparse/union hybrid behavior.
+- #243 adds deterministic validation, active-lane tests, report/CSV golden
+  output, and overhead measurements.
+- #242 updates user-facing documentation and examples after runtime and summary
+  APIs exist.
+
+## Non-Goals
+
+- Implementing OpenMP summary public types in #240.
+- Changing current local, strict MPI, or sparse MPI result types.
+- Changing current CSV schemas or text reports.
+- Changing current `FTIMER_USE_OPENMP=ON` master-thread-only behavior.
+- Adding MPI+OpenMP reductions before #241.
+- Supporting nested OpenMP teams, OpenMP task migration, accelerator/device
+  timing, hardware counters, callback identity, or trace/timeline output.
+
+## Validation For This Design
+
+This issue records the data-model contract without changing runtime behavior.
+Validation for this design-only step is Markdown review and diff checking. No
+Fortran build or pFUnit run is required unless a later change adds code,
+examples, CMake, or tests.

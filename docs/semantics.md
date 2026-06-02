@@ -343,7 +343,9 @@ enforcement should pass `ierr` and check it.
 - Future real hybrid MPI+OpenMP timing is tracked separately from this current
   compatibility mode; see [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md)
   and the opt-in API direction in
-  [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md)
+  [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md), plus the
+  OpenMP/hybrid summary model in
+  [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md)
 
 ### Consequences for timing data
 
