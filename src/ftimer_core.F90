@@ -757,6 +757,7 @@ contains
          call start_trace_mark("start_segment_impl: before contexts add")
          if (.not. allocated(self%segments(segment_idx)%contexts%stacks)) then
             allocate (self%segments(segment_idx)%contexts%stacks(FTIMER_CONTEXT_STORAGE_INITIAL_CAPACITY))
+            call allocate_empty_call_stack_slots(self%segments(segment_idx)%contexts%stacks)
          else if (self%segments(segment_idx)%contexts%count >= &
                   size(self%segments(segment_idx)%contexts%stacks)) then
             call grow_segment_context_stacks(self, segment_idx)
@@ -1263,7 +1264,18 @@ contains
       stack%depth = 0
       if (.not. allocated(stack%ids)) allocate (stack%ids(1))
       if (.not. allocated(stack%activation_tokens)) allocate (stack%activation_tokens(1))
+      stack%ids = 0
+      stack%activation_tokens = 0_int64
    end subroutine allocate_empty_call_stack
+
+   subroutine allocate_empty_call_stack_slots(stacks)
+      type(ftimer_call_stack_t), intent(inout) :: stacks(:)
+      integer :: i
+
+      do i = 1, size(stacks)
+         call allocate_empty_call_stack(stacks(i))
+      end do
+   end subroutine allocate_empty_call_stack_slots
 
    subroutine restore_default_clock(self)
       class(ftimer_t), intent(inout) :: self
@@ -1298,6 +1310,7 @@ contains
       new_capacity = max(FTIMER_CONTEXT_STORAGE_INITIAL_CAPACITY, &
                          2*size(self%segments(segment_id)%contexts%stacks))
       allocate (new_stacks(new_capacity))
+      call allocate_empty_call_stack_slots(new_stacks)
       if (self%segments(segment_id)%contexts%count > 0) then
          new_stacks(1:self%segments(segment_id)%contexts%count) = &
             self%segments(segment_id)%contexts%stacks(1:self%segments(segment_id)%contexts%count)
@@ -1758,6 +1771,7 @@ contains
       call start_trace_mark("find_or_create_segment_context: before contexts add")
       if (.not. allocated(self%segments(segment_id)%contexts%stacks)) then
          allocate (self%segments(segment_id)%contexts%stacks(FTIMER_CONTEXT_STORAGE_INITIAL_CAPACITY))
+         call allocate_empty_call_stack_slots(self%segments(segment_id)%contexts%stacks)
       else if (self%segments(segment_id)%contexts%count >= &
                size(self%segments(segment_id)%contexts%stacks)) then
          call grow_segment_context_stacks(self, segment_id)
