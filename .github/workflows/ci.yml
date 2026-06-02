@@ -303,6 +303,44 @@ jobs:
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
 
+      - name: Resolve CMake for pFUnit
+        run: |
+          required_version="3.24.0"
+          selected_cmake=""
+          seen=""
+
+          version_at_least() {
+            [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]
+          }
+
+          for candidate in /usr/local/bin/cmake "$(command -v cmake || true)" /usr/bin/cmake; do
+            if [ -z "$candidate" ] || [ ! -x "$candidate" ]; then
+              continue
+            fi
+            case " $seen " in
+              *" $candidate "*) continue ;;
+            esac
+            seen="$seen $candidate"
+
+            version="$("$candidate" --version | awk 'NR == 1 { print $3 }')"
+            if version_at_least "$version" "$required_version"; then
+              selected_cmake="$candidate"
+              break
+            fi
+            echo "Ignoring $candidate: CMake $version is older than pFUnit's $required_version requirement."
+          done
+
+          if [ -z "$selected_cmake" ]; then
+            echo "pFUnit $PFUNIT_VERSION requires CMake >= $required_version; no suitable CMake was found." >&2
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/cmake-bin"
+          ln -sf "$selected_cmake" "$RUNNER_TEMP/cmake-bin/cmake"
+          echo "$RUNNER_TEMP/cmake-bin" >> "$GITHUB_PATH"
+          echo "FTIMER_CMAKE=$selected_cmake" >> "$GITHUB_ENV"
+          "$selected_cmake" --version
+
       - name: Resolve MPICH tools
         run: |
           if command -v mpifort.mpich >/dev/null 2>&1; then
