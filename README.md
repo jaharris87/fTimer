@@ -319,7 +319,8 @@ Minimum requirements:
 - A Fortran compiler with preprocess support
 - pFUnit only when `FTIMER_BUILD_TESTS=ON`
 - An MPI wrapper/compiler pair only when `FTIMER_USE_MPI=ON`
-- GNU Fortran only when `FTIMER_USE_OPENMP=ON`
+- GNU Fortran or LLVM Flang with a discoverable OpenMP runtime when `FTIMER_USE_OPENMP=ON`
+- CMake 3.24 or newer for the LLVM Flang OpenMP path
 
 ```bash
 # Smoke-test path (includes install/export consumer verification)
@@ -342,10 +343,15 @@ FC=/path/to/mpi-mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TE
 cmake --build build-mpi
 cmake -E chdir build-mpi ctest --output-on-failure -L mpi
 
-# OpenMP build with pFUnit tests
+# OpenMP build with pFUnit tests (GNU Fortran)
 FC=gfortran cmake -B build-openmp -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-openmp
 cmake -E chdir build-openmp ctest --output-on-failure
+
+# OpenMP smoke build (LLVM Flang)
+FC=flang-19 cmake -B build-openmp-flang -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=OFF
+cmake --build build-openmp-flang
+./build-openmp-flang/examples/openmp_example
 
 # Convenience Makefile wrapper
 make
@@ -354,6 +360,13 @@ make openmp
 make test
 ```
 
+If CMake cannot discover LLVM Flang's OpenMP runtime automatically, pass
+`-DOpenMP_ROOT=/path/to/libomp` for that toolchain.
+Cross-compiling or execution-restricted package builds may set
+`-DFTIMER_OPENMP_ASSUME_MASTER_PROBE_OK=ON` only after independently validating
+equivalent OpenMP master-thread runtime semantics for the selected
+compiler/runtime pair.
+
 The smoke-test path also runs the enabled and disabled instrumentation facade examples so the documented compile-out strategy stays buildable.
 
 Supported toolchain matrix:
@@ -361,7 +374,7 @@ Supported toolchain matrix:
 - Serial smoke/library build: GNU Fortran and LLVM Flang are validated in automation
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
 - MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH; smoke/install-consumer coverage runs for both, and MPI pFUnit coverage runs for OpenMPI plus MPICH on hosted Ubuntu 22.04 with a matching MPICH-built pFUnit
-- OpenMP: GNU Fortran only for the documented master-thread-only carve-out
+- OpenMP: GNU Fortran with pFUnit guard coverage, plus LLVM Flang smoke/example coverage for the documented master-thread-only carve-out
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 

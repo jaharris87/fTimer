@@ -97,6 +97,10 @@ if(TEST_ENABLE_OPENMP)
   list(APPEND configure_args -DFTIMER_USE_OPENMP=ON)
 endif()
 
+if(DEFINED TEST_OPENMP_ROOT AND NOT TEST_OPENMP_ROOT STREQUAL "")
+  list(APPEND configure_args -DOpenMP_ROOT=${TEST_OPENMP_ROOT})
+endif()
+
 if(DEFINED CMAKE_MAKE_PROGRAM AND NOT CMAKE_MAKE_PROGRAM STREQUAL "")
   list(APPEND configure_args -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM})
 endif()
@@ -114,6 +118,12 @@ execute_process(
   RESULT_VARIABLE producer_configure_result
 )
 if(NOT producer_configure_result EQUAL 0)
+  if(TEST_ALLOW_CONFIGURE_SKIP)
+    message(STATUS
+      "Skipping ${test_name}: producer configure failed for the optional compiler/runtime path."
+    )
+    return()
+  endif()
   message(FATAL_ERROR "Failed to configure the producer install tree.")
 endif()
 
@@ -251,6 +261,9 @@ target_link_libraries(ftimer_integer_mpi_comm_rejection PRIVATE fTimer::ftimer)
     -G "${CMAKE_GENERATOR}"
     -DCMAKE_PREFIX_PATH=${install_prefix}
   )
+  if(DEFINED TEST_OPENMP_ROOT AND NOT TEST_OPENMP_ROOT STREQUAL "")
+    list(APPEND probe_configure_args -DOpenMP_ROOT=${TEST_OPENMP_ROOT})
+  endif()
   if(DEFINED CMAKE_MAKE_PROGRAM AND NOT CMAKE_MAKE_PROGRAM STREQUAL "")
     list(APPEND probe_configure_args -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM})
   endif()
@@ -437,6 +450,9 @@ find_package(fTimer @requested_version@ CONFIG REQUIRED
     -G "${CMAKE_GENERATOR}"
     -DCMAKE_PREFIX_PATH=${prefix_path}
   )
+  if(DEFINED TEST_OPENMP_ROOT AND NOT TEST_OPENMP_ROOT STREQUAL "")
+    list(APPEND version_probe_configure_args -DOpenMP_ROOT=${TEST_OPENMP_ROOT})
+  endif()
   if(DEFINED CMAKE_MAKE_PROGRAM AND NOT CMAKE_MAKE_PROGRAM STREQUAL "")
     list(APPEND version_probe_configure_args -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM})
   endif()
@@ -571,6 +587,10 @@ set(consumer_configure_args
   -DCMAKE_PREFIX_PATH=${install_prefix}
   -DFTIMER_CONSUMER_ENABLE_MPI=${TEST_ENABLE_MPI}
 )
+
+if(DEFINED TEST_OPENMP_ROOT AND NOT TEST_OPENMP_ROOT STREQUAL "")
+  list(APPEND consumer_configure_args -DOpenMP_ROOT=${TEST_OPENMP_ROOT})
+endif()
 
 if(DEFINED CMAKE_MAKE_PROGRAM AND NOT CMAKE_MAKE_PROGRAM STREQUAL "")
   list(APPEND consumer_configure_args -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM})
