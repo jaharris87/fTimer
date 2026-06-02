@@ -283,9 +283,10 @@ behavior for that example to compile.
 
 ## Validation For This Design
 
-Because this document records a future API contract without adding public
-symbols or changing runtime behavior, validation for #238 is limited to Markdown
-and diff checks. The proposed OpenMP snippets above are intentionally not
-compile targets yet. Later implementation issues must add compiling examples and
-focused build/test coverage for the new API surface before claiming runtime API
-support.
+The original #238 design validation was limited to Markdown and diff checks.
+Issue #268 has since added the public `ftimer_openmp` module surface and focused
+compile/runtime coverage for the lifecycle and timer-catalog subset through
+`ftimer_openmp_api_smoke`, installed-package consumers, and compile-fail probes
+for unsupported positional `init` forms. The summary and hybrid-reduction
+snippets in this document remain future examples until the later #267 child
+issues add those public APIs and their validation.

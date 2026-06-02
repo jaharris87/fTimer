@@ -41,8 +41,12 @@ fTimer/
 │   ├── ftimer_summary.F90
 │   ├── ftimer_mpi.F90
 │   ├── ftimer_core_summary_bindings.F90
+│   ├── ftimer_openmp.F90
 │   └── ftimer.F90
 ├── tests/
+│   ├── test_phase0_smoke.F90
+│   ├── test_openmp_api_smoke.F90
+│   ├── test_openmp_api_diagnostics.F90
 │   ├── test_*.pf
 │   ├── mpi/
 │   └── check_*_contracts.cmake
@@ -258,7 +262,7 @@ The MPI and OpenMP enablement paths are guarded at configure time:
 
 The current test inventory is:
 
-- smoke tests in `tests/test_phase0_smoke.F90`, runtime execution of `basic_usage`, OpenMP example execution when `FTIMER_USE_OPENMP=ON`, MPI example execution when `FTIMER_USE_MPI=ON`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
+- smoke tests in `tests/test_phase0_smoke.F90` and `tests/test_openmp_api_smoke.F90`, OpenMP diagnostic stderr capture through `tests/test_openmp_api_diagnostics.F90` when `FTIMER_USE_OPENMP=ON`, runtime execution of `basic_usage`, OpenMP example execution when `FTIMER_USE_OPENMP=ON`, MPI example execution when `FTIMER_USE_MPI=ON`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
 - serial pFUnit tests for core behavior, summaries, callbacks, reset behavior, call-stack behavior, and procedural parity
 - MPI pFUnit tests under `tests/mpi/`, validated in CI with GNU Fortran against OpenMPI and MPICH
 - OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`, covering the master-thread-only carve-out rather than general threaded timing support

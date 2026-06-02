@@ -221,7 +221,7 @@ The repository includes a worked example under `examples/instrumentation_facade_
 
 ## API Surface
 
-The public API supports three stable import surfaces:
+The public API supports four stable import surfaces:
 
 - Procedural API from `use ftimer`, including `ftimer_init`, `ftimer_finalize`, `ftimer_start`, `ftimer_stop`, `ftimer_scope`, `ftimer_guard_t`, `ftimer_start_id`, `ftimer_stop_id`, `ftimer_lookup`, `ftimer_reset`, `ftimer_get_summary`, `ftimer_mpi_summary`, `ftimer_mpi_union_summary`, `ftimer_print_summary`, `ftimer_write_summary`, `ftimer_write_summary_csv`, `ftimer_print_mpi_summary`, `ftimer_write_mpi_summary`, `ftimer_write_mpi_summary_csv`, `ftimer_print_mpi_union_summary`, `ftimer_write_mpi_union_summary`, `ftimer_write_mpi_union_summary_csv`, and `ftimer_default_instance`
 - OOP API through `type(ftimer_t)` in `ftimer_core`, including explicit `start`/`stop`, the configuration methods `set_clock`, `clear_clock`, `set_callback`, and `clear_callback`, plus pointer-based scoped timing with `ftimer_oop_guard_t` and `ftimer_oop_scope`

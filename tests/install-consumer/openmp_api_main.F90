@@ -7,6 +7,8 @@ program ftimer_installed_openmp_api_consumer
    integer :: duplicate_id
    integer :: i
    integer :: ierr
+   integer :: j
+   integer :: lookup_id
    integer :: reset_id
    integer :: timer_id
    integer :: unknown_id
@@ -39,6 +41,20 @@ program ftimer_installed_openmp_api_consumer
    if (ierr /= FTIMER_ERR_UNKNOWN) error stop 8
    if (unknown_id /= 0) error stop 9
 
+   do i = 1, size(ids)
+      write (name, '("consumer_openmp_api_bulk_",i0)') i
+      call timer%register_timer(trim(name), ids(i), ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 23
+      if (ids(i) <= 0) error stop 24
+      if (ids(i) == timer_id) error stop 25
+      do j = 1, i - 1
+         if (ids(i) == ids(j)) error stop 26
+      end do
+      call timer%lookup_timer(trim(name), lookup_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 27
+      if (lookup_id /= ids(i)) error stop 28
+   end do
+
    call timer%begin_parallel_region(region, ierr=ierr)
    if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 10
 
@@ -61,31 +77,40 @@ program ftimer_installed_openmp_api_consumer
    call timer%start_id(timer_id, ierr=ierr)
    if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 17
 
-   call timer%register_timer("consumer_openmp_api_after_reset", reset_id, ierr=ierr)
-   if (ierr /= FTIMER_SUCCESS) error stop 18
-   if (reset_id == timer_id) error stop 19
-
-   do i = 1, size(ids)
+   do i = 1, 3
       write (name, '("consumer_openmp_api_bulk_",i0)') i
-      call timer%register_timer(trim(name), ids(i), ierr=ierr)
-      if (ierr /= FTIMER_SUCCESS) error stop 20
-      if (ids(i) <= 0) error stop 21
-      if (ids(i) == timer_id) error stop 22
+      call timer%lookup_timer(trim(name), lookup_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 18
+      if (lookup_id /= ids(i)) error stop 19
+      call timer%start_id(ids(i), ierr=ierr)
+      if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 20
+   end do
+
+   call timer%register_timer("consumer_openmp_api_after_reset", reset_id, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 21
+   if (reset_id == timer_id) error stop 22
+   do i = 1, size(ids)
+      if (reset_id == ids(i)) error stop 28
    end do
 
    call timer%finalize(ierr=ierr)
-   if (ierr /= FTIMER_SUCCESS) error stop 23
+   if (ierr /= FTIMER_SUCCESS) error stop 29
 
    call timer%init(config=config, ierr=ierr)
-   if (ierr /= FTIMER_SUCCESS) error stop 24
+   if (ierr /= FTIMER_SUCCESS) error stop 30
 
    call timer%start_id(timer_id, ierr=ierr)
-   if (ierr /= FTIMER_ERR_UNKNOWN) error stop 25
+   if (ierr /= FTIMER_ERR_UNKNOWN) error stop 31
+
+   do i = 1, 3
+      call timer%stop_id(ids(i), ierr=ierr)
+      if (ierr /= FTIMER_ERR_UNKNOWN) error stop 32
+   end do
 
    call timer%register_timer("consumer_openmp_api_after_reinit", reset_id, ierr=ierr)
-   if (ierr /= FTIMER_SUCCESS) error stop 26
-   if (reset_id == timer_id) error stop 27
+   if (ierr /= FTIMER_SUCCESS) error stop 33
+   if (reset_id == timer_id) error stop 34
 
    call timer%finalize(ierr=ierr)
-   if (ierr /= FTIMER_SUCCESS) error stop 28
+   if (ierr /= FTIMER_SUCCESS) error stop 35
 end program ftimer_installed_openmp_api_consumer

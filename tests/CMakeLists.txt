@@ -8,6 +8,16 @@ if(FTIMER_BUILD_SMOKE_TESTS)
   add_executable(ftimer_openmp_api_smoke test_openmp_api_smoke.F90)
   target_link_libraries(ftimer_openmp_api_smoke PRIVATE ftimer)
   add_test(NAME ftimer_openmp_api_smoke COMMAND ftimer_openmp_api_smoke)
+
+  if(FTIMER_USE_OPENMP)
+    add_executable(ftimer_openmp_api_diagnostics test_openmp_api_diagnostics.F90)
+    target_link_libraries(ftimer_openmp_api_diagnostics PRIVATE ftimer)
+    add_test(NAME ftimer_openmp_api_diagnostics
+      COMMAND ${CMAKE_COMMAND}
+        -DTEST_EXECUTABLE=$<TARGET_FILE:ftimer_openmp_api_diagnostics>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_api_diagnostics.cmake
+    )
+  endif()
 endif()
 
 function(ftimer_add_installed_consumer_test test_name test_binary_dir)

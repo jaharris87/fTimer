@@ -239,9 +239,9 @@ function(ftimer_verify_installed_artifacts)
   endif()
 endfunction()
 
-function(ftimer_expect_integer_mpi_comm_rejected probe_name probe_source)
-  set(probe_source_dir "${TEST_BINARY_DIR}/integer-mpi-comm-rejection-src-${probe_name}")
-  set(probe_build_dir "${TEST_BINARY_DIR}/integer-mpi-comm-rejection-build-${probe_name}")
+function(ftimer_expect_installed_source_rejected probe_name probe_source)
+  set(probe_source_dir "${TEST_BINARY_DIR}/source-rejection-src-${probe_name}")
+  set(probe_build_dir "${TEST_BINARY_DIR}/source-rejection-build-${probe_name}")
 
   file(REMOVE_RECURSE "${probe_source_dir}" "${probe_build_dir}")
   file(MAKE_DIRECTORY "${probe_source_dir}")
@@ -283,7 +283,7 @@ target_link_libraries(ftimer_integer_mpi_comm_rejection PRIVATE fTimer::ftimer)
   )
   if(NOT probe_configure_result EQUAL 0)
     message(FATAL_ERROR
-      "Failed to configure the installed integer-MPI-comm rejection probe '${probe_name}'.\n"
+      "Failed to configure the installed source rejection probe '${probe_name}'.\n"
       "stdout:\n${probe_configure_output}\n"
       "stderr:\n${probe_configure_error}"
     )
@@ -301,9 +301,40 @@ target_link_libraries(ftimer_integer_mpi_comm_rejection PRIVATE fTimer::ftimer)
   )
   if(probe_build_result EQUAL 0)
     message(FATAL_ERROR
-      "Installed MPI package accepted legacy integer MPI comm probe '${probe_name}'; expected the build to fail."
+      "Installed package accepted rejected source probe '${probe_name}'; expected the build to fail."
     )
   endif()
+endfunction()
+
+function(ftimer_expect_integer_mpi_comm_rejected probe_name probe_source)
+  ftimer_expect_installed_source_rejected("${probe_name}" "${probe_source}")
+endfunction()
+
+function(ftimer_expect_openmp_init_positional_rejected_cases)
+  ftimer_expect_installed_source_rejected(openmp-positional-config [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+
+   call timer%init(config)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_installed_source_rejected(openmp-positional-config-ierr [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+   integer :: ierr
+
+   call timer%init(config, ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
 endfunction()
 
 function(ftimer_expect_integer_mpi_comm_rejected_cases)
@@ -427,6 +458,33 @@ program ftimer_integer_mpi_comm_rejection
 
    legacy_comm = 2
    call timer%init(config, legacy_comm, ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(openmp-positional-config-mpi-comm [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   use mpi_f08, only: MPI_COMM_WORLD
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+
+   call timer%init(config, MPI_COMM_WORLD)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(openmp-positional-config-mpi-comm-ierr [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   use mpi_f08, only: MPI_COMM_WORLD
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+   integer :: ierr
+
+   call timer%init(config, MPI_COMM_WORLD, ierr)
 end program ftimer_integer_mpi_comm_rejection
 ]=])
 endfunction()
@@ -620,6 +678,8 @@ ftimer_check_package_version_request(
 )
 
 ftimer_verify_installed_artifacts()
+
+ftimer_expect_openmp_init_positional_rejected_cases()
 
 if(TEST_ENABLE_MPI)
   ftimer_expect_integer_mpi_comm_rejected_cases()

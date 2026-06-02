@@ -62,6 +62,8 @@ contains
       integer :: duplicate_id
       integer :: i
       integer :: ierr
+      integer :: j
+      integer :: lookup_id
       integer :: old_id
       integer :: reset_id
       integer :: timer_id
@@ -101,56 +103,85 @@ contains
          call expect_status(ierr, FTIMER_SUCCESS, 18)
          call expect_positive(ids(i), 19)
          if (ids(i) == timer_id) error stop 20
+         do j = 1, i - 1
+            if (ids(i) == ids(j)) error stop 21
+         end do
+         call timer%lookup_timer(trim(name), lookup_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 22)
+         if (lookup_id /= ids(i)) error stop 23
       end do
 
       call timer%lookup_timer("work", old_id, ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 21)
-      if (old_id /= timer_id) error stop 22
+      call expect_status(ierr, FTIMER_SUCCESS, 24)
+      if (old_id /= timer_id) error stop 25
 
       call timer%reset(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 23)
+      call expect_status(ierr, FTIMER_SUCCESS, 26)
 
       call timer%lookup_timer("work", reset_id, ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 24)
-      if (reset_id /= timer_id) error stop 25
+      call expect_status(ierr, FTIMER_SUCCESS, 27)
+      if (reset_id /= timer_id) error stop 28
+
+      do i = 1, 3
+         write (name, '("bulk_",i0)') i
+         call timer%lookup_timer(trim(name), lookup_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 29)
+         if (lookup_id /= ids(i)) error stop 30
+         call timer%start_id(ids(i), ierr=ierr)
+         call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 31)
+      end do
 
       call timer%start_id(timer_id, ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 26)
+      call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 32)
 
       call timer%register_timer("after_reset", reset_id, ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 27)
-      if (reset_id == timer_id) error stop 28
+      call expect_status(ierr, FTIMER_SUCCESS, 33)
+      if (reset_id == timer_id) error stop 34
+      do i = 1, size(ids)
+         if (reset_id == ids(i)) error stop 35
+      end do
 
       call timer%begin_parallel_region(region, ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 29)
+      call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 36)
 
       call timer%end_parallel_region(region, ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 30)
+      call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 37)
 
       call timer%finalize(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 31)
+      call expect_status(ierr, FTIMER_SUCCESS, 38)
 
       call timer%init(config=config, ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 32)
+      call expect_status(ierr, FTIMER_SUCCESS, 39)
 
       call timer%start_id(timer_id, ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 33)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 40)
+
+      do i = 1, 3
+         call timer%stop_id(ids(i), ierr=ierr)
+         call expect_status(ierr, FTIMER_ERR_UNKNOWN, 41)
+      end do
 
       call timer%register_timer("after_reinit", reset_id, ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 34)
-      if (reset_id == timer_id) error stop 35
+      call expect_status(ierr, FTIMER_SUCCESS, 42)
+      if (reset_id == timer_id) error stop 43
+      do i = 1, size(ids)
+         if (reset_id == ids(i)) error stop 44
+      end do
 
       call timer%finalize(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 36)
+      call expect_status(ierr, FTIMER_SUCCESS, 45)
    end subroutine check_catalog_lifecycle
 
 #ifdef FTIMER_USE_OPENMP
    subroutine check_parallel_rejections()
       integer :: ierr
+      integer :: local_id
       integer :: timer_id
+      integer :: master_seen
       integer :: worker_bad
       integer :: worker_seen
       type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: local_region
       type(ftimer_openmp_t) :: timer
 
       call omp_set_dynamic(.false.)
@@ -166,9 +197,27 @@ contains
 
       worker_bad = 0
       worker_seen = 0
+      master_seen = 0
 
-!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
-      if (omp_get_thread_num() /= 0) then
+!$omp parallel num_threads(2) default(shared) private(ierr, local_id, local_region) &
+!$omp& reduction(+:worker_bad, worker_seen, master_seen)
+      if (omp_get_thread_num() == 0) then
+         master_seen = master_seen + 1
+
+         local_id = -1
+         call timer%register_timer("parallel_master_created", local_id, ierr=ierr)
+         if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
+         if (local_id /= 0) worker_bad = worker_bad + 1
+
+         call timer%reset(ierr=ierr)
+         if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
+
+         call timer%finalize(ierr=ierr)
+         if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
+
+         call timer%begin_parallel_region(local_region, ierr=ierr)
+         if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
+      else
          worker_seen = worker_seen + 1
 
          call timer%start_id(timer_id, ierr=ierr)
@@ -181,8 +230,16 @@ contains
       end if
 !$omp end parallel
 
+      if (master_seen /= 1) error stop 42
       if (worker_seen <= 0) error stop 42
       if (worker_bad /= 0) error stop 43
+
+      call timer%lookup_timer("parallel_work", local_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 44)
+      if (local_id /= timer_id) error stop 45
+
+      call timer%lookup_timer("parallel_master_created", local_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 46)
 
       call timer%finalize()
    end subroutine check_parallel_rejections
