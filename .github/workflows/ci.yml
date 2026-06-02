@@ -262,9 +262,10 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   test-mpi-mpich:
-    runs-on: ubuntu-latest
-    env:
-      UCX_TLS: tcp,self,sm
+    # Ubuntu 24.04's apt MPICH package launches Hydra jobs as singleton
+    # MPI_COMM_WORLD ranks because libmpich and mpiexec.mpich disagree on
+    # PMI/PMIx support. Keep the pFUnit path on 22.04 until that package is fixed.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
 
