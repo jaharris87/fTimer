@@ -12,6 +12,13 @@ set(FTIMER_SOURCES
 add_library(ftimer ${FTIMER_SOURCES})
 add_library(fTimer::ftimer ALIAS ftimer)
 
+# fTimer uses allocatable components and derived-type assignment throughout
+# its public result types and runtime storage. nvfortran needs the Fortran 2003
+# allocatable assignment mode for that code path.
+set(FTIMER_NVHPC_ALLOCATABLE_OPTION
+  "$<$<COMPILE_LANG_AND_ID:Fortran,NVHPC>:-Mallocatable=03>"
+)
+
 set_target_properties(ftimer PROPERTIES
   Fortran_MODULE_DIRECTORY "${FTIMER_PUBLIC_MODULE_DIR}"
 )
@@ -21,6 +28,8 @@ target_include_directories(ftimer
     $<BUILD_INTERFACE:${FTIMER_PUBLIC_MODULE_DIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ftimer>
 )
+
+target_compile_options(ftimer PUBLIC ${FTIMER_NVHPC_ALLOCATABLE_OPTION})
 
 if(FTIMER_USE_MPI)
   target_compile_definitions(ftimer PUBLIC FTIMER_USE_MPI)
@@ -44,6 +53,8 @@ if(FTIMER_BUILD_TESTS)
     PUBLIC
       $<BUILD_INTERFACE:${FTIMER_TEST_LIBRARY_MODULE_DIR}>
   )
+
+  target_compile_options(ftimer_test PUBLIC ${FTIMER_NVHPC_ALLOCATABLE_OPTION})
 
   if(FTIMER_USE_MPI)
     target_compile_definitions(ftimer_test PUBLIC FTIMER_USE_MPI)

@@ -358,7 +358,7 @@ The smoke-test path also runs the enabled and disabled instrumentation facade ex
 
 Supported toolchain matrix:
 
-- Serial smoke/library build: GNU Fortran and LLVM Flang are validated in automation
+- Serial smoke/library build: GNU Fortran, LLVM Flang, and NVIDIA NVHPC `nvfortran` are validated in automation
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
 - MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH; MPICH coverage is smoke/install-consumer only, while MPI pFUnit coverage remains on OpenMPI
 - OpenMP: GNU Fortran only for the documented master-thread-only carve-out

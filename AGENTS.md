@@ -60,7 +60,7 @@ configure command as a convenience for a clean reconfigure.
 
 Supported toolchain matrix:
 
-- Serial smoke/library build: GNU Fortran and LLVM Flang are the validated automation paths.
+- Serial smoke/library build: GNU Fortran, LLVM Flang, and NVIDIA NVHPC `nvfortran` are the validated automation paths.
 - Serial + pFUnit tests: GNU Fortran (`gfortran`) with a pFUnit installation built for the same compiler/toolchain.
 - MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH. MPICH coverage is smoke/install-consumer only; MPI pFUnit coverage remains on OpenMPI. `FTIMER_USE_MPI=ON` now runs a configure-time `mpi_f08` probe and fails early if the active compiler cannot consume the discovered MPI module files.
 - OpenMP: GNU Fortran (`gfortran`) only for the documented/supported path.
@@ -204,7 +204,7 @@ For GitHub interactions in Codex threads, use a connector-first workflow.
 ### Test Infrastructure
 
 - **Current default**: smoke-test baseline (`FTIMER_BUILD_SMOKE_TESTS=ON`, `FTIMER_BUILD_TESTS=OFF`)
-- **Build-contract smoke coverage**: the smoke baseline now also runs `examples/basic_usage`, builds and executes the installed-package consumer fixture, exercises supported feature-enabled installed-consumer paths when their compilers are available, and includes the script-driven configure/make contract checks. These tests skip cleanly when the required external toolchain pieces are not present, and CI validates serial smoke with both GNU Fortran and LLVM Flang.
+- **Build-contract smoke coverage**: the smoke baseline now also runs `examples/basic_usage`, builds and executes the installed-package consumer fixture, exercises supported feature-enabled installed-consumer paths when their compilers are available, and includes the script-driven configure/make contract checks. These tests skip cleanly when the required external toolchain pieces are not present, and CI validates serial smoke with GNU Fortran, LLVM Flang, and NVIDIA NVHPC `nvfortran`.
 - **Behavioral suite**: pFUnit, enabled explicitly with `-DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=...`
 - **Mock clock**: Module-level `fake_time` variable with `mock_clock()` function. When configuring the mock clock on an already initialized timer, set `fake_time` to the intended summary-window start before `call timer%set_clock(mock_clock)`, or use `attach_mock_clock()` which does that setup. Advance deterministically: set `fake_time`, call start/stop, assert exact accumulated times.
 - **Golden output tests**: `test_summary.pf` compares `print_summary()` output against expected text.

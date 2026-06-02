@@ -71,6 +71,68 @@ jobs:
       - name: Smoke test
         run: ctest --test-dir build --output-on-failure
 
+  build-serial-nvhpc:
+    runs-on: ubuntu-latest
+    env:
+      NVHPC_VERSION: 26.3
+      NVHPC_APT_PACKAGE: nvhpc-26-3
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install NVHPC dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates cmake curl gfortran gnupg
+          curl -fsSL https://developer.download.nvidia.com/hpc-sdk/ubuntu/DEB-GPG-KEY-NVIDIA-HPC-SDK \
+            | sudo gpg --dearmor --yes -o /usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg] https://developer.download.nvidia.com/hpc-sdk/ubuntu/amd64 /' \
+            | sudo tee /etc/apt/sources.list.d/nvhpc.list
+          sudo apt-get update -y
+          sudo apt-get install -y "${NVHPC_APT_PACKAGE}"
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Configure NVHPC environment
+        run: |
+          nvarch="$(uname -s)_$(uname -m)"
+          echo "NVARCH=${nvarch}" >> "$GITHUB_ENV"
+          echo "NVCOMPILERS=/opt/nvidia/hpc_sdk" >> "$GITHUB_ENV"
+          echo "/opt/nvidia/hpc_sdk/${nvarch}/${NVHPC_VERSION}/compilers/bin" >> "$GITHUB_PATH"
+
+      - name: Show NVHPC compiler
+        run: |
+          nvfortran --version
+          cmake --version
+
+      - name: Configure (NVHPC serial)
+        run: FC=nvfortran cmake -B build
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Verify serial smoke test registration
+        run: |
+          for test_name in \
+            ftimer_phase0_smoke \
+            ftimer_installed_package_consumer \
+            ftimer_installed_package_consumer_absolute_includedir \
+            ftimer_absolute_includedir_destdir_install \
+            ftimer_basic_usage_smoke \
+            ftimer_instrumentation_facade_enabled_smoke \
+            ftimer_instrumentation_facade_disabled_smoke; do
+            test_listing="$(ctest --test-dir build -N -R "^${test_name}$")"
+            echo "${test_listing}"
+            if [[ "${test_listing}" != *"Test #"* ]]; then
+              echo "::error::CTest target not registered: ${test_name}"
+              ctest --test-dir build -N
+              exit 1
+            fi
+          done
+
+      - name: Serial smoke and installed-consumer checks
+        run: |
+          ctest --test-dir build --output-on-failure --no-tests=error -R '^(ftimer_phase0_smoke|ftimer_installed_package_consumer|ftimer_installed_package_consumer_absolute_includedir|ftimer_absolute_includedir_destdir_install|ftimer_basic_usage_smoke|ftimer_instrumentation_facade_enabled_smoke|ftimer_instrumentation_facade_disabled_smoke)$'
+
   build-mpi:
     runs-on: ubuntu-latest
     steps:

@@ -221,7 +221,7 @@ The repository supports three distinct validation layers, and the architecture d
 
 Supported local build paths today are:
 
-- serial smoke/library build validated with GNU Fortran and LLVM Flang
+- serial smoke/library build validated with GNU Fortran, LLVM Flang, and NVIDIA NVHPC `nvfortran`
 - serial pFUnit tests with `gfortran` plus a matching pFUnit install
 - MPI builds through GNU Fortran MPI wrapper compilers, with CI smoke/install-consumer coverage for OpenMPI and MPICH
 - OpenMP builds with `gfortran`
@@ -259,6 +259,7 @@ The default repository baseline is still the smoke/build-contract path. The full
 
 - `build-serial`
 - `build-serial-flang`
+- `build-serial-nvhpc`
 - `build-mpi`
 - `build-mpi-mpich`
 - `test-serial`
@@ -269,7 +270,7 @@ The default repository baseline is still the smoke/build-contract path. The full
 - `build-bench`
 - `lint`
 
-That means pFUnit-backed serial, OpenMPI MPI, and OpenMP test jobs are part of current CI now; they are not deferred future work. MPICH coverage is currently smoke/install-consumer only: a GitHub-hosted MPICH pFUnit trial in issue #245 launched the test executables but pFUnit reported `Insufficient processes to run this test. (PE=0)` under the MPICH launcher. A GitHub-hosted NVHPC 26.3 serial smoke/install-consumer trial installed and built successfully, but the generated executables aborted at runtime with `DEALLOCATE: memory at (nil) not allocated`, so NVHPC validation remains deferred rather than claimed. The contract-regression job also verifies the configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
+That means pFUnit-backed serial, OpenMPI MPI, and OpenMP test jobs are part of current CI now; they are not deferred future work. MPICH coverage is currently smoke/install-consumer only: a GitHub-hosted MPICH pFUnit trial in issue #245 launched the test executables but pFUnit reported `Insufficient processes to run this test. (PE=0)` under the MPICH launcher. NVHPC coverage is currently serial smoke/install-consumer only: a first GitHub-hosted NVHPC 26.3 trial installed and built successfully but aborted at runtime with `DEALLOCATE: memory at (nil) not allocated` until the fTimer CMake target passed nvfortran's documented Fortran 2003 allocatable assignment mode (`-Mallocatable=03`). The contract-regression job also verifies the configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
 
 ## Maintainer Workflow
 
