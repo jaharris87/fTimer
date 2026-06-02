@@ -626,21 +626,28 @@ contains
       integer :: trimmed_len
       character(len=FTIMER_STATUS_MESSAGE_LEN) :: message
 
+      call start_trace_mark("start_impl: enter")
       if (present(activation_token)) activation_token = 0_int64
 
       if (.not. self%initialized) then
+         call start_trace_mark("start_impl: not initialized")
          call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer start before init")
          return
       end if
 
       call normalize_name(name, trimmed_len, status, message)
+      call start_trace_mark("start_impl: after normalize_name")
       if (status /= FTIMER_SUCCESS) then
          call report_status(ierr, status, trim(message))
          return
       end if
 
+      call start_trace_mark("start_impl: before find_or_create_segment")
       segment_idx = self%find_or_create_segment(name(1:trimmed_len))
+      call start_trace_mark("start_impl: after find_or_create_segment")
+      call start_trace_mark("start_impl: before start_segment_impl")
       call start_segment_impl(self, segment_idx, ierr=ierr, activation_token=activation_token)
+      call start_trace_mark("start_impl: after start_segment_impl")
    end subroutine start_impl
 
    subroutine stop(self, name, ierr)
@@ -733,29 +740,42 @@ contains
       integer(int64) :: token
       real(wp) :: now
 
+      call start_trace_mark("start_segment_impl: enter")
       if (present(activation_token)) activation_token = 0_int64
 
+      call start_trace_mark("start_segment_impl: before find_or_create_segment_context")
       ctx = find_or_create_segment_context(self, segment_idx, self%call_stack)
+      call start_trace_mark("start_segment_impl: after find_or_create_segment_context")
+      call start_trace_mark("start_segment_impl: before ensure_context_storage")
       call ensure_context_storage(self%segments(segment_idx), ctx)
+      call start_trace_mark("start_segment_impl: after ensure_context_storage")
 
       if (self%segments(segment_idx)%call_count(ctx) >= huge(0_int64)) then
          call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer start call count overflow")
          return
       end if
 
+      call start_trace_mark("start_segment_impl: before create_activation_token")
       token = create_activation_token(self)
+      call start_trace_mark("start_segment_impl: after create_activation_token")
+      call start_trace_mark("start_segment_impl: before call_stack push")
       call self%call_stack%push(segment_idx, token)
+      call start_trace_mark("start_segment_impl: after call_stack push")
       now = self%wtime()
+      call start_trace_mark("start_segment_impl: after wtime")
       self%segments(segment_idx)%start_time(ctx) = now
       self%segments(segment_idx)%call_count(ctx) = self%segments(segment_idx)%call_count(ctx) + 1_int64
       self%segments(segment_idx)%is_running(ctx) = .true.
+      call start_trace_mark("start_segment_impl: after state updates")
 
       if (associated(self%on_event)) then
          call self%on_event(public_segment_id(self, segment_idx), ctx, FTIMER_EVENT_START, now, self%user_data)
       end if
+      call start_trace_mark("start_segment_impl: after callback check")
 
       if (present(activation_token)) activation_token = token
       if (present(ierr)) ierr = FTIMER_SUCCESS
+      call start_trace_mark("start_segment_impl: exit")
    end subroutine start_segment_impl
 
    subroutine stop_id(self, id, ierr)
@@ -1063,20 +1083,33 @@ contains
       character(len=*), intent(in) :: name
       integer :: new_idx
 
+      call start_trace_mark("find_or_create_segment: enter")
       idx = find_segment_index(self, name)
+      call start_trace_mark("find_or_create_segment: after find_segment_index")
       if (idx > 0) return
 
       new_idx = self%num_segments + 1
+      call start_trace_mark("find_or_create_segment: before ensure_segment_capacity")
       call ensure_segment_capacity(self, new_idx)
+      call start_trace_mark("find_or_create_segment: after ensure_segment_capacity")
+      call start_trace_mark("find_or_create_segment: before assign name")
       call assign_allocatable_string(self%segments(new_idx)%name, name)
+      call start_trace_mark("find_or_create_segment: after assign name")
       self%segment_ids(new_idx) = allocate_segment_id(self)
+      call start_trace_mark("find_or_create_segment: after allocate_segment_id")
       call ensure_segment_name_index(self, new_idx)
+      call start_trace_mark("find_or_create_segment: after ensure_segment_name_index")
       call ensure_segment_id_index(self, new_idx)
+      call start_trace_mark("find_or_create_segment: after ensure_segment_id_index")
 
       self%num_segments = new_idx
+      call start_trace_mark("find_or_create_segment: before insert_segment_name_slot")
       call insert_segment_name_slot(self%segment_name_slots, name, new_idx)
+      call start_trace_mark("find_or_create_segment: after insert_segment_name_slot")
       call insert_segment_id_slot(self%segment_id_slots, self%segment_ids(new_idx), new_idx)
+      call start_trace_mark("find_or_create_segment: after insert_segment_id_slot")
       idx = new_idx
+      call start_trace_mark("find_or_create_segment: exit")
    end function find_or_create_segment
 
    subroutine assign_allocatable_string(value, text)
@@ -1761,6 +1794,20 @@ contains
          write (error_unit, '(a)') trim(message)
       end if
    end subroutine report_status
+
+   subroutine start_trace_mark(message)
+      character(len=*), intent(in) :: message
+      character(len=8) :: enabled
+      integer :: length
+      integer :: status
+
+      call get_environment_variable("FTIMER_START_TRACE", enabled, length=length, status=status)
+      if ((status /= 0) .or. (length <= 0)) return
+      if (enabled(1:1) == '0') return
+
+      write (error_unit, '(a)') "ftimer-core: "//message
+      flush (error_unit)
+   end subroutine start_trace_mark
 
    logical function stack_contains(stack, id) result(found)
       type(ftimer_call_stack_t), intent(in) :: stack

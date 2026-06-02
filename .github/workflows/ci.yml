@@ -131,6 +131,7 @@ jobs:
 
       - name: Diagnose phase0 smoke with NVHPC runtime traceback
         env:
+          FTIMER_START_TRACE: "1"
           NVCOMPILER_TERM: trace,abort
         run: ./build/tests/ftimer_phase0_smoke
 
