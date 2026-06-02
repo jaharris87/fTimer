@@ -14,7 +14,7 @@ function(ftimer_add_installed_consumer_test test_name test_binary_dir)
     INSTALL_ONLY
     USE_DESTDIR
   )
-  set(oneValueArgs INSTALL_INCLUDEDIR REQUIRED_COMPILER_NAMES)
+  set(oneValueArgs INSTALL_INCLUDEDIR OPENMP_ROOT REQUIRED_COMPILER_NAMES)
   cmake_parse_arguments(FTIMER_CONSUMER "${options}" "${oneValueArgs}" "" ${ARGN})
 
   add_test(NAME ${test_name}
@@ -34,6 +34,7 @@ function(ftimer_add_installed_consumer_test test_name test_binary_dir)
       -DTEST_USE_DESTDIR=${FTIMER_CONSUMER_USE_DESTDIR}
       -DTEST_ENABLE_MPI=${FTIMER_CONSUMER_ENABLE_MPI}
       -DTEST_ENABLE_OPENMP=${FTIMER_CONSUMER_ENABLE_OPENMP}
+      -DTEST_OPENMP_ROOT=${FTIMER_CONSUMER_OPENMP_ROOT}
       -DTEST_EXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
       -DTEST_PACKAGE_VERSION=${PROJECT_VERSION}
       -DTEST_PACKAGE_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
@@ -130,12 +131,29 @@ if(FTIMER_BUILD_SMOKE_TESTS)
     ENABLE_OPENMP
   )
 
+  if(FTIMER_USE_OPENMP)
+    set(ftimer_openmp_flang_consumer_args
+      REQUIRED_COMPILER_NAMES flang-19,flang-new-19,flang-new,flang
+      ENABLE_OPENMP
+    )
+    if(DEFINED OpenMP_ROOT AND NOT OpenMP_ROOT STREQUAL "")
+      list(APPEND ftimer_openmp_flang_consumer_args OPENMP_ROOT ${OpenMP_ROOT})
+    endif()
+
+    ftimer_add_installed_consumer_test(
+      ftimer_installed_package_consumer_openmp_flang
+      ${CMAKE_CURRENT_BINARY_DIR}/installed_package_consumer_openmp_flang
+      ${ftimer_openmp_flang_consumer_args}
+    )
+  endif()
+
   add_test(NAME ftimer_configure_contracts
     COMMAND ${CMAKE_COMMAND}
       -DREPO_ROOT=${CMAKE_SOURCE_DIR}
       -DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/configure_contracts
       -DCMAKE_GENERATOR=${CMAKE_GENERATOR}
       -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+      -DFTIMER_REQUIRE_FLANG_OPENMP_CONTRACT=${FTIMER_REQUIRE_FLANG_OPENMP_CONTRACT}
       -P ${CMAKE_CURRENT_SOURCE_DIR}/check_configure_contracts.cmake
   )
 

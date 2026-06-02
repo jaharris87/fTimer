@@ -44,7 +44,7 @@ then require GitHub CI to pass before tagging.
 | Smoke/install path | Yes |
 | Serial pFUnit path | Yes when pFUnit is available |
 | MPI path | Yes when MPI and matching pFUnit are available |
-| OpenMP carve-out | Yes when OpenMP and matching pFUnit are available |
+| OpenMP carve-out | Yes: GNU pFUnit guard coverage when OpenMP and matching pFUnit are available; LLVM Flang smoke/example coverage when validating the OpenMP compiler matrix |
 | Bench harness | Yes for hot-path or summary-performance changes |
 | Formatting | Yes for source/test/example changes |
 | Diff hygiene | Yes |
@@ -83,6 +83,16 @@ FC=gfortran cmake -B build-openmp \
   -DPFUNIT_DIR=/path/to/pfunit
 cmake --build build-openmp
 cmake -E chdir build-openmp ctest --output-on-failure
+
+FC=flang-19 cmake -B build-openmp-flang \
+  -DFTIMER_USE_OPENMP=ON \
+  -DFTIMER_BUILD_TESTS=OFF
+cmake --build build-openmp-flang
+cmake -E chdir build-openmp-flang ctest --output-on-failure \
+  -R '^(ftimer_openmp_example_smoke|ftimer_installed_package_consumer_openmp_flang)$'
+
+Add `-DOpenMP_ROOT=/path/to/libomp` on LLVM Flang platforms where CMake does
+not discover the OpenMP runtime automatically.
 
 cmake -S . -B build-bench \
   -DFTIMER_BUILD_BENCH=ON \

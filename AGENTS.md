@@ -69,6 +69,7 @@ Supported toolchain matrix:
 - Serial + pFUnit tests: GNU Fortran (`gfortran`) with a pFUnit installation built for the same compiler/toolchain.
 - MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH. Smoke/install-consumer coverage runs for both, and MPI pFUnit coverage runs for OpenMPI plus MPICH on hosted Ubuntu 22.04 with a matching MPICH-built pFUnit. `FTIMER_USE_MPI=ON` now runs a configure-time `mpi_f08` probe and fails early if the active compiler cannot consume the discovered MPI module files.
 - OpenMP: GNU Fortran (`gfortran`) with pFUnit guard coverage, plus LLVM Flang smoke/example coverage for the documented master-thread-only carve-out.
+  LLVM Flang OpenMP validation requires CMake 3.24 or newer so CMake reports compiler ID `LLVMFlang`.
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 
@@ -258,6 +259,7 @@ The native Codex trigger comments are intentionally posted as single-line `@code
 
 - **`FTIMER_USE_MPI`** (CMake option, default OFF): Enables MPI support. When ON, `MPI_Wtime()` is used as the clock source and `mpi_summary()` / `mpi_union_summary()` can populate cross-rank fields. Use MPI-enabled fTimer only after `MPI_Init` and before `MPI_Finalize`. The supported path is an MPI wrapper compiler such as `mpifort`; configure now fails early if the active compiler cannot compile a minimal `mpi_f08` probe against the discovered MPI toolchain. When OFF, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI result objects; they do not fall back to local summaries.
 - **`FTIMER_USE_OPENMP`** (CMake option, default OFF): Enables limited `!$omp master` guards around the guarded `ftimer_core` entry points. This is master-thread-only protection, not full thread safety. The documented/supported build paths are GNU Fortran (`gfortran`) and LLVM Flang after CMake resolves `OpenMP::OpenMP_Fortran` and fTimer's configure-time OpenMP master-thread probe passes.
+- **`FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK`** (CMake option, default OFF): Advanced escape hatch for cross-compiling or execution-restricted package builds. It may be set only after independently validating equivalent OpenMP master-thread runtime semantics for the selected compiler/runtime pair.
 - **`FTIMER_BUILD_SMOKE_TESTS`** (CMake option, default ON): Enables the smoke-test baseline, including install/export consumer verification and the script-driven build-contract regression checks when their toolchain prerequisites are available.
 - **`FTIMER_BUILD_TESTS`** (CMake option, default OFF): Enables the pFUnit-backed behavioral and MPI test suites.
 - **`CMAKE_INSTALL_PREFIX`**: Where `make install` places the library and module files.

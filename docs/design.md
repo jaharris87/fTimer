@@ -240,13 +240,13 @@ The MPI and OpenMP enablement paths are guarded at configure time:
 
 - `FTIMER_USE_MPI=ON` requires a compiler/toolchain pair that can compile a minimal `mpi_f08` probe against the discovered MPI installation.
 - MPI builds also require the same `mpi_f08` path to compile the `MPI_Type_match_size`/`MPI_ERRORS_RETURN` validation calls used to select reduction datatypes for `real(wp)` and `integer(int64)`.
-- `FTIMER_USE_OPENMP=ON` is admitted only for validated compiler IDs (`GNU` and `LLVMFlang` today), requires `OpenMP::OpenMP_Fortran` to resolve successfully, and runs a configure-time probe that compiles, links, and executes `omp_lib`, a two-thread parallel region, and `!$omp master` semantics.
+- `FTIMER_USE_OPENMP=ON` is admitted only for validated compiler IDs (`GNU` and `LLVMFlang` today), requires `OpenMP::OpenMP_Fortran` to resolve successfully, and runs a configure-time probe that compiles, links, and executes `omp_lib`, a two-thread parallel region, and `!$omp master` semantics. LLVM Flang OpenMP validation requires CMake 3.24 or newer so CMake reports compiler ID `LLVMFlang`; cross-compiling or execution-restricted package builds may use the advanced `FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK` option only after independently validating equivalent runtime semantics for the selected compiler/runtime pair.
 
 ### Test Categories
 
 The current test inventory is:
 
-- smoke tests in `tests/test_phase0_smoke.F90`, runtime execution of `basic_usage`, MPI example execution when `FTIMER_USE_MPI=ON`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
+- smoke tests in `tests/test_phase0_smoke.F90`, runtime execution of `basic_usage`, OpenMP example execution when `FTIMER_USE_OPENMP=ON`, MPI example execution when `FTIMER_USE_MPI=ON`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
 - serial pFUnit tests for core behavior, summaries, callbacks, reset behavior, call-stack behavior, and procedural parity
 - MPI pFUnit tests under `tests/mpi/`, validated in CI with GNU Fortran against OpenMPI and MPICH
 - OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`, covering the master-thread-only carve-out rather than general threaded timing support

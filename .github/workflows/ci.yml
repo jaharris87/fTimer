@@ -497,7 +497,7 @@ jobs:
         run: cmake --build build -j$(nproc)
 
       - name: OpenMP example smoke test
-        run: ctest --test-dir build --output-on-failure --no-tests=error -R '^ftimer_openmp_example_smoke$'
+        run: ctest --test-dir build --output-on-failure --no-tests=error -R '^(ftimer_openmp_example_smoke|ftimer_installed_package_consumer_openmp_flang)$'
 
   build-contract-regressions:
     runs-on: ubuntu-latest
@@ -512,7 +512,7 @@ jobs:
       # These checks cover the configure-time negative gates and the Makefile
       # wrapper defaults that Issue #51 tracks as automated regressions.
       - name: Configure contract checks
-        run: cmake -B build-contract -DFTIMER_BUILD_EXAMPLES=OFF
+        run: cmake -B build-contract -DFTIMER_BUILD_EXAMPLES=OFF -DFTIMER_REQUIRE_FLANG_OPENMP_CONTRACT=ON
 
       - name: Run contract regression tests
         run: ctest --test-dir build-contract --output-on-failure -R "ftimer_(configure|make)_.*contracts"

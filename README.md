@@ -320,6 +320,7 @@ Minimum requirements:
 - pFUnit only when `FTIMER_BUILD_TESTS=ON`
 - An MPI wrapper/compiler pair only when `FTIMER_USE_MPI=ON`
 - GNU Fortran or LLVM Flang with a discoverable OpenMP runtime when `FTIMER_USE_OPENMP=ON`
+- CMake 3.24 or newer for the LLVM Flang OpenMP path
 
 ```bash
 # Smoke-test path (includes install/export consumer verification)
@@ -361,6 +362,10 @@ make test
 
 If CMake cannot discover LLVM Flang's OpenMP runtime automatically, pass
 `-DOpenMP_ROOT=/path/to/libomp` for that toolchain.
+Cross-compiling or execution-restricted package builds may set
+`-DFTIMER_OPENMP_ASSUME_MASTER_PROBE_OK=ON` only after independently validating
+equivalent OpenMP master-thread runtime semantics for the selected
+compiler/runtime pair.
 
 The smoke-test path also runs the enabled and disabled instrumentation facade examples so the documented compile-out strategy stays buildable.
 

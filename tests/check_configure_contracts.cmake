@@ -84,6 +84,33 @@ function(ftimer_expect_configure_success label compiler)
   endif()
 endfunction()
 
+function(ftimer_try_configure_success out_var label compiler)
+  set(extra_args ${ARGN})
+  set(build_dir "${TEST_BINARY_DIR}/${label}")
+
+  file(REMOVE_RECURSE "${build_dir}")
+
+  ftimer_append_common_configure_args(configure_args)
+  list(APPEND configure_args
+    -B "${build_dir}"
+    -DCMAKE_Fortran_COMPILER=${compiler}
+  )
+  list(APPEND configure_args ${extra_args})
+
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" ${configure_args}
+    RESULT_VARIABLE configure_result
+    OUTPUT_VARIABLE configure_stdout
+    ERROR_VARIABLE configure_stderr
+  )
+
+  if(configure_result EQUAL 0)
+    set(${out_var} TRUE PARENT_SCOPE)
+  else()
+    set(${out_var} FALSE PARENT_SCOPE)
+  endif()
+endfunction()
+
 function(ftimer_try_configure_failure out_var label compiler required_text)
   set(extra_args ${ARGN})
   set(build_dir "${TEST_BINARY_DIR}/${label}")
@@ -184,6 +211,31 @@ if(NOT ftimer_root_cmake MATCHES "FTIMER_VALIDATED_OPENMP_COMPILER_IDS[^\n]*GNU[
     "FTIMER_USE_OPENMP=ON configure coverage must keep the validated compiler-ID policy explicit for GNU and LLVMFlang."
   )
 endif()
+string(FIND
+  "${ftimer_root_cmake}"
+  "if(NOT CMAKE_Fortran_COMPILER_ID IN_LIST FTIMER_VALIDATED_OPENMP_COMPILER_IDS)"
+  ftimer_openmp_compiler_gate_pos
+)
+string(FIND
+  "${ftimer_root_cmake}"
+  "find_package(OpenMP COMPONENTS Fortran)"
+  ftimer_openmp_find_package_pos
+)
+if(ftimer_openmp_compiler_gate_pos EQUAL -1)
+  message(FATAL_ERROR
+    "FTIMER_USE_OPENMP=ON configure coverage must enforce the validated compiler-ID gate."
+  )
+endif()
+if(ftimer_openmp_find_package_pos EQUAL -1)
+  message(FATAL_ERROR
+    "FTIMER_USE_OPENMP=ON configure coverage must still discover OpenMP::OpenMP_Fortran."
+  )
+endif()
+if(ftimer_openmp_compiler_gate_pos GREATER ftimer_openmp_find_package_pos)
+  message(FATAL_ERROR
+    "FTIMER_USE_OPENMP=ON must reject unvalidated compiler IDs before OpenMP runtime discovery."
+  )
+endif()
 if(NOT ftimer_root_cmake MATCHES "ftimer_try_run_openmp_master_probe")
   message(FATAL_ERROR
     "FTIMER_USE_OPENMP=ON configure coverage must run fTimer's OpenMP master-thread capability probe."
@@ -227,11 +279,22 @@ if(ftimer_flang_compiler)
     list(APPEND ftimer_flang_openmp_args -DOpenMP_ROOT=/usr/lib/llvm-19)
   endif()
 
-  ftimer_expect_configure_success(
+  ftimer_try_configure_success(
+    flang_openmp_configure_ok
     openmp_allows_validated_flang
     "${ftimer_flang_compiler}"
     ${ftimer_flang_openmp_args}
   )
+
+  if(NOT flang_openmp_configure_ok AND FTIMER_REQUIRE_FLANG_OPENMP_CONTRACT)
+    message(FATAL_ERROR
+      "Required LLVM Flang OpenMP configure success regression failed. Ensure the CI contract job installs libomp and passes a usable OpenMP_ROOT when needed."
+    )
+  elseif(NOT flang_openmp_configure_ok)
+    message(STATUS
+      "Skipping LLVM Flang OpenMP configure success regression: Flang is present, but CMake could not configure fTimer with the locally discoverable OpenMP runtime."
+    )
+  endif()
 else()
   message(STATUS
     "Skipping LLVM Flang OpenMP configure success regression: flang-19/flang-new/flang is not available on PATH."

@@ -115,18 +115,57 @@ program ftimer_openmp_master_probe
 end program ftimer_openmp_master_probe
 ]=])
 
+  try_compile(_ftimer_openmp_compile_ok
+    "${CMAKE_BINARY_DIR}/CMakeFiles/ftimer_openmp_master_probe_compile"
+    SOURCES "${_ftimer_openmp_probe_src}"
+    LINK_LIBRARIES OpenMP::OpenMP_Fortran
+    OUTPUT_VARIABLE _ftimer_openmp_compile_output
+  )
+
+  if(NOT _ftimer_openmp_compile_ok)
+    string(CONCAT _ftimer_openmp_details
+      "compile_result='${_ftimer_openmp_compile_ok}'\n"
+      "compile_output:\n${_ftimer_openmp_compile_output}"
+    )
+    set(${out_var} FALSE PARENT_SCOPE)
+    set(${details_var} "${_ftimer_openmp_details}" PARENT_SCOPE)
+    return()
+  endif()
+
+  if(FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK)
+    string(CONCAT _ftimer_openmp_details
+      "compile_result='${_ftimer_openmp_compile_ok}'\n"
+      "run_result='assumed by FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK'\n"
+      "compile_output:\n${_ftimer_openmp_compile_output}"
+    )
+    set(${out_var} TRUE PARENT_SCOPE)
+    set(${details_var} "${_ftimer_openmp_details}" PARENT_SCOPE)
+    return()
+  endif()
+
+  if(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
+    string(CONCAT _ftimer_openmp_details
+      "compile_result='${_ftimer_openmp_compile_ok}'\n"
+      "run_result='not run because CMake is cross-compiling without CMAKE_CROSSCOMPILING_EMULATOR'\n"
+      "compile_output:\n${_ftimer_openmp_compile_output}"
+    )
+    set(${out_var} FALSE PARENT_SCOPE)
+    set(${details_var} "${_ftimer_openmp_details}" PARENT_SCOPE)
+    return()
+  endif()
+
   try_run(_ftimer_openmp_run_result _ftimer_openmp_compile_ok
-    "${CMAKE_BINARY_DIR}/CMakeFiles/ftimer_openmp_master_probe_build"
+    "${CMAKE_BINARY_DIR}/CMakeFiles/ftimer_openmp_master_probe_run"
     "${_ftimer_openmp_probe_src}"
     LINK_LIBRARIES OpenMP::OpenMP_Fortran
-    COMPILE_OUTPUT_VARIABLE _ftimer_openmp_compile_output
+    COMPILE_OUTPUT_VARIABLE _ftimer_openmp_run_compile_output
     RUN_OUTPUT_VARIABLE _ftimer_openmp_run_output
   )
 
   string(CONCAT _ftimer_openmp_details
     "compile_result='${_ftimer_openmp_compile_ok}'\n"
     "run_result='${_ftimer_openmp_run_result}'\n"
-    "compile_output:\n${_ftimer_openmp_compile_output}\n"
+    "compile_output:\n${_ftimer_openmp_compile_output}\n${_ftimer_openmp_run_compile_output}\n"
     "run_output:\n${_ftimer_openmp_run_output}"
   )
 
@@ -142,10 +181,16 @@ endfunction()
 # Options
 option(FTIMER_USE_MPI "Enable MPI support" OFF)
 option(FTIMER_USE_OPENMP "Enable OpenMP master-thread guards" OFF)
+option(
+  FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK
+  "Assume the OpenMP master-thread runtime probe passes after compile/link succeeds; intended only for cross-compiling or execution-restricted packaging environments"
+  OFF
+)
 option(FTIMER_BUILD_TESTS "Build pFUnit tests (requires pFUnit)" OFF)
 option(FTIMER_BUILD_SMOKE_TESTS "Build Phase 0 smoke tests" ON)
 option(FTIMER_BUILD_EXAMPLES "Build example programs" ON)
 option(FTIMER_BUILD_BENCH "Build performance measurement harness" OFF)
+mark_as_advanced(FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK)
 
 set(FTIMER_PACKAGE_VERSION_COMPATIBILITY SameMinorVersion)
 
@@ -178,6 +223,14 @@ endif()
 
 if(FTIMER_USE_OPENMP)
   set(FTIMER_VALIDATED_OPENMP_COMPILER_IDS GNU LLVMFlang)
+  if(CMAKE_VERSION VERSION_LESS 3.24 AND NOT CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+    message(FATAL_ERROR
+      "FTIMER_USE_OPENMP=ON with LLVM Flang requires CMake 3.24 or newer so CMake reports compiler ID 'LLVMFlang'.\n"
+      "The active CMake version is ${CMAKE_VERSION}, and the active compiler ID is '${CMAKE_Fortran_COMPILER_ID}' at '${CMAKE_Fortran_COMPILER}'.\n"
+      "Supported paths: use GNU Fortran with this CMake version, or upgrade CMake for LLVM Flang OpenMP validation."
+    )
+  endif()
+
   if(NOT CMAKE_Fortran_COMPILER_ID IN_LIST FTIMER_VALIDATED_OPENMP_COMPILER_IDS)
     message(FATAL_ERROR
       "FTIMER_USE_OPENMP=ON is not currently validated for compiler ID '${CMAKE_Fortran_COMPILER_ID}'.\n"
@@ -202,6 +255,7 @@ if(FTIMER_USE_OPENMP)
     message(FATAL_ERROR
       "FTIMER_USE_OPENMP=ON requires a validated compiler/runtime pair that passes fTimer's master-thread-only OpenMP capability probe.\n"
       "The probe compiles, links, and runs a Fortran program using omp_lib, a two-thread parallel region, and !$omp master semantics.\n"
+      "For cross-compiling or execution-restricted package builds, maintainers may set FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK=ON after independently validating equivalent runtime semantics for the selected compiler/runtime pair.\n"
       "Active compiler ID: '${CMAKE_Fortran_COMPILER_ID}' at '${CMAKE_Fortran_COMPILER}'.\n"
       "${FTIMER_OPENMP_MASTER_PROBE_DETAILS}"
     )
