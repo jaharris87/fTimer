@@ -372,8 +372,10 @@ Implementation guidance:
   [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md),
   including self-time boundaries, wall-clock envelope fields, summed lane work,
   lane participation, and report/CSV shape.
-- #241 defines MPI+OpenMP reductions over the #240 result shape without
-  changing current strict or sparse MPI APIs by accident.
+- #241 defines MPI+OpenMP reductions in
+  [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md)
+  over the #240 result shape without changing current strict or sparse MPI
+  APIs by accident.
 - #243 supplies deterministic mock-clock tests, targeted OpenMP worker tests,
   nested/task rejection tests, active-lane lifecycle and region-epoch tests,
   and overhead measurements.

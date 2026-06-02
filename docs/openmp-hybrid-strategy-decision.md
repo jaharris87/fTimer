@@ -12,6 +12,8 @@ The #239 runtime model is recorded in
 [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md),
 and the #240 summary/self-time model is recorded in
 [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md).
+The #241 MPI+OpenMP reduction model is recorded in
+[`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md).
 
 Issue #160 asked whether fTimer should ever support real hybrid MPI+OpenMP
 timing beyond the documented master-thread-only carve-out.
@@ -111,6 +113,11 @@ below is retained as historical context and maps onto #238 through #243:
   aggregation, call-count semantics, self-time rules, and MPI reduction behavior.
   The #240 summary decision is now recorded in
   [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md).
+- Define the MPI+OpenMP reduction contract. Specify strict validation,
+  participation-aware union behavior, descriptor identity, active-lane
+  preflight, and hybrid report/CSV shape. The #241 reduction decision is now
+  recorded in
+  [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md).
 - Prototype the core concurrency model. Compare thread-local stacks plus
   post-region aggregation against a synchronized shared instance and document
   the overhead and correctness tradeoffs. The #239 thread-lane runtime decision
