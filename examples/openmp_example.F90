@@ -37,9 +37,11 @@ program openmp_example
 #endif
    if (ierr /= 0) error stop "ftimer_init failed"
 
-   ! Supported pattern: time the parallel region as a whole by starting and
-   ! stopping outside the !$omp parallel block. For asynchronous accelerator
-   ! work, callers must synchronize device completion before stopping a timer.
+   ! Compatibility example: time the parallel region as a whole by starting and
+   ! stopping outside the !$omp parallel block. docs/openmp-timing-modes.md
+   ! explains how this current pattern differs from future true worker timing.
+   ! For asynchronous accelerator work, callers must synchronize device
+   ! completion before stopping a timer.
    call ftimer_start("parallel_region", ierr=ierr)
    if (ierr /= 0) error stop "ftimer_start failed"
 !$omp parallel num_threads(2) default(none) shared(accumulator, nthreads, thread_seen) &
@@ -87,6 +89,7 @@ program openmp_example
    print '(a)', "fTimer OpenMP support is limited to master-thread-only region bracketing."
    print '(a)', "This example measures one parallel region wall-clock interval,"
    print '(a)', "not per-thread timings."
+   print '(a)', "See docs/openmp-timing-modes.md for the migration guide."
    print '(a,i0)', "OpenMP threads observed: ", nthreads
    print '(a,i0)', "Recorded timers: ", summary%num_entries
    call ftimer_print_summary(ierr=ierr)

@@ -488,8 +488,10 @@ introduced by #243.
   Later implementation issues must add deterministic MPI+OpenMP validation,
   strict-semantics and participation-aware test matrices, report/CSV golden
   output, and overhead measurements.
-- #242 must update user-facing documentation and examples after the runtime,
-  summary, and reduction APIs exist.
+- #242 records the user-facing timing modes and migration guide in
+  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Later
+  implementation issues should add compile-checked hybrid examples after the
+  runtime, summary, and reduction APIs exist.
 
 ## Non-Goals
 

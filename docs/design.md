@@ -331,6 +331,8 @@ The docs set is intentionally split by purpose:
 - [`README.md`](../README.md): user-facing setup, usage, limitations, and examples
 - [`docs/semantics.md`](semantics.md): current runtime contract and behavior
 - [`docs/design.md`](design.md): current repository architecture, validation reality, and workflow context
+- [`docs/openmp-timing-modes.md`](openmp-timing-modes.md): OpenMP and
+  MPI+OpenMP mode selection, accepted current examples, and migration guidance
 - [`docs/implementation-history.md`](implementation-history.md): historical phase roadmap and landing history
 - [`docs/maintainer.md`](maintainer.md) and [`docs/workflows/`](workflows/): issue/PR/review operating procedures
 
@@ -355,7 +357,9 @@ Future-facing ideas should stay clearly separated from the current architecture 
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md),
   and the validation plan tracked in
   [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
-  before runtime implementation
+  before runtime implementation. User-facing mode selection and migration
+  guidance live in
+  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
 - stable semantic callback identity or a stronger external-profiler integration contract
 - explicit reservation/preallocation APIs for known timer sets, if profiling shows the new internal capacity strategy is still not enough for an adopter workload
 
