@@ -736,7 +736,7 @@ contains
    end subroutine start_id_impl
 
    subroutine start_segment_impl(self, segment_idx, ierr, activation_token)
-      class(ftimer_t), intent(inout) :: self
+      type(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_idx
       integer, intent(out), optional :: ierr
       integer(int64), intent(out), optional :: activation_token
