@@ -288,7 +288,7 @@ contains
 
    logical function ftimer_call_stack_equals(self, other) result(is_equal)
       class(ftimer_call_stack_t), intent(in) :: self
-      class(ftimer_call_stack_t), intent(inout) :: other
+      class(ftimer_call_stack_t), intent(in) :: other
 
       is_equal = .false.
       if (self%depth /= other%depth) return
@@ -317,16 +317,16 @@ contains
          self%ids = other%ids(1:other%depth)
          self%activation_tokens = other%activation_tokens(1:other%depth)
       else
-         call context_trace_mark("call_stack_copy: before zero-depth allocate")
-         allocate (self%ids(0))
-         allocate (self%activation_tokens(0))
+         call context_trace_mark("call_stack_copy: before empty allocate")
+         allocate (self%ids(1))
+         allocate (self%activation_tokens(1))
       end if
       call context_trace_mark("call_stack_copy: exit")
    end subroutine ftimer_call_stack_copy
 
    integer function ftimer_context_list_find(self, stack) result(idx)
       class(ftimer_context_list_t), intent(in) :: self
-      type(ftimer_call_stack_t), intent(inout) :: stack
+      type(ftimer_call_stack_t), intent(in) :: stack
       integer :: i
 
       idx = 0
@@ -340,7 +340,7 @@ contains
 
    integer function ftimer_context_list_add(self, stack) result(idx)
       class(ftimer_context_list_t), intent(inout) :: self
-      type(ftimer_call_stack_t), intent(inout) :: stack
+      type(ftimer_call_stack_t), intent(in) :: stack
       integer :: existing
 
       call context_trace_mark("context_list_add: enter")
@@ -371,8 +371,8 @@ contains
          self%stacks(self%count)%ids = stack%ids(1:stack%depth)
          self%stacks(self%count)%activation_tokens = stack%activation_tokens(1:stack%depth)
       else
-         allocate (self%stacks(self%count)%ids(0))
-         allocate (self%stacks(self%count)%activation_tokens(0))
+         allocate (self%stacks(self%count)%ids(1))
+         allocate (self%stacks(self%count)%activation_tokens(1))
       end if
       call context_trace_mark("context_list_add: after inline stack copy")
       idx = self%count
