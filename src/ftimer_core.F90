@@ -1068,7 +1068,7 @@ contains
 
       new_idx = self%num_segments + 1
       call ensure_segment_capacity(self, new_idx)
-      self%segments(new_idx)%name = name
+      call assign_allocatable_string(self%segments(new_idx)%name, name)
       self%segment_ids(new_idx) = allocate_segment_id(self)
       call ensure_segment_name_index(self, new_idx)
       call ensure_segment_id_index(self, new_idx)
@@ -1078,6 +1078,15 @@ contains
       call insert_segment_id_slot(self%segment_id_slots, self%segment_ids(new_idx), new_idx)
       idx = new_idx
    end function find_or_create_segment
+
+   subroutine assign_allocatable_string(value, text)
+      character(len=:), allocatable, intent(inout) :: value
+      character(len=*), intent(in) :: text
+
+      if (allocated(value)) deallocate (value)
+      allocate (character(len=len(text)) :: value)
+      value = text
+   end subroutine assign_allocatable_string
 
 #ifdef FTIMER_BUILD_TESTS
    subroutine ftimer_test_get_state(self, state)
