@@ -624,6 +624,9 @@ contains
       integer :: segment_idx
       integer :: status
       integer :: trimmed_len
+      integer :: ctx
+      integer(int64) :: token
+      real(wp) :: now
       character(len=FTIMER_STATUS_MESSAGE_LEN) :: message
 
       call start_trace_mark("start_impl: enter")
@@ -645,12 +648,78 @@ contains
       call start_trace_mark("start_impl: before find_or_create_segment")
       segment_idx = self%find_or_create_segment(name(1:trimmed_len))
       call start_trace_mark("start_impl: after find_or_create_segment")
-      call start_trace_mark("start_impl: before start_segment_impl")
-      if (present(activation_token)) then
-         call start_segment_impl(self, segment_idx, ierr=ierr, activation_token=activation_token)
-      else
-         call start_segment_impl(self, segment_idx, ierr=ierr)
+
+      call start_trace_mark("start_segment_impl: enter")
+      call start_trace_mark("start_segment_impl: before find_segment_context")
+      ctx = find_segment_context(self, segment_idx)
+      call start_trace_mark("start_segment_impl: after find_segment_context")
+      if (ctx <= 0) then
+         call start_trace_mark("start_segment_impl: before ensure_segment_context_index")
+         call ensure_segment_context_index(self, segment_idx, self%segments(segment_idx)%contexts%count + 1)
+         call start_trace_mark("start_segment_impl: after ensure_segment_context_index")
+         call start_trace_mark("start_segment_impl: before contexts add")
+         if (.not. allocated(self%segments(segment_idx)%contexts%stacks)) then
+            allocate (self%segments(segment_idx)%contexts%stacks(FTIMER_CONTEXT_STORAGE_INITIAL_CAPACITY))
+         else if (self%segments(segment_idx)%contexts%count >= &
+                  size(self%segments(segment_idx)%contexts%stacks)) then
+            call grow_segment_context_stacks(self, segment_idx)
+         end if
+
+         ctx = self%segments(segment_idx)%contexts%count + 1
+         self%segments(segment_idx)%contexts%count = ctx
+         self%segments(segment_idx)%contexts%stacks(ctx)%depth = self%call_stack%depth
+         if (allocated(self%segments(segment_idx)%contexts%stacks(ctx)%ids)) then
+            deallocate (self%segments(segment_idx)%contexts%stacks(ctx)%ids)
+         end if
+         if (allocated(self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens)) then
+            deallocate (self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens)
+         end if
+         if (self%call_stack%depth > 0) then
+            allocate (self%segments(segment_idx)%contexts%stacks(ctx)%ids(self%call_stack%depth))
+            allocate (self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens(self%call_stack%depth))
+            self%segments(segment_idx)%contexts%stacks(ctx)%ids = self%call_stack%ids(1:self%call_stack%depth)
+            self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens = &
+               self%call_stack%activation_tokens(1:self%call_stack%depth)
+         else
+            allocate (self%segments(segment_idx)%contexts%stacks(ctx)%ids(1))
+            allocate (self%segments(segment_idx)%contexts%stacks(ctx)%activation_tokens(1))
+         end if
+         call start_trace_mark("start_segment_impl: after contexts add")
+         call start_trace_mark("start_segment_impl: before insert_segment_context_slot")
+         call insert_segment_context_slot(self%segments(segment_idx), &
+                                          self%segment_context_indices(segment_idx)%slots, self%call_stack, ctx)
+         call start_trace_mark("start_segment_impl: after insert_segment_context_slot")
       end if
+      call start_trace_mark("start_segment_impl: before ensure_context_storage")
+      call ensure_context_storage(self%segments(segment_idx), ctx)
+      call start_trace_mark("start_segment_impl: after ensure_context_storage")
+
+      if (self%segments(segment_idx)%call_count(ctx) >= huge(0_int64)) then
+         call report_status(ierr, FTIMER_ERR_UNKNOWN, "ftimer start call count overflow")
+         return
+      end if
+
+      call start_trace_mark("start_segment_impl: before create_activation_token")
+      token = create_activation_token(self)
+      call start_trace_mark("start_segment_impl: after create_activation_token")
+      call start_trace_mark("start_segment_impl: before call_stack push")
+      call self%call_stack%push(segment_idx, token)
+      call start_trace_mark("start_segment_impl: after call_stack push")
+      now = self%wtime()
+      call start_trace_mark("start_segment_impl: after wtime")
+      self%segments(segment_idx)%start_time(ctx) = now
+      self%segments(segment_idx)%call_count(ctx) = self%segments(segment_idx)%call_count(ctx) + 1_int64
+      self%segments(segment_idx)%is_running(ctx) = .true.
+      call start_trace_mark("start_segment_impl: after state updates")
+
+      if (associated(self%on_event)) then
+         call self%on_event(public_segment_id(self, segment_idx), ctx, FTIMER_EVENT_START, now, self%user_data)
+      end if
+      call start_trace_mark("start_segment_impl: after callback check")
+
+      if (present(activation_token)) activation_token = token
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+      call start_trace_mark("start_segment_impl: exit")
       call start_trace_mark("start_impl: after start_segment_impl")
    end subroutine start_impl
 

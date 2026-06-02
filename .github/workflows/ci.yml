@@ -76,7 +76,6 @@ jobs:
     env:
       NVHPC_VERSION: 26.3
       NVHPC_APT_PACKAGE: nvhpc-26-3
-      FFLAGS: -O0
     steps:
       - uses: actions/checkout@v6
 
@@ -106,7 +105,7 @@ jobs:
           cmake --version
 
       - name: Configure (NVHPC serial)
-        run: FC=nvfortran cmake -B build -DCMAKE_BUILD_TYPE=Debug
+        run: FC=nvfortran cmake -B build
 
       - name: Build
         run: cmake --build build -j$(nproc)
