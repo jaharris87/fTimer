@@ -93,7 +93,11 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   build-mpi-mpich:
-    runs-on: ubuntu-latest
+    # Hosted Ubuntu 24.04 currently launches apt MPICH 4.2.0/Hydra jobs as
+    # singleton MPI_COMM_WORLD ranks under mpiexec.mpich -n 2. Keep MPICH
+    # validation on 22.04 until the hosted 24.04 package/launcher pair can
+    # prove a multi-rank MPI_COMM_WORLD.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
 
@@ -130,6 +134,28 @@ jobs:
           echo "$RUNNER_TEMP/mpich-bin" >> "$GITHUB_PATH"
           echo "FTIMER_MPICH_FC=$mpich_fc" >> "$GITHUB_ENV"
           echo "FTIMER_MPICH_MPIEXEC=$mpich_mpiexec" >> "$GITHUB_ENV"
+
+      - name: Probe MPICH launcher world size
+        run: |
+          cat > "$RUNNER_TEMP/mpich_world_probe.F90" <<'EOF'
+          program mpich_world_probe
+            use mpi_f08
+            implicit none
+            integer :: ierr
+            integer :: rank
+            integer :: size
+
+            call MPI_Init(ierr)
+            call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
+            call MPI_Comm_size(MPI_COMM_WORLD, size, ierr)
+            print *, 'mpich_world_probe', rank, size
+            call MPI_Finalize(ierr)
+
+            if (size /= 2) error stop 'MPICH launcher did not create a two-rank MPI_COMM_WORLD'
+          end program mpich_world_probe
+          EOF
+          "$FTIMER_MPICH_FC" "$RUNNER_TEMP/mpich_world_probe.F90" -o "$RUNNER_TEMP/mpich_world_probe"
+          "$FTIMER_MPICH_MPIEXEC" -n 2 "$RUNNER_TEMP/mpich_world_probe"
 
       - name: Show MPICH toolchain
         run: |
@@ -265,7 +291,7 @@ jobs:
     # Hosted Ubuntu 24.04 currently launches apt MPICH 4.2.0/Hydra jobs as
     # singleton MPI_COMM_WORLD ranks under mpiexec.mpich -n 2, which makes
     # pFUnit reject [npes=2] tests. Keep MPICH pFUnit validation on 22.04;
-    # build-mpi-mpich still covers MPICH smoke/install-consumer on ubuntu-latest.
+    # build-mpi-mpich separately covers MPICH smoke/install-consumer.
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
