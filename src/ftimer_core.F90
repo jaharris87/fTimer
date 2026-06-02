@@ -744,7 +744,7 @@ contains
       if (present(activation_token)) activation_token = 0_int64
 
       call start_trace_mark("start_segment_impl: before find_or_create_segment_context")
-      ctx = find_or_create_segment_context(self, segment_idx)
+      call find_or_create_segment_context(self, segment_idx, ctx)
       call start_trace_mark("start_segment_impl: after find_or_create_segment_context")
       call start_trace_mark("start_segment_impl: before ensure_context_storage")
       call ensure_context_storage(self%segments(segment_idx), ctx)
@@ -970,7 +970,7 @@ contains
       end if
 
       do i = unwind_count, 1, -1
-         restart_ctx = find_or_create_segment_context(self, unwound_ids(i))
+         call find_or_create_segment_context(self, unwound_ids(i), restart_ctx)
          call ensure_context_storage(self%segments(unwound_ids(i)), restart_ctx)
          restart_token = create_activation_token(self)
          call self%call_stack%push(unwound_ids(i), restart_token)
@@ -1701,9 +1701,10 @@ contains
       call start_trace_mark("find_segment_context: exit")
    end function find_segment_context
 
-   integer function find_or_create_segment_context(self, segment_id) result(ctx)
+   subroutine find_or_create_segment_context(self, segment_id, ctx)
       class(ftimer_t), intent(inout) :: self
       integer, intent(in) :: segment_id
+      integer, intent(out) :: ctx
 
       call start_trace_mark("find_or_create_segment_context: enter")
       ctx = find_segment_context(self, segment_id)
@@ -1746,7 +1747,7 @@ contains
                                        self%segment_context_indices(segment_id)%slots, self%call_stack, ctx)
       call start_trace_mark("find_or_create_segment_context: after insert_segment_context_slot")
       call start_trace_mark("find_or_create_segment_context: exit")
-   end function find_or_create_segment_context
+   end subroutine find_or_create_segment_context
 
    integer function hash_name_slot(name, table_size) result(slot)
       character(len=*), intent(in) :: name
