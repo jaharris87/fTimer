@@ -168,9 +168,9 @@ true OpenMP API:
   to thread 0 as well when the object-level API rejects an in-parallel call.
 - Serial lifecycle calls that observe queued diagnostics may emit one
   deterministic aggregate stderr diagnostic when their own `ierr` is omitted.
-- Serial lifecycle calls that clear queued diagnostics with `ierr` present
-  report only the lifecycle call's own status through `ierr` without writing
-  stderr.
+- Serial lifecycle calls that observe queued diagnostics with `ierr` present
+  report the first queued status through `ierr`, clear the diagnostics, and
+  leave lifecycle state unchanged so a repeated lifecycle call can proceed.
 - Cross-thread start/stop mismatches are lane-local errors by default. A stop on
   a lane whose own stack top does not match must not repair or pop another
   lane's stack.

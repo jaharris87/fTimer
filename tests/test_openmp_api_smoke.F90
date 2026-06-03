@@ -4,7 +4,7 @@ program ftimer_openmp_api_smoke
    use mpi_f08, only: MPI_Finalize, MPI_Init
 #endif
 #ifdef FTIMER_USE_OPENMP
-   use omp_lib, only: omp_get_thread_num, omp_set_dynamic
+   use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic
 #endif
    use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
@@ -13,7 +13,7 @@ program ftimer_openmp_api_smoke
    implicit none
 
    integer :: mpi_ierr
-   real(wp), save :: fake_time = 0.0_wp
+   real(wp), save :: fake_lane_time(0:4) = 0.0_wp
 
 #ifdef FTIMER_USE_MPI
    call MPI_Init(mpi_ierr)
@@ -125,7 +125,7 @@ contains
       type(ftimer_openmp_t) :: timer
 
       config%mode = FTIMER_OPENMP_MODE_THREAD_LANES
-      config%max_lanes = 0
+      config%max_lanes = 3
       config%max_worker_diagnostics = 2
 
       call timer%init(config=config, ierr=ierr)
@@ -335,7 +335,7 @@ contains
 
       call omp_set_dynamic(.false.)
 
-      config%max_lanes = 0
+      config%max_lanes = 3
       config%max_worker_diagnostics = 1
 
       call timer%init(config=config, ierr=ierr)
@@ -463,7 +463,7 @@ contains
       call timer%register_timer("mismatch_child", mismatch_child_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 190)
 
-      fake_time = 1.0_wp
+      fake_lane_time(0) = 1.0_wp
       call timer%start_id(timer_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 103)
 
@@ -473,7 +473,7 @@ contains
       call timer%reset(ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_ACTIVE, 104)
 
-      fake_time = 3.0_wp
+      fake_lane_time(0) = 3.0_wp
       call timer%stop_id(timer_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 105)
 
@@ -549,8 +549,18 @@ contains
 
 !$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
       worker_seen = worker_seen + 1
+      if (omp_get_thread_num() == 0) then
+         fake_lane_time(1) = 1.0_wp
+      else
+         fake_lane_time(2) = 10.0_wp
+      end if
       call timer%start_id(timer_id, ierr=ierr)
       if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+      if (omp_get_thread_num() == 0) then
+         fake_lane_time(1) = 4.0_wp
+      else
+         fake_lane_time(2) = 17.0_wp
+      end if
       call timer%stop_id(timer_id, ierr=ierr)
       if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
 !$omp end parallel
@@ -565,13 +575,25 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 146)
       call expect_count(call_count, 0_int64, 147)
 
+      call timer%test_lane_total_time(0, timer_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 220)
+      call expect_time(elapsed, 0.0_wp, 221)
+
       call timer%test_lane_total_call_count(1, timer_id, call_count, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 148)
       call expect_count(call_count, 1_int64, 149)
 
+      call timer%test_lane_total_time(1, timer_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 216)
+      call expect_time(elapsed, 3.0_wp, 217)
+
       call timer%test_lane_total_call_count(2, timer_id, call_count, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 150)
       call expect_count(call_count, 1_int64, 151)
+
+      call timer%test_lane_total_time(2, timer_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 218)
+      call expect_time(elapsed, 7.0_wp, 219)
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 111)
@@ -612,16 +634,16 @@ contains
 !$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
       if (omp_get_thread_num() == 1) then
          worker_seen = worker_seen + 1
-         fake_time = 10.0_wp
+         fake_lane_time(2) = 10.0_wp
          call timer%start_id(parent_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
-         fake_time = 12.0_wp
+         fake_lane_time(2) = 12.0_wp
          call timer%start_id(child_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
-         fake_time = 15.0_wp
+         fake_lane_time(2) = 15.0_wp
          call timer%stop_id(child_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
-         fake_time = 20.0_wp
+         fake_lane_time(2) = 20.0_wp
          call timer%stop_id(parent_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
       end if
@@ -666,21 +688,54 @@ contains
 !$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
       if (omp_get_thread_num() == 1) then
          worker_seen = worker_seen + 1
+         fake_lane_time(2) = 30.0_wp
          call timer%start_id(mismatch_parent_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 32.0_wp
          call timer%start_id(mismatch_child_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 35.0_wp
          call timer%stop_id(mismatch_parent_id, ierr=ierr)
          if (ierr /= FTIMER_ERR_MISMATCH) worker_bad = worker_bad + 1
-         call timer%stop_id(mismatch_child_id, ierr=ierr)
-         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
-         call timer%stop_id(mismatch_parent_id, ierr=ierr)
-         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
       end if
 !$omp end parallel
 
       if (worker_seen /= 1) error stop 206
       if (worker_bad /= 0) error stop 207
+
+      call timer%test_lane_is_running(2, mismatch_parent_id, is_running, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 222)
+      if (.not. is_running) error stop 223
+
+      call timer%test_lane_is_running(2, mismatch_child_id, is_running, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 224)
+      if (.not. is_running) error stop 225
+
+      call timer%test_lane_total_time(2, mismatch_parent_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 226)
+      call expect_time(elapsed, 0.0_wp, 227)
+
+      call timer%test_lane_parent_total_time(2, mismatch_child_id, mismatch_parent_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 228)
+      call expect_time(elapsed, 0.0_wp, 229)
+
+      worker_bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         fake_lane_time(2) = 38.0_wp
+         call timer%stop_id(mismatch_child_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 40.0_wp
+         call timer%stop_id(mismatch_parent_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 230
+      if (worker_bad /= 0) error stop 231
 
       call timer%end_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 208)
@@ -692,6 +747,14 @@ contains
       call timer%test_lane_parent_call_count(2, mismatch_child_id, mismatch_parent_id, call_count, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 211)
       call expect_count(call_count, 1_int64, 212)
+
+      call timer%test_lane_total_time(2, mismatch_parent_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 232)
+      call expect_time(elapsed, 10.0_wp, 233)
+
+      call timer%test_lane_parent_total_time(2, mismatch_child_id, mismatch_parent_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 234)
+      call expect_time(elapsed, 6.0_wp, 235)
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 213)
@@ -885,8 +948,22 @@ contains
 
    function mock_openmp_clock() result(t)
       real(wp) :: t
+      integer :: lane_id
 
-      t = fake_time
+#ifdef FTIMER_USE_OPENMP
+      if (omp_in_parallel()) then
+         lane_id = 1 + omp_get_thread_num()
+      else
+         lane_id = 0
+      end if
+#else
+      lane_id = 0
+#endif
+
+      if ((lane_id < lbound(fake_lane_time, 1)) .or. (lane_id > ubound(fake_lane_time, 1))) then
+         error stop "mock_openmp_clock lane id out of range"
+      end if
+      t = fake_lane_time(lane_id)
    end function mock_openmp_clock
 
 end program ftimer_openmp_api_smoke

@@ -56,7 +56,7 @@ Lane-level state:
   stack entries;
 - lane-local segment/context tables, keyed by the shared timer id;
 - lane-local inclusive time, start time, running flag, and call count arrays;
-- lane-local diagnostic buffer and overflow count;
+- object-level bounded diagnostic counters, overflow count, and first status;
 - no references to another lane's stack.
 
 The shared catalog provides semantic identity. Lane state owns timing mutation.
@@ -268,17 +268,18 @@ The #238 threaded error policy becomes concrete at the lane level:
 
 - With `ierr` present, a call returns the status for the calling lane and writes
   no stderr.
-- With `ierr` omitted from a worker timing call, the worker call stores a
-  bounded lane-local diagnostic record and writes no stderr.
+- With `ierr` omitted from a rejected worker/object API call inside a parallel
+  region, the call stores bounded aggregate diagnostic state on the timer object
+  and writes no stderr.
 - Serial lifecycle or merge-point calls may emit one deterministic aggregate
   stderr diagnostic for queued worker diagnostics when their own `ierr` is
   omitted.
-- Each lane records diagnostic overflow counts so repeated worker failures do
+- The object records diagnostic overflow counts so repeated worker failures do
   not allocate unbounded memory.
 
-Diagnostics should record at least lane id, status code, operation kind, and a
-short message. They should not store arbitrarily long user timer names on every
-failure; use catalog ids where possible.
+The current diagnostic payload is intentionally aggregate-only: retained count,
+overflow count, and first status. A later explicit diagnostic-detail issue may
+add lane id, operation kind, and short messages if users need that visibility.
 
 ## Clock And Callback Policy
 

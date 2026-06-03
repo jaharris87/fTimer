@@ -29,6 +29,7 @@ program ftimer_openmp_api_ierr_silence
    if (ierr /= FTIMER_ERR_UNKNOWN) error stop 2
 
    config = ftimer_openmp_config_t()
+   config%max_lanes = 3
    call timer%init(config=config, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop 3
 

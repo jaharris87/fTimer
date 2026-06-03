@@ -366,13 +366,17 @@ enforcement should pass `ierr` and check it.
   leave unrelated lane state unchanged. OpenMP task migration is outside the
   validated contract. `reset`, `finalize`, reinitialization,
   and timed-region close scan all lanes and reject active timers.
+  Current `ftimer_openmp_t` timing uses the non-MPI wall clock even in
+  MPI-enabled builds, so worker timing does not call `MPI_Wtime()` from OpenMP
+  threads or require an `MPI_Init_thread` support level.
   Calls made inside an OpenMP parallel region without `ierr` queue bounded
   diagnostics instead of writing unordered stderr, except for valid worker
   timing calls. A later serial lifecycle call without `ierr` emits one aggregate
-  diagnostic when fTimer itself is built with `FTIMER_USE_OPENMP=ON`; with
-  `ierr`, lifecycle calls clear queued diagnostics without writing stderr and
-  return only the lifecycle call's own status. In non-OpenMP fTimer builds,
-  `ftimer_openmp` is
+  diagnostic when fTimer itself is built with `FTIMER_USE_OPENMP=ON` and then
+  proceeds. With `ierr`, a lifecycle call that observes queued worker diagnostics
+  returns the first queued status without writing stderr and leaves lifecycle
+  state unchanged; repeat the lifecycle call after that explicit drain to
+  proceed. In non-OpenMP fTimer builds, `ftimer_openmp` is
   exposed for serial-context lifecycle/catalog/timing adoption only; using that
   package from a downstream OpenMP parallel region is outside the supported
   contract because the library was not built with OpenMP runtime introspection.

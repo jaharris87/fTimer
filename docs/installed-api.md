@@ -17,6 +17,9 @@ The supported source-level import surface is intentionally narrow:
   reductions; no current public `ftimer_openmp` summary/report behavior consumes
   it. Registered timer ids remain valid across `reset()` and are invalidated
   across `finalize()`/reinit without being recycled in the same object.
+  Current `ftimer_openmp_t` timing uses the non-MPI wall clock even in
+  MPI-enabled packages, so worker timing does not call `MPI_Wtime()` from
+  OpenMP threads or require an `MPI_Init_thread` support level.
   `config%max_lanes` counts the serial lane plus worker lanes. Serial timing
   uses lane 0. In `FTIMER_USE_OPENMP=ON` packages, worker timing inside an
   explicitly opened level-1 timed OpenMP region uses one lane per OpenMP
@@ -25,10 +28,12 @@ The supported source-level import surface is intentionally narrow:
   parallel region without `ierr` queue bounded diagnostics instead of writing
   unordered stderr, except for valid worker `start_id`/`stop_id` calls inside an
   open timed region. Later serial lifecycle calls that clear diagnostics emit
-  one aggregate diagnostic when `ierr` is absent; when `ierr` is present they
-  clear queued diagnostics without stderr and return only the lifecycle call's
-  own status. In non-OpenMP packages, this module is supported only for
-  serial-context lifecycle/catalog/timing use.
+  one aggregate diagnostic and proceed when `ierr` is absent. When `ierr` is
+  present, a lifecycle call that observes queued worker diagnostics returns the
+  first queued status without stderr and leaves lifecycle state unchanged; repeat
+  the lifecycle call after that explicit drain to proceed. In non-OpenMP
+  packages, this module is supported only for serial-context lifecycle/catalog/
+  timing use.
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
 ## MPI lifecycle and communicator ownership
@@ -37,6 +42,9 @@ MPI-enabled fTimer must be used after `MPI_Init` and before `MPI_Finalize`.
 The installed MPI-enabled package uses `MPI_Wtime()` as its build-default clock
 and its MPI summary/report entry points use MPI collectives, so pre-init or
 post-finalize use is outside the supported runtime contract.
+The explicit `ftimer_openmp_t` worker runtime is the exception to the clock
+rule above: it currently uses the non-MPI wall clock because the stored
+communicator is reserved for future hybrid reductions.
 
 `init(comm=...)` stores the selected communicator as a non-owning handle. The
 selected communicator is an `mpi_f08` `type(MPI_Comm)` value; legacy integer

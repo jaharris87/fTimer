@@ -23,7 +23,7 @@ program ftimer_installed_openmp_api_mpi_openmp_consumer
 
    call omp_set_dynamic(.false.)
 
-   config%max_lanes = 0
+   config%max_lanes = 3
    config%max_worker_diagnostics = rank + 1
 
    call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)

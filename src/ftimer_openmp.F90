@@ -1,6 +1,6 @@
 module ftimer_openmp
    use, intrinsic :: iso_fortran_env, only: error_unit, int64
-   use ftimer_clock, only: ftimer_default_clock, ftimer_mpi_clock
+   use ftimer_clock, only: ftimer_default_clock
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
                            ftimer_call_stack_t, ftimer_clock_func, ftimer_segment_t, wp
@@ -172,7 +172,7 @@ contains
          return
       end if
 
-      if (.not. present(ierr)) call emit_worker_diagnostics(self)
+      if (drain_worker_diagnostics(self, ierr)) return
       call ensure_object_token(self)
       if (self%object_token == 0_int64) then
          call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp object token space exhausted")
@@ -216,7 +216,7 @@ contains
          return
       end if
 
-      if (.not. present(ierr)) call emit_worker_diagnostics(self)
+      if (drain_worker_diagnostics(self, ierr)) return
       call clear_state(self)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine finalize
@@ -258,7 +258,7 @@ contains
       saved_mpi_comm = self%mpi_comm
       saved_mpi_comm_was_present = self%mpi_comm_was_present
 #endif
-      if (.not. present(ierr)) call emit_worker_diagnostics(self)
+      if (drain_worker_diagnostics(self, ierr)) return
       self%initialized = .true.
       self%config = saved_config
       self%region_open = .false.
@@ -656,11 +656,7 @@ contains
          return
       end if
 
-#ifdef FTIMER_USE_MPI
-      t = ftimer_mpi_clock()
-#else
       t = ftimer_default_clock()
-#endif
    end function openmp_clock
 
    subroutine start_lane_timer(self, lane_idx, catalog_idx, timer_id, epoch, ierr)
@@ -1269,6 +1265,34 @@ contains
       self%worker_diagnostic_overflow = 0
       self%first_worker_status = FTIMER_SUCCESS
    end subroutine clear_worker_diagnostics
+
+   integer function worker_diagnostic_status(self) result(status)
+      class(ftimer_openmp_t), intent(in) :: self
+
+      if ((self%queued_worker_diagnostics <= 0) .and. (self%worker_diagnostic_overflow <= 0)) then
+         status = FTIMER_SUCCESS
+      elseif (self%first_worker_status /= FTIMER_SUCCESS) then
+         status = self%first_worker_status
+      else
+         status = FTIMER_ERR_UNKNOWN
+      end if
+   end function worker_diagnostic_status
+
+   logical function drain_worker_diagnostics(self, ierr) result(did_drain_with_ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+
+      did_drain_with_ierr = .false.
+      if ((self%queued_worker_diagnostics <= 0) .and. (self%worker_diagnostic_overflow <= 0)) return
+
+      if (present(ierr)) then
+         ierr = worker_diagnostic_status(self)
+         call clear_worker_diagnostics(self)
+         did_drain_with_ierr = .true.
+      else
+         call emit_worker_diagnostics(self)
+      end if
+   end function drain_worker_diagnostics
 
    subroutine queue_worker_diagnostic(self, code)
       class(ftimer_openmp_t), intent(inout) :: self
