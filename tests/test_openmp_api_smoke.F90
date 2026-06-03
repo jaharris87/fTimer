@@ -35,13 +35,29 @@ contains
       integer :: ierr
       integer :: timer_id
       type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
       type(ftimer_openmp_t) :: timer
 
       call timer%register_timer("before_init", timer_id, ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_NOT_INIT, 1)
 
+      call timer%lookup_timer("before_init", timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_NOT_INIT, 68)
+
+      call timer%reset(ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_NOT_INIT, 69)
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_NOT_INIT, 70)
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_NOT_INIT, 71)
+
       call timer%start_id(1, ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_NOT_INIT, 2)
+
+      call timer%stop_id(1, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_NOT_INIT, 72)
 
       config%mode = -1
       call timer%init(config=config, ierr=ierr)
@@ -90,6 +106,18 @@ contains
 
       call timer%register_timer("bad"//achar(9)//"name", timer_id, ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_INVALID_NAME, 13)
+
+      call timer%lookup_timer("", lookup_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_INVALID_NAME, 73)
+      if (lookup_id /= 0) error stop 74
+
+      call timer%lookup_timer(" leading", lookup_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_INVALID_NAME, 75)
+      if (lookup_id /= 0) error stop 76
+
+      call timer%lookup_timer("bad"//achar(9)//"name", lookup_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_INVALID_NAME, 77)
+      if (lookup_id /= 0) error stop 78
 
       call timer%register_timer("work", timer_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 14)
@@ -273,8 +301,18 @@ contains
 
          call timer%end_parallel_region(local_region, ierr=ierr)
          if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
+
+         local_id = -1
+         call timer%lookup_timer("parallel_work", local_id, ierr=ierr)
+         if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
+         if (local_id /= 0) worker_bad = worker_bad + 1
       else
          worker_seen = worker_seen + 1
+
+         local_id = -1
+         call timer%lookup_timer("parallel_work", local_id, ierr=ierr)
+         if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
+         if (local_id /= 0) worker_bad = worker_bad + 1
 
          call timer%start_id(timer_id, ierr=ierr)
          if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) worker_bad = worker_bad + 1

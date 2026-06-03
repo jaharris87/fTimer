@@ -300,6 +300,12 @@ contains
          return
       end if
 
+      if (is_inside_parallel_region()) then
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp lookup_timer called inside an OpenMP parallel region")
+         return
+      end if
+
       call normalize_name(name, trimmed_len, status, message)
       if (status /= FTIMER_SUCCESS) then
          call report_timer_status(self, ierr, status, message)
