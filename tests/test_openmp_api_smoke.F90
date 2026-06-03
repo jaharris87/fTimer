@@ -4,7 +4,7 @@ program ftimer_openmp_api_smoke
    use mpi_f08, only: MPI_Finalize, MPI_Init
 #endif
 #ifdef FTIMER_USE_OPENMP
-   use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic
+   use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, omp_set_num_threads
 #endif
    use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
@@ -113,10 +113,12 @@ contains
       integer :: i
       integer :: ierr
       integer :: j
+      integer(int64) :: call_count
       integer :: lookup_id
       integer :: old_id
       integer :: reset_id
       integer :: timer_id
+      real(wp) :: elapsed
       integer :: ids(20)
       character(len=32) :: name
       type(ftimer_openmp_config_t) :: bad_config
@@ -155,6 +157,28 @@ contains
       call timer%register_timer("work", timer_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 14)
       call expect_positive(timer_id, 15)
+
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 92)
+
+      fake_lane_time(0) = 5.0_wp
+      call timer%start_id(timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 93)
+
+      call timer%init(config=config, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 97)
+
+      fake_lane_time(0) = 8.0_wp
+      call timer%stop_id(timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 94)
+
+      call timer%test_lane_total_call_count(0, timer_id, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 95)
+      call expect_count(call_count, 1_int64, 96)
+
+      call timer%test_lane_total_time(0, timer_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 98)
+      call expect_time(elapsed, 3.0_wp, 99)
 
       call timer%register_timer("work", duplicate_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 16)
@@ -421,6 +445,7 @@ contains
       integer :: parent_id
       integer :: second_id
       integer :: timer_id
+      integer :: default_id
       integer :: worker_bad
       integer :: worker_seen
       logical :: is_running
@@ -432,9 +457,11 @@ contains
       type(ftimer_openmp_t) :: forgotten_timer
       type(ftimer_openmp_t) :: limited_timer
       type(ftimer_openmp_t) :: second_timer
+      type(ftimer_openmp_t) :: default_timer
       type(ftimer_openmp_t) :: timer
 
       call omp_set_dynamic(.false.)
+      call omp_set_num_threads(2)
 
       config%max_lanes = 4
       config%max_worker_diagnostics = 4
@@ -594,6 +621,66 @@ contains
       call timer%test_lane_total_time(2, timer_id, elapsed, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 218)
       call expect_time(elapsed, 7.0_wp, 219)
+
+      config = ftimer_openmp_config_t()
+      config%max_worker_diagnostics = 4
+      call default_timer%init(config=config, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 236)
+
+      call default_timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 237)
+
+      call default_timer%register_timer("default_lane_work", default_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 238)
+
+      call default_timer%begin_parallel_region(second_region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 239)
+
+      worker_bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+      worker_seen = worker_seen + 1
+      if (omp_get_thread_num() == 0) then
+         fake_lane_time(1) = 20.0_wp
+      else
+         fake_lane_time(2) = 40.0_wp
+      end if
+      call default_timer%start_id(default_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+      if (omp_get_thread_num() == 0) then
+         fake_lane_time(1) = 23.0_wp
+      else
+         fake_lane_time(2) = 47.0_wp
+      end if
+      call default_timer%stop_id(default_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+!$omp end parallel
+
+      if (worker_seen /= 2) error stop 240
+      if (worker_bad /= 0) error stop 241
+
+      call default_timer%end_parallel_region(second_region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 242)
+
+      call default_timer%test_lane_total_call_count(1, default_id, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 243)
+      call expect_count(call_count, 1_int64, 244)
+
+      call default_timer%test_lane_total_time(1, default_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 245)
+      call expect_time(elapsed, 3.0_wp, 246)
+
+      call default_timer%test_lane_total_call_count(2, default_id, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 247)
+      call expect_count(call_count, 1_int64, 248)
+
+      call default_timer%test_lane_total_time(2, default_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 249)
+      call expect_time(elapsed, 7.0_wp, 250)
+
+      call default_timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 251)
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 111)
@@ -851,6 +938,9 @@ contains
 
       call forgotten_timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_ACTIVE, 136)
+
+      call forgotten_timer%init(config=config, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 252)
 
       worker_bad = 0
       worker_seen = 0

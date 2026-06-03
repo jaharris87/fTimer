@@ -52,6 +52,15 @@ program ftimer_openmp_api_ierr_silence
    call timer%end_parallel_region(region, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop 8
 
+   call timer%begin_parallel_region(region, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 9
+
+#ifdef FTIMER_USE_OPENMP
+   call check_parallel_no_ierr_valid_silence(timer, timer_id)
+#endif
+
+   call timer%end_parallel_region(region)
+
    call timer%finalize()
 
 #ifdef FTIMER_USE_MPI
@@ -97,6 +106,24 @@ contains
       if (worker_seen <= 0) error stop 20
       if (status_bad /= 0) error stop 21
    end subroutine check_parallel_ierr_silence
+
+   subroutine check_parallel_no_ierr_valid_silence(timer, timer_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: timer_id
+      integer :: worker_seen
+
+      call omp_set_dynamic(.false.)
+
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) reduction(+:worker_seen)
+      worker_seen = worker_seen + 1
+      call timer%start_id(timer_id)
+      call timer%stop_id(timer_id)
+!$omp end parallel
+
+      if (worker_seen /= 2) error stop 22
+   end subroutine check_parallel_no_ierr_valid_silence
 #endif
 
 end program ftimer_openmp_api_ierr_silence

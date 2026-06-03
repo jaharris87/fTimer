@@ -111,23 +111,25 @@ region token must not close the earlier activation.
 
 ## Valid Operations
 
-Lifecycle and configuration calls are valid only from serial context, with no
+Current lifecycle and catalog calls are valid only from serial context, with no
 active timers on any lane:
 
 - `init`
 - `finalize`
 - `reset`
-- clock configuration
 - opening or closing a timed parallel-region epoch
-- timer registration intended to avoid hot-path name lookups
-- summary/report construction
+- timer registration with `register_timer`
+- timer id lookup with `lookup_timer`
 
-Timing calls are valid from serial context and from level-1 parallel teams:
+Current timing calls are valid from serial context and from level-1 parallel
+teams:
 
 - `start_id`
 - `stop_id`
-- `start` and `stop`, only if they resolve already-registered names without
-  catalog mutation
+
+OpenMP object clock configuration, summary/report construction, and name-based
+worker `start`/`stop` convenience calls remain future API work. They are not
+part of the current `ftimer_openmp_t` public runtime surface.
 
 Worker timing calls inside a level-1 team are valid only while a timed
 parallel-region epoch is open for that object. A worker timing call without an
@@ -146,8 +148,8 @@ of tight loops.
 
 Recommended path:
 
-1. Register timer names outside a parallel region with `lookup` or a future
-   explicit registration helper.
+1. Register timer names outside a parallel region with `register_timer`; use
+   `lookup_timer` only to recover an existing id by name.
 2. Warm or reserve lane-local context storage for the intended timing patterns
    when the implementation provides such a helper.
 3. Open a timed parallel-region epoch in serial context.
@@ -413,7 +415,9 @@ id path so future runtime changes have a baseline.
 
 ## Validation For This Design
 
-This document defines the runtime model without adding public symbols or
-changing runtime behavior. Validation for this design-only step is Markdown and
-diff checking. The first implementation PR for this model must add compiling
-OpenMP tests and overhead measurements before claiming runtime support.
+This document began as a design-only runtime model. Issue #269 landed the first
+implementation slice: current `ftimer_openmp_t` lifecycle/catalog calls,
+timed-region tokens, and id-first serial-lane / level-1 worker timing are real
+public behavior. That implementation is covered by smoke tests, installed
+consumer checks, and benchmark rows. OpenMP summaries/reports and hybrid
+rank/lane reductions remain deferred to later issues.
