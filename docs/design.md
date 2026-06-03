@@ -20,8 +20,9 @@ Implemented capabilities include:
 - procedural wrappers over an OOP core
 - MPI-reduced global summary fields on every participating rank after a descriptor-hash preflight
 - sparse MPI union summaries plus explicit sparse text and CSV reports
-- limited OpenMP master-thread-only timer guards
-- explicit `ftimer_openmp_t` timed-region and id-first thread-lane timing
+- limited OpenMP master-thread-only timer guards for `ftimer` / `ftimer_core`
+- explicit `ftimer_openmp_t` serial-lane and level-1 worker timed-region /
+  id-first thread-lane timing
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
 fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, OpenMP summary/report result families, or general thread-safe access to the existing `ftimer`/`ftimer_core` APIs from OpenMP worker threads.
@@ -360,21 +361,24 @@ Future-facing ideas should stay clearly separated from the current architecture 
 
 - built-in hardware counter or power-measurement backends
 - richer export formats beyond summary CSV, such as JSON or trace/event formats
-- broader OpenMP support beyond the documented master-thread-only guard model,
-  with the historical #160 deferral recorded in
+- broader OpenMP support beyond the landed `ftimer_openmp_t` serial-lane /
+  level-1 worker runtime, with the historical #160 deferral recorded in
   [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md),
   the reopened opt-in API direction tracked in
   [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md),
-  the thread-lane runtime model tracked in
+  the landed thread-lane runtime model tracked in
   [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md),
-  the summary/self-time model tracked in
+  the still-deferred summary/self-time model tracked in
   [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md),
-  the MPI+OpenMP reduction model tracked in
+  the still-deferred MPI+OpenMP reduction model tracked in
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md),
   and the validation plan tracked in
-  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
-  before runtime implementation. User-facing mode selection and migration
-  guidance live in
+  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md).
+  Remaining deferred areas include OpenMP summaries/reports/CSV, hybrid
+  MPI+OpenMP reductions, nested/task support, broader thread-safe behavior for
+  the existing `ftimer` / `ftimer_core` APIs, and production black-box
+  accounting coverage once a public OpenMP summary/result surface exists.
+  User-facing mode selection and migration guidance live in
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
 - stable semantic callback identity or a stronger external-profiler integration contract
 - explicit reservation/preallocation APIs for known timer sets, if profiling shows the new internal capacity strategy is still not enough for an adopter workload

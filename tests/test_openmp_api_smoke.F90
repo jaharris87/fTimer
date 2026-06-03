@@ -444,6 +444,10 @@ contains
       integer :: other_id
       integer :: parent_id
       integer :: second_id
+      integer :: common_parent_id
+      integer :: grand_a_id
+      integer :: grand_b_id
+      integer :: shared_leaf_id
       integer :: shared_child_id
       integer :: shared_parent_a_id
       integer :: shared_parent_b_id
@@ -451,6 +455,7 @@ contains
       integer :: default_id
       integer :: worker_bad
       integer :: worker_seen
+      integer :: stack_ids(2)
       logical :: is_running
       real(wp) :: elapsed
       type(ftimer_openmp_config_t) :: config
@@ -501,6 +506,18 @@ contains
 
       call timer%register_timer("shared_child", shared_child_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 255)
+
+      call timer%register_timer("grand_a", grand_a_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 272)
+
+      call timer%register_timer("grand_b", grand_b_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 273)
+
+      call timer%register_timer("common_parent", common_parent_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 274)
+
+      call timer%register_timer("shared_leaf", shared_leaf_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 275)
 
       fake_lane_time(0) = 1.0_wp
       call timer%start_id(timer_id, ierr=ierr)
@@ -844,6 +861,87 @@ contains
       call timer%test_lane_total_time(2, shared_child_id, elapsed, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 270)
       call expect_time(elapsed, 11.0_wp, 271)
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 276)
+
+      worker_bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         fake_lane_time(2) = 90.0_wp
+         call timer%start_id(grand_a_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 91.0_wp
+         call timer%start_id(common_parent_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 92.0_wp
+         call timer%start_id(shared_leaf_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 96.0_wp
+         call timer%stop_id(shared_leaf_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 98.0_wp
+         call timer%stop_id(common_parent_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 100.0_wp
+         call timer%stop_id(grand_a_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+
+         fake_lane_time(2) = 110.0_wp
+         call timer%start_id(grand_b_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 111.0_wp
+         call timer%start_id(common_parent_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 112.0_wp
+         call timer%start_id(shared_leaf_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 119.0_wp
+         call timer%stop_id(shared_leaf_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 121.0_wp
+         call timer%stop_id(common_parent_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 123.0_wp
+         call timer%stop_id(grand_b_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 277
+      if (worker_bad /= 0) error stop 278
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 279)
+
+      stack_ids = [grand_a_id, common_parent_id]
+      call timer%test_lane_stack_call_count(2, shared_leaf_id, stack_ids, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 280)
+      call expect_count(call_count, 1_int64, 281)
+
+      call timer%test_lane_stack_total_time(2, shared_leaf_id, stack_ids, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 282)
+      call expect_time(elapsed, 4.0_wp, 283)
+
+      stack_ids = [grand_b_id, common_parent_id]
+      call timer%test_lane_stack_call_count(2, shared_leaf_id, stack_ids, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 284)
+      call expect_count(call_count, 1_int64, 285)
+
+      call timer%test_lane_stack_total_time(2, shared_leaf_id, stack_ids, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 286)
+      call expect_time(elapsed, 7.0_wp, 287)
+
+      call timer%test_lane_total_call_count(2, shared_leaf_id, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 288)
+      call expect_count(call_count, 2_int64, 289)
+
+      call timer%test_lane_total_time(2, shared_leaf_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 290)
+      call expect_time(elapsed, 11.0_wp, 291)
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 205)

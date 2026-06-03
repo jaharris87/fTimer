@@ -153,7 +153,7 @@ The call stack state CHANGES between start and stop — this is the most common 
 
 ## Development Workflow
 
-Current `main` contains the shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, sparse/union MPI descriptor summaries, and limited OpenMP master-thread guards.
+Current `main` contains the shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, sparse/union MPI descriptor summaries, limited OpenMP master-thread guards for the existing APIs, and the explicit `ftimer_openmp_t` serial-lane / level-1 worker timing runtime.
 
 During release-readiness work, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep diffs issue-bounded: preserve procedural-wrapper parity with the OOP core unless a tracked issue explicitly defers parity, keep MPI summary behavior correct and explicit, preserve the limited master-thread-only OpenMP guard model, and keep current-state docs/examples honest. Do not pull OpenMP summaries, hybrid rank/lane reductions, or other broader deferred design work forward without a linked issue.
 

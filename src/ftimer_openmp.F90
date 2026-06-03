@@ -95,8 +95,10 @@ module ftimer_openmp
 #ifdef FTIMER_BUILD_SMOKE_TESTS
       procedure :: test_lane_total_call_count
       procedure :: test_lane_parent_call_count
+      procedure :: test_lane_stack_call_count
       procedure :: test_lane_total_time
       procedure :: test_lane_parent_total_time
+      procedure :: test_lane_stack_total_time
       procedure :: test_lane_is_running
       procedure :: test_set_clock
 #endif
@@ -1121,6 +1123,56 @@ contains
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine test_lane_parent_call_count
 
+   subroutine test_lane_stack_call_count(self, lane_id, id, parent_ids, call_count, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in) :: lane_id
+      integer, intent(in) :: id
+      integer, intent(in) :: parent_ids(:)
+      integer(int64), intent(out) :: call_count
+      integer, intent(out), optional :: ierr
+      integer :: catalog_idx
+      integer :: ctx
+      integer :: lane_idx
+
+      call_count = 0_int64
+
+      if (.not. self%initialized) then
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp test stack call count before init")
+         return
+      end if
+
+      catalog_idx = find_timer_id_index(self, id)
+      if (catalog_idx <= 0) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                  "ftimer_openmp test stack call count with unknown timer id")
+         return
+      end if
+
+      lane_idx = lane_id + 1
+      if ((.not. allocated(self%lanes)) .or. (lane_idx < 1) .or. (lane_idx > size(self%lanes))) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                  "ftimer_openmp test stack call count with unknown lane id")
+         return
+      end if
+
+      if (allocated(self%lanes(lane_idx)%segments)) then
+         if (size(self%lanes(lane_idx)%segments) >= catalog_idx) then
+            if (allocated(self%lanes(lane_idx)%segments(catalog_idx)%call_count)) then
+               do ctx = 1, self%lanes(lane_idx)%segments(catalog_idx)%contexts%count
+                  if (self%lanes(lane_idx)%segments(catalog_idx)%contexts%stacks(ctx)%depth == size(parent_ids)) then
+                     if (all(self%lanes(lane_idx)%segments(catalog_idx)%contexts%stacks(ctx)%ids(1:size(parent_ids)) == &
+                             parent_ids)) then
+                        call_count = call_count + self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx)
+                     end if
+                  end if
+               end do
+            end if
+         end if
+      end if
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine test_lane_stack_call_count
+
    subroutine test_lane_total_time(self, lane_id, id, total_time, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(in) :: lane_id
@@ -1211,6 +1263,56 @@ contains
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine test_lane_parent_total_time
+
+   subroutine test_lane_stack_total_time(self, lane_id, id, parent_ids, total_time, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in) :: lane_id
+      integer, intent(in) :: id
+      integer, intent(in) :: parent_ids(:)
+      real(wp), intent(out) :: total_time
+      integer, intent(out), optional :: ierr
+      integer :: catalog_idx
+      integer :: ctx
+      integer :: lane_idx
+
+      total_time = 0.0_wp
+
+      if (.not. self%initialized) then
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp test stack total time before init")
+         return
+      end if
+
+      catalog_idx = find_timer_id_index(self, id)
+      if (catalog_idx <= 0) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                  "ftimer_openmp test stack total time with unknown timer id")
+         return
+      end if
+
+      lane_idx = lane_id + 1
+      if ((.not. allocated(self%lanes)) .or. (lane_idx < 1) .or. (lane_idx > size(self%lanes))) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                  "ftimer_openmp test stack total time with unknown lane id")
+         return
+      end if
+
+      if (allocated(self%lanes(lane_idx)%segments)) then
+         if (size(self%lanes(lane_idx)%segments) >= catalog_idx) then
+            if (allocated(self%lanes(lane_idx)%segments(catalog_idx)%time)) then
+               do ctx = 1, self%lanes(lane_idx)%segments(catalog_idx)%contexts%count
+                  if (self%lanes(lane_idx)%segments(catalog_idx)%contexts%stacks(ctx)%depth == size(parent_ids)) then
+                     if (all(self%lanes(lane_idx)%segments(catalog_idx)%contexts%stacks(ctx)%ids(1:size(parent_ids)) == &
+                             parent_ids)) then
+                        total_time = total_time + self%lanes(lane_idx)%segments(catalog_idx)%time(ctx)
+                     end if
+                  end if
+               end do
+            end if
+         end if
+      end if
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine test_lane_stack_total_time
 
    subroutine test_lane_is_running(self, lane_id, id, is_running, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
