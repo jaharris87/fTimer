@@ -592,7 +592,7 @@ contains
       integer, intent(in) :: reps
       integer(int64), intent(in) :: count_rate
       integer(int64) :: t0, t1
-      integer :: bad, i, id, ierr
+      integer :: bad, i, id, ierr, worker_seen
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_parallel_region_t) :: region
       type(ftimer_openmp_t) :: timer
@@ -607,9 +607,13 @@ contains
       call require_success(ierr, 'ftimer_openmp worker begin_parallel_region')
 
       bad = 0
+      worker_seen = 0
+      t0 = 0_int64
+      t1 = 0_int64
 
-!$omp parallel num_threads(2) default(shared) private(ierr, i) reduction(+:bad)
+!$omp parallel num_threads(2) default(shared) private(ierr, i) reduction(+:bad, worker_seen)
       if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
          call timer%start_id(id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) bad = bad + 1
          call timer%stop_id(id, ierr=ierr)
@@ -629,6 +633,14 @@ contains
 !$omp end parallel
 
       if (bad /= 0) error stop 'ftimer_bench: ftimer_openmp worker start/stop failed'
+      if (worker_seen <= 0) then
+         call timer%end_parallel_region(region, ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker skipped end_parallel_region')
+         call timer%finalize(ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker skipped finalize')
+         call write_bench_line('ftimer_openmp worker lane (id-based) skipped: OpenMP did not provide thread 1')
+         return
+      end if
       call timer%end_parallel_region(region, ierr=ierr)
       call require_success(ierr, 'ftimer_openmp worker end_parallel_region')
       call timer%finalize(ierr=ierr)

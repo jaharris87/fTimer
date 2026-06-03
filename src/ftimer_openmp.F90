@@ -21,6 +21,8 @@ module ftimer_openmp
    integer, parameter :: FTIMER_OPENMP_MODE_THREAD_LANES = 1
    integer, parameter :: FTIMER_OPENMP_CATALOG_INITIAL_CAPACITY = 16
    integer, parameter :: FTIMER_OPENMP_DEFAULT_WORKER_DIAGNOSTICS = 32
+   integer(int64) :: next_object_token = 1_int64
+   integer(int64) :: next_region_token = 1_int64
 
    type :: ftimer_openmp_config_t
       integer :: mode = FTIMER_OPENMP_MODE_THREAD_LANES
@@ -31,6 +33,8 @@ module ftimer_openmp
    type :: ftimer_openmp_parallel_region_t
       private
       integer :: epoch = 0
+      integer(int64) :: object_token = 0_int64
+      integer(int64) :: region_token = 0_int64
       logical :: active = .false.
    end type ftimer_openmp_parallel_region_t
 
@@ -55,11 +59,14 @@ module ftimer_openmp
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_catalog_entry_t), allocatable :: catalog(:)
       integer, allocatable :: id_to_catalog_idx(:)
+      integer :: id_index_base = 0
       type(ftimer_openmp_lane_t), allocatable :: lanes(:)
       integer :: num_timers = 0
       integer :: next_timer_id = 1
+      integer(int64) :: object_token = 0_int64
       logical :: region_open = .false.
       integer :: current_epoch = 0
+      integer(int64) :: current_region_token = 0_int64
       integer :: next_epoch = 1
       integer :: queued_worker_diagnostics = 0
       integer :: worker_diagnostic_overflow = 0
@@ -163,6 +170,11 @@ contains
 
       lifecycle_status = worker_diagnostic_status(self)
       if (.not. present(ierr)) call emit_worker_diagnostics(self)
+      call ensure_object_token(self)
+      if (self%object_token == 0_int64) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp object token space exhausted")
+         return
+      end if
       call clear_state(self)
       self%initialized = .true.
       self%config = effective_config
@@ -252,6 +264,7 @@ contains
       self%config = saved_config
       self%region_open = .false.
       self%current_epoch = 0
+      self%current_region_token = 0_int64
       self%next_epoch = 1
       call clear_all_lanes(self)
       call clear_worker_diagnostics(self)
@@ -315,7 +328,7 @@ contains
       self%catalog(self%num_timers)%name = name(1:trimmed_len)
       self%catalog(self%num_timers)%id = id
       call ensure_id_index_capacity(self, id)
-      self%id_to_catalog_idx(id) = self%num_timers
+      self%id_to_catalog_idx(id - self%id_index_base + 1) = self%num_timers
       call ensure_all_lane_segment_capacity(self, self%num_timers)
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
@@ -382,9 +395,21 @@ contains
          return
       end if
 
+      if (region%active) then
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp begin_parallel_region with an active region handle")
+         return
+      end if
+
       if (has_active_lanes(self)) then
          call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
                                   "ftimer_openmp begin_parallel_region with active lane timers")
+         return
+      end if
+
+      self%current_region_token = allocate_region_token()
+      if (self%current_region_token == 0_int64) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp region token space exhausted")
          return
       end if
 
@@ -392,6 +417,8 @@ contains
       self%current_epoch = self%next_epoch
       if (self%next_epoch < huge(self%next_epoch)) self%next_epoch = self%next_epoch + 1
       region%epoch = self%current_epoch
+      region%object_token = self%object_token
+      region%region_token = self%current_region_token
       region%active = .true.
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine begin_parallel_region
@@ -402,7 +429,7 @@ contains
       integer, intent(out), optional :: ierr
 
       if (.not. self%initialized) then
-         call clear_region(region)
+         if (region_belongs_to_self(self, region)) call clear_region(region)
          call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp end_parallel_region before init")
          return
       end if
@@ -413,8 +440,11 @@ contains
          return
       end if
 
-      if ((.not. self%region_open) .or. (.not. region%active) .or. (region%epoch /= self%current_epoch)) then
-         call clear_region(region)
+      if ((.not. self%region_open) .or. (.not. region%active) .or. &
+          (region%epoch /= self%current_epoch) .or. &
+          (region%object_token /= self%object_token) .or. &
+          (region%region_token /= self%current_region_token)) then
+         if (region_belongs_to_self(self, region)) call clear_region(region)
          call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
                                   "ftimer_openmp end_parallel_region without matching open timed region")
          return
@@ -428,6 +458,7 @@ contains
 
       self%region_open = .false.
       self%current_epoch = 0
+      self%current_region_token = 0_int64
       call clear_region(region)
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
@@ -498,10 +529,12 @@ contains
       self%config = ftimer_openmp_config_t()
       if (allocated(self%catalog)) deallocate (self%catalog)
       if (allocated(self%id_to_catalog_idx)) deallocate (self%id_to_catalog_idx)
+      self%id_index_base = 0
       if (allocated(self%lanes)) deallocate (self%lanes)
       self%num_timers = 0
       self%region_open = .false.
       self%current_epoch = 0
+      self%current_region_token = 0_int64
       self%next_epoch = 1
       call clear_worker_diagnostics(self)
 #ifdef FTIMER_USE_MPI
@@ -513,8 +546,18 @@ contains
       type(ftimer_openmp_parallel_region_t), intent(inout) :: region
 
       region%epoch = 0
+      region%object_token = 0_int64
+      region%region_token = 0_int64
       region%active = .false.
    end subroutine clear_region
+
+   logical function region_belongs_to_self(self, region) result(belongs)
+      class(ftimer_openmp_t), intent(in) :: self
+      type(ftimer_openmp_parallel_region_t), intent(in) :: region
+
+      belongs = (.not. region%active) .or. &
+                ((self%object_token /= 0_int64) .and. (region%object_token == self%object_token))
+   end function region_belongs_to_self
 
    subroutine allocate_lanes(self)
       class(ftimer_openmp_t), intent(inout) :: self
@@ -831,6 +874,32 @@ contains
       status = FTIMER_SUCCESS
    end subroutine normalize_name
 
+   subroutine ensure_object_token(self)
+      class(ftimer_openmp_t), intent(inout) :: self
+
+      if (self%object_token /= 0_int64) return
+      if (next_object_token <= 0_int64) return
+
+      self%object_token = next_object_token
+      if (next_object_token == huge(next_object_token)) then
+         next_object_token = -1_int64
+      else
+         next_object_token = next_object_token + 1_int64
+      end if
+   end subroutine ensure_object_token
+
+   integer(int64) function allocate_region_token() result(token)
+      token = 0_int64
+      if (next_region_token <= 0_int64) return
+
+      token = next_region_token
+      if (next_region_token == huge(next_region_token)) then
+         next_region_token = -1_int64
+      else
+         next_region_token = next_region_token + 1_int64
+      end if
+   end function allocate_region_token
+
    subroutine ensure_catalog_capacity(self, required_size)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(in) :: required_size
@@ -853,19 +922,36 @@ contains
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(in) :: required_id
       integer, allocatable :: old_index(:)
+      integer :: new_base
       integer :: new_size
+      integer :: offset
+      integer :: old_base
+      integer :: old_size
+      integer :: old_upper
+      integer :: old_offset
 
       if (required_id <= 0) return
 
       if (allocated(self%id_to_catalog_idx)) then
-         if (size(self%id_to_catalog_idx) >= required_id) return
+         offset = required_id - self%id_index_base + 1
+         if ((offset >= 1) .and. (offset <= size(self%id_to_catalog_idx))) return
          call move_alloc(self%id_to_catalog_idx, old_index)
-         new_size = max(required_id, 2*size(old_index))
+         old_base = self%id_index_base
+         old_size = size(old_index)
+         old_upper = old_base + old_size - 1
+         new_base = min(required_id, old_base)
+         new_size = max(required_id, old_upper) - new_base + 1
+         new_size = max(new_size, 2*old_size)
          allocate (self%id_to_catalog_idx(new_size))
          self%id_to_catalog_idx = 0
-         if (size(old_index) > 0) self%id_to_catalog_idx(1:size(old_index)) = old_index
+         if (old_size > 0) then
+            old_offset = old_base - new_base + 1
+            self%id_to_catalog_idx(old_offset:old_offset + old_size - 1) = old_index
+         end if
+         self%id_index_base = new_base
       else
-         new_size = max(required_id, FTIMER_OPENMP_CATALOG_INITIAL_CAPACITY)
+         self%id_index_base = required_id
+         new_size = FTIMER_OPENMP_CATALOG_INITIAL_CAPACITY
          allocate (self%id_to_catalog_idx(new_size))
          self%id_to_catalog_idx = 0
       end if
@@ -908,12 +994,14 @@ contains
    integer function find_timer_id_index(self, id) result(idx)
       class(ftimer_openmp_t), intent(in) :: self
       integer, intent(in) :: id
+      integer :: offset
 
       idx = 0
       if ((id <= 0) .or. (.not. allocated(self%id_to_catalog_idx))) return
-      if (id > size(self%id_to_catalog_idx)) return
+      offset = id - self%id_index_base + 1
+      if ((offset < 1) .or. (offset > size(self%id_to_catalog_idx))) return
 
-      idx = self%id_to_catalog_idx(id)
+      idx = self%id_to_catalog_idx(offset)
       if ((idx < 1) .or. (idx > self%num_timers)) idx = 0
    end function find_timer_id_index
 

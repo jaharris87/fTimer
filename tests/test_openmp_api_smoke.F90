@@ -394,14 +394,17 @@ contains
       integer :: ierr
       integer :: other_id
       integer :: parent_id
+      integer :: second_id
       integer :: timer_id
       integer :: worker_bad
       integer :: worker_seen
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_parallel_region_t) :: second_region
       type(ftimer_openmp_parallel_region_t) :: stale_region
       type(ftimer_openmp_t) :: forgotten_timer
       type(ftimer_openmp_t) :: limited_timer
+      type(ftimer_openmp_t) :: second_timer
       type(ftimer_openmp_t) :: timer
 
       call omp_set_dynamic(.false.)
@@ -455,8 +458,38 @@ contains
       call timer%end_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 144)
 
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 177)
+
       call timer%end_parallel_region(stale_region, ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_ACTIVE, 145)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 178)
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 179)
+
+      call second_timer%init(config=config, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 180)
+
+      call second_timer%register_timer("foreign", second_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 181)
+
+      call second_timer%begin_parallel_region(second_region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 182)
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 183)
+
+      call timer%end_parallel_region(second_region, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 184)
+
+      call second_timer%end_parallel_region(second_region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 185)
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 186)
+
+      call second_timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 187)
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 139)

@@ -101,13 +101,13 @@ timer because the top stack entry's epoch will not match the currently open
 epoch.
 
 Opening a new timed region must fail if any lane already has an active stack.
-Closing a timed region must retire the current epoch so no later worker call can
-use it, then scan the worker lanes for active stacks. If active stacks remain,
-the close returns an error and preserves the lane stack metadata for diagnostics
-or later summary-contract handling. A later worker stop without an open epoch,
-or with a newer epoch than the stack entry, must not close the earlier
-activation. This makes forgotten worker stops fail at the region boundary
-instead of lingering until an unrelated later summary/reset/finalize operation.
+Closing a timed region must scan the worker lanes for active stacks before
+retiring the current epoch. If active stacks remain, the close returns an error
+and leaves the timed-region token open so the caller can re-enter the same
+OpenMP team shape, stop the forgotten lane activation, and retry the close.
+Only a successful close retires the epoch. A later worker stop without an open
+epoch, with a newer epoch than the stack entry, or through a stale or foreign
+region token must not close the earlier activation.
 
 ## Valid Operations
 
@@ -251,8 +251,9 @@ define correct semantics:
 - enough tree/link information to compute self time without crossing sibling
   or cousin boundaries.
 
-Timed-region close must retire the current epoch and return an error if active
-worker lanes remain. `reset` and `finalize` must reject active lanes before
+Timed-region close must return an error without retiring the current epoch if
+active worker lanes remain, so callers can stop the forgotten worker activation
+and retry the close. `reset` and `finalize` must reject active lanes before
 clearing state. They must not force-stop active worker timers or synthesize
 elapsed time silently.
 

@@ -362,8 +362,9 @@ enforcement should pass `ierr` and check it.
   timed level-1 OpenMP region, `start_id`/`stop_id` use one lane per OpenMP
   thread id, enforce lane-local strict stacks, and never repair or pop another
   lane on mismatch. Worker timing calls outside an open timed region, beyond
-  `config%max_lanes`, or in unsupported nested/task contexts return errors and
-  leave unrelated lane state unchanged. `reset`, `finalize`, reinitialization,
+  `config%max_lanes`, or in unsupported nested parallel contexts return errors and
+  leave unrelated lane state unchanged. OpenMP task migration is outside the
+  validated contract. `reset`, `finalize`, reinitialization,
   and timed-region close scan all lanes and reject active timers.
   Calls made inside an OpenMP parallel region without `ierr` queue bounded
   diagnostics instead of writing unordered stderr, except for valid worker
