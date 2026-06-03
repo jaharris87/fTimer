@@ -308,10 +308,11 @@ same runner family after the launcher probe.
 
 The hybrid `build-mpi-openmp` job configures both `FTIMER_USE_MPI=ON` and
 `FTIMER_USE_OPENMP=ON`, builds, and runs smoke/install-consumer checks for
-today's compatibility mode only. Local Homebrew MPICH 5.0.1 was not a valid
-reproduction path because it does not install `mpi_f08.mod`, so it fails
-fTimer's configure-time MPI contract probe. A GitHub-hosted NVHPC 26.3 serial
-smoke/install-consumer trial installed and built successfully, but the
+today's compatibility mode plus the installed opt-in `ftimer_openmp` worker
+API, without claiming hybrid rank/lane reductions. Local Homebrew MPICH 5.0.1
+was not a valid reproduction path because it does not install `mpi_f08.mod`,
+so it fails fTimer's configure-time MPI contract probe. A GitHub-hosted NVHPC
+26.3 serial smoke/install-consumer trial installed and built successfully, but the
 generated executables aborted at runtime with `DEALLOCATE: memory at (nil) not
 allocated`, so NVHPC validation remains deferred rather than claimed. The
 contract-regression job also verifies the configure-time MPI/OpenMP gates and
