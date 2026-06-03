@@ -87,6 +87,7 @@ contains
       integer :: timer_id
       integer :: ids(20)
       character(len=32) :: name
+      type(ftimer_openmp_config_t) :: bad_config
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_parallel_region_t) :: region
       type(ftimer_openmp_t) :: timer
@@ -144,6 +145,37 @@ contains
       call timer%lookup_timer("work", old_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 24)
       if (old_id /= timer_id) error stop 25
+
+      bad_config = config
+      bad_config%mode = -1
+      call timer%init(config=bad_config, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 79)
+
+      call timer%lookup_timer("work", old_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 80)
+      if (old_id /= timer_id) error stop 81
+
+      call timer%start_id(timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 82)
+
+      do i = 1, size(ids)
+         write (name, '("bulk_",i0)') i
+         call timer%lookup_timer(trim(name), lookup_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 83)
+         if (lookup_id /= ids(i)) error stop 84
+      end do
+
+      call timer%start_id(0, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 85)
+
+      call timer%start_id(-1, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 86)
+
+      call timer%stop_id(0, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 87)
+
+      call timer%stop_id(-1, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 88)
 
       call timer%reset(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 26)
