@@ -330,7 +330,6 @@ contains
       self%catalog(self%num_timers)%id = id
       call ensure_id_index_capacity(self, id)
       self%id_to_catalog_idx(id - self%id_index_base + 1) = self%num_timers
-      call ensure_all_lane_segment_capacity(self, self%num_timers)
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine register_timer
@@ -457,6 +456,8 @@ contains
          return
       end if
 
+      if (drain_worker_diagnostics(self, ierr)) return
+
       self%region_open = .false.
       self%current_epoch = 0
       self%current_region_token = 0_int64
@@ -570,7 +571,6 @@ contains
       do i = 1, size(self%lanes)
          self%lanes(i)%lane_id = i - 1
          self%lanes(i)%participated = .false.
-         call ensure_lane_segment_capacity(self%lanes(i), self%num_timers)
       end do
    end subroutine allocate_lanes
 
@@ -578,7 +578,6 @@ contains
       class(ftimer_openmp_t), intent(inout) :: self
 
       call allocate_lanes(self)
-      call ensure_all_lane_segment_capacity(self, self%num_timers)
    end subroutine clear_all_lanes
 
    logical function has_active_lanes(self) result(has_active)
@@ -670,7 +669,7 @@ contains
       integer, intent(out), optional :: ierr
       integer :: ctx
 
-      call ensure_lane_segment_capacity(self%lanes(lane_idx), self%num_timers)
+      call ensure_lane_segment_capacity(self%lanes(lane_idx), catalog_idx)
       call ensure_lane_timer_metadata(self%lanes(lane_idx), catalog_idx, self%catalog(catalog_idx)%name)
 
       ctx = self%lanes(lane_idx)%segments(catalog_idx)%contexts%add(self%lanes(lane_idx)%call_stack)
@@ -750,17 +749,6 @@ contains
          allocate (lane%segments(required_size))
       end if
    end subroutine ensure_lane_segment_capacity
-
-   subroutine ensure_all_lane_segment_capacity(self, required_size)
-      class(ftimer_openmp_t), intent(inout) :: self
-      integer, intent(in) :: required_size
-      integer :: i
-
-      if (.not. allocated(self%lanes)) return
-      do i = 1, size(self%lanes)
-         call ensure_lane_segment_capacity(self%lanes(i), required_size)
-      end do
-   end subroutine ensure_all_lane_segment_capacity
 
    subroutine ensure_lane_timer_metadata(lane, catalog_idx, name)
       type(ftimer_openmp_lane_t), intent(inout) :: lane

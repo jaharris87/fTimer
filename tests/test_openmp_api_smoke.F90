@@ -651,6 +651,26 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 218)
       call expect_time(elapsed, 7.0_wp, 219)
 
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 292)
+
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) reduction(+:worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         call timer%stop_id(timer_id)
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 293
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_MISMATCH, 294)
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 295)
+
       config = ftimer_openmp_config_t()
       config%max_worker_diagnostics = 4
       call default_timer%init(config=config, ierr=ierr)

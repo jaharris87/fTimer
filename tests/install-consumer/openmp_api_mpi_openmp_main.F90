@@ -1,6 +1,6 @@
 program ftimer_installed_openmp_api_mpi_openmp_consumer
    use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_parallel_region_t, ftimer_openmp_t
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_SUCCESS
+   use ftimer_types, only: FTIMER_SUCCESS
    use mpi_f08, only: MPI_COMM_WORLD, MPI_Finalize, MPI_Init, MPI_Comm_rank, MPI_SUCCESS
    use omp_lib, only: omp_get_thread_num, omp_set_dynamic
    implicit none
@@ -57,8 +57,7 @@ program ftimer_installed_openmp_api_mpi_openmp_consumer
    if (worker_seen <= 0) error stop 5
    if (worker_bad /= 0) error stop 6
 
-   call timer%end_parallel_region(region, ierr=ierr)
-   if (ierr /= FTIMER_SUCCESS) error stop 9
+   call timer%end_parallel_region(region)
 
    call timer%finalize()
 
