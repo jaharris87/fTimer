@@ -358,8 +358,6 @@ contains
       type(ftimer_openmp_parallel_region_t), intent(inout) :: region
       integer, intent(out), optional :: ierr
 
-      call clear_region(region)
-
       if (.not. self%initialized) then
          call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp begin_parallel_region before init")
          return
