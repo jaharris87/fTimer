@@ -3,8 +3,8 @@ program ftimer_openmp_api_ierr_silence
    use omp_lib, only: omp_get_thread_num, omp_set_dynamic
 #endif
    use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_parallel_region_t, ftimer_openmp_t
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_NOT_IMPLEMENTED, &
-                           FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_NOT_INIT, &
+                           FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS
    implicit none
 
    integer :: ierr
@@ -34,11 +34,14 @@ program ftimer_openmp_api_ierr_silence
    if (ierr /= FTIMER_SUCCESS) error stop 6
 
    call timer%begin_parallel_region(region, ierr=ierr)
-   if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 7
+   if (ierr /= FTIMER_SUCCESS) error stop 7
 
 #ifdef FTIMER_USE_OPENMP
    call check_parallel_ierr_silence(timer, timer_id)
 #endif
+
+   call timer%end_parallel_region(region, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 8
 
    call timer%finalize()
 
@@ -71,10 +74,10 @@ contains
          worker_seen = worker_seen + 1
 
          call timer%start_id(timer_id, ierr=local_ierr)
-         if (local_ierr /= FTIMER_ERR_NOT_IMPLEMENTED) status_bad = status_bad + 1
+         if (local_ierr /= FTIMER_SUCCESS) status_bad = status_bad + 1
 
          call timer%stop_id(timer_id, ierr=local_ierr)
-         if (local_ierr /= FTIMER_ERR_NOT_IMPLEMENTED) status_bad = status_bad + 1
+         if (local_ierr /= FTIMER_SUCCESS) status_bad = status_bad + 1
       end if
 !$omp end parallel
 

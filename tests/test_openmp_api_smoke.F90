@@ -4,7 +4,7 @@ program ftimer_openmp_api_smoke
 #endif
    use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_NOT_IMPLEMENTED, &
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS
    implicit none
 
@@ -12,6 +12,7 @@ program ftimer_openmp_api_smoke
    call check_catalog_lifecycle()
 #ifdef FTIMER_USE_OPENMP
    call check_parallel_rejections()
+   call check_thread_lane_runtime()
 #endif
 
 contains
@@ -156,7 +157,10 @@ contains
       if (old_id /= timer_id) error stop 81
 
       call timer%start_id(timer_id, ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 82)
+      call expect_status(ierr, FTIMER_SUCCESS, 82)
+
+      call timer%stop_id(timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 89)
 
       do i = 1, size(ids)
          write (name, '("bulk_",i0)') i
@@ -190,11 +194,15 @@ contains
          call expect_status(ierr, FTIMER_SUCCESS, 29)
          if (lookup_id /= ids(i)) error stop 30
          call timer%start_id(ids(i), ierr=ierr)
-         call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 31)
+         call expect_status(ierr, FTIMER_SUCCESS, 31)
+         call timer%stop_id(ids(i), ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 90)
       end do
 
       call timer%start_id(timer_id, ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 32)
+      call expect_status(ierr, FTIMER_SUCCESS, 32)
+      call timer%stop_id(timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 91)
 
       call timer%register_timer("after_reset", reset_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 33)
@@ -204,10 +212,10 @@ contains
       end do
 
       call timer%begin_parallel_region(region, ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 36)
+      call expect_status(ierr, FTIMER_SUCCESS, 36)
 
       call timer%end_parallel_region(region, ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 37)
+      call expect_status(ierr, FTIMER_SUCCESS, 37)
 
       call timer%register_timer("before_direct_reinit", direct_reinit_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 38)
@@ -347,7 +355,7 @@ contains
          if (local_id /= 0) worker_bad = worker_bad + 1
 
          call timer%start_id(timer_id, ierr=ierr)
-         if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) worker_bad = worker_bad + 1
+         if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
 
          call timer%reset(ierr=ierr)
          if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
@@ -369,6 +377,198 @@ contains
 
       call timer%finalize()
    end subroutine check_parallel_rejections
+
+   subroutine check_thread_lane_runtime()
+      integer :: capacity_bad
+      integer :: ierr
+      integer :: other_id
+      integer :: timer_id
+      integer :: worker_bad
+      integer :: worker_seen
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: forgotten_timer
+      type(ftimer_openmp_t) :: limited_timer
+      type(ftimer_openmp_t) :: timer
+
+      call omp_set_dynamic(.false.)
+
+      config%max_lanes = 4
+      config%max_worker_diagnostics = 4
+
+      call timer%init(config=config, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 100)
+
+      call timer%register_timer("lane_work", timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 101)
+
+      call timer%register_timer("other_lane_work", other_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 102)
+
+      call timer%start_id(timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 103)
+
+      call timer%reset(ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 104)
+
+      call timer%stop_id(timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 105)
+
+      call timer%reset(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 106)
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 107)
+
+      worker_bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(3) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+      worker_seen = worker_seen + 1
+      call timer%start_id(timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+      call timer%stop_id(timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+!$omp end parallel
+
+      if (worker_seen /= 3) error stop 108
+      if (worker_bad /= 0) error stop 109
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 110)
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 111)
+
+      worker_bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(3) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         call timer%start_id(other_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         call timer%stop_id(other_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 112
+      if (worker_bad /= 0) error stop 113
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 114)
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 115)
+
+      worker_bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         call timer%start_id(timer_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+      end if
+!$omp barrier
+      if (omp_get_thread_num() == 0) then
+         worker_seen = worker_seen + 1
+         call timer%stop_id(timer_id, ierr=ierr)
+         if (ierr /= FTIMER_ERR_MISMATCH) worker_bad = worker_bad + 1
+      end if
+!$omp barrier
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         call timer%stop_id(timer_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 2) error stop 116
+      if (worker_bad /= 0) error stop 117
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 118)
+
+      worker_bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         call timer%start_id(timer_id, ierr=ierr)
+         if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 119
+      if (worker_bad /= 0) error stop 120
+
+      call forgotten_timer%init(config=config, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 121)
+
+      call forgotten_timer%register_timer("forgotten", timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 122)
+
+      call forgotten_timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 123)
+
+      worker_bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         call forgotten_timer%start_id(timer_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 124
+      if (worker_bad /= 0) error stop 125
+
+      call forgotten_timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 126)
+
+      call forgotten_timer%reset(ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 127)
+
+      call forgotten_timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 136)
+
+      config%max_lanes = 2
+      call limited_timer%init(config=config, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 128)
+
+      call limited_timer%register_timer("limited", timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 129)
+
+      call limited_timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 130)
+
+      capacity_bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:capacity_bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         call limited_timer%start_id(timer_id, ierr=ierr)
+         if (ierr /= FTIMER_ERR_UNKNOWN) capacity_bad = capacity_bad + 1
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 131
+      if (capacity_bad /= 0) error stop 132
+
+      call limited_timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 133)
+
+      call limited_timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 134)
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 135)
+   end subroutine check_thread_lane_runtime
 #endif
 
 end program ftimer_openmp_api_smoke

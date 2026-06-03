@@ -7,9 +7,10 @@
 Issue #240 defines the summary and self-time contract that should sit between
 the opt-in API direction from #238 and the thread-lane runtime model from #239.
 This is a design contract only. It does not add public Fortran symbols, change
-current report output, implement threaded timing, or add MPI+OpenMP reductions.
-Issue #268 adds the initial `ftimer_openmp` module and object
-lifecycle/catalog surface; the summary/result APIs below remain future work.
+current report output, implement summary generation, or add MPI+OpenMP
+reductions. Issue #268 adds the initial `ftimer_openmp` module and object
+lifecycle/catalog surface, and #269 adds the first thread-lane runtime; the
+summary/result APIs below remain future work.
 
 ## Decision
 

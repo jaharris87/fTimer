@@ -1,6 +1,6 @@
 program ftimer_installed_openmp_api_mpi_consumer
    use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, ftimer_openmp_config_t, ftimer_openmp_t
-   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_SUCCESS
+   use ftimer_types, only: FTIMER_SUCCESS
    use mpi_f08, only: MPI_COMM_WORLD, MPI_Finalize, MPI_Init, MPI_SUCCESS
    implicit none
 
@@ -22,7 +22,10 @@ program ftimer_installed_openmp_api_mpi_consumer
    if (ierr /= FTIMER_SUCCESS) error stop 3
 
    call timer%start_id(timer_id, ierr=ierr)
-   if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 4
+   if (ierr /= FTIMER_SUCCESS) error stop 4
+
+   call timer%stop_id(timer_id, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 7
 
    call timer%finalize(ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop 5

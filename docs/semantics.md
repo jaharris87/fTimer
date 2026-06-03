@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`, and the initial explicit `ftimer_openmp` API surface for future opt-in worker timing. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
+Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`, and the explicit `ftimer_openmp` thread-lane runtime for opt-in serial-lane and level-1 OpenMP worker timing. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -350,26 +350,30 @@ enforcement should pass `ierr` and check it.
 - Thread-local timer instances, fuller concurrent timing support, and any `suppress_in_parallel` control remain deferred
 - `ftimer_openmp` is the explicit opt-in worker-timing module. Its
   `ftimer_openmp_t%init(config=...)`, `finalize`, `reset`,
-  `register_timer`, and `lookup_timer` entry points are available now, including
-  keyword-only `init(config=..., comm=...)` in MPI-enabled builds. Registered
-  timer ids remain valid across `reset()` and are invalidated across
-  `finalize()`/reinit without being recycled in the same object. The MPI
-  communicator handle is stored for future hybrid-reduction work; no current
-  public `ftimer_openmp` summary/report behavior consumes it. Timed
-  parallel-region and worker timing methods are deliberately present, but
-  otherwise valid calls return `FTIMER_ERR_NOT_IMPLEMENTED` until the
-  thread-lane runtime implementation lands; lifecycle, active-region, and
-  unknown-id validation errors are reported first. Calls made inside an OpenMP
-  parallel region without `ierr` queue bounded diagnostics instead of writing
-  unordered stderr, including thread 0 because the object-level API rejects
-  in-parallel lifecycle/catalog/timed-region calls. A later serial lifecycle
-  call without `ierr` emits one aggregate diagnostic when fTimer itself is built
-  with `FTIMER_USE_OPENMP=ON`; with `ierr`, lifecycle calls that clear queued
-  diagnostics return the first queued status without writing stderr.
-  In non-OpenMP fTimer builds, `ftimer_openmp` is exposed for serial-context
-  lifecycle/catalog adoption only; using that package from a downstream OpenMP
-  parallel region is outside the supported contract because the library was not
-  built with OpenMP runtime introspection.
+  `register_timer`, `lookup_timer`, `begin_parallel_region`,
+  `end_parallel_region`, `start_id`, and `stop_id` entry points are available
+  now, including keyword-only `init(config=..., comm=...)` in MPI-enabled
+  builds. Registered timer ids remain valid across `reset()` and are
+  invalidated across `finalize()`/reinit without being recycled in the same
+  object. The MPI communicator handle is stored for future hybrid-reduction
+  work; no current public `ftimer_openmp` summary/report behavior consumes it.
+  `config%max_lanes` counts the serial lane plus worker lanes.
+  Serial-context `start_id`/`stop_id` use lane 0. Inside an explicitly opened
+  timed level-1 OpenMP region, `start_id`/`stop_id` use one lane per OpenMP
+  thread id, enforce lane-local strict stacks, and never repair or pop another
+  lane on mismatch. Worker timing calls outside an open timed region, beyond
+  `config%max_lanes`, or in unsupported nested/task contexts return errors and
+  leave unrelated lane state unchanged. `reset`, `finalize`, reinitialization,
+  and timed-region close scan all lanes and reject active timers.
+  Calls made inside an OpenMP parallel region without `ierr` queue bounded
+  diagnostics instead of writing unordered stderr, except for valid worker
+  timing calls. A later serial lifecycle call without `ierr` emits one aggregate
+  diagnostic when fTimer itself is built with `FTIMER_USE_OPENMP=ON`; with
+  `ierr`, lifecycle calls that clear queued diagnostics return the first queued
+  status without writing stderr. In non-OpenMP fTimer builds, `ftimer_openmp` is
+  exposed for serial-context lifecycle/catalog/timing adoption only; using that
+  package from a downstream OpenMP parallel region is outside the supported
+  contract because the library was not built with OpenMP runtime introspection.
 - For user-facing mode selection, accepted instrumentation patterns, and
   migration guidance, see
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).

@@ -23,6 +23,7 @@ program ftimer_openmp_api_serial_diagnostics
    if (ierr /= FTIMER_SUCCESS) error stop 2
 
    call timer%start_id(timer_id)
+   call timer%stop_id(timer_id)
 
    call timer%finalize(ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop 3

@@ -6,9 +6,10 @@
 Issue #239 defines the runtime ownership and aggregation model that should sit
 behind the opt-in API direction from #238. This document is a runtime design
 contract only. Issue #268 adds the initial `ftimer_openmp` module and object
-lifecycle/catalog surface, but it does not add true worker timing,
-per-thread stacks, OpenMP summaries, MPI+OpenMP reductions, or new behavior to
-the current `ftimer_t` compatibility mode.
+lifecycle/catalog surface, and #269 adds the first true worker timing runtime
+with lane-local stacks. OpenMP summaries, MPI+OpenMP reductions, and new
+behavior for the current `ftimer_t` compatibility mode remain out of scope for
+this runtime model.
 
 ## Decision
 
@@ -365,7 +366,7 @@ Implementation guidance:
 - preserve catalog ids so merge-time descriptor construction does not need to
   compare timer names from every lane in the hot path.
 
-The implementation issue that first enables true worker timing should measure
+The runtime implementation should measure
 both cold first-touch overhead and warmed steady-state `start_id`/`stop_id`
 overhead after pre-registration and lane/context warm-up, following the #243
 validation plan.

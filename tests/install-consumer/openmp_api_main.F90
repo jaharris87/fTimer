@@ -1,7 +1,7 @@
 program ftimer_installed_openmp_api_consumer
    use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
-   use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS
+   use ftimer_types, only: FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS
    implicit none
 
    integer :: duplicate_id
@@ -56,16 +56,16 @@ program ftimer_installed_openmp_api_consumer
    end do
 
    call timer%begin_parallel_region(region, ierr=ierr)
-   if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 10
+   if (ierr /= FTIMER_SUCCESS) error stop 10
 
    call timer%start_id(timer_id, ierr=ierr)
-   if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 11
+   if (ierr /= FTIMER_SUCCESS) error stop 11
 
    call timer%stop_id(timer_id, ierr=ierr)
-   if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 12
+   if (ierr /= FTIMER_SUCCESS) error stop 12
 
    call timer%end_parallel_region(region, ierr=ierr)
-   if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 13
+   if (ierr /= FTIMER_SUCCESS) error stop 13
 
    call timer%reset(ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop 14
@@ -75,7 +75,9 @@ program ftimer_installed_openmp_api_consumer
    if (reset_id /= timer_id) error stop 16
 
    call timer%start_id(timer_id, ierr=ierr)
-   if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 17
+   if (ierr /= FTIMER_SUCCESS) error stop 17
+   call timer%stop_id(timer_id, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 36
 
    do i = 1, size(ids)
       write (name, '("consumer_openmp_api_bulk_",i0)') i
@@ -83,7 +85,9 @@ program ftimer_installed_openmp_api_consumer
       if (ierr /= FTIMER_SUCCESS) error stop 18
       if (lookup_id /= ids(i)) error stop 19
       call timer%start_id(ids(i), ierr=ierr)
-      if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 20
+      if (ierr /= FTIMER_SUCCESS) error stop 20
+      call timer%stop_id(ids(i), ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 37
    end do
 
    call timer%register_timer("consumer_openmp_api_after_reset", reset_id, ierr=ierr)
