@@ -370,8 +370,9 @@ enforcement should pass `ierr` and check it.
   diagnostics instead of writing unordered stderr, except for valid worker
   timing calls. A later serial lifecycle call without `ierr` emits one aggregate
   diagnostic when fTimer itself is built with `FTIMER_USE_OPENMP=ON`; with
-  `ierr`, lifecycle calls that clear queued diagnostics return the first queued
-  status without writing stderr. In non-OpenMP fTimer builds, `ftimer_openmp` is
+  `ierr`, lifecycle calls clear queued diagnostics without writing stderr and
+  return only the lifecycle call's own status. In non-OpenMP fTimer builds,
+  `ftimer_openmp` is
   exposed for serial-context lifecycle/catalog/timing adoption only; using that
   package from a downstream OpenMP parallel region is outside the supported
   contract because the library was not built with OpenMP runtime introspection.

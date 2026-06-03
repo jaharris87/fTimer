@@ -1,19 +1,33 @@
 program ftimer_openmp_api_smoke
    use, intrinsic :: iso_fortran_env, only: int64
+#ifdef FTIMER_USE_MPI
+   use mpi_f08, only: MPI_Finalize, MPI_Init
+#endif
 #ifdef FTIMER_USE_OPENMP
    use omp_lib, only: omp_get_thread_num, omp_set_dynamic
 #endif
    use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
-                           FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS
+                           FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, wp
    implicit none
+
+   integer :: mpi_ierr
+   real(wp), save :: fake_time = 0.0_wp
+
+#ifdef FTIMER_USE_MPI
+   call MPI_Init(mpi_ierr)
+#endif
 
    call check_preinit_and_config()
    call check_catalog_lifecycle()
 #ifdef FTIMER_USE_OPENMP
    call check_parallel_rejections()
    call check_thread_lane_runtime()
+#endif
+
+#ifdef FTIMER_USE_MPI
+   call MPI_Finalize(mpi_ierr)
 #endif
 
 contains
@@ -40,6 +54,14 @@ contains
 
       if (actual /= expected) error stop stop_code
    end subroutine expect_count
+
+   subroutine expect_time(actual, expected, stop_code)
+      real(wp), intent(in) :: actual
+      real(wp), intent(in) :: expected
+      integer, intent(in) :: stop_code
+
+      if (abs(actual - expected) > 1.0e-12_wp) error stop stop_code
+   end subroutine expect_time
 
    subroutine check_preinit_and_config()
       integer :: ierr
@@ -392,12 +414,17 @@ contains
       integer(int64) :: call_count
       integer :: child_id
       integer :: ierr
+      integer :: mismatch_child_id
+      integer :: mismatch_parent_id
+      integer :: nested_status
       integer :: other_id
       integer :: parent_id
       integer :: second_id
       integer :: timer_id
       integer :: worker_bad
       integer :: worker_seen
+      logical :: is_running
+      real(wp) :: elapsed
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_parallel_region_t) :: region
       type(ftimer_openmp_parallel_region_t) :: second_region
@@ -415,6 +442,9 @@ contains
       call timer%init(config=config, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 100)
 
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 188)
+
       call timer%register_timer("lane_work", timer_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 101)
 
@@ -427,6 +457,13 @@ contains
       call timer%register_timer("nested_child", child_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 142)
 
+      call timer%register_timer("mismatch_parent", mismatch_parent_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 189)
+
+      call timer%register_timer("mismatch_child", mismatch_child_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 190)
+
+      fake_time = 1.0_wp
       call timer%start_id(timer_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 103)
 
@@ -436,8 +473,21 @@ contains
       call timer%reset(ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_ACTIVE, 104)
 
+      fake_time = 3.0_wp
       call timer%stop_id(timer_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 105)
+
+      call timer%test_lane_total_call_count(0, timer_id, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 191)
+      call expect_count(call_count, 1_int64, 192)
+
+      call timer%test_lane_total_time(0, timer_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 193)
+      call expect_time(elapsed, 2.0_wp, 194)
+
+      call timer%test_lane_is_running(0, timer_id, is_running, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 195)
+      if (is_running) error stop 196
 
       call timer%reset(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 106)
@@ -562,12 +612,16 @@ contains
 !$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
       if (omp_get_thread_num() == 1) then
          worker_seen = worker_seen + 1
+         fake_time = 10.0_wp
          call timer%start_id(parent_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_time = 12.0_wp
          call timer%start_id(child_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_time = 15.0_wp
          call timer%stop_id(child_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_time = 20.0_wp
          call timer%stop_id(parent_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
       end if
@@ -586,6 +640,77 @@ contains
       call timer%test_lane_parent_call_count(2, child_id, parent_id, call_count, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 162)
       call expect_count(call_count, 1_int64, 163)
+
+      call timer%test_lane_total_time(2, parent_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 197)
+      call expect_time(elapsed, 10.0_wp, 198)
+
+      call timer%test_lane_parent_total_time(2, child_id, parent_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 199)
+      call expect_time(elapsed, 3.0_wp, 200)
+
+      call timer%test_lane_is_running(2, parent_id, is_running, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 201)
+      if (is_running) error stop 202
+
+      call timer%test_lane_is_running(2, child_id, is_running, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 203)
+      if (is_running) error stop 204
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 205)
+
+      worker_bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         call timer%start_id(mismatch_parent_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         call timer%start_id(mismatch_child_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         call timer%stop_id(mismatch_parent_id, ierr=ierr)
+         if (ierr /= FTIMER_ERR_MISMATCH) worker_bad = worker_bad + 1
+         call timer%stop_id(mismatch_child_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         call timer%stop_id(mismatch_parent_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 206
+      if (worker_bad /= 0) error stop 207
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 208)
+
+      call timer%test_lane_total_call_count(2, mismatch_parent_id, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 209)
+      call expect_count(call_count, 1_int64, 210)
+
+      call timer%test_lane_parent_call_count(2, mismatch_child_id, mismatch_parent_id, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 211)
+      call expect_count(call_count, 1_int64, 212)
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 213)
+
+      nested_status = FTIMER_SUCCESS
+
+!$omp parallel num_threads(2) default(shared) private(ierr)
+      if (omp_get_thread_num() == 1) then
+!$omp parallel num_threads(1) default(shared) private(ierr)
+         call timer%start_id(timer_id, ierr=ierr)
+         nested_status = ierr
+!$omp end parallel
+      end if
+!$omp end parallel
+
+      call expect_status(nested_status, FTIMER_ERR_ACTIVE, 214)
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 215)
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 115)
@@ -757,5 +882,11 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 135)
    end subroutine check_thread_lane_runtime
 #endif
+
+   function mock_openmp_clock() result(t)
+      real(wp) :: t
+
+      t = fake_time
+   end function mock_openmp_clock
 
 end program ftimer_openmp_api_smoke

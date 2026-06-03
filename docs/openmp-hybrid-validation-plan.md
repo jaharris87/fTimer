@@ -28,9 +28,10 @@ The initial #243 change adds current build-only hybrid coverage:
   installed-consumer path, including an MPI-initialized OpenMP region that
   preserves current worker no-op behavior.
 
-That coverage proves the current MPI and OpenMP compatibility options can
-coexist. It must not be read as evidence that true worker-thread timing or
-hybrid rank/lane reductions are implemented.
+That initial coverage proves the current MPI and OpenMP compatibility options
+can coexist. It must not be read as evidence that the current `ftimer`/
+`ftimer_core` APIs perform true worker-thread timing or that hybrid rank/lane
+reductions are implemented.
 
 ## Current Compatibility Coverage
 
@@ -64,10 +65,11 @@ The compatibility matrix is intentionally about today's APIs:
   present and executed so non-hybrid smoke jobs do not accidentally claim
   unsupported hybrid toolchain coverage.
 
-## Future True OpenMP Test Matrix
+## Current Thread-Lane Runtime Test Matrix
 
-When #239 introduces the first true OpenMP runtime, deterministic tests should
-extend the current `ftimer_openmp` API surface coverage to cover:
+#269 introduces the first true OpenMP runtime through the explicit
+`ftimer_openmp_t` object. Deterministic tests now cover, and should continue to
+cover:
 
 - explicit opt-in construction through the current `ftimer_openmp` module and
   `ftimer_openmp_t` object with real worker timing enabled;
@@ -78,7 +80,7 @@ extend the current `ftimer_openmp` API surface coverage to cover:
 - nested timers with independent lane-local stacks;
 - cross-thread stop attempts that fail lane-locally without mutating another
   lane's stack;
-- active-lane lifecycle errors for reset, summary, reduction, and finalize;
+- active-lane lifecycle errors for reset, timed-region close, and finalize;
 - bounded diagnostic storage and deterministic aggregate diagnostics;
 - thread-private `ierr` behavior on worker paths; and
 - compatibility tests proving current `FTIMER_USE_OPENMP=ON` worker no-op
@@ -189,7 +191,7 @@ comparisons are meaningful.
 
 ## Non-Goals
 
-- Implementing true OpenMP worker timing in #243.
+- Claiming true OpenMP worker timing from the initial #243 build-only coverage.
 - Adding pFUnit tests for future summary/reduction APIs that do not exist yet.
 - Treating MPI+OpenMP build success as proof of hybrid rank/lane reductions.
 - Requiring every CI runner to support every MPI/OpenMP/compiler combination.
@@ -199,7 +201,7 @@ comparisons are meaningful.
 
 ## Dependencies On Later Child Issues
 
-- #239 provides runtime lane state, timed-region epochs, active-lane scans, and
+- #269 provides runtime lane state, timed-region epochs, active-lane scans, and
   diagnostics for true worker timing tests.
 - #240 provides local OpenMP summary/report/CSV behavior for summary golden
   tests.

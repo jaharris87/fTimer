@@ -25,9 +25,10 @@ The supported source-level import surface is intentionally narrow:
   parallel region without `ierr` queue bounded diagnostics instead of writing
   unordered stderr, except for valid worker `start_id`/`stop_id` calls inside an
   open timed region. Later serial lifecycle calls that clear diagnostics emit
-  one aggregate diagnostic when `ierr` is absent, or return the first queued
-  status without stderr when `ierr` is present. In non-OpenMP packages, this
-  module is supported only for serial-context lifecycle/catalog/timing use.
+  one aggregate diagnostic when `ierr` is absent; when `ierr` is present they
+  clear queued diagnostics without stderr and return only the lifecycle call's
+  own status. In non-OpenMP packages, this module is supported only for
+  serial-context lifecycle/catalog/timing use.
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
 ## MPI lifecycle and communicator ownership

@@ -1,4 +1,7 @@
 program ftimer_openmp_api_ierr_silence
+#ifdef FTIMER_USE_MPI
+   use mpi_f08, only: MPI_Finalize, MPI_Init
+#endif
 #ifdef FTIMER_USE_OPENMP
    use omp_lib, only: omp_get_thread_num, omp_set_dynamic
 #endif
@@ -8,10 +11,15 @@ program ftimer_openmp_api_ierr_silence
    implicit none
 
    integer :: ierr
+   integer :: mpi_ierr
    integer :: timer_id
    type(ftimer_openmp_config_t) :: config
    type(ftimer_openmp_parallel_region_t) :: region
    type(ftimer_openmp_t) :: timer
+
+#ifdef FTIMER_USE_MPI
+   call MPI_Init(mpi_ierr)
+#endif
 
    call timer%register_timer("before_init", timer_id, ierr=ierr)
    if (ierr /= FTIMER_ERR_NOT_INIT) error stop 1
@@ -44,6 +52,10 @@ program ftimer_openmp_api_ierr_silence
    if (ierr /= FTIMER_SUCCESS) error stop 8
 
    call timer%finalize()
+
+#ifdef FTIMER_USE_MPI
+   call MPI_Finalize(mpi_ierr)
+#endif
 
 contains
 

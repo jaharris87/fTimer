@@ -1,8 +1,17 @@
 program ftimer_openmp_api_diagnostics
+#ifdef FTIMER_USE_MPI
+   use mpi_f08, only: MPI_Finalize, MPI_Init
+#endif
    use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS
    use omp_lib, only: omp_get_thread_num, omp_set_dynamic
    implicit none
+
+   integer :: mpi_ierr
+
+#ifdef FTIMER_USE_MPI
+   call MPI_Init(mpi_ierr)
+#endif
 
    call omp_set_dynamic(.false.)
 
@@ -23,6 +32,10 @@ program ftimer_openmp_api_diagnostics
    call run_worker_lookup_no_ierr_case()
    call run_master_lookup_no_ierr_case()
    call run_worker_lifecycle_catalog_no_ierr_case()
+
+#ifdef FTIMER_USE_MPI
+   call MPI_Finalize(mpi_ierr)
+#endif
 
 contains
 
@@ -87,19 +100,19 @@ contains
          call timer%finalize()
       case (4)
          call timer%finalize(ierr=ierr)
-         if (ierr /= FTIMER_ERR_ACTIVE) error stop 7
+         if (ierr /= FTIMER_SUCCESS) error stop 7
          call timer%finalize(ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) error stop 8
       case (5)
          call timer%reset(ierr=ierr)
-         if (ierr /= FTIMER_ERR_ACTIVE) error stop 9
+         if (ierr /= FTIMER_SUCCESS) error stop 9
          call timer%lookup_timer("diagnostic_work", timer_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) error stop 10
          call timer%finalize(ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) error stop 11
       case (6)
          call timer%init(config=config, ierr=ierr)
-         if (ierr /= FTIMER_ERR_ACTIVE) error stop 12
+         if (ierr /= FTIMER_SUCCESS) error stop 12
          call timer%lookup_timer("diagnostic_work", timer_id, ierr=ierr)
          if (ierr /= FTIMER_ERR_UNKNOWN) error stop 13
          call timer%register_timer("after_reinit", timer_id, ierr=ierr)

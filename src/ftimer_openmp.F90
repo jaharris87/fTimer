@@ -1,9 +1,9 @@
 module ftimer_openmp
    use, intrinsic :: iso_fortran_env, only: error_unit, int64
-   use ftimer_clock, only: ftimer_default_clock
+   use ftimer_clock, only: ftimer_default_clock, ftimer_mpi_clock
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
-                           ftimer_call_stack_t, ftimer_segment_t, wp
+                           ftimer_call_stack_t, ftimer_clock_func, ftimer_segment_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi_f08, only: MPI_Comm, MPI_COMM_WORLD
 #endif
@@ -71,6 +71,7 @@ module ftimer_openmp
       integer :: queued_worker_diagnostics = 0
       integer :: worker_diagnostic_overflow = 0
       integer :: first_worker_status = FTIMER_SUCCESS
+      procedure(ftimer_clock_func), pointer, nopass :: clock => null()
 #ifdef FTIMER_USE_MPI
       type(MPI_Comm) :: mpi_comm
       logical :: mpi_comm_was_present = .false.
@@ -94,6 +95,10 @@ module ftimer_openmp
 #ifdef FTIMER_BUILD_SMOKE_TESTS
       procedure :: test_lane_total_call_count
       procedure :: test_lane_parent_call_count
+      procedure :: test_lane_total_time
+      procedure :: test_lane_parent_total_time
+      procedure :: test_lane_is_running
+      procedure :: test_set_clock
 #endif
    end type ftimer_openmp_t
 
@@ -142,7 +147,6 @@ contains
       integer, intent(in), optional :: comm
 #endif
       type(ftimer_openmp_config_t) :: effective_config
-      integer :: lifecycle_status
 
       if (is_inside_parallel_region()) then
          call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
@@ -168,7 +172,6 @@ contains
          return
       end if
 
-      lifecycle_status = worker_diagnostic_status(self)
       if (.not. present(ierr)) call emit_worker_diagnostics(self)
       call ensure_object_token(self)
       if (self%object_token == 0_int64) then
@@ -188,13 +191,12 @@ contains
       end if
 #endif
 
-      if (present(ierr)) ierr = lifecycle_status
+      if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine init_impl
 
    subroutine finalize(self, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
-      integer :: lifecycle_status
 
       if (is_inside_parallel_region()) then
          call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
@@ -214,17 +216,15 @@ contains
          return
       end if
 
-      lifecycle_status = worker_diagnostic_status(self)
       if (.not. present(ierr)) call emit_worker_diagnostics(self)
       call clear_state(self)
-      if (present(ierr)) ierr = lifecycle_status
+      if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine finalize
 
    subroutine reset(self, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(out), optional :: ierr
       type(ftimer_openmp_config_t) :: saved_config
-      integer :: lifecycle_status
 #ifdef FTIMER_USE_MPI
       type(MPI_Comm) :: saved_mpi_comm
       logical :: saved_mpi_comm_was_present
@@ -258,7 +258,6 @@ contains
       saved_mpi_comm = self%mpi_comm
       saved_mpi_comm_was_present = self%mpi_comm_was_present
 #endif
-      lifecycle_status = worker_diagnostic_status(self)
       if (.not. present(ierr)) call emit_worker_diagnostics(self)
       self%initialized = .true.
       self%config = saved_config
@@ -272,7 +271,7 @@ contains
       self%mpi_comm = saved_mpi_comm
       self%mpi_comm_was_present = saved_mpi_comm_was_present
 #endif
-      if (present(ierr)) ierr = lifecycle_status
+      if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine reset
 
    subroutine register_timer(self, name, id, ierr)
@@ -536,6 +535,7 @@ contains
       self%current_epoch = 0
       self%current_region_token = 0_int64
       self%next_epoch = 1
+      nullify (self%clock)
       call clear_worker_diagnostics(self)
 #ifdef FTIMER_USE_MPI
       self%mpi_comm_was_present = .false.
@@ -648,6 +648,21 @@ contains
 #endif
    end function current_parallel_level
 
+   real(wp) function openmp_clock(self) result(t)
+      class(ftimer_openmp_t), intent(in) :: self
+
+      if (associated(self%clock)) then
+         t = self%clock()
+         return
+      end if
+
+#ifdef FTIMER_USE_MPI
+      t = ftimer_mpi_clock()
+#else
+      t = ftimer_default_clock()
+#endif
+   end function openmp_clock
+
    subroutine start_lane_timer(self, lane_idx, catalog_idx, timer_id, epoch, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(in) :: lane_idx
@@ -660,8 +675,7 @@ contains
       call ensure_lane_segment_capacity(self%lanes(lane_idx), self%num_timers)
       call ensure_lane_timer_metadata(self%lanes(lane_idx), catalog_idx, self%catalog(catalog_idx)%name)
 
-      ctx = self%lanes(lane_idx)%segments(catalog_idx)%contexts%find(self%lanes(lane_idx)%call_stack)
-      if (ctx <= 0) ctx = self%lanes(lane_idx)%segments(catalog_idx)%contexts%add(self%lanes(lane_idx)%call_stack)
+      ctx = self%lanes(lane_idx)%segments(catalog_idx)%contexts%add(self%lanes(lane_idx)%call_stack)
       call ensure_context_storage(self%lanes(lane_idx)%segments(catalog_idx), ctx)
 
       if (self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx) == &
@@ -674,7 +688,7 @@ contains
       self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx) = &
          self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx) + 1_int64
       self%lanes(lane_idx)%segments(catalog_idx)%is_running(ctx) = .true.
-      self%lanes(lane_idx)%segments(catalog_idx)%start_time(ctx) = ftimer_default_clock()
+      self%lanes(lane_idx)%segments(catalog_idx)%start_time(ctx) = openmp_clock(self)
       call self%lanes(lane_idx)%call_stack%push(timer_id, int(epoch, int64))
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
@@ -703,7 +717,7 @@ contains
          return
       end if
 
-      now = ftimer_default_clock()
+      now = openmp_clock(self)
       popped_id = self%lanes(lane_idx)%call_stack%pop(popped_epoch)
       if ((popped_id /= timer_id) .or. (popped_epoch /= int(epoch, int64))) then
          error stop "ftimer_openmp internal lane stack pop mismatch"
@@ -1006,6 +1020,20 @@ contains
    end function find_timer_id_index
 
 #ifdef FTIMER_BUILD_SMOKE_TESTS
+   subroutine test_set_clock(self, clock, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      procedure(ftimer_clock_func) :: clock
+      integer, intent(out), optional :: ierr
+
+      if (self%region_open .or. has_active_lanes(self)) then
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, "ftimer_openmp test_set_clock with active timing")
+         return
+      end if
+
+      self%clock => clock
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine test_set_clock
+
    subroutine test_lane_total_call_count(self, lane_id, id, call_count, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(in) :: lane_id
@@ -1096,6 +1124,142 @@ contains
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine test_lane_parent_call_count
+
+   subroutine test_lane_total_time(self, lane_id, id, total_time, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in) :: lane_id
+      integer, intent(in) :: id
+      real(wp), intent(out) :: total_time
+      integer, intent(out), optional :: ierr
+      integer :: catalog_idx
+      integer :: ctx
+      integer :: lane_idx
+
+      total_time = 0.0_wp
+
+      if (.not. self%initialized) then
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp test total time before init")
+         return
+      end if
+
+      catalog_idx = find_timer_id_index(self, id)
+      if (catalog_idx <= 0) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp test total time with unknown timer id")
+         return
+      end if
+
+      lane_idx = lane_id + 1
+      if ((.not. allocated(self%lanes)) .or. (lane_idx < 1) .or. (lane_idx > size(self%lanes))) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp test total time with unknown lane id")
+         return
+      end if
+
+      if (allocated(self%lanes(lane_idx)%segments)) then
+         if (size(self%lanes(lane_idx)%segments) >= catalog_idx) then
+            if (allocated(self%lanes(lane_idx)%segments(catalog_idx)%time)) then
+               do ctx = 1, self%lanes(lane_idx)%segments(catalog_idx)%contexts%count
+                  total_time = total_time + self%lanes(lane_idx)%segments(catalog_idx)%time(ctx)
+               end do
+            end if
+         end if
+      end if
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine test_lane_total_time
+
+   subroutine test_lane_parent_total_time(self, lane_id, id, parent_id, total_time, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in) :: lane_id
+      integer, intent(in) :: id
+      integer, intent(in) :: parent_id
+      real(wp), intent(out) :: total_time
+      integer, intent(out), optional :: ierr
+      integer :: catalog_idx
+      integer :: ctx
+      integer :: lane_idx
+
+      total_time = 0.0_wp
+
+      if (.not. self%initialized) then
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp test parent total time before init")
+         return
+      end if
+
+      catalog_idx = find_timer_id_index(self, id)
+      if (catalog_idx <= 0) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                  "ftimer_openmp test parent total time with unknown timer id")
+         return
+      end if
+
+      lane_idx = lane_id + 1
+      if ((.not. allocated(self%lanes)) .or. (lane_idx < 1) .or. (lane_idx > size(self%lanes))) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                  "ftimer_openmp test parent total time with unknown lane id")
+         return
+      end if
+
+      if (allocated(self%lanes(lane_idx)%segments)) then
+         if (size(self%lanes(lane_idx)%segments) >= catalog_idx) then
+            if (allocated(self%lanes(lane_idx)%segments(catalog_idx)%time)) then
+               do ctx = 1, self%lanes(lane_idx)%segments(catalog_idx)%contexts%count
+                  if (self%lanes(lane_idx)%segments(catalog_idx)%contexts%stacks(ctx)%depth == 1) then
+                     if (self%lanes(lane_idx)%segments(catalog_idx)%contexts%stacks(ctx)%ids(1) == parent_id) then
+                        total_time = total_time + self%lanes(lane_idx)%segments(catalog_idx)%time(ctx)
+                     end if
+                  end if
+               end do
+            end if
+         end if
+      end if
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine test_lane_parent_total_time
+
+   subroutine test_lane_is_running(self, lane_id, id, is_running, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in) :: lane_id
+      integer, intent(in) :: id
+      logical, intent(out) :: is_running
+      integer, intent(out), optional :: ierr
+      integer :: catalog_idx
+      integer :: ctx
+      integer :: lane_idx
+
+      is_running = .false.
+
+      if (.not. self%initialized) then
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp test running state before init")
+         return
+      end if
+
+      catalog_idx = find_timer_id_index(self, id)
+      if (catalog_idx <= 0) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp test running state with unknown timer id")
+         return
+      end if
+
+      lane_idx = lane_id + 1
+      if ((.not. allocated(self%lanes)) .or. (lane_idx < 1) .or. (lane_idx > size(self%lanes))) then
+         call report_timer_status(self, ierr, FTIMER_ERR_UNKNOWN, "ftimer_openmp test running state with unknown lane id")
+         return
+      end if
+
+      if (allocated(self%lanes(lane_idx)%segments)) then
+         if (size(self%lanes(lane_idx)%segments) >= catalog_idx) then
+            if (allocated(self%lanes(lane_idx)%segments(catalog_idx)%is_running)) then
+               do ctx = 1, self%lanes(lane_idx)%segments(catalog_idx)%contexts%count
+                  if (self%lanes(lane_idx)%segments(catalog_idx)%is_running(ctx)) then
+                     is_running = .true.
+                     exit
+                  end if
+               end do
+            end if
+         end if
+      end if
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine test_lane_is_running
 #endif
 
    subroutine clear_worker_diagnostics(self)
@@ -1105,18 +1269,6 @@ contains
       self%worker_diagnostic_overflow = 0
       self%first_worker_status = FTIMER_SUCCESS
    end subroutine clear_worker_diagnostics
-
-   integer function worker_diagnostic_status(self) result(status)
-      class(ftimer_openmp_t), intent(in) :: self
-
-      if ((self%queued_worker_diagnostics <= 0) .and. (self%worker_diagnostic_overflow <= 0)) then
-         status = FTIMER_SUCCESS
-      elseif (self%first_worker_status /= FTIMER_SUCCESS) then
-         status = self%first_worker_status
-      else
-         status = FTIMER_ERR_UNKNOWN
-      end if
-   end function worker_diagnostic_status
 
    subroutine queue_worker_diagnostic(self, code)
       class(ftimer_openmp_t), intent(inout) :: self

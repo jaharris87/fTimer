@@ -188,8 +188,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
-      # Hybrid smoke validates that the current MPI and OpenMP compatibility
-      # options can coexist. It does not claim true worker-thread timing.
+      # Hybrid smoke validates MPI/OpenMP coexistence plus the installed
+      # ftimer_openmp worker API. It does not claim hybrid rank/lane reductions.
       - name: Configure (MPI+OpenMP)
         run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DFTIMER_USE_OPENMP=ON
 
