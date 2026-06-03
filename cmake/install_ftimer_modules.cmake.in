@@ -16,6 +16,7 @@ set(ftimer_installed_module_artifact_names
   ftimer_clock
   ftimer_core
   ftimer_mpi
+  ftimer_openmp
   ftimer_summary
   ftimer_types
 )

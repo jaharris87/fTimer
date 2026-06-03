@@ -16,12 +16,14 @@ Before starting a release candidate:
 - Review open `release-blocker`, `release-audit`, `bug`, and `post-release`
   issues for items that should affect the release notes or block the tag.
 - Keep the release claim within the documented support boundary: serial timing,
-  pure-MPI timing, the narrow master-thread-only OpenMP carve-out, and the
+  pure-MPI timing, the narrow master-thread-only OpenMP carve-out, the initial
+  `ftimer_openmp` lifecycle/configuration/timer-catalog API surface, and the
   CMake package path.
 - Do not promote deferred non-goals into the release unless a linked issue has
-  changed scope. Current non-goals include broad hybrid OpenMP timing, full
-  profiler integration, FPM packaging, hardware counters, traces, accelerator
-  timelines, automatic MPI barriers, and stable callback semantic identity.
+  changed scope. Current non-goals include true OpenMP worker timing, OpenMP
+  summaries/reports/CSV, MPI+OpenMP hybrid reductions, full profiler
+  integration, FPM packaging, hardware counters, traces, accelerator timelines,
+  automatic MPI barriers, and stable callback semantic identity.
 
 ## Version And Compatibility
 

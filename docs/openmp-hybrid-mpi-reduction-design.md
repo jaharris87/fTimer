@@ -13,7 +13,7 @@ OpenMP guard behavior, or change existing pure-MPI APIs.
 ## Decision
 
 True MPI+OpenMP timing should use a new hybrid summary/result family behind
-the future `ftimer_openmp_t` API:
+future hybrid summary methods on `ftimer_openmp_t`:
 
 - `timer%mpi_openmp_summary(summary, ierr=ierr)` as the proposed future
   structured summary entry point;
@@ -24,8 +24,8 @@ the future `ftimer_openmp_t` API:
 - strict-identical participant semantics defined here for validation and later
   adopter-driven use, but not exposed as a required first public policy.
 
-Those names are proposed source shapes for later implementation issues, not
-symbols available on current `main`.
+The hybrid summary method and result names above are proposed source shapes for
+later implementation issues, not symbols available on current `main`.
 
 The existing `mpi_summary()`, `mpi_union_summary()`, `ftimer_mpi_summary_t`,
 `ftimer_mpi_union_summary_t`, strict MPI reports, sparse MPI reports, and
@@ -52,11 +52,12 @@ add the new API.
 
 ## Recommended API Boundary
 
-Hybrid summaries should be entered through the future OpenMP-specific object
-that already owns lane state:
+Hybrid summaries should be entered through the current OpenMP-specific object
+that will own lane state once true worker timing lands:
 
 ```fortran
-! Proposed future API shape. Not implemented on current main.
+! Proposed future summary API shape. The ftimer_openmp object exists on current
+! main, but hybrid summary result types and methods are not implemented yet.
 use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, &
                          ftimer_openmp_config_t, ftimer_openmp_t
 use ftimer_types, only: ftimer_mpi_openmp_summary_t
@@ -86,8 +87,8 @@ must not add positional mode arguments to current `ftimer_t%init`,
 
 No `ftimer_mpi_openmp_summary()` procedural wrapper should be added to the
 current `ftimer` default instance. If later ergonomics need procedural helpers,
-they should live in the future `ftimer_openmp` module and take an explicit
-`type(ftimer_openmp_t)` object argument.
+future helper entry points should live in the current `ftimer_openmp` module and
+take an explicit `type(ftimer_openmp_t)` object argument.
 
 ## Reduction Inputs And Preconditions
 

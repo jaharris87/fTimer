@@ -36,6 +36,10 @@ ftimer_core|ftimer_internal_stop_scope_activation|unstable
 ftimer_core|ftimer_test_get_state|test-only
 ftimer_core|ftimer_test_set_call_count|test-only
 ftimer_core|ftimer_test_state_t|test-only
+ftimer_openmp|FTIMER_OPENMP_MODE_THREAD_LANES|stable
+ftimer_openmp|ftimer_openmp_config_t|stable
+ftimer_openmp|ftimer_openmp_parallel_region_t|stable
+ftimer_openmp|ftimer_openmp_t|stable
 ftimer_types|FTIMER_SUCCESS|stable
 ftimer_types|FTIMER_ERR_NOT_INIT|stable
 ftimer_types|FTIMER_ERR_NOT_IMPLEMENTED|stable

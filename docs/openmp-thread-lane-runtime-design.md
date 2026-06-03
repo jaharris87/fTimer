@@ -5,14 +5,15 @@
 
 Issue #239 defines the runtime ownership and aggregation model that should sit
 behind the opt-in API direction from #238. This document is a runtime design
-contract only. It does not add public Fortran symbols, per-thread stacks,
-OpenMP summaries, MPI+OpenMP reductions, or new behavior to the current
-`ftimer_t` compatibility mode.
+contract only. Issue #268 adds the initial `ftimer_openmp` module and object
+lifecycle/catalog surface, but it does not add true worker timing,
+per-thread stacks, OpenMP summaries, MPI+OpenMP reductions, or new behavior to
+the current `ftimer_t` compatibility mode.
 
 ## Decision
 
 The first true OpenMP timing implementation should use independent lane-owned
-runtime state behind the future `ftimer_openmp_t` object:
+runtime state behind the current `ftimer_openmp_t` object:
 
 - one serial lane for calls made outside an OpenMP parallel region;
 - one lane per OpenMP thread in a level-1 parallel team;
@@ -30,8 +31,8 @@ current `ftimer_t` calls into this lane runtime.
 
 ## Runtime State Ownership
 
-The future `ftimer_openmp_t` should separate shared, mostly read-only metadata
-from hot per-lane state.
+The true worker-timing `ftimer_openmp_t` runtime should separate shared,
+mostly read-only metadata from hot per-lane state.
 
 Object-level state:
 

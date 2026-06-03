@@ -41,8 +41,12 @@ fTimer/
 │   ├── ftimer_summary.F90
 │   ├── ftimer_mpi.F90
 │   ├── ftimer_core_summary_bindings.F90
+│   ├── ftimer_openmp.F90
 │   └── ftimer.F90
 ├── tests/
+│   ├── test_phase0_smoke.F90
+│   ├── test_openmp_api_smoke.F90
+│   ├── test_openmp_api_diagnostics.F90
 │   ├── test_*.pf
 │   ├── mpi/
 │   └── check_*_contracts.cmake
@@ -89,6 +93,9 @@ ftimer_mpi.F90
 ftimer_clock.F90
   └─ default wall clock, MPI wall clock wrapper, date-string helper
 
+ftimer_openmp.F90
+  └─ explicit opt-in OpenMP lifecycle/catalog API surface
+
 ftimer_types.F90
   └─ kinds, constants, summary/container types, and callback interfaces
 ```
@@ -101,7 +108,8 @@ The CMake source order reflects the real dependency order:
 4. `ftimer_summary.F90`
 5. `ftimer_mpi.F90`
 6. `ftimer_core_summary_bindings.F90`
-7. `ftimer.F90`
+7. `ftimer_openmp.F90`
+8. `ftimer.F90`
 
 ### Module Roles
 
@@ -112,6 +120,13 @@ The CMake source order reflects the real dependency order:
 `ftimer_core.F90` owns the mutable timer state in `ftimer_t`: timer definitions, active stack state, mismatch policy, communicator capture, lightweight callback registration, and the guarded timer entry points.
 
 `ftimer_core_summary_bindings.F90` is the submodule-backed binding layer that connects `ftimer_t` to local summary generation, formatted reporting, CSV export formatting, and file-output entry points without collapsing all summary logic into the core module body.
+
+`ftimer_openmp.F90` is the additive, explicit opt-in API surface for future
+true OpenMP worker timing. Its lifecycle/configuration and timer catalog
+operations are usable today; otherwise valid timed-region and worker timing
+calls return `FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime and
+summary families land under later #267 child issues, after lifecycle/context/id
+validation.
 
 `ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, self-time computation, and strict/sparse MPI text formatting are assembled for reporting.
 
@@ -150,9 +165,10 @@ The public surface on current `main` is split between:
 
 - the procedural API in `use ftimer`
 - the OOP API through `type(ftimer_t)` from `use ftimer_core`
+- the explicit opt-in OpenMP API surface in `use ftimer_openmp`
 - shared types and constants from `use ftimer_types`
 
-The supported source-level module surface is intentionally limited to those three modules. Their module-level public symbols are checked against `tests/public_symbol_allowlist.txt` so runtime storage helpers are not accidentally promoted into the stable downstream contract. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md` and `share/doc/fTimer/LICENSE`, and the installed-consumer smoke test checks those documentation artifacts against the source tree.
+The supported source-level module surface is intentionally limited to `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the additive opt-in API surface for future true OpenMP worker timing; its lifecycle/configuration and timer catalog methods are available now, while otherwise valid timed-region and worker timing calls return `FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime lands, after lifecycle/context/id validation. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt` so runtime storage helpers are not accidentally promoted into the stable downstream contract. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md` and `share/doc/fTimer/LICENSE`, and the installed-consumer smoke test checks those documentation artifacts against the source tree.
 
 The currently exported procedural entry points are:
 
@@ -247,7 +263,7 @@ The MPI and OpenMP enablement paths are guarded at configure time:
 
 The current test inventory is:
 
-- smoke tests in `tests/test_phase0_smoke.F90`, runtime execution of `basic_usage`, OpenMP example execution when `FTIMER_USE_OPENMP=ON`, MPI example execution when `FTIMER_USE_MPI=ON`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
+- smoke tests in `tests/test_phase0_smoke.F90` and `tests/test_openmp_api_smoke.F90`, OpenMP diagnostic stderr capture through `tests/test_openmp_api_diagnostics.F90` when `FTIMER_USE_OPENMP=ON`, runtime execution of `basic_usage`, OpenMP example execution when `FTIMER_USE_OPENMP=ON`, MPI example execution when `FTIMER_USE_MPI=ON`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
 - serial pFUnit tests for core behavior, summaries, callbacks, reset behavior, call-stack behavior, and procedural parity
 - MPI pFUnit tests under `tests/mpi/`, validated in CI with GNU Fortran against OpenMPI and MPICH
 - OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`, covering the master-thread-only carve-out rather than general threaded timing support

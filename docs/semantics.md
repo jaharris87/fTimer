@@ -4,7 +4,7 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, and limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
+Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`, and the initial explicit `ftimer_openmp` API surface for future opt-in worker timing. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. The OpenMP path is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid-thread timing contract. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
@@ -181,7 +181,12 @@ This disabled-facade behavior is an application integration contract, not an alt
 - With `ierr` present, these lifecycle calls return `FTIMER_ERR_ACTIVE` and do not write to stderr
 - With `ierr` absent, they warn to stderr and return immediately with the timer state unchanged
 - They do not force-stop timers, synthesize elapsed time, zero accumulated data, restart the summary window, or perform hidden cleanup
-- In `FTIMER_USE_OPENMP=ON` builds, these lifecycle bullets apply only to serial code and OpenMP master-thread calls; non-master calls are suppressed before validation, emit no warning, and leave any caller-provided `ierr` unchanged
+- In `FTIMER_USE_OPENMP=ON` builds, these lifecycle bullets apply to the
+  existing `ftimer`/`ftimer_core` guarded APIs only in serial code and OpenMP
+  master-thread calls; non-master calls to those guarded APIs are suppressed
+  before validation, emit no warning, and leave any caller-provided `ierr`
+  unchanged. The explicit `ftimer_openmp` object has its own active-region
+  rejection and queued-diagnostic contract below.
 - Repairing stop mismatches is a separate explicit opt-in through `mismatch_mode = FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR`
 
 ## Local Summary Contract
@@ -317,12 +322,15 @@ The call is a no-op: no segment is created, no stack depth change occurs.
 Parent timers are not affected. Summary output will simply omit the rejected child;
 it does not produce a plausible-but-wrong child entry.
 
-**OpenMP carve-out**: this warn-and-skip contract applies in serial code and from the
-OpenMP master thread only. When built with `FTIMER_USE_OPENMP=ON`, calls from non-master
-threads are suppressed before validation reaches `normalize_name` or `report_status` — they
-produce no stderr diagnostic, return 0 (for `lookup`), and leave any caller-provided `ierr`
-unchanged. This is a consequence of the master-thread-only guard model documented in
-"OpenMP Carve-Out And Limitations" below.
+**OpenMP carve-out**: for the existing `ftimer`/`ftimer_core` guarded APIs, this
+warn-and-skip contract applies in serial code and from the OpenMP master thread
+only. When built with `FTIMER_USE_OPENMP=ON`, calls from non-master threads are
+suppressed before validation reaches `normalize_name` or `report_status` — they
+produce no stderr diagnostic, return 0 (for `lookup`), and leave any
+caller-provided `ierr` unchanged. This is a consequence of the
+master-thread-only guard model documented in "OpenMP Carve-Out And Limitations"
+below. The explicit `ftimer_openmp` object does not use this silent no-op
+contract for in-parallel object calls.
 
 This is the deliberate policy rather than a stronger failure (e.g. `error stop`),
 chosen for consistency with the library's error contract and because callers that
@@ -340,6 +348,28 @@ enforcement should pass `ierr` and check it.
 - Suppressed non-master calls are skipped before normal validation, emit no stderr warning, and leave any caller-provided `ierr` unchanged
 - The OpenMP guards do not broaden support for concurrent access to other APIs; summary/report generation and other shared access remain unsupported in threaded regions
 - Thread-local timer instances, fuller concurrent timing support, and any `suppress_in_parallel` control remain deferred
+- `ftimer_openmp` is the explicit opt-in worker-timing module. Its
+  `ftimer_openmp_t%init(config=...)`, `finalize`, `reset`,
+  `register_timer`, and `lookup_timer` entry points are available now, including
+  keyword-only `init(config=..., comm=...)` in MPI-enabled builds. Registered
+  timer ids remain valid across `reset()` and are invalidated across
+  `finalize()`/reinit without being recycled in the same object. The MPI
+  communicator handle is stored for future hybrid-reduction work; no current
+  public `ftimer_openmp` summary/report behavior consumes it. Timed
+  parallel-region and worker timing methods are deliberately present, but
+  otherwise valid calls return `FTIMER_ERR_NOT_IMPLEMENTED` until the
+  thread-lane runtime implementation lands; lifecycle, active-region, and
+  unknown-id validation errors are reported first. Calls made inside an OpenMP
+  parallel region without `ierr` queue bounded diagnostics instead of writing
+  unordered stderr, including thread 0 because the object-level API rejects
+  in-parallel lifecycle/catalog/timed-region calls. A later serial lifecycle
+  call without `ierr` emits one aggregate diagnostic when fTimer itself is built
+  with `FTIMER_USE_OPENMP=ON`; with `ierr`, lifecycle calls that clear queued
+  diagnostics return the first queued status without writing stderr.
+  In non-OpenMP fTimer builds, `ftimer_openmp` is exposed for serial-context
+  lifecycle/catalog adoption only; using that package from a downstream OpenMP
+  parallel region is outside the supported contract because the library was not
+  built with OpenMP runtime introspection.
 - For user-facing mode selection, accepted instrumentation patterns, and
   migration guidance, see
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
@@ -356,7 +386,9 @@ enforcement should pass `ierr` and check it.
 
 ### Consequences for timing data
 
-The silent worker-thread no-op model has specific, observable consequences that users must understand to avoid misreading summary output:
+For the existing `ftimer`/`ftimer_core` guarded APIs, the silent worker-thread
+no-op model has specific, observable consequences that users must understand to
+avoid misreading summary output:
 
 - **Timer calls made exclusively on worker threads are silently dropped**: no summary entry is created, no call count is incremented, and no timing data is recorded for those calls. A timer name that is started and stopped only on worker threads will not appear in the summary at all.
 - **Call counts reflect only master-thread invocations, not all-thread counts**: when all N threads in a parallel region call `start`/`stop` for the same timer, only the master thread's call is recorded; the summary shows `call_count = 1`, not `N`.

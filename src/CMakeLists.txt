@@ -6,6 +6,7 @@ set(FTIMER_SOURCES
   ftimer_summary.F90
   ftimer_mpi.F90
   ftimer_core_summary_bindings.F90
+  ftimer_openmp.F90
   ftimer.F90
 )
 

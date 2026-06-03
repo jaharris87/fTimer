@@ -171,6 +171,7 @@ function(ftimer_verify_installed_artifacts)
     ftimer_clock.mod
     ftimer_core.mod
     ftimer_mpi.mod
+    ftimer_openmp.mod
     ftimer_summary.mod
     ftimer_types.mod
   )
@@ -238,9 +239,9 @@ function(ftimer_verify_installed_artifacts)
   endif()
 endfunction()
 
-function(ftimer_expect_integer_mpi_comm_rejected probe_name probe_source)
-  set(probe_source_dir "${TEST_BINARY_DIR}/integer-mpi-comm-rejection-src-${probe_name}")
-  set(probe_build_dir "${TEST_BINARY_DIR}/integer-mpi-comm-rejection-build-${probe_name}")
+function(ftimer_expect_installed_source_rejected probe_name probe_source)
+  set(probe_source_dir "${TEST_BINARY_DIR}/source-rejection-src-${probe_name}")
+  set(probe_build_dir "${TEST_BINARY_DIR}/source-rejection-build-${probe_name}")
 
   file(REMOVE_RECURSE "${probe_source_dir}" "${probe_build_dir}")
   file(MAKE_DIRECTORY "${probe_source_dir}")
@@ -282,7 +283,7 @@ target_link_libraries(ftimer_integer_mpi_comm_rejection PRIVATE fTimer::ftimer)
   )
   if(NOT probe_configure_result EQUAL 0)
     message(FATAL_ERROR
-      "Failed to configure the installed integer-MPI-comm rejection probe '${probe_name}'.\n"
+      "Failed to configure the installed source rejection probe '${probe_name}'.\n"
       "stdout:\n${probe_configure_output}\n"
       "stderr:\n${probe_configure_error}"
     )
@@ -300,9 +301,40 @@ target_link_libraries(ftimer_integer_mpi_comm_rejection PRIVATE fTimer::ftimer)
   )
   if(probe_build_result EQUAL 0)
     message(FATAL_ERROR
-      "Installed MPI package accepted legacy integer MPI comm probe '${probe_name}'; expected the build to fail."
+      "Installed package accepted rejected source probe '${probe_name}'; expected the build to fail."
     )
   endif()
+endfunction()
+
+function(ftimer_expect_integer_mpi_comm_rejected probe_name probe_source)
+  ftimer_expect_installed_source_rejected("${probe_name}" "${probe_source}")
+endfunction()
+
+function(ftimer_expect_openmp_init_positional_rejected_cases)
+  ftimer_expect_installed_source_rejected(openmp-positional-config [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+
+   call timer%init(config)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_installed_source_rejected(openmp-positional-config-ierr [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+   integer :: ierr
+
+   call timer%init(config, ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
 endfunction()
 
 function(ftimer_expect_integer_mpi_comm_rejected_cases)
@@ -382,6 +414,77 @@ program ftimer_integer_mpi_comm_rejection
 
    legacy_comm = 2
    call ftimer_init(legacy_comm, ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(openmp-keyword [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+   integer :: ierr
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call timer%init(config=config, comm=legacy_comm, ierr=ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(openmp-positional-config-and-int [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call timer%init(config, legacy_comm)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(openmp-positional-config-int-ierr [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+   integer :: ierr
+   integer :: legacy_comm
+
+   legacy_comm = 2
+   call timer%init(config, legacy_comm, ierr)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(openmp-positional-config-mpi-comm [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   use mpi_f08, only: MPI_COMM_WORLD
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+
+   call timer%init(config, MPI_COMM_WORLD)
+end program ftimer_integer_mpi_comm_rejection
+]=])
+
+  ftimer_expect_integer_mpi_comm_rejected(openmp-positional-config-mpi-comm-ierr [=[
+program ftimer_integer_mpi_comm_rejection
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_t
+   use mpi_f08, only: MPI_COMM_WORLD
+   implicit none
+
+   type(ftimer_openmp_config_t) :: config
+   type(ftimer_openmp_t) :: timer
+   integer :: ierr
+
+   call timer%init(config, MPI_COMM_WORLD, ierr)
 end program ftimer_integer_mpi_comm_rejection
 ]=])
 endfunction()
@@ -576,6 +679,8 @@ ftimer_check_package_version_request(
 
 ftimer_verify_installed_artifacts()
 
+ftimer_expect_openmp_init_positional_rejected_cases()
+
 if(TEST_ENABLE_MPI)
   ftimer_expect_integer_mpi_comm_rejected_cases()
 endif()
@@ -631,6 +736,12 @@ endif()
 set(consumer_executable "${consumer_build_dir}/ftimer_installed_consumer${TEST_EXECUTABLE_SUFFIX}")
 set(oop_consumer_executable "${consumer_build_dir}/ftimer_installed_oop_consumer${TEST_EXECUTABLE_SUFFIX}")
 set(mixed_consumer_executable "${consumer_build_dir}/ftimer_installed_mixed_consumer${TEST_EXECUTABLE_SUFFIX}")
+set(openmp_api_consumer_executable
+  "${consumer_build_dir}/ftimer_installed_openmp_api_consumer${TEST_EXECUTABLE_SUFFIX}"
+)
+set(openmp_api_openmp_consumer_executable
+  "${consumer_build_dir}/ftimer_installed_openmp_api_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
+)
 if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   set(configured_consumer_executable
     "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_consumer${TEST_EXECUTABLE_SUFFIX}"
@@ -641,6 +752,12 @@ if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   set(configured_mixed_consumer_executable
     "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_mixed_consumer${TEST_EXECUTABLE_SUFFIX}"
   )
+  set(configured_openmp_api_consumer_executable
+    "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_openmp_api_consumer${TEST_EXECUTABLE_SUFFIX}"
+  )
+  set(configured_openmp_api_openmp_consumer_executable
+    "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_openmp_api_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
+  )
   if(EXISTS "${configured_consumer_executable}")
     set(consumer_executable "${configured_consumer_executable}")
   endif()
@@ -649,6 +766,12 @@ if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
   endif()
   if(EXISTS "${configured_mixed_consumer_executable}")
     set(mixed_consumer_executable "${configured_mixed_consumer_executable}")
+  endif()
+  if(EXISTS "${configured_openmp_api_consumer_executable}")
+    set(openmp_api_consumer_executable "${configured_openmp_api_consumer_executable}")
+  endif()
+  if(EXISTS "${configured_openmp_api_openmp_consumer_executable}")
+    set(openmp_api_openmp_consumer_executable "${configured_openmp_api_openmp_consumer_executable}")
   endif()
 endif()
 
@@ -681,16 +804,47 @@ if(NOT TEST_ENABLE_MPI)
   if(NOT mixed_consumer_run_result EQUAL 0)
     message(FATAL_ERROR "Installed-package mixed-module consumer executable exited with a nonzero status.")
   endif()
+
+  execute_process(
+    COMMAND "${openmp_api_consumer_executable}"
+    WORKING_DIRECTORY "${consumer_build_dir}"
+    RESULT_VARIABLE openmp_api_consumer_run_result
+  )
+  if(NOT openmp_api_consumer_run_result EQUAL 0)
+    message(FATAL_ERROR "Installed-package OpenMP API consumer executable exited with a nonzero status.")
+  endif()
+
+  if(TEST_ENABLE_OPENMP)
+    execute_process(
+      COMMAND "${openmp_api_openmp_consumer_executable}"
+      WORKING_DIRECTORY "${consumer_build_dir}"
+      RESULT_VARIABLE openmp_api_openmp_consumer_run_result
+    )
+    if(NOT openmp_api_openmp_consumer_run_result EQUAL 0)
+      message(FATAL_ERROR
+        "Installed-package OpenMP API OpenMP consumer executable exited with a nonzero status."
+      )
+    endif()
+  endif()
 endif()
 
 if(TEST_ENABLE_MPI)
   set(mpi_consumer_executable "${consumer_build_dir}/ftimer_installed_mpi_consumer${TEST_EXECUTABLE_SUFFIX}")
+  set(openmp_api_mpi_consumer_executable
+    "${consumer_build_dir}/ftimer_installed_openmp_api_mpi_consumer${TEST_EXECUTABLE_SUFFIX}"
+  )
   if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
     set(configured_mpi_consumer_executable
       "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_mpi_consumer${TEST_EXECUTABLE_SUFFIX}"
     )
+    set(configured_openmp_api_mpi_consumer_executable
+      "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_openmp_api_mpi_consumer${TEST_EXECUTABLE_SUFFIX}"
+    )
     if(EXISTS "${configured_mpi_consumer_executable}")
       set(mpi_consumer_executable "${configured_mpi_consumer_executable}")
+    endif()
+    if(EXISTS "${configured_openmp_api_mpi_consumer_executable}")
+      set(openmp_api_mpi_consumer_executable "${configured_openmp_api_mpi_consumer_executable}")
     endif()
   endif()
 
@@ -735,6 +889,23 @@ if(TEST_ENABLE_MPI)
     message(FATAL_ERROR "Installed-package MPI consumer executable exited with a nonzero status.")
   endif()
 
+  set(ftimer_openmp_api_mpi_launch_command "${ftimer_mpi_launch_prefix}")
+  list(APPEND ftimer_openmp_api_mpi_launch_command "${openmp_api_mpi_consumer_executable}")
+  if(DEFINED TEST_MPIEXEC_POSTFLAGS AND NOT TEST_MPIEXEC_POSTFLAGS STREQUAL "")
+    list(APPEND ftimer_openmp_api_mpi_launch_command ${TEST_MPIEXEC_POSTFLAGS})
+  endif()
+
+  execute_process(
+    COMMAND ${ftimer_openmp_api_mpi_launch_command}
+    WORKING_DIRECTORY "${consumer_build_dir}"
+    RESULT_VARIABLE openmp_api_mpi_consumer_run_result
+  )
+  if(NOT openmp_api_mpi_consumer_run_result EQUAL 0)
+    message(FATAL_ERROR
+      "Installed-package OpenMP API MPI consumer executable exited with a nonzero status."
+    )
+  endif()
+
   if(NOT EXISTS "${consumer_build_dir}/consumer_mpi_summary.txt")
     message(FATAL_ERROR "Installed-package MPI consumer did not write consumer_mpi_summary.txt.")
   endif()
@@ -759,12 +930,23 @@ if(TEST_ENABLE_MPI)
     set(mpi_openmp_consumer_executable
       "${consumer_build_dir}/ftimer_installed_mpi_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
     )
+    set(openmp_api_mpi_openmp_consumer_executable
+      "${consumer_build_dir}/ftimer_installed_openmp_api_mpi_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
+    )
     if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
       set(configured_mpi_openmp_consumer_executable
         "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_mpi_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
       )
+      set(configured_openmp_api_mpi_openmp_consumer_executable
+        "${consumer_build_dir}/${TEST_CONFIG}/ftimer_installed_openmp_api_mpi_openmp_consumer${TEST_EXECUTABLE_SUFFIX}"
+      )
       if(EXISTS "${configured_mpi_openmp_consumer_executable}")
         set(mpi_openmp_consumer_executable "${configured_mpi_openmp_consumer_executable}")
+      endif()
+      if(EXISTS "${configured_openmp_api_mpi_openmp_consumer_executable}")
+        set(openmp_api_mpi_openmp_consumer_executable
+          "${configured_openmp_api_mpi_openmp_consumer_executable}"
+        )
       endif()
     endif()
 
@@ -782,6 +964,97 @@ if(TEST_ENABLE_MPI)
     if(NOT mpi_openmp_consumer_run_result EQUAL 0)
       message(FATAL_ERROR
         "Installed-package MPI+OpenMP consumer executable exited with a nonzero status."
+      )
+    endif()
+
+    set(ftimer_openmp_api_mpi_openmp_launch_command "${ftimer_mpi_launch_prefix}")
+    list(APPEND ftimer_openmp_api_mpi_openmp_launch_command
+      "${openmp_api_mpi_openmp_consumer_executable}"
+    )
+    if(DEFINED TEST_MPIEXEC_POSTFLAGS AND NOT TEST_MPIEXEC_POSTFLAGS STREQUAL "")
+      list(APPEND ftimer_openmp_api_mpi_openmp_launch_command ${TEST_MPIEXEC_POSTFLAGS})
+    endif()
+
+    execute_process(
+      COMMAND ${ftimer_openmp_api_mpi_openmp_launch_command}
+      WORKING_DIRECTORY "${consumer_build_dir}"
+      RESULT_VARIABLE openmp_api_mpi_openmp_consumer_run_result
+      ERROR_VARIABLE openmp_api_mpi_openmp_consumer_stderr
+    )
+    if(NOT openmp_api_mpi_openmp_consumer_run_result EQUAL 0)
+      message(FATAL_ERROR
+        "Installed-package OpenMP API MPI+OpenMP consumer executable exited with a nonzero status.\n"
+        "stderr:\n${openmp_api_mpi_openmp_consumer_stderr}"
+      )
+    endif()
+
+    string(REPLACE "\r\n" "\n" openmp_api_mpi_openmp_consumer_stderr_normalized
+      "${openmp_api_mpi_openmp_consumer_stderr}"
+    )
+    string(REPLACE ";" "\\;" openmp_api_mpi_openmp_consumer_stderr_escaped
+      "${openmp_api_mpi_openmp_consumer_stderr_normalized}"
+    )
+    string(REPLACE "\n" ";" openmp_api_mpi_openmp_stderr_lines
+      "${openmp_api_mpi_openmp_consumer_stderr_escaped}"
+    )
+    set(openmp_api_mpi_openmp_diagnostic_line_count 0)
+    set(openmp_api_mpi_openmp_rank0_line_count 0)
+    set(openmp_api_mpi_openmp_rank1_line_count 0)
+    set(openmp_api_mpi_openmp_unexpected_ftimer_line_count 0)
+    set(openmp_api_mpi_openmp_unexpected_ftimer_lines "")
+    foreach(openmp_api_mpi_openmp_stderr_line IN LISTS openmp_api_mpi_openmp_stderr_lines)
+      string(STRIP "${openmp_api_mpi_openmp_stderr_line}" openmp_api_mpi_openmp_stderr_line_stripped)
+      if(NOT openmp_api_mpi_openmp_stderr_line_stripped MATCHES "ftimer_openmp recorded")
+        if(openmp_api_mpi_openmp_stderr_line_stripped MATCHES "[Ff]Timer|FTIMER|ftimer_")
+          math(EXPR openmp_api_mpi_openmp_unexpected_ftimer_line_count
+            "${openmp_api_mpi_openmp_unexpected_ftimer_line_count} + 1"
+          )
+          string(APPEND openmp_api_mpi_openmp_unexpected_ftimer_lines
+            "${openmp_api_mpi_openmp_stderr_line_stripped}\n"
+          )
+        endif()
+        continue()
+      endif()
+
+      math(EXPR openmp_api_mpi_openmp_diagnostic_line_count
+        "${openmp_api_mpi_openmp_diagnostic_line_count} + 1"
+      )
+      if((openmp_api_mpi_openmp_stderr_line_stripped MATCHES
+            "ftimer_openmp recorded 1 worker diagnostics")
+          AND (openmp_api_mpi_openmp_stderr_line_stripped MATCHES
+            "first status 2, overflow 0"))
+        math(EXPR openmp_api_mpi_openmp_rank0_line_count
+          "${openmp_api_mpi_openmp_rank0_line_count} + 1"
+        )
+      elseif((openmp_api_mpi_openmp_stderr_line_stripped MATCHES
+            "ftimer_openmp recorded 2 worker diagnostics")
+          AND (openmp_api_mpi_openmp_stderr_line_stripped MATCHES
+            "first status 2, overflow 0"))
+        math(EXPR openmp_api_mpi_openmp_rank1_line_count
+          "${openmp_api_mpi_openmp_rank1_line_count} + 1"
+        )
+      endif()
+    endforeach()
+
+    if((NOT "${openmp_api_mpi_openmp_diagnostic_line_count}" STREQUAL "2")
+        OR (NOT "${openmp_api_mpi_openmp_rank0_line_count}" STREQUAL "1")
+        OR (NOT "${openmp_api_mpi_openmp_rank1_line_count}" STREQUAL "1")
+        OR (NOT "${openmp_api_mpi_openmp_unexpected_ftimer_line_count}" STREQUAL "0"))
+      message(FATAL_ERROR
+        "Unexpected OpenMP API MPI+OpenMP diagnostic stderr.\n"
+        "Expected one rank diagnostic with 1 retained worker diagnostic and "
+        "one rank diagnostic with 2 retained worker diagnostics.\n"
+        "Observed ftimer_openmp diagnostic line count: "
+        "${openmp_api_mpi_openmp_diagnostic_line_count}\n"
+        "Observed rank-0-style diagnostic line count: "
+        "${openmp_api_mpi_openmp_rank0_line_count}\n"
+        "Observed rank-1-style diagnostic line count: "
+        "${openmp_api_mpi_openmp_rank1_line_count}\n"
+        "Observed unexpected fTimer diagnostic line count: "
+        "${openmp_api_mpi_openmp_unexpected_ftimer_line_count}\n"
+        "Unexpected fTimer diagnostic lines:\n"
+        "${openmp_api_mpi_openmp_unexpected_ftimer_lines}"
+        "Actual:\n${openmp_api_mpi_openmp_consumer_stderr_normalized}"
       )
     endif()
   endif()

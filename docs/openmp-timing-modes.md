@@ -9,9 +9,18 @@ umbrella issue #237. It explains what exists on current `main`, what is
 accepted as future opt-in design, and how examples should evolve without making
 today's master-thread-only behavior look accidental.
 
-Current `main` still has no true worker-thread timing API. The design docs name
-future source shapes such as `ftimer_openmp_t`, but those symbols are not
-available until later implementation issues add them.
+Current `main` still has no true worker-thread timing behavior. The first
+`ftimer_openmp` source symbols are available as the opt-in API surface, but
+timed-region worker calls, OpenMP summaries, and hybrid MPI+OpenMP reductions
+remain deferred to later implementation issues.
+
+The `ftimer_openmp` module is installed in all package modes: serial, MPI,
+OpenMP, and MPI+OpenMP. Packages built without `FTIMER_USE_OPENMP=ON` support
+its lifecycle/configuration and timer catalog entry points only from serial
+context. OpenMP-region rejection and bounded worker diagnostics require an
+fTimer package built with `FTIMER_USE_OPENMP=ON`; global OpenMP flags in a
+downstream application do not retrofit OpenMP runtime introspection into a
+non-OpenMP fTimer package.
 
 ## Mode Summary
 
@@ -22,8 +31,8 @@ available until later implementation issues add them.
 | `FTIMER_USE_OPENMP=OFF` with external OpenMP flags | Yes | fTimer keeps serial/pure-MPI semantics. Global OpenMP compiler flags do not activate the guard carve-out. |
 | `FTIMER_USE_OPENMP=ON` compatibility mode | Yes | Current APIs run guarded timer operations only on OpenMP thread 0. Worker-thread calls are silent no-ops. |
 | `FTIMER_USE_MPI=ON` plus `FTIMER_USE_OPENMP=ON` | Yes, as compatibility smoke coverage | MPI and OpenMP package dependencies can coexist. This still uses the current master-thread-only OpenMP behavior. |
-| True OpenMP worker timing | No | Future opt-in API behind `ftimer_openmp`, `ftimer_openmp_t`, and explicit configuration. |
-| True MPI+OpenMP rank/lane reductions | No | Future hybrid result family behind the future OpenMP-specific object. |
+| True OpenMP worker timing | No | Initial opt-in API surface behind `ftimer_openmp`, `ftimer_openmp_t`, and explicit configuration exists; otherwise valid worker timing calls return `FTIMER_ERR_NOT_IMPLEMENTED` after lifecycle/catalog validation. |
+| True MPI+OpenMP rank/lane reductions | No | Future hybrid result family behind the OpenMP-specific object. |
 
 ## Current Accepted Patterns
 
@@ -106,8 +115,9 @@ pattern when they want one wall-clock interval for a parallel region. The most
 important migration audit is expectation-setting: if an application currently
 calls fTimer inside a parallel region and expects each worker to contribute,
 that instrumentation is not producing those data today. Move such timing calls
-outside the parallel region for current releases, or plan a future explicit
-worker-timing migration after the OpenMP-specific API lands.
+outside the parallel region for current releases, or plan an explicit
+worker-timing migration after the OpenMP-specific runtime and summary behavior
+land.
 
 Applications that may need both compatibility mode and future true worker
 timing should put fTimer calls behind an application-owned instrumentation
@@ -115,10 +125,10 @@ facade. That keeps the choice between current `ftimer` calls and future
 `ftimer_openmp` calls in one application module instead of spreading mode
 conditionals across scientific kernels.
 
-When true OpenMP timing is implemented, the intended migration is additive:
+The additive migration surface starts with `ftimer_openmp`:
 
-- import the future `ftimer_openmp` module explicitly;
-- construct a future `type(ftimer_openmp_t)` object, not the procedural
+- import the `ftimer_openmp` module explicitly;
+- construct a `type(ftimer_openmp_t)` object, not the procedural
   default instance;
 - initialize it with a keyword `config=` object and, for hybrid runs, a keyword
   `comm=`;
@@ -127,9 +137,10 @@ When true OpenMP timing is implemented, the intended migration is additive:
 - consume future OpenMP or MPI+OpenMP summary/result types instead of current
   `ftimer_summary_t`, `ftimer_mpi_summary_t`, or `ftimer_mpi_union_summary_t`.
 
-The future snippets in the design docs are interface sketches only. They should
-not become compiling examples until the corresponding runtime, summary, and
-validation implementation issues add real public symbols.
+Only the lifecycle/configuration and timer catalog parts of that surface are
+functional today. The timed-region, worker `start_id`/`stop_id`, summary, and
+hybrid reduction pieces should not become full examples until the corresponding
+runtime, summary, and validation implementation issues make them functional.
 
 ## Future Example Policy
 

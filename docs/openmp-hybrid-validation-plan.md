@@ -4,10 +4,11 @@
 # OpenMP And Hybrid Validation Plan
 
 Issue #243 defines the validation strategy for the OpenMP/hybrid direction
-recorded in #238, #239, #240, and #241. This document is a validation contract
-only. It does not implement true OpenMP worker timing, add `ftimer_openmp`
-public APIs, add hybrid reductions, or change the current
-`FTIMER_USE_OPENMP=ON` master-thread-only compatibility mode.
+recorded in #238, #239, #240, and #241. This document is a validation contract.
+Issue #268 adds the initial `ftimer_openmp` public API surface and lifecycle
+coverage, but true OpenMP worker timing, OpenMP summaries, hybrid reductions,
+and changes to the current `FTIMER_USE_OPENMP=ON` master-thread-only
+compatibility mode remain deferred to later #267 child issues.
 
 ## Decision
 
@@ -42,8 +43,11 @@ Current `main` should keep these validation gates:
   `libomp` runtime is available;
 - option-off/global-OpenMP regression coverage for #199;
 - build-contract regression coverage for configure gates and Makefile wrapper
-  behavior; and
-- MPI+OpenMP build-only smoke coverage for the current compatibility mode.
+  behavior;
+- MPI+OpenMP build-only smoke coverage for the current compatibility mode; and
+- `ftimer_openmp` API/lifecycle smoke, diagnostics, public-symbol, and
+  installed-package consumer coverage for the current non-functional worker
+  timing boundary.
 
 The compatibility matrix is intentionally about today's APIs:
 
@@ -62,10 +66,10 @@ The compatibility matrix is intentionally about today's APIs:
 ## Future True OpenMP Test Matrix
 
 When #239 introduces the first true OpenMP runtime, deterministic tests should
-cover:
+extend the current `ftimer_openmp` API surface coverage to cover:
 
-- explicit opt-in construction through the future `ftimer_openmp` module and
-  `ftimer_openmp_t` object;
+- explicit opt-in construction through the current `ftimer_openmp` module and
+  `ftimer_openmp_t` object with real worker timing enabled;
 - one strict stack per OpenMP lane, initially one lane per level-1 team thread;
 - serial-context timer registration before worker use;
 - id-based `start_id`/`stop_id` inside a timed parallel-region epoch;
@@ -132,9 +136,13 @@ Installed-package checks should verify the public package story at each stage:
 - current OpenMP installed consumers using the master-thread-only package
   contract;
 - current MPI+OpenMP installed consumers proving that exported MPI and OpenMP
-  dependencies can coexist; and
+  dependencies can coexist;
+- current `ftimer_openmp` installed consumers for serial, MPI, OpenMP, and
+  MPI+OpenMP package modes, proving that the lifecycle/catalog surface imports,
+  links, validates keyword-only init shape, and keeps worker timing
+  non-functional with `FTIMER_ERR_NOT_IMPLEMENTED`; and
 - future true OpenMP/hybrid installed consumers only after the public
-  `ftimer_openmp` module, config object, and result types exist.
+  runtime, summary, and reduction result types exist.
 
 Future installed consumers should compile the documented source shapes, run the
 supported examples, and assert the exported CMake package resolves only the
