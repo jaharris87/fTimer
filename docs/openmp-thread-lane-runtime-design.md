@@ -37,8 +37,9 @@ mostly read-only metadata from hot per-lane state.
 
 Object-level state:
 
-- initialization flag, mismatch mode, and lifecycle state;
-- clock pointer and summary-window timestamps;
+- initialization flag and lifecycle state;
+- optional clock pointer for test/validation injection and summary-window
+  timestamps for future summaries;
 - optional MPI communicator capture for later hybrid work;
 - an append-only timer catalog mapping public timer ids to validated names;
 - timed parallel-region epoch state, including whether a worker-timed region is
@@ -200,8 +201,8 @@ On `stop_id(timer_id)`:
 4. Compare only the current lane's stack top, including both timer id and epoch.
 5. If the top matches, capture one `now`, pop the lane stack, then look up the
    now-current parent context before accumulating elapsed time.
-6. If the top does not match, apply the configured mismatch mode only within
-   that lane.
+6. If the top does not match, return a strict mismatch error and leave that
+   lane's state unchanged.
 
 The existing ordering rule still matters: stop must pop the lane stack before
 looking up the context to accumulate into. Doing that lookup against the running
@@ -209,18 +210,21 @@ stack would create the same context-attribution bug as in the serial runtime.
 
 ## Mismatch And Repair Policy
 
-Strict nesting is per lane.
+Current #269 worker timing is strict-only and per lane.
 
 - A stop on an empty lane stack is `FTIMER_ERR_MISMATCH`.
 - A stop for a different timer id than the current lane stack top is
-  `FTIMER_ERR_MISMATCH` in strict mode.
+  `FTIMER_ERR_MISMATCH`.
 - A worker stop for a matching timer id from a different timed-region epoch is
-  `FTIMER_ERR_MISMATCH` in strict mode.
-- Warn and repair modes may unwind/restart timers only on the current lane.
-- Repair must capture one timestamp and use it for every unwound timer on that
-  lane.
-- Repair must not fire callbacks.
-- Repair must never inspect, pop, stop, or restart another lane's stack.
+  `FTIMER_ERR_MISMATCH`.
+- Mismatch errors leave the current lane's stack and accumulated time
+  unchanged, so callers can recover with matching stops where possible.
+
+Future warn/repair modes are not part of the current `ftimer_openmp_t` contract.
+If a later issue adds them, they may unwind/restart timers only on the current
+lane, must capture one timestamp for every unwound timer on that lane, must not
+fire callbacks, and must never inspect, pop, stop, or restart another lane's
+stack.
 
 Cross-thread and cross-region start/stop pairing is therefore a mismatch, not a
 migration event. The lane that started the timer remains active. Region close,
@@ -340,9 +344,11 @@ these synchronization properties:
 
 The warmed steady-state path assumes names are registered and the relevant
 lane-local contexts have either been reserved or touched once before the
-measured loop. The remaining costs are lane-local hash/context lookup and the
-clock call. Lane-local array growth is allowed only as a cold first-touch or
-growth path and must be documented separately from steady-state timing cost.
+measured loop. The current #269 implementation uses lane-local linear context
+lookup plus the clock call; issue #277 tracks the context-indexing and
+context-scaling benchmark work needed to reduce or quantify that cost. Lane-local
+array growth is allowed only as a cold first-touch or growth path and must be
+documented separately from steady-state timing cost.
 Until a reserve API exists, users who need warmed hot-loop measurements should
 pre-register ids and run an untimed dummy timed region that touches the same
 lane/timer/context combinations before entering the measured loop.

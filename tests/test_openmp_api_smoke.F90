@@ -444,6 +444,9 @@ contains
       integer :: other_id
       integer :: parent_id
       integer :: second_id
+      integer :: shared_child_id
+      integer :: shared_parent_a_id
+      integer :: shared_parent_b_id
       integer :: timer_id
       integer :: default_id
       integer :: worker_bad
@@ -489,6 +492,15 @@ contains
 
       call timer%register_timer("mismatch_child", mismatch_child_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 190)
+
+      call timer%register_timer("shared_parent_a", shared_parent_a_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 253)
+
+      call timer%register_timer("shared_parent_b", shared_parent_b_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 254)
+
+      call timer%register_timer("shared_child", shared_child_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 255)
 
       fake_lane_time(0) = 1.0_wp
       call timer%start_id(timer_id, ierr=ierr)
@@ -765,6 +777,73 @@ contains
       call timer%test_lane_is_running(2, child_id, is_running, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 203)
       if (is_running) error stop 204
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 256)
+
+      worker_bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         fake_lane_time(2) = 50.0_wp
+         call timer%start_id(shared_parent_a_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 51.0_wp
+         call timer%start_id(shared_child_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 55.0_wp
+         call timer%stop_id(shared_child_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 60.0_wp
+         call timer%stop_id(shared_parent_a_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+
+         fake_lane_time(2) = 70.0_wp
+         call timer%start_id(shared_parent_b_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 72.0_wp
+         call timer%start_id(shared_child_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 79.0_wp
+         call timer%stop_id(shared_child_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+         fake_lane_time(2) = 81.0_wp
+         call timer%stop_id(shared_parent_b_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 257
+      if (worker_bad /= 0) error stop 258
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 259)
+
+      call timer%test_lane_parent_call_count(2, shared_child_id, shared_parent_a_id, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 260)
+      call expect_count(call_count, 1_int64, 261)
+
+      call timer%test_lane_parent_total_time(2, shared_child_id, shared_parent_a_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 262)
+      call expect_time(elapsed, 4.0_wp, 263)
+
+      call timer%test_lane_parent_call_count(2, shared_child_id, shared_parent_b_id, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 264)
+      call expect_count(call_count, 1_int64, 265)
+
+      call timer%test_lane_parent_total_time(2, shared_child_id, shared_parent_b_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 266)
+      call expect_time(elapsed, 7.0_wp, 267)
+
+      call timer%test_lane_total_call_count(2, shared_child_id, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 268)
+      call expect_count(call_count, 2_int64, 269)
+
+      call timer%test_lane_total_time(2, shared_child_id, elapsed, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 270)
+      call expect_time(elapsed, 11.0_wp, 271)
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 205)
