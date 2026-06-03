@@ -16,6 +16,10 @@ The #241 MPI+OpenMP reduction model is recorded in
 [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md).
 The #242 user-facing timing modes and migration guide is recorded in
 [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
+Issue #268 landed the first public `ftimer_openmp` symbols for the opt-in
+surface: configuration, lifecycle, timer registration/lookup, and deferred
+timed-region/worker method names. True worker timing, OpenMP summaries, and
+MPI+OpenMP reductions remain deferred under the #237 umbrella.
 
 Issue #160 asked whether fTimer should ever support real hybrid MPI+OpenMP
 timing beyond the documented master-thread-only carve-out.
@@ -24,18 +28,20 @@ timing beyond the documented master-thread-only carve-out.
 
 Real hybrid MPI+OpenMP timing was deferred pending concrete adopter demand under
 #160. It was not planned for that release path, but it was not rejected forever.
-Issue #237 now reopens the direction as future work with child issues, starting
-with the API and compatibility model in #238.
+Issue #237 now reopens the direction as staged work with child issues, starting
+with the API and compatibility model in #238 and the initial API symbols in
+#268.
 
 The current `FTIMER_USE_OPENMP=ON` behavior stays unchanged: timer operations in
 OpenMP parallel regions run only on the master thread, and worker-thread calls
-remain silent no-ops. fTimer should not add partial worker-thread timing until a
-future issue defines an explicit opt-in API, aggregation model, summary data
-contract, migration story, and test plan.
+remain silent no-ops. fTimer should not add partial worker-thread timing beyond
+the current `ftimer_openmp` lifecycle/catalog surface until later issues define
+and implement the runtime, aggregation model, summary data contract, migration
+story, and test plan.
 
 No child implementation issues were opened from #160. The later #237 umbrella is
-the place that now tracks child design, runtime, summary, reduction, validation,
-and docs work before code changes begin.
+the place that now tracks staged design, API, runtime, summary, reduction,
+validation, and docs work before true worker timing code changes continue.
 
 ## Evidence
 
