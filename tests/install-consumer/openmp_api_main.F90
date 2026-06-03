@@ -77,7 +77,7 @@ program ftimer_installed_openmp_api_consumer
    call timer%start_id(timer_id, ierr=ierr)
    if (ierr /= FTIMER_ERR_NOT_IMPLEMENTED) error stop 17
 
-   do i = 1, 3
+   do i = 1, size(ids)
       write (name, '("consumer_openmp_api_bulk_",i0)') i
       call timer%lookup_timer(trim(name), lookup_id, ierr=ierr)
       if (ierr /= FTIMER_SUCCESS) error stop 18
@@ -102,7 +102,7 @@ program ftimer_installed_openmp_api_consumer
    call timer%start_id(timer_id, ierr=ierr)
    if (ierr /= FTIMER_ERR_UNKNOWN) error stop 31
 
-   do i = 1, 3
+   do i = 1, size(ids)
       call timer%stop_id(ids(i), ierr=ierr)
       if (ierr /= FTIMER_ERR_UNKNOWN) error stop 32
    end do

@@ -21,6 +21,7 @@ program ftimer_openmp_api_diagnostics
    call run_reinit_config_case()
    call run_reset_preserves_config_case()
    call run_worker_lookup_no_ierr_case()
+   call run_master_lookup_no_ierr_case()
    call run_worker_lifecycle_catalog_no_ierr_case()
 
 contains
@@ -223,6 +224,46 @@ contains
 
       call timer%finalize()
    end subroutine run_worker_lookup_no_ierr_case
+
+   subroutine run_master_lookup_no_ierr_case()
+      integer :: ierr
+      integer :: master_created_id
+      integer :: master_seen
+      integer :: timer_id
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+
+      config%max_lanes = 0
+      config%max_worker_diagnostics = 1
+
+      call timer%init(config=config, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 46
+
+      call timer%register_timer("master_diagnostic_work", timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 47
+
+      master_created_id = -1
+      master_seen = 0
+
+!$omp parallel num_threads(2) default(shared) reduction(+:master_seen)
+      if (omp_get_thread_num() == 0) then
+         master_seen = master_seen + 1
+         call timer%register_timer("master_parallel_created", master_created_id)
+      end if
+!$omp end parallel
+
+      if (master_seen /= 1) error stop 48
+      if (master_created_id /= 0) error stop 49
+
+      call timer%lookup_timer("master_diagnostic_work", timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 50
+
+      call timer%lookup_timer("master_parallel_created", master_created_id, ierr=ierr)
+      if (ierr /= FTIMER_ERR_UNKNOWN) error stop 51
+      if (master_created_id /= 0) error stop 52
+
+      call timer%finalize()
+   end subroutine run_master_lookup_no_ierr_case
 
    subroutine run_worker_lifecycle_catalog_no_ierr_case()
       integer :: ierr

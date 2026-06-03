@@ -152,7 +152,7 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 27)
       if (reset_id /= timer_id) error stop 28
 
-      do i = 1, 3
+      do i = 1, size(ids)
          write (name, '("bulk_",i0)') i
          call timer%lookup_timer(trim(name), lookup_id, ierr=ierr)
          call expect_status(ierr, FTIMER_SUCCESS, 29)
@@ -232,7 +232,7 @@ contains
       call timer%stop_id(after_direct_reinit_id, ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_UNKNOWN, 60)
 
-      do i = 1, 3
+      do i = 1, size(ids)
          call timer%stop_id(ids(i), ierr=ierr)
          call expect_status(ierr, FTIMER_ERR_UNKNOWN, 61)
       end do

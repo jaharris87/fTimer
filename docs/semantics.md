@@ -181,7 +181,12 @@ This disabled-facade behavior is an application integration contract, not an alt
 - With `ierr` present, these lifecycle calls return `FTIMER_ERR_ACTIVE` and do not write to stderr
 - With `ierr` absent, they warn to stderr and return immediately with the timer state unchanged
 - They do not force-stop timers, synthesize elapsed time, zero accumulated data, restart the summary window, or perform hidden cleanup
-- In `FTIMER_USE_OPENMP=ON` builds, these lifecycle bullets apply only to serial code and OpenMP master-thread calls; non-master calls are suppressed before validation, emit no warning, and leave any caller-provided `ierr` unchanged
+- In `FTIMER_USE_OPENMP=ON` builds, these lifecycle bullets apply to the
+  existing `ftimer`/`ftimer_core` guarded APIs only in serial code and OpenMP
+  master-thread calls; non-master calls to those guarded APIs are suppressed
+  before validation, emit no warning, and leave any caller-provided `ierr`
+  unchanged. The explicit `ftimer_openmp` object has its own active-region
+  rejection and queued-diagnostic contract below.
 - Repairing stop mismatches is a separate explicit opt-in through `mismatch_mode = FTIMER_MISMATCH_WARN` or `FTIMER_MISMATCH_REPAIR`
 
 ## Local Summary Contract
@@ -317,12 +322,15 @@ The call is a no-op: no segment is created, no stack depth change occurs.
 Parent timers are not affected. Summary output will simply omit the rejected child;
 it does not produce a plausible-but-wrong child entry.
 
-**OpenMP carve-out**: this warn-and-skip contract applies in serial code and from the
-OpenMP master thread only. When built with `FTIMER_USE_OPENMP=ON`, calls from non-master
-threads are suppressed before validation reaches `normalize_name` or `report_status` — they
-produce no stderr diagnostic, return 0 (for `lookup`), and leave any caller-provided `ierr`
-unchanged. This is a consequence of the master-thread-only guard model documented in
-"OpenMP Carve-Out And Limitations" below.
+**OpenMP carve-out**: for the existing `ftimer`/`ftimer_core` guarded APIs, this
+warn-and-skip contract applies in serial code and from the OpenMP master thread
+only. When built with `FTIMER_USE_OPENMP=ON`, calls from non-master threads are
+suppressed before validation reaches `normalize_name` or `report_status` — they
+produce no stderr diagnostic, return 0 (for `lookup`), and leave any
+caller-provided `ierr` unchanged. This is a consequence of the
+master-thread-only guard model documented in "OpenMP Carve-Out And Limitations"
+below. The explicit `ftimer_openmp` object does not use this silent no-op
+contract for in-parallel object calls.
 
 This is the deliberate policy rather than a stronger failure (e.g. `error stop`),
 chosen for consistency with the library's error contract and because callers that
@@ -378,7 +386,9 @@ enforcement should pass `ierr` and check it.
 
 ### Consequences for timing data
 
-The silent worker-thread no-op model has specific, observable consequences that users must understand to avoid misreading summary output:
+For the existing `ftimer`/`ftimer_core` guarded APIs, the silent worker-thread
+no-op model has specific, observable consequences that users must understand to
+avoid misreading summary output:
 
 - **Timer calls made exclusively on worker threads are silently dropped**: no summary entry is created, no call count is incremented, and no timing data is recorded for those calls. A timer name that is started and stopped only on worker threads will not appear in the summary at all.
 - **Call counts reflect only master-thread invocations, not all-thread counts**: when all N threads in a parallel region call `start`/`stop` for the same timer, only the master thread's call is recorded; the summary shows `call_count = 1`, not `N`.
