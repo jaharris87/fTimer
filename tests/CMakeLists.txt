@@ -6,7 +6,7 @@ if(FTIMER_BUILD_SMOKE_TESTS)
   add_test(NAME ftimer_phase0_smoke COMMAND ftimer_phase0_smoke)
 
   add_executable(ftimer_openmp_api_smoke test_openmp_api_smoke.F90)
-  target_link_libraries(ftimer_openmp_api_smoke PRIVATE ftimer)
+  target_link_libraries(ftimer_openmp_api_smoke PRIVATE ftimer_smoke_test)
   add_test(NAME ftimer_openmp_api_smoke COMMAND ftimer_openmp_api_smoke)
 
   add_executable(ftimer_openmp_api_ierr_silence test_openmp_api_ierr_silence.F90)

@@ -180,10 +180,10 @@ endfunction()
 
 # Options
 option(FTIMER_USE_MPI "Enable MPI support" OFF)
-option(FTIMER_USE_OPENMP "Enable OpenMP master-thread guards" OFF)
+option(FTIMER_USE_OPENMP "Enable OpenMP master-thread guards and ftimer_openmp worker timing" OFF)
 option(
   FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK
-  "Assume the OpenMP master-thread runtime probe passes after compile/link succeeds; intended only for cross-compiling or execution-restricted packaging environments"
+  "Assume the OpenMP capability probe passes after compile/link succeeds; intended only for cross-compiling or execution-restricted packaging environments"
   OFF
 )
 option(FTIMER_BUILD_TESTS "Build pFUnit tests (requires pFUnit)" OFF)
@@ -196,6 +196,7 @@ set(FTIMER_PACKAGE_VERSION_COMPATIBILITY SameMinorVersion)
 
 set(FTIMER_PUBLIC_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/ftimer")
 set(FTIMER_TEST_LIBRARY_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/testlib")
+set(FTIMER_SMOKE_TEST_LIBRARY_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/smokelib")
 set(FTIMER_TEST_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/tests")
 
 # MPI
@@ -237,7 +238,7 @@ if(FTIMER_USE_OPENMP)
       "The active compiler is '${CMAKE_Fortran_COMPILER_ID}' at '${CMAKE_Fortran_COMPILER}'.\n"
       "Validated OpenMP compiler IDs: GNU and LLVMFlang.\n"
       "Supported paths: configure with GNU Fortran ('FC=gfortran ...') or LLVM Flang ('FC=flang-19 ...') and a discoverable OpenMP runtime.\n"
-      "Other compilers must be added only after fTimer's master-thread-only OpenMP probe and smoke coverage validate them."
+      "Other compilers must be added only after fTimer's OpenMP capability probe and smoke coverage validate master-thread guards plus ftimer_openmp worker timing."
     )
   endif()
 
@@ -253,8 +254,8 @@ if(FTIMER_USE_OPENMP)
   ftimer_try_run_openmp_master_probe(FTIMER_OPENMP_MASTER_PROBE_OK FTIMER_OPENMP_MASTER_PROBE_DETAILS)
   if(NOT FTIMER_OPENMP_MASTER_PROBE_OK)
     message(FATAL_ERROR
-      "FTIMER_USE_OPENMP=ON requires a validated compiler/runtime pair that passes fTimer's master-thread-only OpenMP capability probe.\n"
-      "The probe compiles, links, and runs a Fortran program using omp_lib, a two-thread parallel region, and !$omp master semantics.\n"
+      "FTIMER_USE_OPENMP=ON requires a validated compiler/runtime pair that passes fTimer's OpenMP capability probe.\n"
+      "The probe compiles, links, and runs a Fortran program using omp_lib, a two-thread parallel region, omp_get_thread_num introspection, and !$omp master semantics.\n"
       "For cross-compiling or execution-restricted package builds, maintainers may set FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK=ON after independently validating equivalent runtime semantics for the selected compiler/runtime pair.\n"
       "Active compiler ID: '${CMAKE_Fortran_COMPILER_ID}' at '${CMAKE_Fortran_COMPILER}'.\n"
       "${FTIMER_OPENMP_MASTER_PROBE_DETAILS}"

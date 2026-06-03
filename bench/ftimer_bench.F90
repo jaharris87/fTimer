@@ -55,6 +55,12 @@
 !                                       metadata-heavy report output
 !  strict MPI CSV reporting          -- MPI-enabled builds only; captures the
 !                                       reduction + root CSV reporting path
+!  ftimer_openmp serial lane         -- id-first explicit OpenMP object path in
+!                                       serial context
+!  ftimer_openmp region open/close   -- OpenMP-enabled builds only; captures
+!                                       timed-region token overhead
+!  ftimer_openmp worker lane         -- OpenMP-enabled builds only; captures
+!                                       warmed id-first worker start/stop
 !  raw date string formatting        -- date_and_time + string formatting,
 !                                       matching the original per-call wrapper
 !  ftimer_date_string steady-state   -- cached second-resolution date stamp
@@ -101,12 +107,17 @@ program ftimer_bench
    use ftimer, only: ftimer_finalize, ftimer_get_summary, ftimer_init, &
                      ftimer_lookup, ftimer_start, ftimer_start_id, &
                      ftimer_stop, ftimer_stop_id
+   use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_parallel_region_t, &
+                            ftimer_openmp_t
    use ftimer_summary, only: build_summary, format_mpi_union_summary, format_summary
-   use ftimer_types, only: ftimer_metadata_t, ftimer_mpi_union_summary_t, ftimer_segment_t, &
-                           ftimer_summary_t, wp
+   use ftimer_types, only: FTIMER_SUCCESS, ftimer_metadata_t, ftimer_mpi_union_summary_t, &
+                           ftimer_segment_t, ftimer_summary_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi_f08, only: MPI_Barrier, MPI_COMM_WORLD, MPI_Comm_rank, MPI_Comm_size, MPI_Finalize, &
                       MPI_Init
+#endif
+#ifdef FTIMER_USE_OPENMP
+   use omp_lib, only: omp_get_thread_num, omp_set_dynamic
 #endif
    implicit none
 
@@ -118,6 +129,8 @@ program ftimer_bench
    end interface
 
    integer, parameter :: REPS_HOT = 100000  ! flat and lookup scenarios
+   integer, parameter :: REPS_OPENMP_REGION = 10000
+   integer, parameter :: REPS_OPENMP_WORKER = 50000
    integer, parameter :: REPS_LONG_NAME = 50000
    integer, parameter :: REPS_NESTED = 10000   ! per nesting-depth scenario
    integer, parameter :: REPS_SUMMARY = 1000    ! per summary scenario (N=10, N=50)
@@ -167,6 +180,11 @@ program ftimer_bench
    ! --- Hot-path scenarios ---
    call bench_flat_name(REPS_HOT, count_rate)
    call bench_flat_id(REPS_HOT, count_rate)
+   call bench_openmp_serial_lane_id(REPS_HOT, count_rate)
+#ifdef FTIMER_USE_OPENMP
+   call bench_openmp_region_open_close(REPS_OPENMP_REGION, count_rate)
+   call bench_openmp_worker_lane_id(REPS_OPENMP_WORKER, count_rate)
+#endif
    call bench_long_name(REPS_LONG_NAME, 64, .false., count_rate)
    call bench_long_name(REPS_LONG_NAME, 256, .false., count_rate)
    call bench_long_name(REPS_LONG_NAME, 1024, .false., count_rate)
@@ -273,6 +291,7 @@ program ftimer_bench
    call write_bench_line('  - ftimer_date_string steady-state = cached path after warm-up.')
    call write_bench_line('  - Long-name name-based rows include full per-call validation and hashing of the label.')
    call write_bench_line('  - name-based start/stop remains the default path; lookup/start_id/stop_id is the optional hot path.')
+   call write_bench_line('  - ftimer_openmp worker rows appear only in FTIMER_USE_OPENMP=ON builds.')
    call write_bench_line('  - All scenarios use the real wall-clock (no mock clock).')
    call write_bench_line('  - Timings include clock-call overhead inside start/stop.')
    call write_bench_line('  - Pass a CSV path as argv[1] to archive parseable benchmark results.')
@@ -507,6 +526,116 @@ contains
       call ftimer_finalize()
       call print_result('flat start/stop (id-based)', reps, t0, t1, count_rate)
    end subroutine bench_flat_id
+
+   subroutine bench_openmp_serial_lane_id(reps, count_rate)
+      integer, intent(in) :: reps
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0, t1
+      integer :: i, id, ierr
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+
+      config%max_lanes = 1
+      call timer%init(config=config, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp serial init')
+      call timer%register_timer('t', id, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp serial register_timer')
+
+      call timer%start_id(id, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp serial warm start_id')
+      call timer%stop_id(id, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp serial warm stop_id')
+
+      call system_clock(t0)
+      do i = 1, reps
+         call timer%start_id(id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 'ftimer_bench: ftimer_openmp serial start_id failed'
+         call timer%stop_id(id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 'ftimer_bench: ftimer_openmp serial stop_id failed'
+      end do
+      call system_clock(t1)
+
+      call timer%finalize(ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp serial finalize')
+      call print_result('ftimer_openmp serial lane (id-based)', reps, t0, t1, count_rate)
+   end subroutine bench_openmp_serial_lane_id
+
+#ifdef FTIMER_USE_OPENMP
+   subroutine bench_openmp_region_open_close(reps, count_rate)
+      integer, intent(in) :: reps
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0, t1
+      integer :: i, ierr
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+
+      config%max_lanes = 3
+      call timer%init(config=config, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp region init')
+
+      call system_clock(t0)
+      do i = 1, reps
+         call timer%begin_parallel_region(region, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 'ftimer_bench: ftimer_openmp begin_parallel_region failed'
+         call timer%end_parallel_region(region, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 'ftimer_bench: ftimer_openmp end_parallel_region failed'
+      end do
+      call system_clock(t1)
+
+      call timer%finalize(ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp region finalize')
+      call print_result('ftimer_openmp region open/close', reps, t0, t1, count_rate)
+   end subroutine bench_openmp_region_open_close
+
+   subroutine bench_openmp_worker_lane_id(reps, count_rate)
+      integer, intent(in) :: reps
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0, t1
+      integer :: bad, i, id, ierr
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+
+      call omp_set_dynamic(.false.)
+      config%max_lanes = 3
+      call timer%init(config=config, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker init')
+      call timer%register_timer('worker', id, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker register_timer')
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker begin_parallel_region')
+
+      bad = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr, i) reduction(+:bad)
+      if (omp_get_thread_num() == 1) then
+         call timer%start_id(id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         call timer%stop_id(id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+      end if
+!$omp barrier
+      if (omp_get_thread_num() == 1) then
+         call system_clock(t0)
+         do i = 1, reps
+            call timer%start_id(id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            call timer%stop_id(id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         end do
+         call system_clock(t1)
+      end if
+!$omp end parallel
+
+      if (bad /= 0) error stop 'ftimer_bench: ftimer_openmp worker start/stop failed'
+      call timer%end_parallel_region(region, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker end_parallel_region')
+      call timer%finalize(ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker finalize')
+      call print_result('ftimer_openmp worker lane (id-based)', reps, t0, t1, count_rate)
+   end subroutine bench_openmp_worker_lane_id
+#endif
 
    ! Long-name start/stop with one steady-state resident timer.
    ! The name-based rows include per-call validation and hashing across the full

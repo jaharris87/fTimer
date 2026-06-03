@@ -10,7 +10,7 @@ When current-state sources disagree, use this repository-wide precedence order: 
 
 ## Current Scope
 
-Current `main` ships a small, correctness-first wall-clock timing library for modern Fortran. The strongest supported stories today are disciplined serial timing and pure-MPI timing; the OpenMP path is a deliberately narrow carve-out for bracketing a parallel region as a whole.
+Current `main` ships a small, correctness-first wall-clock timing library for modern Fortran. The strongest supported stories today are disciplined serial timing and pure-MPI timing. OpenMP support is split between the existing master-thread-only compatibility carve-out for `ftimer`/`ftimer_core` and the explicit `ftimer_openmp_t` serial-lane and level-1 worker timing runtime.
 
 Implemented capabilities include:
 
@@ -21,9 +21,10 @@ Implemented capabilities include:
 - MPI-reduced global summary fields on every participating rank after a descriptor-hash preflight
 - sparse MPI union summaries plus explicit sparse text and CSV reports
 - limited OpenMP master-thread-only timer guards
+- explicit `ftimer_openmp_t` timed-region and id-first thread-lane timing
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
-fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, or general thread-safe timing across OpenMP worker threads.
+fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, OpenMP summary/report result families, or general thread-safe access to the existing `ftimer`/`ftimer_core` APIs from OpenMP worker threads.
 It also does not provide accelerator/device synchronization hooks or implicit MPI
 barriers; callers own those synchronization decisions when interpreting
 wall-clock intervals.
@@ -94,7 +95,7 @@ ftimer_clock.F90
   └─ default wall clock, MPI wall clock wrapper, date-string helper
 
 ftimer_openmp.F90
-  └─ explicit opt-in OpenMP lifecycle/catalog API surface
+  └─ explicit opt-in OpenMP lifecycle/catalog/timed-region thread-lane runtime
 
 ftimer_types.F90
   └─ kinds, constants, summary/container types, and callback interfaces
@@ -153,7 +154,7 @@ The current implementation is organized around a few design choices that show up
   `MPI_Init` and before `MPI_Finalize`. The communicator captured by
   `init(comm=...)` is a non-owning handle that the caller must keep valid while
   fTimer summaries, reports, finalization, or reinitialization may use it.
-- OpenMP support is intentionally narrow: guarded timer operations run only on the master thread when `FTIMER_USE_OPENMP=ON`, so this path should not be read as general hybrid-thread timing support.
+- OpenMP support has two distinct paths: guarded `ftimer`/`ftimer_core` operations still run only on the master thread when `FTIMER_USE_OPENMP=ON`, while `ftimer_openmp_t` provides opt-in id-first timing for serial and level-1 OpenMP worker lanes. Neither path currently provides OpenMP summaries or hybrid rank/lane reductions.
 
 Those runtime semantics are specified in detail in [`docs/semantics.md`](semantics.md); this document focuses on how the repository realizes them.
 
@@ -238,8 +239,8 @@ Supported local build paths today are:
 - serial smoke/library build validated with GNU Fortran and LLVM Flang
 - serial pFUnit tests with `gfortran` plus a matching pFUnit install
 - MPI builds through GNU Fortran MPI wrapper compilers, with CI smoke/install-consumer coverage for OpenMPI and MPICH and MPI pFUnit coverage for OpenMPI plus MPICH on hosted Ubuntu 22.04
-- OpenMP builds with GNU Fortran and LLVM Flang for the master-thread-only carve-out; pFUnit OpenMP guard coverage remains on `gfortran`
-- MPI+OpenMP build-only smoke coverage for the current compatibility mode, proving the existing MPI and OpenMP feature flags can coexist without claiming true worker-thread timing
+- OpenMP builds with GNU Fortran and LLVM Flang for the master-thread-only carve-out plus the explicit `ftimer_openmp_t` worker timing runtime; pFUnit OpenMP guard coverage remains on `gfortran`
+- MPI+OpenMP smoke coverage for the current compatibility mode and installed opt-in `ftimer_openmp` worker API, proving the existing MPI and OpenMP feature flags can coexist without claiming hybrid rank/lane reductions
 - benchmark harness builds with `FTIMER_BUILD_BENCH=ON`
 
 The top-level CMake options that shape those paths are:
@@ -255,7 +256,7 @@ The MPI and OpenMP enablement paths are guarded at configure time:
 
 - `FTIMER_USE_MPI=ON` requires a compiler/toolchain pair that can compile a minimal `mpi_f08` probe against the discovered MPI installation.
 - MPI builds also require the same `mpi_f08` path to compile the `MPI_Type_match_size`/`MPI_ERRORS_RETURN` validation calls used to select reduction datatypes for `real(wp)` and `integer(int64)`.
-- `FTIMER_USE_OPENMP=ON` is admitted only for validated compiler IDs (`GNU` and `LLVMFlang` today), requires `OpenMP::OpenMP_Fortran` to resolve successfully, and runs a configure-time probe that compiles, links, and executes `omp_lib`, a two-thread parallel region, and `!$omp master` semantics. LLVM Flang OpenMP validation requires CMake 3.24 or newer so CMake reports compiler ID `LLVMFlang`; cross-compiling or execution-restricted package builds may use the advanced `FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK` option only after independently validating equivalent runtime semantics for the selected compiler/runtime pair.
+- `FTIMER_USE_OPENMP=ON` is admitted only for validated compiler IDs (`GNU` and `LLVMFlang` today), requires `OpenMP::OpenMP_Fortran` to resolve successfully, and runs a configure-time probe that compiles, links, and executes `omp_lib`, a two-thread parallel region, `omp_get_thread_num` introspection, and `!$omp master` semantics. LLVM Flang OpenMP validation requires CMake 3.24 or newer so CMake reports compiler ID `LLVMFlang`; cross-compiling or execution-restricted package builds may use the advanced `FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK` option only after independently validating equivalent runtime semantics for the selected compiler/runtime pair.
 
 ### Test Categories
 
@@ -264,8 +265,8 @@ The current test inventory is:
 - smoke tests in `tests/test_phase0_smoke.F90` and `tests/test_openmp_api_smoke.F90`, OpenMP diagnostic stderr capture through `tests/test_openmp_api_diagnostics.F90` when `FTIMER_USE_OPENMP=ON`, runtime execution of `basic_usage`, OpenMP example execution when `FTIMER_USE_OPENMP=ON`, MPI example execution when `FTIMER_USE_MPI=ON`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
 - serial pFUnit tests for core behavior, summaries, callbacks, reset behavior, call-stack behavior, and procedural parity
 - MPI pFUnit tests under `tests/mpi/`, validated in CI with GNU Fortran against OpenMPI and MPICH
-- OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`, covering the master-thread-only carve-out rather than general threaded timing support
-- MPI+OpenMP installed-consumer smoke coverage for the current exported-package dependency story, including an MPI-initialized OpenMP region that preserves worker no-op behavior
+- OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`, covering the master-thread-only carve-out plus `ftimer_openmp_t` thread-lane timing smoke coverage
+- MPI+OpenMP installed-consumer smoke coverage for the current exported-package dependency story, including an MPI-initialized OpenMP region and explicit `ftimer_openmp_t` worker calls without claiming hybrid reductions
 
 The default repository baseline is still the smoke/build-contract path. The full behavioral suite is enabled explicitly with `FTIMER_BUILD_TESTS=ON`.
 

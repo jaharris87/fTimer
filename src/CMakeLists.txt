@@ -58,3 +58,29 @@ if(FTIMER_BUILD_TESTS)
 
   target_compile_definitions(ftimer_test PRIVATE FTIMER_BUILD_TESTS)
 endif()
+
+if(FTIMER_BUILD_SMOKE_TESTS)
+  add_library(ftimer_smoke_test ${FTIMER_SOURCES})
+
+  set_target_properties(ftimer_smoke_test PROPERTIES
+    Fortran_MODULE_DIRECTORY "${FTIMER_SMOKE_TEST_LIBRARY_MODULE_DIR}"
+    OUTPUT_NAME ftimer_smoke_test
+  )
+
+  target_include_directories(ftimer_smoke_test
+    PUBLIC
+      $<BUILD_INTERFACE:${FTIMER_SMOKE_TEST_LIBRARY_MODULE_DIR}>
+  )
+
+  if(FTIMER_USE_MPI)
+    target_compile_definitions(ftimer_smoke_test PUBLIC FTIMER_USE_MPI)
+    target_link_libraries(ftimer_smoke_test PUBLIC MPI::MPI_Fortran)
+  endif()
+
+  if(FTIMER_USE_OPENMP)
+    target_compile_definitions(ftimer_smoke_test PUBLIC FTIMER_USE_OPENMP)
+    target_link_libraries(ftimer_smoke_test PUBLIC OpenMP::OpenMP_Fortran)
+  endif()
+
+  target_compile_definitions(ftimer_smoke_test PRIVATE FTIMER_BUILD_SMOKE_TESTS)
+endif()

@@ -46,9 +46,9 @@ Current `main` should keep these validation gates:
 - build-contract regression coverage for configure gates and Makefile wrapper
   behavior;
 - MPI+OpenMP build-only smoke coverage for the current compatibility mode; and
-- `ftimer_openmp` API/lifecycle smoke, diagnostics, public-symbol, and
-  installed-package consumer coverage for the current non-functional worker
-  timing boundary.
+- `ftimer_openmp` API/lifecycle, timed-region, thread-lane runtime,
+  diagnostics, public-symbol, and installed-package consumer coverage for the
+  current opt-in worker timing boundary.
 
 The compatibility matrix is intentionally about today's APIs:
 
@@ -163,7 +163,7 @@ to provide coverage.
   carve-out, but it is not a substitute for GNU pFUnit behavioral coverage.
 - Cross-compiling or execution-restricted package builds may use
   `FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK=ON` only after independent validation of
-  equivalent OpenMP master-thread runtime semantics.
+  equivalent OpenMP master-thread and worker-lane runtime semantics.
 
 Any skipped optional path should emit a clear CMake or CI message naming the
 missing compiler, MPI wrapper, launcher, OpenMP runtime, or pFUnit dependency.

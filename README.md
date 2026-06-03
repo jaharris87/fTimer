@@ -2,7 +2,7 @@
 
 fTimer is a lightweight, correctness-first wall-clock timing library for modern Fortran. Current `main` is positioned first for disciplined serial and pure-MPI codes that need hierarchical timers, predictable accounting, and summaries you can inspect programmatically instead of scraping from ad hoc text output.
 
-> Current product position: fTimer's core supported stories are serial timing and pure-MPI timing. `FTIMER_USE_OPENMP=ON` is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid MPI+OpenMP timing model. The callback hook is a lightweight intra-run event hook, not a stable external-profiler integration contract.
+> Current product position: fTimer's core supported stories are serial timing and pure-MPI timing. `FTIMER_USE_OPENMP=ON` keeps the existing procedural and `ftimer_core` APIs on a master-thread-only carve-out, while `ftimer_openmp_t` provides an explicit opt-in serial-lane and level-1 OpenMP worker timing runtime. OpenMP summaries and hybrid rank/lane reductions are not implemented yet. The callback hook is a lightweight intra-run event hook, not a stable external-profiler integration contract.
 
 For a first release, the focus is a small, dependable core:
 
@@ -12,6 +12,7 @@ For a first release, the focus is a small, dependable core:
 - small procedural and explicit OOP scoped guards for lexical blocks with early exits
 - procedural wrappers and an OOP core API
 - optional MPI global summaries plus first-class strict text/CSV and sparse text/CSV report output
+- an explicit `ftimer_openmp_t` runtime for id-first serial-lane and level-1 OpenMP worker timing
 - an installable CMake package for downstream projects
 
 ## Why Use fTimer
@@ -38,11 +39,12 @@ fTimer currently supports these usage paths:
 
 - Serial timing with local summaries plus formatted text and CSV reports
 - Pure-MPI builds on the validated `mpi_f08` path that are used after `MPI_Init` and before `MPI_Finalize`, use `MPI_Wtime()`, produce global MPI summaries on every participating rank, and can emit strict communicator-level text/CSV reports or opt-in sparse union text/CSV reports
-- A narrow OpenMP carve-out: master-thread-only timer guards for timing a parallel region as a whole
+- OpenMP compatibility guards for timing a parallel region as a whole through the existing APIs
+- Explicit opt-in OpenMP worker timing through `ftimer_openmp_t`, with summaries and hybrid reductions deferred
 - Downstream consumption through `find_package(fTimer CONFIG REQUIRED)`
 - Application-owned instrumentation facades that can select either the real fTimer implementation or a dependency-free no-op implementation at build time
 
-Important limitations are documented later in this README. The short version is that serial and pure-MPI are the core supported stories on current `main`; OpenMP support is intentionally limited to the documented master-thread-only model.
+Important limitations are documented later in this README. The short version is that serial and pure-MPI are the core supported stories on current `main`; OpenMP has a legacy master-thread-only compatibility path plus the explicit `ftimer_openmp_t` worker-timing object, but not stopped-run OpenMP summaries or hybrid rank/lane reductions.
 
 ## Quick Start
 
@@ -283,7 +285,7 @@ Operational notes:
 - `examples/nested_timers.F90`: nested timers and metadata headers
 - `examples/instrumentation_facade_*.F90`: enabled and disabled application-owned timing facade implementations that demonstrate the supported compile-out/no-op pattern
 - `examples/mpi_example.F90`: pure-MPI timing with a global MPI summary object and first-class MPI report output
-- `examples/openmp_example.F90`: the narrow OpenMP carve-out, where timers bracket the parallel region instead of running inside worker threads. See [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md) for the current OpenMP/MPI+OpenMP migration guide.
+- `examples/openmp_example.F90`: the OpenMP compatibility carve-out, where existing API timers bracket the parallel region instead of running inside worker threads. See [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md) for the current OpenMP/MPI+OpenMP migration guide and the explicit `ftimer_openmp_t` worker-timing path.
 
 ## CSV Export
 
@@ -371,7 +373,7 @@ If CMake cannot discover LLVM Flang's OpenMP runtime automatically, pass
 `-DOpenMP_ROOT=/path/to/libomp` for that toolchain.
 Cross-compiling or execution-restricted package builds may set
 `-DFTIMER_OPENMP_ASSUME_MASTER_PROBE_OK=ON` only after independently validating
-equivalent OpenMP master-thread runtime semantics for the selected
+equivalent OpenMP master-thread and worker-lane runtime semantics for the selected
 compiler/runtime pair.
 
 The smoke-test path also runs the enabled and disabled instrumentation facade examples so the documented compile-out strategy stays buildable.
@@ -382,7 +384,7 @@ Supported toolchain matrix:
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
 - MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH; smoke/install-consumer coverage runs for both, and MPI pFUnit coverage runs for OpenMPI plus MPICH on hosted Ubuntu 22.04 with a matching MPICH-built pFUnit
 - OpenMP: GNU Fortran with pFUnit guard coverage, plus LLVM Flang smoke/example coverage for the documented master-thread-only carve-out
-- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested for current compatibility mode only, including an MPI-initialized OpenMP installed consumer; this does not validate true worker-thread timing or hybrid rank/lane reductions
+- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested for current compatibility mode and the opt-in `ftimer_openmp` worker API, including MPI-initialized OpenMP installed consumers; this does not validate hybrid rank/lane reductions
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 
@@ -403,7 +405,7 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - Rank-conditional timer reductions are not supported by the strict `mpi_summary()` API. Use the separate opt-in `mpi_union_summary()` / `ftimer_mpi_union_summary()` API with `ftimer_mpi_union_summary_t` for sparse descriptor-union reductions. See [`docs/mpi-sparse-summary-decision.md`](docs/mpi-sparse-summary-decision.md).
 - Local summary `node_id` values are not a cross-run identity contract. Treat them as explicit links inside one produced summary object, not as durable ids across separate runs or independently produced summaries.
 - All ranks that participate in `mpi_summary()` must agree on the communicator captured by `init`. If would-be participants diverge onto different communicators, the library cannot safely discover that mistake after the split; the practical failure mode is a hang, not a clean local fallback.
-- `FTIMER_USE_OPENMP=ON` enables only limited master-thread-only guards for the current `ftimer` and `ftimer_core` APIs. Worker-thread timer calls through those APIs inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
+- `FTIMER_USE_OPENMP=ON` enables limited master-thread-only guards for the current `ftimer` and `ftimer_core` APIs. Worker-thread timer calls through those APIs inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole through existing APIs, place `start`/`stop` outside the `!$omp parallel` block. To time level-1 worker lanes, use the explicit `ftimer_openmp_t` object with pre-registered ids and an opened timed region.
 - `use ftimer_openmp` exposes the opt-in worker-timing API without changing current `ftimer` behavior. The object lifecycle/configuration, timer catalog, timed parallel-region, and id-first thread-lane timing calls are available now. Serial timing uses lane 0; worker timing uses one lane per level-1 OpenMP thread id inside an explicitly opened timed region. Cross-lane mismatches, calls outside an open timed region, and out-of-capacity lanes return errors without repairing or popping another lane.
 - `FTIMER_USE_OPENMP` is the source-level switch for that carve-out; global OpenMP compiler flags alone do not enable the guards when the option is `OFF`.
 - The `ftimer`/`ftimer_core` OpenMP guard path does not make those APIs thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.

@@ -16,11 +16,11 @@ remain deferred to later implementation issues.
 
 The `ftimer_openmp` module is installed in all package modes: serial, MPI,
 OpenMP, and MPI+OpenMP. Packages built without `FTIMER_USE_OPENMP=ON` support
-its lifecycle/configuration and timer catalog entry points only from serial
-context. OpenMP-region rejection and bounded worker diagnostics require an
-fTimer package built with `FTIMER_USE_OPENMP=ON`; global OpenMP flags in a
-downstream application do not retrofit OpenMP runtime introspection into a
-non-OpenMP fTimer package.
+its lifecycle/configuration, timer catalog, and serial-lane `start_id`/`stop_id`
+entry points from serial context. Timed OpenMP worker regions, OpenMP-region
+rejection, and bounded worker diagnostics require an fTimer package built with
+`FTIMER_USE_OPENMP=ON`; global OpenMP flags in a downstream application do not
+retrofit OpenMP runtime introspection into a non-OpenMP fTimer package.
 
 ## Mode Summary
 
@@ -133,6 +133,8 @@ The additive migration surface starts with `ftimer_openmp`:
   `comm=`;
 - register timer names in serial context before hot worker use;
 - pass timer ids into an explicitly opened timed OpenMP region; and
+- run an untimed warm-up region for short hot loops when first-touch allocation
+  would otherwise contaminate the measurement; and
 - consume future OpenMP or MPI+OpenMP summary/result types instead of current
   `ftimer_summary_t`, `ftimer_mpi_summary_t`, or `ftimer_mpi_union_summary_t`.
 

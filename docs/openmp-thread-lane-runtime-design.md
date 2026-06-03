@@ -339,6 +339,9 @@ lane-local contexts have either been reserved or touched once before the
 measured loop. The remaining costs are lane-local hash/context lookup and the
 clock call. Lane-local array growth is allowed only as a cold first-touch or
 growth path and must be documented separately from steady-state timing cost.
+Until a reserve API exists, users who need warmed hot-loop measurements should
+pre-register ids and run an untimed dummy timed region that touches the same
+lane/timer/context combinations before entering the measured loop.
 
 The first public config surface should stay lean: `max_lanes` plus bounded
 diagnostic policy are enough for correctness. Expected timer counts, context
@@ -369,7 +372,9 @@ Implementation guidance:
 The runtime implementation should measure
 both cold first-touch overhead and warmed steady-state `start_id`/`stop_id`
 overhead after pre-registration and lane/context warm-up, following the #243
-validation plan.
+validation plan. The benchmark harness carries initial rows for the explicit
+`ftimer_openmp` serial-lane id path, timed-region open/close, and warmed worker
+id path so future runtime changes have a baseline.
 
 ## Interaction With Later Child Issues
 
