@@ -87,8 +87,8 @@ must not add positional mode arguments to current `ftimer_t%init`,
 
 No `ftimer_mpi_openmp_summary()` procedural wrapper should be added to the
 current `ftimer` default instance. If later ergonomics need procedural helpers,
-they should live in the future `ftimer_openmp` module and take an explicit
-`type(ftimer_openmp_t)` object argument.
+future helper entry points should live in the current `ftimer_openmp` module and
+take an explicit `type(ftimer_openmp_t)` object argument.
 
 ## Reduction Inputs And Preconditions
 
