@@ -31,7 +31,7 @@ non-OpenMP fTimer package.
 | `FTIMER_USE_OPENMP=OFF` with external OpenMP flags | Yes | fTimer keeps serial/pure-MPI semantics. Global OpenMP compiler flags do not activate the guard carve-out. |
 | `FTIMER_USE_OPENMP=ON` compatibility mode | Yes | Current APIs run guarded timer operations only on OpenMP thread 0. Worker-thread calls are silent no-ops. |
 | `FTIMER_USE_MPI=ON` plus `FTIMER_USE_OPENMP=ON` | Yes, as compatibility smoke coverage | MPI and OpenMP package dependencies can coexist. This still uses the current master-thread-only OpenMP behavior. |
-| True OpenMP worker timing | No | Initial opt-in API surface behind `ftimer_openmp`, `ftimer_openmp_t`, and explicit configuration exists; worker timing calls return `FTIMER_ERR_NOT_IMPLEMENTED`. |
+| True OpenMP worker timing | No | Initial opt-in API surface behind `ftimer_openmp`, `ftimer_openmp_t`, and explicit configuration exists; otherwise valid worker timing calls return `FTIMER_ERR_NOT_IMPLEMENTED` after lifecycle/catalog validation. |
 | True MPI+OpenMP rank/lane reductions | No | Future hybrid result family behind the OpenMP-specific object. |
 
 ## Current Accepted Patterns

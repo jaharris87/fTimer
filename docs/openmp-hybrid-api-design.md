@@ -45,8 +45,9 @@ for compile-time adoption, while later child issues implement runtime behavior.
 - `use ftimer_openmp` exposes the opt-in object surface. `init(config=...)`,
   `register_timer`, `lookup_timer`, `reset`, and `finalize` are real lifecycle
   and catalog operations. `begin_parallel_region`, `end_parallel_region`,
-  `start_id`, and `stop_id` return `FTIMER_ERR_NOT_IMPLEMENTED` until the
-  thread-lane runtime lands.
+  `start_id`, and `stop_id` return `FTIMER_ERR_NOT_IMPLEMENTED` for otherwise
+  valid calls until the thread-lane runtime lands; lifecycle/context/id
+  validation still reports its own status first.
 - The current OpenMP guard tests that defend worker no-op behavior remain
   compatibility tests, not tests to weaken during true OpenMP implementation.
 
@@ -143,7 +144,8 @@ Future OpenMP options should be carried through a config object and passed by
 keyword:
 
 - `config=config` for OpenMP timing mode and lane policy;
-- `comm=comm` for MPI communicator capture in MPI-enabled builds;
+- `comm=comm` for storing a non-owning MPI communicator handle in MPI-enabled
+  builds, ready for later hybrid reduction work;
 - `mismatch_mode=...` and `ierr=...` preserved as keyword-friendly arguments.
 
 This keeps removed integer communicator handles, existing mismatch-mode
@@ -157,16 +159,15 @@ true OpenMP API:
 - Examples and tests should pass a thread-private `ierr` in worker timing paths.
 - With `ierr` present, each call reports the status observed by that calling
   lane and does not write to stderr.
-- With `ierr` absent from a worker timing call, the runtime should not emit
-  unordered per-thread stderr diagnostics. It should record bounded,
-  thread-safe diagnostics on the timer object and expose an aggregate status
-  through later summary/finalize/diagnostic APIs.
-- Serial or master-thread lifecycle calls that observe queued diagnostics may
-  emit one deterministic aggregate stderr diagnostic when their own `ierr` is
-  omitted.
-- Serial or master-thread lifecycle calls that clear queued diagnostics with
-  `ierr` present report the first queued worker status through `ierr` without
-  writing stderr.
+- With `ierr` absent from a call made inside an OpenMP parallel region, the
+  runtime should not emit unordered per-thread stderr diagnostics. It should
+  record bounded, thread-safe diagnostics on the timer object and expose an
+  aggregate status through later summary/finalize/diagnostic APIs. This applies
+  to thread 0 as well when the object-level API rejects an in-parallel call.
+- Serial lifecycle calls that observe queued diagnostics may emit one
+  deterministic aggregate stderr diagnostic when their own `ierr` is omitted.
+- Serial lifecycle calls that clear queued diagnostics with `ierr` present
+  report the first queued status through `ierr` without writing stderr.
 - Cross-thread start/stop mismatches are lane-local errors by default. A stop on
   a lane whose own stack top does not match must not repair or pop another
   lane's stack.

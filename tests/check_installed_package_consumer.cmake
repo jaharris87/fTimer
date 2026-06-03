@@ -1000,9 +1000,19 @@ if(TEST_ENABLE_MPI)
     set(openmp_api_mpi_openmp_diagnostic_line_count 0)
     set(openmp_api_mpi_openmp_rank0_line_count 0)
     set(openmp_api_mpi_openmp_rank1_line_count 0)
+    set(openmp_api_mpi_openmp_unexpected_ftimer_line_count 0)
+    set(openmp_api_mpi_openmp_unexpected_ftimer_lines "")
     foreach(openmp_api_mpi_openmp_stderr_line IN LISTS openmp_api_mpi_openmp_stderr_lines)
       string(STRIP "${openmp_api_mpi_openmp_stderr_line}" openmp_api_mpi_openmp_stderr_line_stripped)
       if(NOT openmp_api_mpi_openmp_stderr_line_stripped MATCHES "ftimer_openmp recorded")
+        if(openmp_api_mpi_openmp_stderr_line_stripped MATCHES "[Ff]Timer|FTIMER|ftimer_")
+          math(EXPR openmp_api_mpi_openmp_unexpected_ftimer_line_count
+            "${openmp_api_mpi_openmp_unexpected_ftimer_line_count} + 1"
+          )
+          string(APPEND openmp_api_mpi_openmp_unexpected_ftimer_lines
+            "${openmp_api_mpi_openmp_stderr_line_stripped}\n"
+          )
+        endif()
         continue()
       endif()
 
@@ -1028,7 +1038,8 @@ if(TEST_ENABLE_MPI)
 
     if((NOT "${openmp_api_mpi_openmp_diagnostic_line_count}" STREQUAL "2")
         OR (NOT "${openmp_api_mpi_openmp_rank0_line_count}" STREQUAL "1")
-        OR (NOT "${openmp_api_mpi_openmp_rank1_line_count}" STREQUAL "1"))
+        OR (NOT "${openmp_api_mpi_openmp_rank1_line_count}" STREQUAL "1")
+        OR (NOT "${openmp_api_mpi_openmp_unexpected_ftimer_line_count}" STREQUAL "0"))
       message(FATAL_ERROR
         "Unexpected OpenMP API MPI+OpenMP diagnostic stderr.\n"
         "Expected one rank diagnostic with 1 retained worker diagnostic and "
@@ -1039,6 +1050,10 @@ if(TEST_ENABLE_MPI)
         "${openmp_api_mpi_openmp_rank0_line_count}\n"
         "Observed rank-1-style diagnostic line count: "
         "${openmp_api_mpi_openmp_rank1_line_count}\n"
+        "Observed unexpected fTimer diagnostic line count: "
+        "${openmp_api_mpi_openmp_unexpected_ftimer_line_count}\n"
+        "Unexpected fTimer diagnostic lines:\n"
+        "${openmp_api_mpi_openmp_unexpected_ftimer_lines}"
         "Actual:\n${openmp_api_mpi_openmp_consumer_stderr_normalized}"
       )
     endif()

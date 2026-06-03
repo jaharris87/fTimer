@@ -345,14 +345,19 @@ enforcement should pass `ierr` and check it.
   `register_timer`, and `lookup_timer` entry points are available now, including
   keyword-only `init(config=..., comm=...)` in MPI-enabled builds. Registered
   timer ids remain valid across `reset()` and are invalidated across
-  `finalize()`/reinit without being recycled in the same object. Timed
-  parallel-region and worker timing methods are deliberately present but return
-  `FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime implementation
-  lands. Worker calls in this explicit OpenMP API that omit `ierr` queue
-  bounded diagnostics; a later serial lifecycle call without `ierr` emits one
-  aggregate diagnostic when fTimer itself is built with `FTIMER_USE_OPENMP=ON`;
-  with `ierr`, lifecycle calls that clear queued diagnostics return the first
-  queued worker status without writing stderr.
+  `finalize()`/reinit without being recycled in the same object. The MPI
+  communicator handle is stored for future hybrid-reduction work; no current
+  public `ftimer_openmp` summary/report behavior consumes it. Timed
+  parallel-region and worker timing methods are deliberately present, but
+  otherwise valid calls return `FTIMER_ERR_NOT_IMPLEMENTED` until the
+  thread-lane runtime implementation lands; lifecycle, active-region, and
+  unknown-id validation errors are reported first. Calls made inside an OpenMP
+  parallel region without `ierr` queue bounded diagnostics instead of writing
+  unordered stderr, including thread 0 because the object-level API rejects
+  in-parallel lifecycle/catalog/timed-region calls. A later serial lifecycle
+  call without `ierr` emits one aggregate diagnostic when fTimer itself is built
+  with `FTIMER_USE_OPENMP=ON`; with `ierr`, lifecycle calls that clear queued
+  diagnostics return the first queued status without writing stderr.
   In non-OpenMP fTimer builds, `ftimer_openmp` is exposed for serial-context
   lifecycle/catalog adoption only; using that package from a downstream OpenMP
   parallel region is outside the supported contract because the library was not

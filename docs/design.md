@@ -123,9 +123,10 @@ The CMake source order reflects the real dependency order:
 
 `ftimer_openmp.F90` is the additive, explicit opt-in API surface for future
 true OpenMP worker timing. Its lifecycle/configuration and timer catalog
-operations are usable today; its timed-region and worker timing calls return
-`FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime and summary families
-land under later #267 child issues.
+operations are usable today; otherwise valid timed-region and worker timing
+calls return `FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime and
+summary families land under later #267 child issues, after lifecycle/context/id
+validation.
 
 `ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, self-time computation, and strict/sparse MPI text formatting are assembled for reporting.
 
@@ -167,7 +168,7 @@ The public surface on current `main` is split between:
 - the explicit opt-in OpenMP API surface in `use ftimer_openmp`
 - shared types and constants from `use ftimer_types`
 
-The supported source-level module surface is intentionally limited to `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the additive opt-in API surface for future true OpenMP worker timing; its lifecycle/configuration and timer catalog methods are available now, while timed-region and worker timing methods return `FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime lands. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt` so runtime storage helpers are not accidentally promoted into the stable downstream contract. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md` and `share/doc/fTimer/LICENSE`, and the installed-consumer smoke test checks those documentation artifacts against the source tree.
+The supported source-level module surface is intentionally limited to `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the additive opt-in API surface for future true OpenMP worker timing; its lifecycle/configuration and timer catalog methods are available now, while otherwise valid timed-region and worker timing calls return `FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime lands, after lifecycle/context/id validation. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt` so runtime storage helpers are not accidentally promoted into the stable downstream contract. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md` and `share/doc/fTimer/LICENSE`, and the installed-consumer smoke test checks those documentation artifacts against the source tree.
 
 The currently exported procedural entry points are:
 

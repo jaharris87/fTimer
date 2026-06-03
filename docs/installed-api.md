@@ -11,18 +11,24 @@ The supported source-level import surface is intentionally narrow:
   pointer-based `ftimer_oop_scope` scoped guard helper
 - `use ftimer_openmp` for the explicit opt-in OpenMP timing API surface. In
   this release line, its lifecycle/configuration and timer catalog entry points
-  are real, while worker timing and timed parallel-region behavior are
-  intentionally present but return `FTIMER_ERR_NOT_IMPLEMENTED` until the
-  thread-lane runtime lands. `ftimer_openmp_t%init` requires `config=` and
-  accepts `comm=` only by keyword in MPI builds. Registered timer ids remain
+  are real, while otherwise valid worker timing and timed parallel-region calls
+  are intentionally present but return `FTIMER_ERR_NOT_IMPLEMENTED` until the
+  thread-lane runtime lands. Lifecycle, active-region, and unknown-id
+  validation errors are reported before the deferred-runtime status.
+  `ftimer_openmp_t%init` requires `config=` and accepts `comm=` only by keyword
+  in MPI builds. The MPI communicator handle is stored for future hybrid
+  reductions; no current public `ftimer_openmp` summary/report behavior consumes
+  it. Registered timer ids remain
   valid across `reset()` and are invalidated across `finalize()`/reinit without
   being recycled in the same object. OpenMP-region rejection and bounded worker
-  diagnostics require a package built with `FTIMER_USE_OPENMP=ON`. Worker
-  calls that omit `ierr` queue bounded diagnostics; lifecycle calls that clear
-  them emit one aggregate diagnostic when `ierr` is absent, or return the first
-  queued worker status without stderr when `ierr` is present. In non-OpenMP
-  packages, this module is supported only for serial-context lifecycle/catalog
-  use.
+  diagnostics require a package built with `FTIMER_USE_OPENMP=ON`. Calls made
+  inside an OpenMP parallel region without `ierr` queue bounded diagnostics
+  instead of writing unordered stderr, including thread 0 because the
+  object-level API rejects in-parallel lifecycle/catalog/timed-region calls.
+  Later serial lifecycle calls that clear them emit one aggregate diagnostic
+  when `ierr` is absent, or return the first queued status without stderr when
+  `ierr` is present. In non-OpenMP packages, this module is supported only for
+  serial-context lifecycle/catalog use.
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
 ## MPI lifecycle and communicator ownership

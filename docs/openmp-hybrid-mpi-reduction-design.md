@@ -13,7 +13,7 @@ OpenMP guard behavior, or change existing pure-MPI APIs.
 ## Decision
 
 True MPI+OpenMP timing should use a new hybrid summary/result family behind
-the future `ftimer_openmp_t` API:
+future hybrid summary methods on `ftimer_openmp_t`:
 
 - `timer%mpi_openmp_summary(summary, ierr=ierr)` as the proposed future
   structured summary entry point;
@@ -24,8 +24,8 @@ the future `ftimer_openmp_t` API:
 - strict-identical participant semantics defined here for validation and later
   adopter-driven use, but not exposed as a required first public policy.
 
-Those names are proposed source shapes for later implementation issues, not
-symbols available on current `main`.
+The hybrid summary method and result names above are proposed source shapes for
+later implementation issues, not symbols available on current `main`.
 
 The existing `mpi_summary()`, `mpi_union_summary()`, `ftimer_mpi_summary_t`,
 `ftimer_mpi_union_summary_t`, strict MPI reports, sparse MPI reports, and

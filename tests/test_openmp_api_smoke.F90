@@ -265,7 +265,13 @@ contains
          call timer%finalize(ierr=ierr)
          if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
 
+         call timer%init(config=config, ierr=ierr)
+         if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
+
          call timer%begin_parallel_region(local_region, ierr=ierr)
+         if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
+
+         call timer%end_parallel_region(local_region, ierr=ierr)
          if (ierr /= FTIMER_ERR_ACTIVE) worker_bad = worker_bad + 1
       else
          worker_seen = worker_seen + 1

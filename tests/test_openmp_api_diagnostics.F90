@@ -19,6 +19,7 @@ program ftimer_openmp_api_diagnostics
    call run_diagnostic_case(retained_count=1, worker_count=1, omitted_call_count=2, drain_mode=5)
    call run_diagnostic_case(retained_count=1, worker_count=1, omitted_call_count=2, drain_mode=6)
    call run_reinit_config_case()
+   call run_reset_preserves_config_case()
    call run_worker_lifecycle_catalog_no_ierr_case()
 
 contains
@@ -147,6 +148,45 @@ contains
       call timer%finalize()
    end subroutine run_reinit_config_case
 
+   subroutine run_reset_preserves_config_case()
+      integer :: ierr
+      integer :: i
+      integer :: timer_id
+      integer :: worker_seen
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+
+      config%max_lanes = 0
+      config%max_worker_diagnostics = 1
+
+      call timer%init(config=config, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 21
+
+      call timer%register_timer("reset_config_work", timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 22
+
+      call timer%reset(ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 23
+
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(i) reduction(+:worker_seen)
+      if (omp_get_thread_num() /= 0) then
+         worker_seen = worker_seen + 1
+         do i = 1, 3
+            call timer%stop_id(timer_id)
+         end do
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 24
+
+      call timer%lookup_timer("reset_config_work", timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 25
+
+      call timer%finalize()
+   end subroutine run_reset_preserves_config_case
+
    subroutine run_worker_lifecycle_catalog_no_ierr_case()
       integer :: ierr
       integer :: timer_id
@@ -159,10 +199,10 @@ contains
       config%max_worker_diagnostics = 3
 
       call timer%init(config=config, ierr=ierr)
-      if (ierr /= FTIMER_SUCCESS) error stop 21
+      if (ierr /= FTIMER_SUCCESS) error stop 31
 
       call timer%register_timer("diagnostic_work", timer_id, ierr=ierr)
-      if (ierr /= FTIMER_SUCCESS) error stop 22
+      if (ierr /= FTIMER_SUCCESS) error stop 32
 
       worker_seen = 0
 
@@ -175,16 +215,16 @@ contains
       end if
 !$omp end parallel
 
-      if (worker_seen /= 1) error stop 23
+      if (worker_seen /= 1) error stop 33
 
       call timer%lookup_timer("diagnostic_work", timer_id, ierr=ierr)
-      if (ierr /= FTIMER_SUCCESS) error stop 24
+      if (ierr /= FTIMER_SUCCESS) error stop 34
 
       call timer%lookup_timer("worker_created", worker_timer_id, ierr=ierr)
-      if (ierr /= FTIMER_ERR_UNKNOWN) error stop 25
+      if (ierr /= FTIMER_ERR_UNKNOWN) error stop 35
 
       call timer%finalize()
       call timer%finalize(ierr=ierr)
-      if (ierr /= FTIMER_SUCCESS) error stop 26
+      if (ierr /= FTIMER_SUCCESS) error stop 36
    end subroutine run_worker_lifecycle_catalog_no_ierr_case
 end program ftimer_openmp_api_diagnostics
