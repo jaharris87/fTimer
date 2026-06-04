@@ -19,8 +19,9 @@ The #242 user-facing timing modes and migration guide is recorded in
 Issue #268 landed the first public `ftimer_openmp` symbols for the opt-in
 surface: configuration, lifecycle, timer registration/lookup, and placeholder
 timed-region/worker method names. Issue #269 then landed the first
-serial-lane / level-1 worker timing runtime behind those method names. OpenMP
-summaries and MPI+OpenMP reductions remain deferred under the #267 umbrella.
+serial-lane / level-1 worker timing runtime behind those method names. Issue
+#270 landed stopped-run local OpenMP summaries, reports, and CSV output.
+MPI+OpenMP reductions remain deferred under the #267 umbrella.
 
 Issue #160 asked whether fTimer should ever support real hybrid MPI+OpenMP
 timing beyond the documented master-thread-only carve-out.
@@ -37,9 +38,9 @@ The current `ftimer` / `ftimer_core` `FTIMER_USE_OPENMP=ON` behavior stays
 unchanged: timer operations in OpenMP parallel regions run only on the master
 thread, and worker-thread calls remain silent no-ops. The separate
 `ftimer_openmp_t` opt-in surface now owns the staged worker-timing path: #269
-implements serial-lane and level-1 worker `start_id`/`stop_id` timing, while
-later issues still own aggregation, summary data contracts, migration expansion,
-and MPI+OpenMP reductions.
+implements serial-lane and level-1 worker `start_id`/`stop_id` timing, and
+#270 implements local aggregate summary/report/CSV contracts. Later issues
+still own migration expansion and MPI+OpenMP reductions.
 
 No child implementation issues were opened from #160. The later OpenMP umbrella
 is the place that now tracks staged design, API, runtime, summary, reduction,

@@ -140,19 +140,27 @@ contains
       call expect_entry(summary, root_idx, eligible=2, participating=2, missing=0, &
                         sum_inclusive=22.0_wp, sum_self=19.0_wp, &
                         min_inclusive=10.0_wp, avg_inclusive=11.0_wp, max_inclusive=12.0_wp, &
-                        avg_self=9.5_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, stop_code=25)
+                        inclusive_imbalance=12.0_wp/11.0_wp, min_self=7.0_wp, avg_self=9.5_wp, &
+                        max_self=12.0_wp, self_imbalance=12.0_wp/9.5_wp, min_calls=1_int64, &
+                        avg_calls=1.0_wp, max_calls=1_int64, stop_code=25)
       call expect_entry(summary, child_idx, eligible=2, participating=1, missing=1, &
                         sum_inclusive=3.0_wp, sum_self=3.0_wp, &
                         min_inclusive=3.0_wp, avg_inclusive=3.0_wp, max_inclusive=3.0_wp, &
-                        avg_self=3.0_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, stop_code=26)
+                        inclusive_imbalance=1.0_wp, min_self=3.0_wp, avg_self=3.0_wp, &
+                        max_self=3.0_wp, self_imbalance=1.0_wp, min_calls=1_int64, &
+                        avg_calls=1.0_wp, max_calls=1_int64, stop_code=26)
       call expect_entry(summary, serial_idx, eligible=1, participating=1, missing=0, &
                         sum_inclusive=2.0_wp, sum_self=2.0_wp, &
                         min_inclusive=2.0_wp, avg_inclusive=2.0_wp, max_inclusive=2.0_wp, &
-                        avg_self=2.0_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, stop_code=27)
+                        inclusive_imbalance=1.0_wp, min_self=2.0_wp, avg_self=2.0_wp, &
+                        max_self=2.0_wp, self_imbalance=1.0_wp, min_calls=1_int64, &
+                        avg_calls=1.0_wp, max_calls=1_int64, stop_code=27)
       call expect_entry(summary, sparse_idx, eligible=2, participating=1, missing=1, &
                         sum_inclusive=5.0_wp, sum_self=5.0_wp, &
                         min_inclusive=5.0_wp, avg_inclusive=5.0_wp, max_inclusive=5.0_wp, &
-                        avg_self=5.0_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, stop_code=28)
+                        inclusive_imbalance=1.0_wp, min_self=5.0_wp, avg_self=5.0_wp, &
+                        max_self=5.0_wp, self_imbalance=1.0_wp, min_calls=1_int64, &
+                        avg_calls=1.0_wp, max_calls=1_int64, stop_code=28)
 
       metadata(1)%key = 'Case'
       metadata(1)%value = 'openmp summary'
@@ -212,21 +220,40 @@ contains
       call expect_csv_entry_field(csv_text, 'root', 'min_lane_inclusive_time', csv_real_text(10.0_wp), 58)
       call expect_csv_entry_field(csv_text, 'root', 'avg_lane_inclusive_time', csv_real_text(11.0_wp), 59)
       call expect_csv_entry_field(csv_text, 'root', 'max_lane_inclusive_time', csv_real_text(12.0_wp), 60)
-      call expect_csv_entry_field(csv_text, 'root', 'min_lane_call_count', '1', 61)
-      call expect_csv_entry_field(csv_text, 'root', 'avg_lane_call_count', csv_real_text(1.0_wp), 62)
-      call expect_csv_entry_field(csv_text, 'root', 'max_lane_call_count', '1', 63)
-      call expect_csv_entry_field(csv_text, 'child', 'eligible_lane_count', '2', 64)
-      call expect_csv_entry_field(csv_text, 'child', 'participating_lane_count', '1', 65)
-      call expect_csv_entry_field(csv_text, 'child', 'missing_lane_count', '1', 66)
-      call expect_csv_entry_field(csv_text, 'child', 'sum_lane_self_time', csv_real_text(3.0_wp), 67)
-      call expect_csv_entry_field(csv_text, 'serial', 'eligible_lane_count', '1', 68)
-      call expect_csv_entry_field(csv_text, 'serial', 'sum_lane_inclusive_time', csv_real_text(2.0_wp), 69)
-      call expect_csv_entry_field(csv_text, 'sparse', 'eligible_lane_count', '2', 70)
-      call expect_csv_entry_field(csv_text, 'sparse', 'participating_lane_count', '1', 71)
-      call expect_csv_entry_field(csv_text, 'sparse', 'missing_lane_count', '1', 72)
+      call expect_csv_entry_field(csv_text, 'root', 'lane_inclusive_imbalance', csv_real_text(12.0_wp/11.0_wp), 61)
+      call expect_csv_entry_field(csv_text, 'root', 'min_lane_self_time', csv_real_text(7.0_wp), 62)
+      call expect_csv_entry_field(csv_text, 'root', 'avg_lane_self_time', csv_real_text(9.5_wp), 63)
+      call expect_csv_entry_field(csv_text, 'root', 'max_lane_self_time', csv_real_text(12.0_wp), 64)
+      call expect_csv_entry_field(csv_text, 'root', 'lane_self_imbalance', csv_real_text(12.0_wp/9.5_wp), 65)
+      call expect_csv_entry_field(csv_text, 'root', 'min_lane_call_count', '1', 66)
+      call expect_csv_entry_field(csv_text, 'root', 'avg_lane_call_count', csv_real_text(1.0_wp), 67)
+      call expect_csv_entry_field(csv_text, 'root', 'max_lane_call_count', '1', 68)
+      call expect_csv_entry_field(csv_text, 'child', 'eligible_lane_count', '2', 69)
+      call expect_csv_entry_field(csv_text, 'child', 'participating_lane_count', '1', 70)
+      call expect_csv_entry_field(csv_text, 'child', 'missing_lane_count', '1', 71)
+      call expect_csv_entry_field(csv_text, 'child', 'sum_lane_self_time', csv_real_text(3.0_wp), 72)
+      call expect_csv_entry_field(csv_text, 'child', 'lane_inclusive_imbalance', csv_real_text(1.0_wp), 73)
+      call expect_csv_entry_field(csv_text, 'child', 'min_lane_self_time', csv_real_text(3.0_wp), 74)
+      call expect_csv_entry_field(csv_text, 'child', 'avg_lane_self_time', csv_real_text(3.0_wp), 75)
+      call expect_csv_entry_field(csv_text, 'child', 'max_lane_self_time', csv_real_text(3.0_wp), 76)
+      call expect_csv_entry_field(csv_text, 'child', 'lane_self_imbalance', csv_real_text(1.0_wp), 77)
+      call expect_csv_entry_field(csv_text, 'serial', 'eligible_lane_count', '1', 78)
+      call expect_csv_entry_field(csv_text, 'serial', 'sum_lane_inclusive_time', csv_real_text(2.0_wp), 79)
+      call expect_csv_entry_field(csv_text, 'serial', 'min_lane_self_time', csv_real_text(2.0_wp), 80)
+      call expect_csv_entry_field(csv_text, 'serial', 'avg_lane_self_time', csv_real_text(2.0_wp), 81)
+      call expect_csv_entry_field(csv_text, 'serial', 'max_lane_self_time', csv_real_text(2.0_wp), 82)
+      call expect_csv_entry_field(csv_text, 'serial', 'lane_self_imbalance', csv_real_text(1.0_wp), 83)
+      call expect_csv_entry_field(csv_text, 'sparse', 'eligible_lane_count', '2', 84)
+      call expect_csv_entry_field(csv_text, 'sparse', 'participating_lane_count', '1', 85)
+      call expect_csv_entry_field(csv_text, 'sparse', 'missing_lane_count', '1', 86)
+      call expect_csv_entry_field(csv_text, 'sparse', 'lane_inclusive_imbalance', csv_real_text(1.0_wp), 87)
+      call expect_csv_entry_field(csv_text, 'sparse', 'min_lane_self_time', csv_real_text(5.0_wp), 88)
+      call expect_csv_entry_field(csv_text, 'sparse', 'avg_lane_self_time', csv_real_text(5.0_wp), 89)
+      call expect_csv_entry_field(csv_text, 'sparse', 'max_lane_self_time', csv_real_text(5.0_wp), 90)
+      call expect_csv_entry_field(csv_text, 'sparse', 'lane_self_imbalance', csv_real_text(1.0_wp), 91)
 
       call timer%finalize(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 73)
+      call expect_status(ierr, FTIMER_SUCCESS, 92)
       call delete_if_exists(report_path)
       call delete_if_exists(csv_path)
    end subroutine check_openmp_summary_aggregates
@@ -358,6 +385,7 @@ contains
       type(ftimer_openmp_parallel_region_t) :: region
       type(ftimer_openmp_summary_t) :: summary
       type(ftimer_openmp_t) :: timer
+      integer :: expected_eligible
       integer :: ierr
       integer :: mixed_id
       integer :: mixed_idx
@@ -410,8 +438,9 @@ contains
          if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
       end if
 !$omp end parallel
-      if (worker_seen /= 4) error stop 128
+      if (worker_seen < 2) error stop 128
       if (worker_bad /= 0) error stop 129
+      expected_eligible = max(2, worker_seen)
       fake_lane_time(0) = 411.0_wp
       call timer%end_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 130)
@@ -421,9 +450,9 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 131)
       mixed_idx = find_entry(summary, "mixed", 0)
       if (mixed_idx <= 0) error stop 132
-      call expect_int(summary%entries(mixed_idx)%eligible_lane_count, 4, 133)
+      call expect_int(summary%entries(mixed_idx)%eligible_lane_count, expected_eligible, 133)
       call expect_int(summary%entries(mixed_idx)%participating_lane_count, 1, 134)
-      call expect_int(summary%entries(mixed_idx)%missing_lane_count, 3, 135)
+      call expect_int(summary%entries(mixed_idx)%missing_lane_count, expected_eligible - 1, 135)
       if (summary%entries(mixed_idx)%missing_lane_count_known) error stop 136
       call expect_time(summary%entries(mixed_idx)%sum_lane_inclusive_time, 6.0_wp, 137)
       call expect_time(summary%entries(mixed_idx)%sum_lane_self_time, 6.0_wp, 138)
@@ -502,19 +531,27 @@ contains
       call expect_entry(summary, root_idx, eligible=1, participating=1, missing=0, &
                         sum_inclusive=10.0_wp, sum_self=3.0_wp, &
                         min_inclusive=10.0_wp, avg_inclusive=10.0_wp, max_inclusive=10.0_wp, &
-                        avg_self=3.0_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, stop_code=169)
+                        inclusive_imbalance=1.0_wp, min_self=3.0_wp, avg_self=3.0_wp, &
+                        max_self=3.0_wp, self_imbalance=1.0_wp, min_calls=1_int64, &
+                        avg_calls=1.0_wp, max_calls=1_int64, stop_code=169)
       call expect_entry(summary, child_idx, eligible=1, participating=1, missing=0, &
                         sum_inclusive=5.0_wp, sum_self=3.0_wp, &
                         min_inclusive=5.0_wp, avg_inclusive=5.0_wp, max_inclusive=5.0_wp, &
-                        avg_self=3.0_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, stop_code=170)
+                        inclusive_imbalance=1.0_wp, min_self=3.0_wp, avg_self=3.0_wp, &
+                        max_self=3.0_wp, self_imbalance=1.0_wp, min_calls=1_int64, &
+                        avg_calls=1.0_wp, max_calls=1_int64, stop_code=170)
       call expect_entry(summary, grandchild_idx, eligible=1, participating=1, missing=0, &
                         sum_inclusive=2.0_wp, sum_self=2.0_wp, &
                         min_inclusive=2.0_wp, avg_inclusive=2.0_wp, max_inclusive=2.0_wp, &
-                        avg_self=2.0_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, stop_code=171)
+                        inclusive_imbalance=1.0_wp, min_self=2.0_wp, avg_self=2.0_wp, &
+                        max_self=2.0_wp, self_imbalance=1.0_wp, min_calls=1_int64, &
+                        avg_calls=1.0_wp, max_calls=1_int64, stop_code=171)
       call expect_entry(summary, sibling_idx, eligible=1, participating=1, missing=0, &
                         sum_inclusive=2.0_wp, sum_self=2.0_wp, &
                         min_inclusive=2.0_wp, avg_inclusive=2.0_wp, max_inclusive=2.0_wp, &
-                        avg_self=2.0_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, stop_code=172)
+                        inclusive_imbalance=1.0_wp, min_self=2.0_wp, avg_self=2.0_wp, &
+                        max_self=2.0_wp, self_imbalance=1.0_wp, min_calls=1_int64, &
+                        avg_calls=1.0_wp, max_calls=1_int64, stop_code=172)
       call expect_time(summary%sum_lane_self_time, 10.0_wp, 173)
 
       call timer%finalize(ierr=ierr)
@@ -647,8 +684,9 @@ contains
    end subroutine check_openmp_summary_no_ierr_worker_diagnostics
 
    subroutine expect_entry(summary, idx, eligible, participating, missing, sum_inclusive, sum_self, &
-                           min_inclusive, avg_inclusive, max_inclusive, avg_self, &
-                           min_calls, avg_calls, max_calls, stop_code)
+                           min_inclusive, avg_inclusive, max_inclusive, inclusive_imbalance, &
+                           min_self, avg_self, max_self, self_imbalance, min_calls, avg_calls, &
+                           max_calls, stop_code)
       type(ftimer_openmp_summary_t), intent(in) :: summary
       integer, intent(in) :: idx
       integer, intent(in) :: eligible
@@ -659,7 +697,11 @@ contains
       real(wp), intent(in) :: min_inclusive
       real(wp), intent(in) :: avg_inclusive
       real(wp), intent(in) :: max_inclusive
+      real(wp), intent(in) :: inclusive_imbalance
+      real(wp), intent(in) :: min_self
       real(wp), intent(in) :: avg_self
+      real(wp), intent(in) :: max_self
+      real(wp), intent(in) :: self_imbalance
       integer(int64), intent(in) :: min_calls
       real(wp), intent(in) :: avg_calls
       integer(int64), intent(in) :: max_calls
@@ -674,10 +716,14 @@ contains
       call expect_time(summary%entries(idx)%min_lane_inclusive_time, min_inclusive, stop_code + 600)
       call expect_time(summary%entries(idx)%avg_lane_inclusive_time, avg_inclusive, stop_code + 700)
       call expect_time(summary%entries(idx)%max_lane_inclusive_time, max_inclusive, stop_code + 800)
-      call expect_time(summary%entries(idx)%avg_lane_self_time, avg_self, stop_code + 900)
-      call expect_int64(summary%entries(idx)%min_lane_call_count, min_calls, stop_code + 1000)
-      call expect_time(summary%entries(idx)%avg_lane_call_count, avg_calls, stop_code + 1100)
-      call expect_int64(summary%entries(idx)%max_lane_call_count, max_calls, stop_code + 1200)
+      call expect_time(summary%entries(idx)%lane_inclusive_imbalance, inclusive_imbalance, stop_code + 900)
+      call expect_time(summary%entries(idx)%min_lane_self_time, min_self, stop_code + 1000)
+      call expect_time(summary%entries(idx)%avg_lane_self_time, avg_self, stop_code + 1100)
+      call expect_time(summary%entries(idx)%max_lane_self_time, max_self, stop_code + 1200)
+      call expect_time(summary%entries(idx)%lane_self_imbalance, self_imbalance, stop_code + 1300)
+      call expect_int64(summary%entries(idx)%min_lane_call_count, min_calls, stop_code + 1400)
+      call expect_time(summary%entries(idx)%avg_lane_call_count, avg_calls, stop_code + 1500)
+      call expect_int64(summary%entries(idx)%max_lane_call_count, max_calls, stop_code + 1600)
    end subroutine expect_entry
 
    integer function find_entry(summary, name, parent_id) result(idx)

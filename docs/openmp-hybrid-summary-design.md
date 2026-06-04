@@ -110,21 +110,20 @@ use the same path-oriented idea as MPI summaries: timer names plus their parent
 context path, not raw runtime array indices and not summary-local node ids from
 one lane.
 
-Per-lane records are still useful for validation and diagnostics, but they
-should be opt-in detail output in the first implementation. The default
-structured summary and default CSV should stay aggregate-first so routine users
-do not pay `O(descriptor_count * lane_count)` materialization and storage cost
-unless they request lane detail. The detail path may be a separate result type,
-an explicit `detail=.true.` option, or a diagnostic export chosen by the
-implementation issue, but it must not weaken the aggregate participation
-contract.
+Per-lane records are still useful for validation and diagnostics, but they are
+not part of the current local OpenMP public surface. The default structured
+summary and default CSV stay aggregate-first so routine users do not pay
+`O(descriptor_count * lane_count)` materialization and storage cost. A future
+detail path may be a separate result type, an explicit `detail=.true.` option,
+or a diagnostic export chosen by its implementation issue, but it must not
+weaken the aggregate participation contract.
 
 ## Wall-Clock Envelope And Summed Work
 
-The future summary must name wall-clock quantities separately from summed lane
-work.
+The local OpenMP summary names wall-clock quantities separately from summed
+lane work.
 
-Recommended top-level local OpenMP fields:
+Top-level local OpenMP fields:
 
 - `summary_window_time`: elapsed wall-clock time from init/reset to the summary
   snapshot, matching the current local summary-window idea;
@@ -230,12 +229,10 @@ Consequences:
   sizes, `eligible_lane_count` is the count of distinct lane ids that were
   eligible in at least one contributing epoch. If that union would hide an
   important epoch-level difference, the default aggregate row should avoid
-  claiming a precise missing-lane interpretation and the implementation should
-  expose epoch detail through the optional lane/detail diagnostics rather than
-  overloading the aggregate row. Future result and CSV schemas should pair such
-  aggregate missing-count fields with explicit known-state fields, for example
-  `missing_lane_count_known`, so an ambiguous aggregate cannot be mistaken for
-  a real zero missing count.
+  claiming a precise missing-lane interpretation. Local OpenMP summaries expose
+  that ambiguity through `missing_lane_count_known`, so an ambiguous aggregate
+  cannot be mistaken for a real zero missing count. Future detail exports may
+  add epoch or lane diagnostics without overloading the aggregate row.
 - Missing lanes are not zero-filled for per-entry min, max, average, call
   count, percent, or imbalance fields.
 - A materialized zero-call or zero-time entry participates if the runtime emits
@@ -253,12 +250,11 @@ OpenMP summary construction is a merge point and should run outside OpenMP
 parallel regions. It must not read lane state while worker lanes may still be
 mutating it.
 
-The first OpenMP summary implementation should be stopped-run-only. If any lane
-has an active stack, `get_openmp_summary()` and OpenMP report/CSV writers should
-return `FTIMER_ERR_ACTIVE`, leave the normal summary/report artifact empty, and
+Local OpenMP summary/report/CSV construction is stopped-run-only. If any lane
+has an active stack, `get_openmp_summary()` and OpenMP report/CSV writers return
+`FTIMER_ERR_ACTIVE`, leave the normal summary/report artifact empty, and
 preserve bounded active-lane diagnostics on the timer object. Those diagnostics
-should include lane id, descriptor identity, and timed-region epoch when
-available.
+include lane id, descriptor identity, and timed-region epoch when available.
 
 This is intentionally stricter than the current local `get_summary()` live
 snapshot contract for `type(ftimer_t)`. True worker timing has multiple mutable

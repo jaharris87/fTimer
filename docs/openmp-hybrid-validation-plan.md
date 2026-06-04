@@ -6,10 +6,10 @@
 Issue #243 defines the validation strategy for the OpenMP/hybrid direction
 recorded in #238, #239, #240, and #241. This document is a validation contract.
 Issue #268 adds the initial `ftimer_openmp` public API surface and lifecycle
-coverage, and #269 adds the first true OpenMP thread-lane runtime. OpenMP
-summaries, hybrid reductions, and changes to the current
-`FTIMER_USE_OPENMP=ON` master-thread-only compatibility mode remain deferred to
-later #267 child issues.
+coverage, #269 adds the first true OpenMP thread-lane runtime, and #270 adds
+stopped-run local OpenMP summary, report, and CSV coverage. Hybrid reductions
+and changes to the current `FTIMER_USE_OPENMP=ON` master-thread-only
+compatibility mode remain deferred to later #267 child issues.
 
 ## Decision
 
@@ -100,12 +100,16 @@ should cover:
   mixed-epoch aggregates;
 - self time computed from lane-local direct children before cross-lane
   aggregation;
-- aggregate-first summary rows and opt-in lane detail rows;
+- aggregate-first summary rows without requiring lane detail rows;
 - local OpenMP text report output that labels envelope time and summed work
   separately;
 - local OpenMP CSV schema versioning and append-header rejection; and
 - compatibility with current local, strict MPI, and sparse MPI CSV/report
   schemas.
+
+Opt-in lane-detail exports are not part of the current local OpenMP public
+surface. They should move into this matrix only after a dedicated detail result
+or diagnostic CSV mode exists.
 
 ## Future MPI+OpenMP Reduction Matrix
 
