@@ -6,10 +6,10 @@
 Issue #243 defines the validation strategy for the OpenMP/hybrid direction
 recorded in #238, #239, #240, and #241. This document is a validation contract.
 Issue #268 adds the initial `ftimer_openmp` public API surface and lifecycle
-coverage, and #269 adds the first true OpenMP thread-lane runtime. OpenMP
-summaries, hybrid reductions, and changes to the current
-`FTIMER_USE_OPENMP=ON` master-thread-only compatibility mode remain deferred to
-later #267 child issues.
+coverage, #269 adds the first true OpenMP thread-lane runtime, and #270 adds
+stopped-run local OpenMP summary, report, and CSV coverage. Hybrid reductions
+and changes to the current `FTIMER_USE_OPENMP=ON` master-thread-only
+compatibility mode remain deferred to later #267 child issues.
 
 ## Decision
 
@@ -89,9 +89,10 @@ cover:
 Tests should use the injectable mock clock or a deterministic OpenMP-aware clock
 model. They should not sleep or depend on wall-clock timing jitter.
 
-## Future Summary And Report Matrix
+## Summary And Report Matrix
 
-When #240 adds local OpenMP summaries and reports, tests should cover:
+Local OpenMP summaries, reports, and CSV output are current behavior. Tests
+should cover:
 
 - stopped-run-only summary construction and active-lane refusal;
 - wall-clock `timed_region_envelope_time` distinct from summed lane work;
@@ -99,12 +100,16 @@ When #240 adds local OpenMP summaries and reports, tests should cover:
   mixed-epoch aggregates;
 - self time computed from lane-local direct children before cross-lane
   aggregation;
-- aggregate-first summary rows and opt-in lane detail rows;
+- aggregate-first summary rows without requiring lane detail rows;
 - local OpenMP text report output that labels envelope time and summed work
   separately;
 - local OpenMP CSV schema versioning and append-header rejection; and
 - compatibility with current local, strict MPI, and sparse MPI CSV/report
   schemas.
+
+Opt-in lane-detail exports are not part of the current local OpenMP public
+surface. They should move into this matrix only after a dedicated detail result
+or diagnostic CSV mode exists.
 
 ## Future MPI+OpenMP Reduction Matrix
 
@@ -143,9 +148,10 @@ Installed-package checks should verify the public package story at each stage:
 - current `ftimer_openmp` installed consumers for serial, MPI, OpenMP, and
   MPI+OpenMP package modes, proving that the lifecycle/catalog surface imports,
   links, validates keyword-only init shape, runs serial and timed worker
-  `start_id`/`stop_id`, and preserves bounded worker diagnostics; and
-- future OpenMP/hybrid summary installed consumers only after the public summary
-  and reduction result types exist.
+  `start_id`/`stop_id`, preserves bounded worker diagnostics, and exercises
+  stopped-run local OpenMP summary/report/CSV entry points; and
+- future hybrid summary installed consumers only after the public hybrid
+  reduction result types exist.
 
 Future installed consumers should compile the documented source shapes, run the
 supported examples, and assert the exported CMake package resolves only the
@@ -207,9 +213,10 @@ comparisons are meaningful.
   tests.
 - #241 provides the hybrid reduction contract that MPI+OpenMP pFUnit and CSV
   tests must enforce.
-- #242 records user-facing timing modes and migration guidance. Later
-  implementation issues add compile-checked future OpenMP/hybrid examples and
-  installed consumers once the future public API exists.
+- #242 records user-facing timing modes and migration guidance. Current local
+  OpenMP examples and installed consumers should stay compile-checked; later
+  implementation issues add future hybrid examples and installed consumers once
+  the future hybrid public API exists.
 
 ## Validation For This Plan
 

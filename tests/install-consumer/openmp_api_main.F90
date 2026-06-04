@@ -1,9 +1,11 @@
 program ftimer_installed_openmp_api_consumer
    use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, ftimer_openmp_config_t, &
-                            ftimer_openmp_parallel_region_t, ftimer_openmp_t
+                            ftimer_openmp_parallel_region_t, ftimer_openmp_summary_t, ftimer_openmp_t
    use ftimer_types, only: FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS
    implicit none
 
+   character(len=*), parameter :: summary_csv_path = 'installed_openmp_summary.csv'
+   character(len=*), parameter :: summary_report_path = 'installed_openmp_summary.txt'
    integer :: duplicate_id
    integer :: i
    integer :: ierr
@@ -16,6 +18,7 @@ program ftimer_installed_openmp_api_consumer
    character(len=32) :: name
    type(ftimer_openmp_config_t) :: config
    type(ftimer_openmp_parallel_region_t) :: region
+   type(ftimer_openmp_summary_t) :: summary
    type(ftimer_openmp_t) :: timer
 
    config%mode = FTIMER_OPENMP_MODE_THREAD_LANES
@@ -78,6 +81,17 @@ program ftimer_installed_openmp_api_consumer
    if (ierr /= FTIMER_SUCCESS) error stop 17
    call timer%stop_id(timer_id, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop 36
+   call timer%get_openmp_summary(summary, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 38
+   if (summary%num_entries /= 1) error stop 39
+   call delete_if_exists(summary_report_path)
+   call delete_if_exists(summary_csv_path)
+   call timer%write_openmp_summary(summary_report_path, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 40
+   call timer%write_openmp_summary_csv(summary_csv_path, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 41
+   call delete_if_exists(summary_report_path)
+   call delete_if_exists(summary_csv_path)
 
    do i = 1, size(ids)
       write (name, '("consumer_openmp_api_bulk_",i0)') i
@@ -117,4 +131,15 @@ program ftimer_installed_openmp_api_consumer
 
    call timer%finalize(ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop 35
+
+contains
+
+   subroutine delete_if_exists(path)
+      character(len=*), intent(in) :: path
+      integer :: io
+      integer :: unit
+
+      open (newunit=unit, file=path, status='old', iostat=io)
+      if (io == 0) close (unit, status='delete')
+   end subroutine delete_if_exists
 end program ftimer_installed_openmp_api_consumer

@@ -23,9 +23,11 @@ Implemented capabilities include:
 - limited OpenMP master-thread-only timer guards for `ftimer` / `ftimer_core`
 - explicit `ftimer_openmp_t` serial-lane and level-1 worker timed-region /
   id-first thread-lane timing
+- stopped-run local OpenMP summaries, text reports, and CSV output through
+  `ftimer_openmp_t`
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
-fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, OpenMP summary/report result families, or general thread-safe access to the existing `ftimer`/`ftimer_core` APIs from OpenMP worker threads.
+fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, hybrid MPI+OpenMP rank/lane reductions, or general thread-safe access to the existing `ftimer`/`ftimer_core` APIs from OpenMP worker threads.
 It also does not provide accelerator/device synchronization hooks or implicit MPI
 barriers; callers own those synchronization decisions when interpreting
 wall-clock intervals.
@@ -125,8 +127,9 @@ The CMake source order reflects the real dependency order:
 
 `ftimer_openmp.F90` is the additive, explicit opt-in API surface for true OpenMP
 worker timing. Its lifecycle/configuration, timer catalog, timed-region, and
-id-first thread-lane timing operations are usable today. OpenMP summary and
-hybrid rank/lane reduction families remain deferred to later #267 child issues.
+id-first thread-lane timing operations are usable today, along with stopped-run
+local OpenMP summary, report, and CSV output. Hybrid rank/lane reduction
+families remain deferred to later #267 child issues.
 
 `ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, self-time computation, and strict/sparse MPI text formatting are assembled for reporting.
 
@@ -155,7 +158,7 @@ The current implementation is organized around a few design choices that show up
   `MPI_Init` and before `MPI_Finalize`. The communicator captured by
   `init(comm=...)` is a non-owning handle that the caller must keep valid while
   fTimer summaries, reports, finalization, or reinitialization may use it.
-- OpenMP support has two distinct paths: guarded `ftimer`/`ftimer_core` operations still run only on the master thread when `FTIMER_USE_OPENMP=ON`, while `ftimer_openmp_t` provides opt-in id-first timing for serial and level-1 OpenMP worker lanes. Neither path currently provides OpenMP summaries or hybrid rank/lane reductions.
+- OpenMP support has two distinct paths: guarded `ftimer`/`ftimer_core` operations still run only on the master thread when `FTIMER_USE_OPENMP=ON`, while `ftimer_openmp_t` provides opt-in id-first timing for serial and level-1 OpenMP worker lanes plus stopped-run local OpenMP summary, report, and CSV output. Hybrid rank/lane reductions remain deferred.
 
 Those runtime semantics are specified in detail in [`docs/semantics.md`](semantics.md); this document focuses on how the repository realizes them.
 
@@ -168,7 +171,7 @@ The public surface on current `main` is split between:
 - the explicit opt-in OpenMP API surface in `use ftimer_openmp`
 - shared types and constants from `use ftimer_types`
 
-The supported source-level module surface is intentionally limited to `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the additive opt-in API surface for true OpenMP worker timing; its lifecycle/configuration, timer catalog, timed-region, and id-first thread-lane timing methods are available now, while OpenMP summaries and hybrid rank/lane reductions remain deferred. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt` so runtime storage helpers are not accidentally promoted into the stable downstream contract. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md` and `share/doc/fTimer/LICENSE`, and the installed-consumer smoke test checks those documentation artifacts against the source tree.
+The supported source-level module surface is intentionally limited to `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the additive opt-in API surface for true OpenMP worker timing; its lifecycle/configuration, timer catalog, timed-region, id-first thread-lane timing, and local OpenMP summary/report methods are available now, while hybrid rank/lane reductions remain deferred. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt` so runtime storage helpers are not accidentally promoted into the stable downstream contract. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md` and `share/doc/fTimer/LICENSE`, and the installed-consumer smoke test checks those documentation artifacts against the source tree.
 
 The currently exported procedural entry points are:
 
@@ -368,16 +371,16 @@ Future-facing ideas should stay clearly separated from the current architecture 
   [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md),
   the landed thread-lane runtime model tracked in
   [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md),
-  the still-deferred summary/self-time model tracked in
+  the landed local summary/self-time model tracked in
   [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md),
   the still-deferred MPI+OpenMP reduction model tracked in
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md),
   and the validation plan tracked in
   [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md).
-  Remaining deferred areas include OpenMP summaries/reports/CSV, hybrid
-  MPI+OpenMP reductions, nested/task support, broader thread-safe behavior for
-  the existing `ftimer` / `ftimer_core` APIs, and production black-box
-  accounting coverage once a public OpenMP summary/result surface exists.
+  Remaining deferred areas include hybrid MPI+OpenMP reductions, nested/task
+  support, broader thread-safe behavior for the existing `ftimer` /
+  `ftimer_core` APIs, and production black-box accounting coverage around the
+  public OpenMP summary/result surface.
   User-facing mode selection and migration guidance live in
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
 - stable semantic callback identity or a stronger external-profiler integration contract

@@ -7,9 +7,9 @@ Issue #239 defines the runtime ownership and aggregation model that should sit
 behind the opt-in API direction from #238. This document is a runtime design
 contract only. Issue #268 adds the initial `ftimer_openmp` module and object
 lifecycle/catalog surface, and #269 adds the first true worker timing runtime
-with lane-local stacks. OpenMP summaries, MPI+OpenMP reductions, and new
-behavior for the current `ftimer_t` compatibility mode remain out of scope for
-this runtime model.
+with lane-local stacks. Issue #270 adds stopped-run local OpenMP summaries,
+reports, and CSV output. MPI+OpenMP reductions and new behavior for the current
+`ftimer_t` compatibility mode remain out of scope for this runtime model.
 
 ## Decision
 
@@ -128,9 +128,9 @@ teams:
 - `start_id`
 - `stop_id`
 
-OpenMP object clock configuration, summary/report construction, and name-based
-worker `start`/`stop` convenience calls remain future API work. They are not
-part of the current `ftimer_openmp_t` public runtime surface.
+Stopped-run local summary/report construction is now part of the current
+`ftimer_openmp_t` public runtime surface. OpenMP object clock configuration and
+name-based worker `start`/`stop` convenience calls remain future API work.
 
 Worker timing calls inside a level-1 team are valid only while a timed
 parallel-region epoch is open for that object. A worker timing call without an
@@ -425,5 +425,6 @@ This document began as a design-only runtime model. Issue #269 landed the first
 implementation slice: current `ftimer_openmp_t` lifecycle/catalog calls,
 timed-region tokens, and id-first serial-lane / level-1 worker timing are real
 public behavior. That implementation is covered by smoke tests, installed
-consumer checks, and benchmark rows. OpenMP summaries/reports and hybrid
-rank/lane reductions remain deferred to later issues.
+consumer checks, and benchmark rows. Issue #270 extends that coverage to local
+OpenMP summaries/reports/CSV; hybrid rank/lane reductions remain deferred to
+later issues.

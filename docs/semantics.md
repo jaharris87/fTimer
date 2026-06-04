@@ -4,9 +4,9 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`, and the explicit `ftimer_openmp` thread-lane runtime for opt-in serial-lane and level-1 OpenMP worker timing. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
+Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`, and the explicit `ftimer_openmp` thread-lane runtime with stopped-run local OpenMP summary, text report, and CSV output for opt-in serial-lane and level-1 OpenMP worker timing. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
 
-This contract is strongest for disciplined serial and pure-MPI wall-clock timing. OpenMP support has two current paths: existing `ftimer`/`ftimer_core` calls keep the master-thread-only carve-out for bracketing a parallel region as a whole, while `ftimer_openmp_t` provides explicit opt-in serial-lane and level-1 worker timing without OpenMP summaries or hybrid rank/lane reductions. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
+This contract is strongest for disciplined serial and pure-MPI wall-clock timing. OpenMP support has two current paths: existing `ftimer`/`ftimer_core` calls keep the master-thread-only carve-out for bracketing a parallel region as a whole, while `ftimer_openmp_t` provides explicit opt-in serial-lane and level-1 worker timing with local OpenMP summaries but without hybrid rank/lane reductions. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
 Current architecture, validation, and workflow notes belong in `docs/design.md`. Historical phase-roadmap notes belong in `docs/implementation-history.md`. When current-state sources disagree, use this repository-wide precedence order: current code under `src/`, then current behavioral tests, then `docs/semantics.md`, then `README.md`, then `docs/design.md`.
 
@@ -356,7 +356,7 @@ enforcement should pass `ierr` and check it.
   builds. Registered timer ids remain valid across `reset()` and are
   invalidated across `finalize()`/reinit without being recycled in the same
   object. The MPI communicator handle is stored for future hybrid-reduction
-  work; no current public `ftimer_openmp` summary/report behavior consumes it.
+  work; local OpenMP summary/report behavior does not consume it.
   `config%max_lanes` counts the serial lane plus worker lanes.
   Serial-context `start_id`/`stop_id` use lane 0. Inside an explicitly opened
   timed level-1 OpenMP region, `start_id`/`stop_id` use one lane per OpenMP
@@ -380,6 +380,44 @@ enforcement should pass `ierr` and check it.
   exposed for serial-context lifecycle/catalog/timing adoption only; using that
   package from a downstream OpenMP parallel region is outside the supported
   contract because the library was not built with OpenMP runtime introspection.
+- `ftimer_openmp_t%get_openmp_summary(summary, ierr=...)`,
+  `print_openmp_summary`, `write_openmp_summary`, and
+  `write_openmp_summary_csv` are the local OpenMP summary/report family. They
+  return and format `ftimer_openmp_summary_t`, not `ftimer_summary_t`, and do
+  not change current local, strict MPI, or sparse MPI summary schemas.
+- OpenMP summaries are stopped-run-only merge points. If called inside an
+  OpenMP parallel region, while a timed region is open, or while any lane has
+  an active timer stack, they return `FTIMER_ERR_ACTIVE`, leave the structured
+  summary empty, and file-output APIs do not emit a normal artifact.
+- `ftimer_openmp_summary_t%summary_window_time` is the elapsed wall-clock time
+  from `init` or `reset` to the summary snapshot. `timed_region_envelope_time`
+  is the summed wall-clock duration of explicitly opened timed OpenMP regions.
+  `sum_lane_root_inclusive_time` is summed lane work over root descriptor rows
+  only; it may exceed the wall-clock envelope when lanes run concurrently.
+  `sum_lane_self_time` is the sum of lane-local self time over all descriptor
+  rows.
+- OpenMP summary entries are a canonical logical descriptor tree with
+  `node_id`/`parent_id` links. Per-entry lane min/avg/max, imbalance, summed
+  inclusive/self time, and call-count fields are computed over participating
+  lanes only. Missing lanes are not zero-filled.
+- Self time is computed on each lane before aggregation. Aggregate OpenMP self
+  time is not computed as aggregate inclusive time minus aggregate child
+  inclusive time.
+- `eligible_lane_count`, `participating_lane_count`, and
+  `missing_lane_count` describe lane participation for that descriptor.
+  Eligible worker lanes come from the actual level-1 team lanes observed for
+  contributing timed-region epochs, not from `config%max_lanes`. Serial-lane
+  descriptors use lane 0 as their eligible participant. When mixed contributing
+  epochs make the aggregate missing-lane interpretation ambiguous,
+  `missing_lane_count_known` is false.
+- The OpenMP text report is an abbreviated human-facing view of
+  `ftimer_openmp_summary_t`. The OpenMP CSV export uses a dedicated
+  `format_version=1`, `summary_kind=openmp` schema with `summary`,
+  `metadata`, and aggregate `entry` rows. It is not append-compatible with the
+  local/strict MPI version-2 CSV header or the sparse MPI union CSV header.
+- Local OpenMP summaries are summary tables, not traces. They do not expose
+  interval timelines, profiler event streams, per-entry wall-clock interval
+  unions, or MPI+OpenMP reductions.
 - For user-facing mode selection, accepted instrumentation patterns, and
   migration guidance, see
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
