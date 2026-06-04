@@ -6,17 +6,18 @@
 Issue #243 defines the validation strategy for the OpenMP/hybrid direction
 recorded in #238, #239, #240, and #241. This document is a validation contract.
 Issue #268 adds the initial `ftimer_openmp` public API surface and lifecycle
-coverage, but true OpenMP worker timing, OpenMP summaries, hybrid reductions,
-and changes to the current `FTIMER_USE_OPENMP=ON` master-thread-only
-compatibility mode remain deferred to later #267 child issues.
+coverage, and #269 adds the first true OpenMP thread-lane runtime. OpenMP
+summaries, hybrid reductions, and changes to the current
+`FTIMER_USE_OPENMP=ON` master-thread-only compatibility mode remain deferred to
+later #267 child issues.
 
 ## Decision
 
 Validation should advance in two layers:
 
 - current compatibility coverage for configurations that exist on `main`; and
-- future true OpenMP/hybrid behavioral coverage that lands only with the
-  corresponding runtime, summary, reduction, documentation, and benchmark work.
+- OpenMP/hybrid behavioral coverage that lands with the corresponding runtime,
+  summary, reduction, documentation, and benchmark work.
 
 The initial #243 change adds current build-only hybrid coverage:
 
@@ -27,9 +28,10 @@ The initial #243 change adds current build-only hybrid coverage:
   installed-consumer path, including an MPI-initialized OpenMP region that
   preserves current worker no-op behavior.
 
-That coverage proves the current MPI and OpenMP compatibility options can
-coexist. It must not be read as evidence that true worker-thread timing or
-hybrid rank/lane reductions are implemented.
+That initial coverage proves the current MPI and OpenMP compatibility options
+can coexist. It must not be read as evidence that the current `ftimer`/
+`ftimer_core` APIs perform true worker-thread timing or that hybrid rank/lane
+reductions are implemented.
 
 ## Current Compatibility Coverage
 
@@ -45,9 +47,9 @@ Current `main` should keep these validation gates:
 - build-contract regression coverage for configure gates and Makefile wrapper
   behavior;
 - MPI+OpenMP build-only smoke coverage for the current compatibility mode; and
-- `ftimer_openmp` API/lifecycle smoke, diagnostics, public-symbol, and
-  installed-package consumer coverage for the current non-functional worker
-  timing boundary.
+- `ftimer_openmp` API/lifecycle, timed-region, thread-lane runtime,
+  diagnostics, public-symbol, and installed-package consumer coverage for the
+  current opt-in worker timing boundary.
 
 The compatibility matrix is intentionally about today's APIs:
 
@@ -63,10 +65,11 @@ The compatibility matrix is intentionally about today's APIs:
   present and executed so non-hybrid smoke jobs do not accidentally claim
   unsupported hybrid toolchain coverage.
 
-## Future True OpenMP Test Matrix
+## Current Thread-Lane Runtime Test Matrix
 
-When #239 introduces the first true OpenMP runtime, deterministic tests should
-extend the current `ftimer_openmp` API surface coverage to cover:
+#269 introduces the first true OpenMP runtime through the explicit
+`ftimer_openmp_t` object. Deterministic tests now cover, and should continue to
+cover:
 
 - explicit opt-in construction through the current `ftimer_openmp` module and
   `ftimer_openmp_t` object with real worker timing enabled;
@@ -77,7 +80,7 @@ extend the current `ftimer_openmp` API surface coverage to cover:
 - nested timers with independent lane-local stacks;
 - cross-thread stop attempts that fail lane-locally without mutating another
   lane's stack;
-- active-lane lifecycle errors for reset, summary, reduction, and finalize;
+- active-lane lifecycle errors for reset, timed-region close, and finalize;
 - bounded diagnostic storage and deterministic aggregate diagnostics;
 - thread-private `ierr` behavior on worker paths; and
 - compatibility tests proving current `FTIMER_USE_OPENMP=ON` worker no-op
@@ -139,10 +142,10 @@ Installed-package checks should verify the public package story at each stage:
   dependencies can coexist;
 - current `ftimer_openmp` installed consumers for serial, MPI, OpenMP, and
   MPI+OpenMP package modes, proving that the lifecycle/catalog surface imports,
-  links, validates keyword-only init shape, and keeps worker timing
-  non-functional with `FTIMER_ERR_NOT_IMPLEMENTED`; and
-- future true OpenMP/hybrid installed consumers only after the public
-  runtime, summary, and reduction result types exist.
+  links, validates keyword-only init shape, runs serial and timed worker
+  `start_id`/`stop_id`, and preserves bounded worker diagnostics; and
+- future OpenMP/hybrid summary installed consumers only after the public summary
+  and reduction result types exist.
 
 Future installed consumers should compile the documented source shapes, run the
 supported examples, and assert the exported CMake package resolves only the
@@ -162,7 +165,7 @@ to provide coverage.
   carve-out, but it is not a substitute for GNU pFUnit behavioral coverage.
 - Cross-compiling or execution-restricted package builds may use
   `FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK=ON` only after independent validation of
-  equivalent OpenMP master-thread runtime semantics.
+  equivalent OpenMP master-thread and worker-lane runtime semantics.
 
 Any skipped optional path should emit a clear CMake or CI message naming the
 missing compiler, MPI wrapper, launcher, OpenMP runtime, or pFUnit dependency.
@@ -170,13 +173,12 @@ missing compiler, MPI wrapper, launcher, OpenMP runtime, or pFUnit dependency.
 ## Performance Validation
 
 Performance validation belongs with implementation issues, not with this
-build-only compatibility PR. When true worker timing lands, measurements should
-track:
+build-only compatibility PR. For true worker timing, measurements should track:
 
 - serial hot-path overhead relative to current `ftimer_t`;
 - MPI-only hot-path and summary overhead relative to current pure-MPI paths;
 - master-thread-only OpenMP overhead for current compatibility mode;
-- warmed worker `start_id`/`stop_id` overhead in the future opt-in runtime;
+- warmed worker `start_id`/`stop_id` overhead in the opt-in runtime;
 - timed-region open/close overhead;
 - lane merge cost for local summaries;
 - descriptor-union and rank-level materialization cost for hybrid summaries;
@@ -189,8 +191,8 @@ comparisons are meaningful.
 
 ## Non-Goals
 
-- Implementing true OpenMP worker timing in #243.
-- Adding pFUnit tests for future APIs that do not exist yet.
+- Claiming true OpenMP worker timing from the initial #243 build-only coverage.
+- Adding pFUnit tests for future summary/reduction APIs that do not exist yet.
 - Treating MPI+OpenMP build success as proof of hybrid rank/lane reductions.
 - Requiring every CI runner to support every MPI/OpenMP/compiler combination.
 - Weakening current worker no-op compatibility tests.
@@ -199,7 +201,7 @@ comparisons are meaningful.
 
 ## Dependencies On Later Child Issues
 
-- #239 provides runtime lane state, timed-region epochs, active-lane scans, and
+- #269 provides runtime lane state, timed-region epochs, active-lane scans, and
   diagnostics for true worker timing tests.
 - #240 provides local OpenMP summary/report/CSV behavior for summary golden
   tests.

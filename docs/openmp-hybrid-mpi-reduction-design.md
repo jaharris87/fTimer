@@ -52,8 +52,8 @@ add the new API.
 
 ## Recommended API Boundary
 
-Hybrid summaries should be entered through the current OpenMP-specific object
-that will own lane state once true worker timing lands:
+Hybrid summaries should be entered through the current OpenMP-specific object,
+which now owns lane state; hybrid summary/result methods remain future work:
 
 ```fortran
 ! Proposed future summary API shape. The ftimer_openmp object exists on current

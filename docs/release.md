@@ -16,14 +16,14 @@ Before starting a release candidate:
 - Review open `release-blocker`, `release-audit`, `bug`, and `post-release`
   issues for items that should affect the release notes or block the tag.
 - Keep the release claim within the documented support boundary: serial timing,
-  pure-MPI timing, the narrow master-thread-only OpenMP carve-out, the initial
-  `ftimer_openmp` lifecycle/configuration/timer-catalog API surface, and the
-  CMake package path.
+  pure-MPI timing, the narrow master-thread-only OpenMP carve-out, the
+  `ftimer_openmp` lifecycle/configuration/timer-catalog and id-first
+  serial-lane/level-1 worker timing surface, and the CMake package path.
 - Do not promote deferred non-goals into the release unless a linked issue has
-  changed scope. Current non-goals include true OpenMP worker timing, OpenMP
-  summaries/reports/CSV, MPI+OpenMP hybrid reductions, full profiler
-  integration, FPM packaging, hardware counters, traces, accelerator timelines,
-  automatic MPI barriers, and stable callback semantic identity.
+  changed scope. Current non-goals include OpenMP summaries/reports/CSV,
+  MPI+OpenMP hybrid reductions, full profiler integration, FPM packaging,
+  hardware counters, traces, accelerator timelines, automatic MPI barriers, and
+  stable callback semantic identity.
 
 ## Version And Compatibility
 
@@ -49,7 +49,7 @@ then require GitHub CI to pass before tagging.
 | Smoke/install path | Yes |
 | Serial pFUnit path | Yes when pFUnit is available |
 | MPI path | Yes when MPI and matching pFUnit are available |
-| MPI+OpenMP compatibility path | Yes when validating the hybrid compatibility matrix; this proves current feature-flag and package coexistence, not true worker timing |
+| MPI+OpenMP compatibility path | Yes when validating the hybrid compatibility matrix; this proves current feature-flag coexistence plus the installed `ftimer_openmp` worker API, not hybrid rank/lane reductions |
 | OpenMP carve-out | Yes: GNU pFUnit guard coverage when OpenMP and matching pFUnit are available; LLVM Flang smoke/example coverage when validating the OpenMP compiler matrix |
 | Bench harness | Yes for hot-path or summary-performance changes |
 | Formatting | Yes for source/test/example changes |

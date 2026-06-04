@@ -1022,14 +1022,14 @@ if(TEST_ENABLE_MPI)
       if((openmp_api_mpi_openmp_stderr_line_stripped MATCHES
             "ftimer_openmp recorded 1 worker diagnostics")
           AND (openmp_api_mpi_openmp_stderr_line_stripped MATCHES
-            "first status 2, overflow 0"))
+            "first status 5, overflow 0"))
         math(EXPR openmp_api_mpi_openmp_rank0_line_count
           "${openmp_api_mpi_openmp_rank0_line_count} + 1"
         )
       elseif((openmp_api_mpi_openmp_stderr_line_stripped MATCHES
             "ftimer_openmp recorded 2 worker diagnostics")
           AND (openmp_api_mpi_openmp_stderr_line_stripped MATCHES
-            "first status 2, overflow 0"))
+            "first status 5, overflow 0"))
         math(EXPR openmp_api_mpi_openmp_rank1_line_count
           "${openmp_api_mpi_openmp_rank1_line_count} + 1"
         )

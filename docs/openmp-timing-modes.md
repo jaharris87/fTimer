@@ -1,26 +1,26 @@
 > **When to read this:** When choosing how to instrument OpenMP or
 > MPI+OpenMP code, when migrating from the current master-thread-only
-> compatibility mode, or when reviewing future true OpenMP timing examples.
+> compatibility mode, or when reviewing opt-in OpenMP timing examples.
 
 # OpenMP Timing Modes And Migration Guide
 
 This guide is the user-facing companion to the OpenMP/hybrid strategy under
-umbrella issue #237. It explains what exists on current `main`, what is
-accepted as future opt-in design, and how examples should evolve without making
-today's master-thread-only behavior look accidental.
+umbrella issue #237. It explains what exists on current `main`, how the opt-in
+OpenMP object differs from the compatibility carve-out, and how examples should
+evolve without making today's master-thread-only behavior look accidental.
 
-Current `main` still has no true worker-thread timing behavior. The first
-`ftimer_openmp` source symbols are available as the opt-in API surface, but
-timed-region worker calls, OpenMP summaries, and hybrid MPI+OpenMP reductions
+Current `main` includes opt-in worker-thread timing through `ftimer_openmp`.
+Timed-region worker `start_id`/`stop_id` calls are available inside explicit
+level-1 OpenMP epochs, while OpenMP summaries and hybrid MPI+OpenMP reductions
 remain deferred to later implementation issues.
 
 The `ftimer_openmp` module is installed in all package modes: serial, MPI,
 OpenMP, and MPI+OpenMP. Packages built without `FTIMER_USE_OPENMP=ON` support
-its lifecycle/configuration and timer catalog entry points only from serial
-context. OpenMP-region rejection and bounded worker diagnostics require an
-fTimer package built with `FTIMER_USE_OPENMP=ON`; global OpenMP flags in a
-downstream application do not retrofit OpenMP runtime introspection into a
-non-OpenMP fTimer package.
+its lifecycle/configuration, timer catalog, and serial-lane `start_id`/`stop_id`
+entry points from serial context. Timed OpenMP worker regions, OpenMP-region
+rejection, and bounded worker diagnostics require an fTimer package built with
+`FTIMER_USE_OPENMP=ON`; global OpenMP flags in a downstream application do not
+retrofit OpenMP runtime introspection into a non-OpenMP fTimer package.
 
 ## Mode Summary
 
@@ -30,8 +30,8 @@ non-OpenMP fTimer package.
 | Pure-MPI timing | Yes | Use the current `mpi_f08` `comm=` contract after `MPI_Init` and before `MPI_Finalize`. |
 | `FTIMER_USE_OPENMP=OFF` with external OpenMP flags | Yes | fTimer keeps serial/pure-MPI semantics. Global OpenMP compiler flags do not activate the guard carve-out. |
 | `FTIMER_USE_OPENMP=ON` compatibility mode | Yes | Current APIs run guarded timer operations only on OpenMP thread 0. Worker-thread calls are silent no-ops. |
-| `FTIMER_USE_MPI=ON` plus `FTIMER_USE_OPENMP=ON` | Yes, as compatibility smoke coverage | MPI and OpenMP package dependencies can coexist. This still uses the current master-thread-only OpenMP behavior. |
-| True OpenMP worker timing | No | Initial opt-in API surface behind `ftimer_openmp`, `ftimer_openmp_t`, and explicit configuration exists; otherwise valid worker timing calls return `FTIMER_ERR_NOT_IMPLEMENTED` after lifecycle/catalog validation. |
+| `FTIMER_USE_MPI=ON` plus `FTIMER_USE_OPENMP=ON` | Yes, as compatibility smoke coverage | MPI and OpenMP package dependencies can coexist. Procedural and `ftimer_core` timing still use the master-thread-only OpenMP behavior. |
+| True OpenMP worker timing | Yes, through `ftimer_openmp` | Use `ftimer_openmp_t`, pre-register timer ids, open a timed level-1 region from serial context, and call `start_id`/`stop_id` on worker lanes. |
 | True MPI+OpenMP rank/lane reductions | No | Future hybrid result family behind the OpenMP-specific object. |
 
 ## Current Accepted Patterns
@@ -113,17 +113,16 @@ summary types, CSV schemas, and MPI result families remain the stable surface.
 Existing OpenMP compatibility users should keep the current region-bracketing
 pattern when they want one wall-clock interval for a parallel region. The most
 important migration audit is expectation-setting: if an application currently
-calls fTimer inside a parallel region and expects each worker to contribute,
-that instrumentation is not producing those data today. Move such timing calls
-outside the parallel region for current releases, or plan an explicit
-worker-timing migration after the OpenMP-specific runtime and summary behavior
-land.
+calls the procedural or `ftimer_core` APIs inside a parallel region and expects
+each worker to contribute, that instrumentation is not producing those data.
+Move such timing calls outside the parallel region for compatibility timing, or
+migrate those hot paths to the explicit `ftimer_openmp_t` worker-timing object.
 
-Applications that may need both compatibility mode and future true worker
-timing should put fTimer calls behind an application-owned instrumentation
-facade. That keeps the choice between current `ftimer` calls and future
-`ftimer_openmp` calls in one application module instead of spreading mode
-conditionals across scientific kernels.
+Applications that need both compatibility mode and true worker timing should
+put fTimer calls behind an application-owned instrumentation facade. That keeps
+the choice between current `ftimer` calls and `ftimer_openmp` calls in one
+application module instead of spreading mode conditionals across scientific
+kernels.
 
 The additive migration surface starts with `ftimer_openmp`:
 
@@ -134,13 +133,15 @@ The additive migration surface starts with `ftimer_openmp`:
   `comm=`;
 - register timer names in serial context before hot worker use;
 - pass timer ids into an explicitly opened timed OpenMP region; and
+- run an untimed warm-up region for short hot loops when first-touch allocation
+  would otherwise contaminate the measurement; and
 - consume future OpenMP or MPI+OpenMP summary/result types instead of current
   `ftimer_summary_t`, `ftimer_mpi_summary_t`, or `ftimer_mpi_union_summary_t`.
 
-Only the lifecycle/configuration and timer catalog parts of that surface are
-functional today. The timed-region, worker `start_id`/`stop_id`, summary, and
-hybrid reduction pieces should not become full examples until the corresponding
-runtime, summary, and validation implementation issues make them functional.
+The lifecycle/configuration, timer catalog, timed-region, and worker
+`start_id`/`stop_id` pieces are functional today. Full OpenMP summary and
+hybrid reduction examples should wait until the corresponding result families
+land.
 
 ## Future Example Policy
 
@@ -148,8 +149,8 @@ Keep current and future examples separate.
 
 - `examples/openmp_example.F90` remains the compatibility example for
   `FTIMER_USE_OPENMP=ON`.
-- Future true OpenMP worker examples should be added only after the
-  OpenMP-specific runtime and summary APIs exist.
+- Future true OpenMP worker examples should use `ftimer_openmp_t` and should be
+  added once the example can present a complete stopped-run reporting story.
 - Future MPI+OpenMP examples should use the future `ftimer_openmp_t` hybrid
   summary path, not the current procedural default instance.
 - Future examples should show the id-first worker hot path, explicit timed

@@ -6,9 +6,10 @@
 Issue #239 defines the runtime ownership and aggregation model that should sit
 behind the opt-in API direction from #238. This document is a runtime design
 contract only. Issue #268 adds the initial `ftimer_openmp` module and object
-lifecycle/catalog surface, but it does not add true worker timing,
-per-thread stacks, OpenMP summaries, MPI+OpenMP reductions, or new behavior to
-the current `ftimer_t` compatibility mode.
+lifecycle/catalog surface, and #269 adds the first true worker timing runtime
+with lane-local stacks. OpenMP summaries, MPI+OpenMP reductions, and new
+behavior for the current `ftimer_t` compatibility mode remain out of scope for
+this runtime model.
 
 ## Decision
 
@@ -36,8 +37,9 @@ mostly read-only metadata from hot per-lane state.
 
 Object-level state:
 
-- initialization flag, mismatch mode, and lifecycle state;
-- clock pointer and summary-window timestamps;
+- initialization flag and lifecycle state;
+- optional clock pointer for test/validation injection and summary-window
+  timestamps for future summaries;
 - optional MPI communicator capture for later hybrid work;
 - an append-only timer catalog mapping public timer ids to validated names;
 - timed parallel-region epoch state, including whether a worker-timed region is
@@ -55,7 +57,7 @@ Lane-level state:
   stack entries;
 - lane-local segment/context tables, keyed by the shared timer id;
 - lane-local inclusive time, start time, running flag, and call count arrays;
-- lane-local diagnostic buffer and overflow count;
+- object-level bounded diagnostic counters, overflow count, and first status;
 - no references to another lane's stack.
 
 The shared catalog provides semantic identity. Lane state owns timing mutation.
@@ -100,33 +102,35 @@ timer because the top stack entry's epoch will not match the currently open
 epoch.
 
 Opening a new timed region must fail if any lane already has an active stack.
-Closing a timed region must retire the current epoch so no later worker call can
-use it, then scan the worker lanes for active stacks. If active stacks remain,
-the close returns an error and preserves the lane stack metadata for diagnostics
-or later summary-contract handling. A later worker stop without an open epoch,
-or with a newer epoch than the stack entry, must not close the earlier
-activation. This makes forgotten worker stops fail at the region boundary
-instead of lingering until an unrelated later summary/reset/finalize operation.
+Closing a timed region must scan the worker lanes for active stacks before
+retiring the current epoch. If active stacks remain, the close returns an error
+and leaves the timed-region token open so the caller can re-enter the same
+OpenMP team shape, stop the forgotten lane activation, and retry the close.
+Only a successful close retires the epoch. A later worker stop without an open
+epoch, with a newer epoch than the stack entry, or through a stale or foreign
+region token must not close the earlier activation.
 
 ## Valid Operations
 
-Lifecycle and configuration calls are valid only from serial context, with no
+Current lifecycle and catalog calls are valid only from serial context, with no
 active timers on any lane:
 
 - `init`
 - `finalize`
 - `reset`
-- clock configuration
 - opening or closing a timed parallel-region epoch
-- timer registration intended to avoid hot-path name lookups
-- summary/report construction
+- timer registration with `register_timer`
+- timer id lookup with `lookup_timer`
 
-Timing calls are valid from serial context and from level-1 parallel teams:
+Current timing calls are valid from serial context and from level-1 parallel
+teams:
 
 - `start_id`
 - `stop_id`
-- `start` and `stop`, only if they resolve already-registered names without
-  catalog mutation
+
+OpenMP object clock configuration, summary/report construction, and name-based
+worker `start`/`stop` convenience calls remain future API work. They are not
+part of the current `ftimer_openmp_t` public runtime surface.
 
 Worker timing calls inside a level-1 team are valid only while a timed
 parallel-region epoch is open for that object. A worker timing call without an
@@ -145,8 +149,8 @@ of tight loops.
 
 Recommended path:
 
-1. Register timer names outside a parallel region with `lookup` or a future
-   explicit registration helper.
+1. Register timer names outside a parallel region with `register_timer`; use
+   `lookup_timer` only to recover an existing id by name.
 2. Warm or reserve lane-local context storage for the intended timing patterns
    when the implementation provides such a helper.
 3. Open a timed parallel-region epoch in serial context.
@@ -197,8 +201,8 @@ On `stop_id(timer_id)`:
 4. Compare only the current lane's stack top, including both timer id and epoch.
 5. If the top matches, capture one `now`, pop the lane stack, then look up the
    now-current parent context before accumulating elapsed time.
-6. If the top does not match, apply the configured mismatch mode only within
-   that lane.
+6. If the top does not match, return a strict mismatch error and leave that
+   lane's state unchanged.
 
 The existing ordering rule still matters: stop must pop the lane stack before
 looking up the context to accumulate into. Doing that lookup against the running
@@ -206,18 +210,21 @@ stack would create the same context-attribution bug as in the serial runtime.
 
 ## Mismatch And Repair Policy
 
-Strict nesting is per lane.
+Current #269 worker timing is strict-only and per lane.
 
 - A stop on an empty lane stack is `FTIMER_ERR_MISMATCH`.
 - A stop for a different timer id than the current lane stack top is
-  `FTIMER_ERR_MISMATCH` in strict mode.
+  `FTIMER_ERR_MISMATCH`.
 - A worker stop for a matching timer id from a different timed-region epoch is
-  `FTIMER_ERR_MISMATCH` in strict mode.
-- Warn and repair modes may unwind/restart timers only on the current lane.
-- Repair must capture one timestamp and use it for every unwound timer on that
-  lane.
-- Repair must not fire callbacks.
-- Repair must never inspect, pop, stop, or restart another lane's stack.
+  `FTIMER_ERR_MISMATCH`.
+- Mismatch errors leave the current lane's stack and accumulated time
+  unchanged, so callers can recover with matching stops where possible.
+
+Future warn/repair modes are not part of the current `ftimer_openmp_t` contract.
+If a later issue adds them, they may unwind/restart timers only on the current
+lane, must capture one timestamp for every unwound timer on that lane, must not
+fire callbacks, and must never inspect, pop, stop, or restart another lane's
+stack.
 
 Cross-thread and cross-region start/stop pairing is therefore a mismatch, not a
 migration event. The lane that started the timer remains active. Region close,
@@ -250,8 +257,9 @@ define correct semantics:
 - enough tree/link information to compute self time without crossing sibling
   or cousin boundaries.
 
-Timed-region close must retire the current epoch and return an error if active
-worker lanes remain. `reset` and `finalize` must reject active lanes before
+Timed-region close must return an error without retiring the current epoch if
+active worker lanes remain, so callers can stop the forgotten worker activation
+and retry the close. `reset` and `finalize` must reject active lanes before
 clearing state. They must not force-stop active worker timers or synthesize
 elapsed time silently.
 
@@ -266,17 +274,18 @@ The #238 threaded error policy becomes concrete at the lane level:
 
 - With `ierr` present, a call returns the status for the calling lane and writes
   no stderr.
-- With `ierr` omitted from a worker timing call, the worker call stores a
-  bounded lane-local diagnostic record and writes no stderr.
+- With `ierr` omitted from a rejected worker/object API call inside a parallel
+  region, the call stores bounded aggregate diagnostic state on the timer object
+  and writes no stderr.
 - Serial lifecycle or merge-point calls may emit one deterministic aggregate
   stderr diagnostic for queued worker diagnostics when their own `ierr` is
   omitted.
-- Each lane records diagnostic overflow counts so repeated worker failures do
+- The object records diagnostic overflow counts so repeated worker failures do
   not allocate unbounded memory.
 
-Diagnostics should record at least lane id, status code, operation kind, and a
-short message. They should not store arbitrarily long user timer names on every
-failure; use catalog ids where possible.
+The current diagnostic payload is intentionally aggregate-only: retained count,
+overflow count, and first status. A later explicit diagnostic-detail issue may
+add lane id, operation kind, and short messages if users need that visibility.
 
 ## Clock And Callback Policy
 
@@ -335,9 +344,14 @@ these synchronization properties:
 
 The warmed steady-state path assumes names are registered and the relevant
 lane-local contexts have either been reserved or touched once before the
-measured loop. The remaining costs are lane-local hash/context lookup and the
-clock call. Lane-local array growth is allowed only as a cold first-touch or
-growth path and must be documented separately from steady-state timing cost.
+measured loop. The current #269 implementation uses lane-local linear context
+lookup plus the clock call; issue #277 tracks the context-indexing and
+context-scaling benchmark work needed to reduce or quantify that cost. Lane-local
+array growth is allowed only as a cold first-touch or growth path and must be
+documented separately from steady-state timing cost.
+Until a reserve API exists, users who need warmed hot-loop measurements should
+pre-register ids and run an untimed dummy timed region that touches the same
+lane/timer/context combinations before entering the measured loop.
 
 The first public config surface should stay lean: `max_lanes` plus bounded
 diagnostic policy are enough for correctness. Expected timer counts, context
@@ -365,10 +379,12 @@ Implementation guidance:
 - preserve catalog ids so merge-time descriptor construction does not need to
   compare timer names from every lane in the hot path.
 
-The implementation issue that first enables true worker timing should measure
+The runtime implementation should measure
 both cold first-touch overhead and warmed steady-state `start_id`/`stop_id`
 overhead after pre-registration and lane/context warm-up, following the #243
-validation plan.
+validation plan. The benchmark harness carries initial rows for the explicit
+`ftimer_openmp` serial-lane id path, timed-region open/close, and warmed worker
+id path so future runtime changes have a baseline.
 
 ## Interaction With Later Child Issues
 
@@ -405,7 +421,9 @@ validation plan.
 
 ## Validation For This Design
 
-This document defines the runtime model without adding public symbols or
-changing runtime behavior. Validation for this design-only step is Markdown and
-diff checking. The first implementation PR for this model must add compiling
-OpenMP tests and overhead measurements before claiming runtime support.
+This document began as a design-only runtime model. Issue #269 landed the first
+implementation slice: current `ftimer_openmp_t` lifecycle/catalog calls,
+timed-region tokens, and id-first serial-lane / level-1 worker timing are real
+public behavior. That implementation is covered by smoke tests, installed
+consumer checks, and benchmark rows. OpenMP summaries/reports and hybrid
+rank/lane reductions remain deferred to later issues.

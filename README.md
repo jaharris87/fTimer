@@ -2,7 +2,7 @@
 
 fTimer is a lightweight, correctness-first wall-clock timing library for modern Fortran. Current `main` is positioned first for disciplined serial and pure-MPI codes that need hierarchical timers, predictable accounting, and summaries you can inspect programmatically instead of scraping from ad hoc text output.
 
-> Current product position: fTimer's core supported stories are serial timing and pure-MPI timing. `FTIMER_USE_OPENMP=ON` is a narrow master-thread-only carve-out for bracketing a parallel region as a whole, not a general hybrid MPI+OpenMP timing model. The callback hook is a lightweight intra-run event hook, not a stable external-profiler integration contract.
+> Current product position: fTimer's core supported stories are serial timing and pure-MPI timing. `FTIMER_USE_OPENMP=ON` keeps the existing procedural and `ftimer_core` APIs on a master-thread-only carve-out, while `ftimer_openmp_t` provides an explicit opt-in serial-lane and level-1 OpenMP worker timing runtime. OpenMP summaries and hybrid rank/lane reductions are not implemented yet. The callback hook is a lightweight intra-run event hook, not a stable external-profiler integration contract.
 
 For a first release, the focus is a small, dependable core:
 
@@ -12,6 +12,7 @@ For a first release, the focus is a small, dependable core:
 - small procedural and explicit OOP scoped guards for lexical blocks with early exits
 - procedural wrappers and an OOP core API
 - optional MPI global summaries plus first-class strict text/CSV and sparse text/CSV report output
+- an explicit `ftimer_openmp_t` runtime for id-first serial-lane and level-1 OpenMP worker timing
 - an installable CMake package for downstream projects
 
 ## Why Use fTimer
@@ -38,11 +39,12 @@ fTimer currently supports these usage paths:
 
 - Serial timing with local summaries plus formatted text and CSV reports
 - Pure-MPI builds on the validated `mpi_f08` path that are used after `MPI_Init` and before `MPI_Finalize`, use `MPI_Wtime()`, produce global MPI summaries on every participating rank, and can emit strict communicator-level text/CSV reports or opt-in sparse union text/CSV reports
-- A narrow OpenMP carve-out: master-thread-only timer guards for timing a parallel region as a whole
+- OpenMP compatibility guards for timing a parallel region as a whole through the existing APIs
+- Explicit opt-in OpenMP worker timing through `ftimer_openmp_t`, with summaries and hybrid reductions deferred
 - Downstream consumption through `find_package(fTimer CONFIG REQUIRED)`
 - Application-owned instrumentation facades that can select either the real fTimer implementation or a dependency-free no-op implementation at build time
 
-Important limitations are documented later in this README. The short version is that serial and pure-MPI are the core supported stories on current `main`; OpenMP support is intentionally limited to the documented master-thread-only model.
+Important limitations are documented later in this README. The short version is that serial and pure-MPI are the core supported stories on current `main`; OpenMP has a legacy master-thread-only compatibility path plus the explicit `ftimer_openmp_t` worker-timing object, but not stopped-run OpenMP summaries or hybrid rank/lane reductions.
 
 ## Quick Start
 
@@ -171,9 +173,9 @@ The supported downstream contract is the installed package export. New adopters 
 
 Pre-1.0 CMake package compatibility is intentionally limited to the same minor release line. For example, a `0.2.z` install may satisfy `find_package(fTimer 0.2 CONFIG REQUIRED)` or an older compatible `0.2.x` request, but it will not satisfy a `0.1.x`, `0.3.x`, or later-minor request. Versionless `find_package(fTimer CONFIG REQUIRED)` remains available for consumers that deliberately accept whichever installed fTimer package appears on `CMAKE_PREFIX_PATH`. The `0.2` package line is the first line whose stable summary/result types expose local `call_count` and MPI `min_call_count`/`max_call_count` fields as `integer(int64)`; MPI `avg_call_count` remains `real(wp)`.
 
-The downstream examples under [`tests/install-consumer/`](tests/install-consumer/) are also part of the smoke path. They show the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer`, `use ftimer_types`, scoped timing, summary retrieval, and the initial `use ftimer_openmp` API surface from an installed prefix.
+The downstream examples under [`tests/install-consumer/`](tests/install-consumer/) are also part of the smoke path. They show the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer`, `use ftimer_types`, scoped timing, summary retrieval, and the explicit `use ftimer_openmp` API surface from an installed prefix.
 
-The supported source-level module surface is intentionally narrow: `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the explicit opt-in OpenMP timing surface; its lifecycle/configuration and timer registration/lookup entry points are real, while otherwise valid worker timing and timed parallel-region calls currently return `FTIMER_ERR_NOT_IMPLEMENTED` until the thread-lane runtime lands. Validation still reports lifecycle, active-region, and unknown-id errors before the deferred-runtime status. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt`; visible implementation helpers are documented as unstable rather than implied stable API. The installed include tree is a curated compiler module artifact set and currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so consumers get a coherent Fortran module set. Those implementation modules are not stable import targets. The installed package includes `share/doc/fTimer/installed-api.md` with the same stability contract and `share/doc/fTimer/LICENSE` with the BSD terms. The smoke tests verify the exact module artifact set and installed documentation artifacts.
+The supported source-level module surface is intentionally narrow: `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the explicit opt-in OpenMP timing surface; its lifecycle/configuration, timer registration/lookup, timed parallel-region, and id-first thread-lane timing entry points are real. OpenMP summaries and hybrid rank/lane reductions remain deferred to their own result families. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt`; visible implementation helpers are documented as unstable rather than implied stable API. The installed include tree is a curated compiler module artifact set and currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so consumers get a coherent Fortran module set. Those implementation modules are not stable import targets. The installed package includes `share/doc/fTimer/installed-api.md` with the same stability contract and `share/doc/fTimer/LICENSE` with the BSD terms. The smoke tests verify the exact module artifact set and installed documentation artifacts.
 
 ## Compile-Out / No-Op Instrumentation Pattern
 
@@ -235,7 +237,7 @@ Some implementation-detail symbols are publicly visible from stable modules beca
 Operational notes:
 
 - `ierr` is now the last optional argument in the `init` signatures. In MPI builds, communicator capture uses `comm :: type(MPI_Comm)` from `mpi_f08`; integer communicator handles are not accepted. Integer `init` options such as `mismatch_mode` and `ierr` must be passed by keyword so legacy positional communicator handles cannot be mistaken for supported options. Keywords are recommended for readability on all `init` calls.
-- `ftimer_openmp_t%init` requires `config=` and accepts `comm=` only by keyword in MPI builds. The MPI communicator handle is stored for future hybrid-reduction work; no current public `ftimer_openmp` summary/report behavior consumes it. The OpenMP object keeps registered timer ids valid across `reset()` and invalidates them across `finalize()`/reinit without recycling ids in the same object. In `FTIMER_USE_OPENMP=ON` fTimer builds, `ftimer_openmp` calls made inside an OpenMP parallel region without `ierr` queue bounded diagnostics instead of writing unordered stderr; this includes thread 0 because the object-level API rejects in-parallel lifecycle/catalog/timed-region calls. A later serial lifecycle call without `ierr` emits one aggregate message; with `ierr`, lifecycle calls that clear queued diagnostics return the first queued status without writing stderr. In non-OpenMP fTimer packages, `ftimer_openmp` is a serial-context lifecycle/catalog surface only, even if a downstream application separately enables OpenMP.
+- `ftimer_openmp_t%init` requires `config=` and accepts `comm=` only by keyword in MPI builds. The MPI communicator handle is stored for future hybrid-reduction work; no current public `ftimer_openmp` summary/report behavior consumes it. Current `ftimer_openmp_t` timing uses the non-MPI wall clock even in MPI-enabled packages, so worker timing does not call `MPI_Wtime()` from OpenMP threads or require an `MPI_Init_thread` support level. The OpenMP object keeps registered timer ids valid across `reset()` and invalidates them across `finalize()`/reinit without recycling ids in the same object. `config%max_lanes` counts the serial lane plus worker lanes. In `FTIMER_USE_OPENMP=ON` fTimer builds, `begin_parallel_region`/`end_parallel_region` are called from serial context and `start_id`/`stop_id` may run inside the open level-1 OpenMP region. Worker calls outside an open timed region, over `config%max_lanes`, or on the wrong lane return errors without mutating unrelated lane state. Calls made inside an OpenMP parallel region without `ierr` queue bounded diagnostics instead of writing unordered stderr, except for valid worker timing calls. A later serial lifecycle call without `ierr` emits one aggregate message and proceeds. With `ierr`, a lifecycle call that observes queued worker diagnostics returns the first queued status without stderr and leaves lifecycle state unchanged; repeat the lifecycle call after that explicit drain to proceed. In non-OpenMP fTimer packages, `ftimer_openmp` is a serial-context lifecycle/catalog/timing surface only, even if a downstream application separately enables OpenMP.
 - MPI-enabled fTimer must be used after `MPI_Init` and before `MPI_Finalize`. The MPI build-default clock calls `MPI_Wtime()`, and MPI summaries/reports enter MPI collectives, so initializing, timing, summarizing, reporting, resetting, or finalizing an MPI-enabled timer outside the MPI lifetime is unsupported.
 - `init(comm=...)` captures the communicator to use for later MPI summaries and reports, but fTimer stores that communicator as a non-owning handle. It does not call `MPI_Comm_dup` or `MPI_Comm_free` for caller-provided communicators. If you pass a subcommunicator, keep it valid until all fTimer summaries, reports, `finalize()`, or any `init()` reinitialization that may use the old communicator are complete.
 - Current `ftimer` and `type(ftimer_t)` `init`, `reset`, and `finalize` calls are correctness-first on active timers: with `ierr` they return `FTIMER_ERR_ACTIVE`; without `ierr` they warn and leave state unchanged. In `FTIMER_USE_OPENMP=ON` builds, that diagnostic contract applies on the master thread; worker-thread lifecycle calls through the current APIs remain silent no-ops. These paths do not force-stop active timers or synthesize summary data.
@@ -283,7 +285,7 @@ Operational notes:
 - `examples/nested_timers.F90`: nested timers and metadata headers
 - `examples/instrumentation_facade_*.F90`: enabled and disabled application-owned timing facade implementations that demonstrate the supported compile-out/no-op pattern
 - `examples/mpi_example.F90`: pure-MPI timing with a global MPI summary object and first-class MPI report output
-- `examples/openmp_example.F90`: the narrow OpenMP carve-out, where timers bracket the parallel region instead of running inside worker threads. See [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md) for the current OpenMP/MPI+OpenMP migration guide.
+- `examples/openmp_example.F90`: the OpenMP compatibility carve-out, where existing API timers bracket the parallel region instead of running inside worker threads. See [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md) for the current OpenMP/MPI+OpenMP migration guide and the explicit `ftimer_openmp_t` worker-timing path.
 
 ## CSV Export
 
@@ -345,7 +347,7 @@ FC=/path/to/mpi-mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TE
 cmake --build build-mpi
 cmake -E chdir build-mpi ctest --output-on-failure -L mpi
 
-# MPI+OpenMP compatibility smoke build (does not enable true worker timing)
+# MPI+OpenMP smoke build for compatibility plus installed ftimer_openmp worker API
 FC=mpifort cmake -B build-mpi-openmp -DFTIMER_USE_MPI=ON -DFTIMER_USE_OPENMP=ON
 cmake --build build-mpi-openmp
 cmake -E chdir build-mpi-openmp ctest --output-on-failure
@@ -371,7 +373,7 @@ If CMake cannot discover LLVM Flang's OpenMP runtime automatically, pass
 `-DOpenMP_ROOT=/path/to/libomp` for that toolchain.
 Cross-compiling or execution-restricted package builds may set
 `-DFTIMER_OPENMP_ASSUME_MASTER_PROBE_OK=ON` only after independently validating
-equivalent OpenMP master-thread runtime semantics for the selected
+equivalent OpenMP master-thread and worker-lane runtime semantics for the selected
 compiler/runtime pair.
 
 The smoke-test path also runs the enabled and disabled instrumentation facade examples so the documented compile-out strategy stays buildable.
@@ -382,7 +384,7 @@ Supported toolchain matrix:
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
 - MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH; smoke/install-consumer coverage runs for both, and MPI pFUnit coverage runs for OpenMPI plus MPICH on hosted Ubuntu 22.04 with a matching MPICH-built pFUnit
 - OpenMP: GNU Fortran with pFUnit guard coverage, plus LLVM Flang smoke/example coverage for the documented master-thread-only carve-out
-- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested for current compatibility mode only, including an MPI-initialized OpenMP installed consumer; this does not validate true worker-thread timing or hybrid rank/lane reductions
+- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested for current compatibility mode and the opt-in `ftimer_openmp` worker API, including MPI-initialized OpenMP installed consumers; this does not validate hybrid rank/lane reductions
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 
@@ -403,10 +405,10 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - Rank-conditional timer reductions are not supported by the strict `mpi_summary()` API. Use the separate opt-in `mpi_union_summary()` / `ftimer_mpi_union_summary()` API with `ftimer_mpi_union_summary_t` for sparse descriptor-union reductions. See [`docs/mpi-sparse-summary-decision.md`](docs/mpi-sparse-summary-decision.md).
 - Local summary `node_id` values are not a cross-run identity contract. Treat them as explicit links inside one produced summary object, not as durable ids across separate runs or independently produced summaries.
 - All ranks that participate in `mpi_summary()` must agree on the communicator captured by `init`. If would-be participants diverge onto different communicators, the library cannot safely discover that mistake after the split; the practical failure mode is a hang, not a clean local fallback.
-- `FTIMER_USE_OPENMP=ON` enables only limited master-thread-only guards for the current `ftimer` and `ftimer_core` APIs. Worker-thread timer calls through those APIs inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole, place `start`/`stop` outside the `!$omp parallel` block.
-- `use ftimer_openmp` exposes the future opt-in worker-timing API shape without changing current `ftimer` behavior. The object lifecycle/configuration and timer catalog calls are available now; `begin_parallel_region`, `end_parallel_region`, `start_id`, and `stop_id` return `FTIMER_ERR_NOT_IMPLEMENTED` for otherwise valid calls until the later OpenMP runtime issue implements thread-lane timing. Lifecycle, active-region, and unknown-id validation errors are reported first.
+- `FTIMER_USE_OPENMP=ON` enables limited master-thread-only guards for the current `ftimer` and `ftimer_core` APIs. Worker-thread timer calls through those APIs inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole through existing APIs, place `start`/`stop` outside the `!$omp parallel` block. To time level-1 worker lanes, use the explicit `ftimer_openmp_t` object with pre-registered ids and an opened timed region.
+- `use ftimer_openmp` exposes the opt-in worker-timing API without changing current `ftimer` behavior. The object lifecycle/configuration, timer catalog, timed parallel-region, and id-first thread-lane timing calls are available now. Serial timing uses lane 0; worker timing uses one lane per level-1 OpenMP thread id inside an explicitly opened timed region. Cross-lane mismatches, calls outside an open timed region, and out-of-capacity lanes return errors without repairing or popping another lane.
 - `FTIMER_USE_OPENMP` is the source-level switch for that carve-out; global OpenMP compiler flags alone do not enable the guards when the option is `OFF`.
-- The OpenMP path does not make fTimer thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.
+- The `ftimer`/`ftimer_core` OpenMP guard path does not make those APIs thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.
 - OpenMP mode selection, accepted instrumentation patterns, and migration
   guidance are collected in
   [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md). Future real

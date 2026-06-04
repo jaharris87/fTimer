@@ -10,25 +10,30 @@ The supported source-level import surface is intentionally narrow:
 - `use ftimer_core` for `type(ftimer_t)`, its OOP methods, and the
   pointer-based `ftimer_oop_scope` scoped guard helper
 - `use ftimer_openmp` for the explicit opt-in OpenMP timing API surface. In
-  this release line, its lifecycle/configuration and timer catalog entry points
-  are real, while otherwise valid worker timing and timed parallel-region calls
-  are intentionally present but return `FTIMER_ERR_NOT_IMPLEMENTED` until the
-  thread-lane runtime lands. Lifecycle, active-region, and unknown-id
-  validation errors are reported before the deferred-runtime status.
+  this release line, its lifecycle/configuration, timer catalog,
+  timed-region, and id-first thread-lane timing entry points are real.
   `ftimer_openmp_t%init` requires `config=` and accepts `comm=` only by keyword
   in MPI builds. The MPI communicator handle is stored for future hybrid
   reductions; no current public `ftimer_openmp` summary/report behavior consumes
-  it. Registered timer ids remain
-  valid across `reset()` and are invalidated across `finalize()`/reinit without
-  being recycled in the same object. OpenMP-region rejection and bounded worker
-  diagnostics require a package built with `FTIMER_USE_OPENMP=ON`. Calls made
-  inside an OpenMP parallel region without `ierr` queue bounded diagnostics
-  instead of writing unordered stderr, including thread 0 because the
-  object-level API rejects in-parallel lifecycle/catalog/timed-region calls.
-  Later serial lifecycle calls that clear them emit one aggregate diagnostic
-  when `ierr` is absent, or return the first queued status without stderr when
-  `ierr` is present. In non-OpenMP packages, this module is supported only for
-  serial-context lifecycle/catalog use.
+  it. Registered timer ids remain valid across `reset()` and are invalidated
+  across `finalize()`/reinit without being recycled in the same object.
+  Current `ftimer_openmp_t` timing uses the non-MPI wall clock even in
+  MPI-enabled packages, so worker timing does not call `MPI_Wtime()` from
+  OpenMP threads or require an `MPI_Init_thread` support level.
+  `config%max_lanes` counts the serial lane plus worker lanes. Serial timing
+  uses lane 0. In `FTIMER_USE_OPENMP=ON` packages, worker timing inside an
+  explicitly opened level-1 timed OpenMP region uses one lane per OpenMP
+  thread id. OpenMP-region rejection and bounded worker diagnostics require a
+  package built with `FTIMER_USE_OPENMP=ON`. Calls made inside an OpenMP
+  parallel region without `ierr` queue bounded diagnostics instead of writing
+  unordered stderr, except for valid worker `start_id`/`stop_id` calls inside an
+  open timed region. Later serial lifecycle calls that clear diagnostics emit
+  one aggregate diagnostic and proceed when `ierr` is absent. When `ierr` is
+  present, a lifecycle call that observes queued worker diagnostics returns the
+  first queued status without stderr and leaves lifecycle state unchanged; repeat
+  the lifecycle call after that explicit drain to proceed. In non-OpenMP
+  packages, this module is supported only for serial-context lifecycle/catalog/
+  timing use.
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
 ## MPI lifecycle and communicator ownership
@@ -37,6 +42,9 @@ MPI-enabled fTimer must be used after `MPI_Init` and before `MPI_Finalize`.
 The installed MPI-enabled package uses `MPI_Wtime()` as its build-default clock
 and its MPI summary/report entry points use MPI collectives, so pre-init or
 post-finalize use is outside the supported runtime contract.
+The explicit `ftimer_openmp_t` worker runtime is the exception to the clock
+rule above: it currently uses the non-MPI wall clock because the stored
+communicator is reserved for future hybrid reductions.
 
 `init(comm=...)` stores the selected communicator as a non-owning handle. The
 selected communicator is an `mpi_f08` `type(MPI_Comm)` value; legacy integer

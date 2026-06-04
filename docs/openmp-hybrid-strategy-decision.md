@@ -17,9 +17,10 @@ The #241 MPI+OpenMP reduction model is recorded in
 The #242 user-facing timing modes and migration guide is recorded in
 [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
 Issue #268 landed the first public `ftimer_openmp` symbols for the opt-in
-surface: configuration, lifecycle, timer registration/lookup, and deferred
-timed-region/worker method names. True worker timing, OpenMP summaries, and
-MPI+OpenMP reductions remain deferred under the #237 umbrella.
+surface: configuration, lifecycle, timer registration/lookup, and placeholder
+timed-region/worker method names. Issue #269 then landed the first
+serial-lane / level-1 worker timing runtime behind those method names. OpenMP
+summaries and MPI+OpenMP reductions remain deferred under the #267 umbrella.
 
 Issue #160 asked whether fTimer should ever support real hybrid MPI+OpenMP
 timing beyond the documented master-thread-only carve-out.
@@ -32,16 +33,17 @@ Issue #237 now reopens the direction as staged work with child issues, starting
 with the API and compatibility model in #238 and the initial API symbols in
 #268.
 
-The current `FTIMER_USE_OPENMP=ON` behavior stays unchanged: timer operations in
-OpenMP parallel regions run only on the master thread, and worker-thread calls
-remain silent no-ops. fTimer should not add partial worker-thread timing beyond
-the current `ftimer_openmp` lifecycle/catalog surface until later issues define
-and implement the runtime, aggregation model, summary data contract, migration
-story, and test plan.
+The current `ftimer` / `ftimer_core` `FTIMER_USE_OPENMP=ON` behavior stays
+unchanged: timer operations in OpenMP parallel regions run only on the master
+thread, and worker-thread calls remain silent no-ops. The separate
+`ftimer_openmp_t` opt-in surface now owns the staged worker-timing path: #269
+implements serial-lane and level-1 worker `start_id`/`stop_id` timing, while
+later issues still own aggregation, summary data contracts, migration expansion,
+and MPI+OpenMP reductions.
 
-No child implementation issues were opened from #160. The later #237 umbrella is
-the place that now tracks staged design, API, runtime, summary, reduction,
-validation, and docs work before true worker timing code changes continue.
+No child implementation issues were opened from #160. The later OpenMP umbrella
+is the place that now tracks staged design, API, runtime, summary, reduction,
+validation, and docs work before broader worker timing support continues.
 
 ## Evidence
 

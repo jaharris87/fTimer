@@ -24,7 +24,6 @@ string(CONCAT expected_stderr
   "ftimer_openmp register_timer before init\n"
   "ftimer_openmp init with invalid configuration\n"
   "ftimer_openmp lookup_timer with unknown timer name\n"
-  "ftimer_openmp worker timing is not implemented yet\n"
 )
 if(NOT diagnostic_stderr_normalized STREQUAL expected_stderr)
   message(FATAL_ERROR

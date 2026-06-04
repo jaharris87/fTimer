@@ -39,7 +39,7 @@ program openmp_example
 
    ! Compatibility example: time the parallel region as a whole by starting and
    ! stopping outside the !$omp parallel block. docs/openmp-timing-modes.md
-   ! explains how this current pattern differs from future true worker timing.
+   ! also shows the separate ftimer_openmp_t API for opt-in worker timing.
    ! For asynchronous accelerator work, callers must synchronize device
    ! completion before stopping a timer.
    call ftimer_start("parallel_region", ierr=ierr)
@@ -86,9 +86,9 @@ program openmp_example
    if (trim(summary%entries(1)%name) /= "parallel_region") error stop "OpenMP example recorded the wrong timer"
    if (summary%entries(1)%call_count /= 1) error stop "OpenMP example expected one timer call"
 
-   print '(a)', "fTimer OpenMP support is limited to master-thread-only region bracketing."
-   print '(a)', "This example measures one parallel region wall-clock interval,"
-   print '(a)', "not per-thread timings."
+   print '(a)', "This procedural example measures one parallel region wall-clock interval,"
+   print '(a)', "using the master-thread-only compatibility path."
+   print '(a)', "Use ftimer_openmp_t for explicit opt-in worker timings."
    print '(a)', "See docs/openmp-timing-modes.md for the migration guide."
    print '(a,i0)', "OpenMP threads observed: ", nthreads
    print '(a,i0)', "Recorded timers: ", summary%num_entries
