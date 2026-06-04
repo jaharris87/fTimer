@@ -70,10 +70,12 @@ the rank/lane result families.
 use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, &
                          ftimer_openmp_config_t, &
                          ftimer_openmp_parallel_region_t, &
+                         ftimer_openmp_summary_t, &
                          ftimer_openmp_t
 
 type(ftimer_openmp_config_t) :: config
 type(ftimer_openmp_parallel_region_t) :: region
+type(ftimer_openmp_summary_t) :: summary
 type(ftimer_openmp_t) :: timer
 integer :: cell_update_id, ierr
 
