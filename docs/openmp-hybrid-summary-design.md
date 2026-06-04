@@ -22,11 +22,15 @@ Current local and strict hybrid type family:
 
 - `ftimer_openmp_summary_t` for local OpenMP aggregate summaries;
 - `ftimer_openmp_summary_entry_t` for logical timer/context aggregate rows;
-- optional `ftimer_openmp_lane_entry_t` detail records for explicit diagnostic
-  or detail exports, not for the default aggregate summary path;
-- `ftimer_mpi_openmp_summary_t` and related rank/entry types for strict hybrid
-  MPI+OpenMP reductions defined by #241 in
+- `ftimer_mpi_openmp_summary_t` for strict hybrid MPI+OpenMP reductions;
+- `ftimer_mpi_openmp_summary_entry_t` for strict hybrid logical timer/context
+  aggregate rows;
+- `ftimer_mpi_openmp_rank_t` for strict hybrid rank aggregate rows defined by
+  #241 in
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md).
+
+Optional lane-detail records remain future work and are not part of the
+current public local or strict hybrid structured-summary API.
 
 Current local and strict hybrid entry points:
 

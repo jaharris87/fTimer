@@ -129,11 +129,22 @@ set(expected_diagnostics
   "ftimer_openmp mpi_openmp_summary MPI reduction failed"
   "${expected_append_diagnostic}"
 )
-foreach(expected IN LISTS expected_diagnostics)
-  list(FIND ftimer_diagnostic_lines "${expected}" expected_index)
-  if(expected_index EQUAL -1)
+list(LENGTH expected_diagnostics expected_diagnostic_count)
+if(NOT ftimer_diagnostic_count EQUAL expected_diagnostic_count)
+  message(FATAL_ERROR
+    "Unexpected number of expected fTimer diagnostics: ${expected_diagnostic_count}.\n"
+    "stderr:\n${summary_stderr_normalized}"
+  )
+endif()
+math(EXPR last_expected_diagnostic_index "${expected_diagnostic_count} - 1")
+foreach(diagnostic_index RANGE 0 ${last_expected_diagnostic_index})
+  list(GET ftimer_diagnostic_lines ${diagnostic_index} actual_diagnostic)
+  list(GET expected_diagnostics ${diagnostic_index} expected_diagnostic)
+  if(NOT actual_diagnostic STREQUAL expected_diagnostic)
     message(FATAL_ERROR
-      "Expected fTimer diagnostic was missing: ${expected}\n"
+      "Unexpected fTimer diagnostic at index ${diagnostic_index}.\n"
+      "Expected: ${expected_diagnostic}\n"
+      "Actual: ${actual_diagnostic}\n"
       "stderr:\n${summary_stderr_normalized}"
     )
   endif()

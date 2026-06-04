@@ -3,7 +3,7 @@ program ftimer_openmp_mpi_summary_smoke
    use ftimer_openmp, only: ftimer_mpi_openmp_summary_t, ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MPI_INCON, &
-                           FTIMER_SUCCESS, ftimer_metadata_t, wp
+                           FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, ftimer_metadata_t, wp
    use mpi_f08, only: MPI_Barrier, MPI_COMM_WORLD, MPI_Comm_rank, MPI_Comm_size, &
                       MPI_Finalize, MPI_Init, MPI_SUCCESS
    use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, omp_set_num_threads
@@ -40,6 +40,8 @@ program ftimer_openmp_mpi_summary_smoke
    call check_strict_hybrid_eligible_lane_mismatch(rank)
    call check_strict_hybrid_varied_call_counts(rank)
    call check_strict_hybrid_worker_varied_call_counts(rank)
+   call check_strict_hybrid_worker_context_call_counts(rank)
+   call check_strict_hybrid_worker_diagnostic_ierr_preflight(rank)
    call check_strict_hybrid_worker_diagnostic_no_ierr_failure(rank)
    call check_strict_hybrid_csv_append_validation(rank)
 
@@ -891,6 +893,170 @@ contains
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 480)
    end subroutine check_strict_hybrid_worker_varied_call_counts
+
+   subroutine check_strict_hybrid_worker_context_call_counts(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      integer :: call_idx
+      integer :: child_id
+      integer :: child_under_a_idx
+      integer :: child_under_b_idx
+      integer :: ierr
+      integer :: lane_id
+      integer :: parent_a_id
+      integer :: parent_a_idx
+      integer :: parent_b_id
+      integer :: parent_b_idx
+      integer :: repeats_a
+      integer :: repeats_b
+      real(wp) :: duration
+      real(wp) :: total_time_a
+      real(wp) :: total_time_b
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 650)
+      fake_lane_time(0) = 1600.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 651)
+      call timer%register_timer('worker_parent_a_ctx', parent_a_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 652)
+      call timer%register_timer('worker_parent_b_ctx', parent_b_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 653)
+      call timer%register_timer('worker_shared_ctx', child_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 654)
+
+      fake_lane_time(0) = 1610.0_wp
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 655)
+!$omp parallel num_threads(2) default(shared) private(call_idx, duration, ierr, lane_id, &
+!$omp& repeats_a, repeats_b, total_time_a, total_time_b)
+      lane_id = 1 + omp_get_thread_num()
+      repeats_a = 1 + omp_get_thread_num() + 2*rank
+      if (rank == 0) then
+         total_time_a = merge(4.0_wp, 0.5_wp, omp_get_thread_num() == 0)
+      else
+         total_time_a = merge(6.0_wp, 2.0_wp, omp_get_thread_num() == 0)
+      end if
+      duration = total_time_a/real(repeats_a, wp)
+      fake_lane_time(lane_id) = 100.0_wp
+      call timer%start_id(parent_a_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 656
+      do call_idx = 1, repeats_a
+         fake_lane_time(lane_id) = 100.0_wp + 10.0_wp*real(call_idx, wp)
+         call timer%start_id(child_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 657
+         fake_lane_time(lane_id) = fake_lane_time(lane_id) + duration
+         call timer%stop_id(child_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 658
+      end do
+      call timer%stop_id(parent_a_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 659
+
+      repeats_b = merge(2, 5, rank == 0)
+      if (rank == 0) then
+         total_time_b = merge(1.0_wp, 7.0_wp, omp_get_thread_num() == 0)
+      else
+         total_time_b = merge(3.0_wp, 9.0_wp, omp_get_thread_num() == 0)
+      end if
+      duration = total_time_b/real(repeats_b, wp)
+      fake_lane_time(lane_id) = 300.0_wp
+      call timer%start_id(parent_b_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 660
+      do call_idx = 1, repeats_b
+         fake_lane_time(lane_id) = 300.0_wp + 10.0_wp*real(call_idx, wp)
+         call timer%start_id(child_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 661
+         fake_lane_time(lane_id) = fake_lane_time(lane_id) + duration
+         call timer%stop_id(child_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 662
+      end do
+      call timer%stop_id(parent_b_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 663
+!$omp end parallel
+      fake_lane_time(0) = 1620.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 664)
+
+      fake_lane_time(0) = 1625.0_wp
+      call timer%mpi_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 665)
+      call expect_int(summary%num_entries, 4, 666)
+      parent_a_idx = find_entry(summary, 'worker_parent_a_ctx', 0)
+      parent_b_idx = find_entry(summary, 'worker_parent_b_ctx', 0)
+      if (parent_a_idx <= 0) error stop 667
+      if (parent_b_idx <= 0) error stop 668
+      child_under_a_idx = find_entry(summary, 'worker_shared_ctx', summary%entries(parent_a_idx)%node_id)
+      child_under_b_idx = find_entry(summary, 'worker_shared_ctx', summary%entries(parent_b_idx)%node_id)
+      if (child_under_a_idx <= 0) error stop 669
+      if (child_under_b_idx <= 0) error stop 670
+      if (summary%entries(child_under_a_idx)%node_id == &
+          summary%entries(child_under_b_idx)%node_id) error stop 671
+      if (summary%entries(child_under_a_idx)%parent_id == &
+          summary%entries(child_under_b_idx)%parent_id) error stop 672
+      if (summary%entries(child_under_a_idx)%execution_domain /= 'openmp_level1_team') error stop 673
+      if (summary%entries(child_under_b_idx)%execution_domain /= 'openmp_level1_team') error stop 674
+
+      call expect_entry(summary, child_under_a_idx, rank_count=2, eligible_samples=4, &
+                        participating_samples=4, missing_samples=0, sum_inclusive=12.5_wp, &
+                        sum_self=12.5_wp, min_inclusive=0.5_wp, avg_inclusive=3.125_wp, &
+                        max_inclusive=6.0_wp, inclusive_imbalance=6.0_wp/3.125_wp, &
+                        min_self=0.5_wp, avg_self=3.125_wp, max_self=6.0_wp, &
+                        self_imbalance=6.0_wp/3.125_wp, min_calls=1_int64, &
+                        avg_calls=2.5_wp, max_calls=4_int64, stop_code=675)
+      call expect_entry(summary, child_under_b_idx, rank_count=2, eligible_samples=4, &
+                        participating_samples=4, missing_samples=0, sum_inclusive=20.0_wp, &
+                        sum_self=20.0_wp, min_inclusive=1.0_wp, avg_inclusive=5.0_wp, &
+                        max_inclusive=9.0_wp, inclusive_imbalance=9.0_wp/5.0_wp, &
+                        min_self=1.0_wp, avg_self=5.0_wp, max_self=9.0_wp, &
+                        self_imbalance=9.0_wp/5.0_wp, min_calls=2_int64, &
+                        avg_calls=3.5_wp, max_calls=5_int64, stop_code=694)
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 713)
+   end subroutine check_strict_hybrid_worker_context_call_counts
+
+   subroutine check_strict_hybrid_worker_diagnostic_ierr_preflight(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+      integer :: timer_id
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 720)
+      fake_lane_time(0) = 1700.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 721)
+      if (rank == 0) then
+         call timer%register_timer('diagnostic_rank0_path', timer_id, ierr=ierr)
+      else
+         call timer%register_timer('diagnostic_rank1_path', timer_id, ierr=ierr)
+      end if
+      call expect_status(ierr, FTIMER_SUCCESS, 722)
+      call run_all_worker_lanes(timer, region, timer_id, 1.0_wp, 2.0_wp, 723)
+
+!$omp parallel num_threads(2) default(shared)
+      if ((rank == 1) .and. (omp_get_thread_num() == 0)) call timer%start_id(-999)
+!$omp end parallel
+
+      call timer%mpi_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 725)
+      call expect_int(summary%num_entries, 0, 726)
+
+      call timer%mpi_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_MPI_INCON, 727)
+      call expect_int(summary%num_entries, 0, 728)
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 729)
+   end subroutine check_strict_hybrid_worker_diagnostic_ierr_preflight
 
    subroutine check_strict_hybrid_worker_diagnostic_no_ierr_failure(rank)
       integer, intent(in) :: rank
