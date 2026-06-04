@@ -427,5 +427,6 @@ implementation slice: current `ftimer_openmp_t` lifecycle/catalog calls,
 timed-region tokens, and id-first serial-lane / level-1 worker timing are real
 public behavior. That implementation is covered by smoke tests, installed
 consumer checks, and benchmark rows. Issue #270 extends that coverage to local
-OpenMP summaries/reports/CSV; hybrid rank/lane reductions remain deferred to
-later issues.
+OpenMP summaries/reports/CSV, and issue #271 adds strict MPI+OpenMP rank/lane
+summaries/reports/CSV. Sparse/union hybrid participation reductions remain
+deferred to later issues.

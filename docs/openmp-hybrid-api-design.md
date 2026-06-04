@@ -230,8 +230,9 @@ Existing users do not need to change source code.
   should put that choice behind an application-owned instrumentation facade.
 - Users adopting true OpenMP timing should explicitly import `ftimer_openmp`,
   construct a `ftimer_openmp_t`, initialize it with `config=...`, and later
-  consume `ftimer_openmp_summary_t` for stopped-run local OpenMP summaries.
-  Hybrid MPI+OpenMP summaries remain a later result family.
+  consume `ftimer_openmp_summary_t` for stopped-run local OpenMP summaries or
+  `ftimer_mpi_openmp_summary_t` for strict MPI+OpenMP rank/lane reductions.
+  Sparse/union hybrid participation summaries remain a later result family.
 
 The #242 migration guide keeps `examples/openmp_example.F90` as the
 compatibility example. Later implementation issues should add a separate true
@@ -269,16 +270,16 @@ behavior for that example to compile.
   [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md),
   including envelope time, summed work, participation, self-time boundaries,
   and CSV/report schemas.
-- #241 defines hybrid MPI+OpenMP reductions in
+- #241 defines strict hybrid MPI+OpenMP reductions and future sparse/union
+  participation policy in
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md)
   without changing current `mpi_summary()` or `mpi_union_summary()` semantics
   by accident.
 - #243 records the OpenMP/hybrid validation plan in
   [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
-  and adds current MPI+OpenMP compatibility smoke coverage. Later
-  implementation issues must add deterministic OpenMP and hybrid tests,
-  including compatibility tests that prove current worker no-op behavior still
-  holds for existing APIs.
+  and adds current MPI+OpenMP compatibility smoke coverage. Current strict
+  hybrid tests are deterministic and keep compatibility tests that prove current
+  worker no-op behavior still holds for existing APIs.
 - #242 records the user-facing timing modes and migration guide in
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Later
   implementation issues must add compile-checked true OpenMP and hybrid
@@ -290,7 +291,7 @@ behavior for that example to compile.
 - Adding per-thread stacks or thread-local timer objects in this design PR.
 - Changing current OpenMP guard semantics or test expectations.
 - Changing serial or pure-MPI public API names, signatures, or result types.
-- Adding hybrid MPI+OpenMP reductions before the summary model is settled.
+- Adding reduction APIs before the summary model is settled in this design slice.
 - Supporting OpenMP tasks, accelerator/device timing, hardware counters,
   profiler traces, automatic MPI barriers, or stable callback identity.
 

@@ -2,8 +2,8 @@ program ftimer_openmp_mpi_summary_smoke
    use, intrinsic :: iso_fortran_env, only: int64, iostat_end
    use ftimer_openmp, only: ftimer_mpi_openmp_summary_t, ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_MPI_INCON, FTIMER_SUCCESS, &
-                           ftimer_metadata_t, wp
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MPI_INCON, &
+                           FTIMER_SUCCESS, ftimer_metadata_t, wp
    use mpi_f08, only: MPI_Barrier, MPI_COMM_WORLD, MPI_Comm_rank, MPI_Comm_size, &
                       MPI_Finalize, MPI_Init, MPI_SUCCESS
    use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, omp_set_num_threads
@@ -28,8 +28,12 @@ program ftimer_openmp_mpi_summary_smoke
 
    call check_strict_hybrid_identical_participation(rank)
    call check_strict_hybrid_active_lane_failure(rank)
+   call check_strict_hybrid_open_region_failure(rank)
    call check_strict_hybrid_descriptor_mismatch(rank)
    call check_strict_hybrid_lane_participation_mismatch(rank)
+   call check_strict_hybrid_execution_domain_mismatch(rank)
+   call check_strict_hybrid_eligible_lane_mismatch(rank)
+   call check_strict_hybrid_csv_append_validation(rank)
 
    call MPI_Finalize(ierr)
    if (ierr /= MPI_SUCCESS) error stop 5
@@ -180,10 +184,28 @@ contains
          call expect_contains(csv_text, '"1","mpi_openmp","rank"', 62)
          call expect_contains(csv_text, '"1","mpi_openmp","entry"', 63)
          call expect_not_contains(csv_text, '"2","mpi","summary"', 64)
+         call expect_csv_record_count(csv_text, 'summary', 1, 65)
+         call expect_csv_record_count(csv_text, 'rank', 2, 66)
+         call expect_csv_record_count(csv_text, 'entry', 2, 67)
+         call expect_csv_record_field(csv_text, 'summary', '', 'num_ranks', '2', 68)
+         call expect_csv_record_field(csv_text, 'summary', '', 'num_entries', '2', 69)
+         call expect_csv_record_field(csv_text, 'rank', '0', 'sum_lane_root_inclusive_time', &
+                                      real_csv_text(22.0_wp), 70)
+         call expect_csv_record_field(csv_text, 'rank', '1', 'sum_lane_root_inclusive_time', &
+                                      real_csv_text(42.0_wp), 71)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'execution_domain', &
+                                      'openmp_level1_team', 72)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'eligible_rank_lane_sample_count', '4', 73)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'participating_rank_lane_sample_count', '4', 74)
+         call expect_csv_real_record_field(csv_text, 'entry', 'root', &
+                                          'sum_participating_lane_self_time', 43.0_wp, 75)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'min_participating_lane_call_count', '1', 76)
+         call expect_csv_record_field(csv_text, 'entry', 'child', 'parent_id', &
+                                      int_csv_text(summary%entries(root_idx)%node_id), 77)
       end if
 
       call timer%finalize(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 65)
+      call expect_status(ierr, FTIMER_SUCCESS, 78)
       if (rank == 0) then
          call delete_if_exists(report_path)
          call delete_if_exists(csv_path)
@@ -235,6 +257,33 @@ contains
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 79)
    end subroutine check_strict_hybrid_active_lane_failure
+
+   subroutine check_strict_hybrid_open_region_failure(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 110)
+      fake_lane_time(0) = 250.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 111)
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 112)
+      call timer%mpi_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 113)
+      call expect_int(summary%num_entries, 0, 114)
+      fake_lane_time(0) = 252.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 115)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 116)
+   end subroutine check_strict_hybrid_open_region_failure
 
    subroutine check_strict_hybrid_descriptor_mismatch(rank)
       integer, intent(in) :: rank
@@ -307,6 +356,163 @@ contains
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 99)
    end subroutine check_strict_hybrid_lane_participation_mismatch
+
+   subroutine check_strict_hybrid_execution_domain_mismatch(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+      integer :: timer_id
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 130)
+      fake_lane_time(0) = 500.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 131)
+      call timer%register_timer('same_domain_sensitive', timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 132)
+
+      if (rank == 0) then
+         fake_lane_time(0) = 1.0_wp
+         call timer%start_id(timer_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 133)
+         fake_lane_time(0) = 3.0_wp
+         call timer%stop_id(timer_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 134)
+      else
+         call run_all_worker_lanes(timer, region, timer_id, 1.0_wp, 3.0_wp, 135)
+      end if
+
+      call timer%mpi_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_MPI_INCON, 137)
+      call expect_int(summary%num_entries, 0, 138)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 139)
+   end subroutine check_strict_hybrid_execution_domain_mismatch
+
+   subroutine check_strict_hybrid_eligible_lane_mismatch(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+      integer :: timer_id
+
+      config%max_lanes = 4
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 150)
+      fake_lane_time(0) = 600.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 151)
+      call timer%register_timer('same_lane_sensitive', timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 152)
+
+      fake_lane_time(0) = 610.0_wp
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 153)
+!$omp parallel num_threads(merge(2, 3, rank == 0)) default(shared) private(ierr)
+      fake_lane_time(1 + omp_get_thread_num()) = 1.0_wp
+      call timer%start_id(timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 154
+      fake_lane_time(1 + omp_get_thread_num()) = 4.0_wp
+      call timer%stop_id(timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 155
+!$omp end parallel
+      fake_lane_time(0) = 616.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 156)
+
+      call timer%mpi_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_MPI_INCON, 157)
+      call expect_int(summary%num_entries, 0, 158)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 159)
+   end subroutine check_strict_hybrid_eligible_lane_mismatch
+
+   subroutine check_strict_hybrid_csv_append_validation(rank)
+      integer, intent(in) :: rank
+      character(len=*), parameter :: bad_record_path = 'mpi_openmp_summary_bad_record_append.csv'
+      character(len=*), parameter :: csv_path = 'mpi_openmp_summary_append.csv'
+      character(len=*), parameter :: truncated_path = 'mpi_openmp_summary_truncated_append.csv'
+      character(len=*), parameter :: unknown_record_path = 'mpi_openmp_summary_unknown_record_append.csv'
+      character(len=*), parameter :: wrong_header_path = 'mpi_openmp_summary_wrong_header_append.csv'
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      character(len=:), allocatable :: bad_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      integer :: ierr
+      integer :: timer_id
+
+      if (rank == 0) then
+         call delete_if_exists(csv_path)
+         call delete_if_exists(bad_record_path)
+         call delete_if_exists(truncated_path)
+         call delete_if_exists(unknown_record_path)
+         call delete_if_exists(wrong_header_path)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 180
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 181)
+      fake_lane_time(0) = 700.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 182)
+      call timer%register_timer('append', timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 183)
+      call run_all_worker_lanes(timer, region, timer_id, 1.0_wp, 3.0_wp, 184)
+
+      call timer%write_mpi_openmp_summary_csv(csv_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 186)
+      call timer%write_mpi_openmp_summary_csv(csv_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 187)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 188
+
+      if (rank == 0) then
+         csv_text = read_file_text(csv_path)
+         header = first_line(csv_text)
+         call expect_int(count_occurrences(csv_text, header), 1, 189)
+
+         bad_text = header//new_line('a')//'"1","mpi_openmp","summary"'//new_line('a')
+         call write_text_file(bad_record_path, bad_text)
+         bad_text = header//new_line('a')//'"1","mpi_openmp","summary",'
+         call write_text_file(truncated_path, bad_text)
+         bad_text = header//new_line('a')// &
+                    replace_first(csv_line_at(csv_text, 2), '"summary"', '"invalid"')//new_line('a')
+         call write_text_file(unknown_record_path, bad_text)
+         bad_text = 'format_version,summary_kind,record_type'//new_line('a')
+         call write_text_file(wrong_header_path, bad_text)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 190
+
+      call timer%write_mpi_openmp_summary_csv(bad_record_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 191)
+      call timer%write_mpi_openmp_summary_csv(truncated_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 192)
+      call timer%write_mpi_openmp_summary_csv(unknown_record_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 193)
+      call timer%write_mpi_openmp_summary_csv(wrong_header_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 194)
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 195)
+      if (rank == 0) then
+         call delete_if_exists(csv_path)
+         call delete_if_exists(bad_record_path)
+         call delete_if_exists(truncated_path)
+         call delete_if_exists(unknown_record_path)
+         call delete_if_exists(wrong_header_path)
+      end if
+   end subroutine check_strict_hybrid_csv_append_validation
 
    subroutine run_all_worker_lanes(timer, region, timer_id, start_time, stop_time, stop_code)
       type(ftimer_openmp_t), intent(inout) :: timer
@@ -461,6 +667,289 @@ contains
       if (index(text, needle) > 0) error stop stop_code
    end subroutine expect_not_contains
 
+   subroutine expect_csv_record_count(csv_text, record_type, expected, stop_code)
+      character(len=*), intent(in) :: csv_text
+      character(len=*), intent(in) :: record_type
+      integer, intent(in) :: expected
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: candidate
+      integer :: count
+      integer :: line_no
+      integer :: record_type_col
+
+      record_type_col = csv_column_index(first_line(csv_text), 'record_type')
+      if (record_type_col <= 0) error stop stop_code
+      count = 0
+      line_no = 2
+      do
+         candidate = csv_line_at(csv_text, line_no)
+         if (len(candidate) <= 0) exit
+         if (csv_field_value(candidate, record_type_col) == record_type) count = count + 1
+         line_no = line_no + 1
+      end do
+      if (count /= expected) error stop stop_code
+   end subroutine expect_csv_record_count
+
+   subroutine expect_csv_record_field(csv_text, record_type, selector, column, expected, stop_code)
+      character(len=*), intent(in) :: csv_text
+      character(len=*), intent(in) :: record_type
+      character(len=*), intent(in) :: selector
+      character(len=*), intent(in) :: column
+      character(len=*), intent(in) :: expected
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: row
+      integer :: column_idx
+
+      header = first_line(csv_text)
+      row = find_csv_record(csv_text, record_type, selector)
+      if (len(row) <= 0) error stop stop_code
+      column_idx = csv_column_index(header, column)
+      if (column_idx <= 0) error stop stop_code
+      if (csv_field_value(row, column_idx) /= expected) error stop stop_code
+   end subroutine expect_csv_record_field
+
+   subroutine expect_csv_real_record_field(csv_text, record_type, selector, column, expected, stop_code)
+      character(len=*), intent(in) :: csv_text
+      character(len=*), intent(in) :: record_type
+      character(len=*), intent(in) :: selector
+      character(len=*), intent(in) :: column
+      real(wp), intent(in) :: expected
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: field_text
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: row
+      integer :: column_idx
+      integer :: io
+      real(wp) :: actual
+
+      header = first_line(csv_text)
+      row = find_csv_record(csv_text, record_type, selector)
+      if (len(row) <= 0) error stop stop_code
+      column_idx = csv_column_index(header, column)
+      if (column_idx <= 0) error stop stop_code
+      field_text = csv_field_value(row, column_idx)
+      read (field_text, *, iostat=io) actual
+      if (io /= 0) error stop stop_code
+      call expect_time(actual, expected, stop_code)
+   end subroutine expect_csv_real_record_field
+
+   function find_csv_record(csv_text, record_type, selector) result(row)
+      character(len=*), intent(in) :: csv_text
+      character(len=*), intent(in) :: record_type
+      character(len=*), intent(in) :: selector
+      character(len=:), allocatable :: row
+      character(len=:), allocatable :: candidate
+      character(len=:), allocatable :: header
+      integer :: line_no
+      integer :: name_col
+      integer :: rank_col
+      integer :: record_type_col
+
+      row = ''
+      header = first_line(csv_text)
+      record_type_col = csv_column_index(header, 'record_type')
+      rank_col = csv_column_index(header, 'rank')
+      name_col = csv_column_index(header, 'name')
+      if (record_type_col <= 0) return
+      line_no = 2
+      do
+         candidate = csv_line_at(csv_text, line_no)
+         if (len(candidate) <= 0) exit
+         if (csv_field_value(candidate, record_type_col) == record_type) then
+            select case (record_type)
+            case ('summary')
+               if (len_trim(selector) == 0) then
+                  row = candidate
+                  return
+               end if
+            case ('rank')
+               if ((rank_col > 0) .and. (csv_field_value(candidate, rank_col) == selector)) then
+                  row = candidate
+                  return
+               end if
+            case ('entry')
+               if ((name_col > 0) .and. (csv_field_value(candidate, name_col) == selector)) then
+                  row = candidate
+                  return
+               end if
+            end select
+         end if
+         line_no = line_no + 1
+      end do
+   end function find_csv_record
+
+   integer function csv_column_index(header, column_name) result(idx)
+      character(len=*), intent(in) :: header
+      character(len=*), intent(in) :: column_name
+      integer :: column
+      integer :: pos
+
+      idx = 0
+      column = 1
+      pos = 1
+      do while (pos <= len_trim(header))
+         if (csv_field_value(header, column) == column_name) then
+            idx = column
+            return
+         end if
+         column = column + 1
+         pos = next_csv_field_start(header, pos)
+         if (pos <= 0) exit
+      end do
+   end function csv_column_index
+
+   integer function next_csv_field_start(line, start_pos) result(next_pos)
+      character(len=*), intent(in) :: line
+      integer, intent(in) :: start_pos
+      integer :: i
+      logical :: in_quotes
+      logical :: pending_quote
+
+      next_pos = 0
+      in_quotes = .false.
+      pending_quote = .false.
+      i = start_pos
+      do while (i <= len_trim(line))
+         if (pending_quote) then
+            pending_quote = .false.
+            if (line(i:i) == '"') then
+               i = i + 1
+               cycle
+            end if
+            in_quotes = .false.
+         end if
+         if (line(i:i) == '"') then
+            if (in_quotes) then
+               pending_quote = .true.
+            else
+               in_quotes = .true.
+            end if
+         else if ((line(i:i) == ',') .and. (.not. in_quotes)) then
+            next_pos = i + 1
+            return
+         end if
+         i = i + 1
+      end do
+   end function next_csv_field_start
+
+   function csv_field_value(line, column) result(value)
+      character(len=*), intent(in) :: line
+      integer, intent(in) :: column
+      character(len=:), allocatable :: value
+      integer :: current_column
+      integer :: i
+      logical :: in_quotes
+      logical :: pending_quote
+
+      value = ''
+      current_column = 1
+      in_quotes = .false.
+      pending_quote = .false.
+      i = 1
+      do while (i <= len_trim(line))
+         if (pending_quote) then
+            pending_quote = .false.
+            if (line(i:i) == '"') then
+               if (current_column == column) value = value//'"'
+               i = i + 1
+               cycle
+            end if
+            in_quotes = .false.
+         end if
+         if (line(i:i) == '"') then
+            if (in_quotes) then
+               pending_quote = .true.
+            else
+               in_quotes = .true.
+            end if
+         else if ((line(i:i) == ',') .and. (.not. in_quotes)) then
+            if (current_column == column) return
+            current_column = current_column + 1
+         else if (current_column == column) then
+            value = value//line(i:i)
+         end if
+         i = i + 1
+      end do
+   end function csv_field_value
+
+   function first_line(text) result(line)
+      character(len=*), intent(in) :: text
+      character(len=:), allocatable :: line
+
+      line = csv_line_at(text, 1)
+   end function first_line
+
+   function csv_line_at(text, line_no) result(line)
+      character(len=*), intent(in) :: text
+      integer, intent(in) :: line_no
+      character(len=:), allocatable :: line
+      integer :: current_line
+      integer :: i
+
+      line = ''
+      current_line = 1
+      do i = 1, len(text)
+         if (text(i:i) == new_line('a')) then
+            if (current_line == line_no) return
+            current_line = current_line + 1
+            cycle
+         end if
+         if (current_line == line_no) line = line//text(i:i)
+      end do
+   end function csv_line_at
+
+   integer function count_occurrences(text, needle) result(count)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: needle
+      integer :: pos
+      integer :: start
+
+      count = 0
+      if (len(needle) <= 0) return
+      start = 1
+      do
+         pos = index(text(start:), needle)
+         if (pos <= 0) exit
+         count = count + 1
+         start = start + pos + len(needle) - 1
+         if (start > len(text)) exit
+      end do
+   end function count_occurrences
+
+   function replace_first(text, old, new) result(replaced)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: old
+      character(len=*), intent(in) :: new
+      character(len=:), allocatable :: replaced
+      integer :: pos
+
+      pos = index(text, old)
+      if (pos <= 0) then
+         replaced = text
+      else
+         replaced = text(:pos - 1)//new//text(pos + len(old):)
+      end if
+   end function replace_first
+
+   function int_csv_text(value) result(text)
+      integer, intent(in) :: value
+      character(len=:), allocatable :: text
+      character(len=32) :: buffer
+
+      write (buffer, '(i0)') value
+      text = trim(buffer)
+   end function int_csv_text
+
+   function real_csv_text(value) result(text)
+      real(wp), intent(in) :: value
+      character(len=:), allocatable :: text
+      character(len=48) :: buffer
+
+      write (buffer, '(es32.17e4)') value
+      text = trim(adjustl(buffer))
+   end function real_csv_text
+
    function read_file_text(path) result(text)
       character(len=*), intent(in) :: path
       character(len=:), allocatable :: text
@@ -479,6 +968,20 @@ contains
       end do
       close (unit)
    end function read_file_text
+
+   subroutine write_text_file(path, text)
+      character(len=*), intent(in) :: path
+      character(len=*), intent(in) :: text
+      integer :: io
+      integer :: unit
+
+      open (newunit=unit, file=path, status='replace', action='write', iostat=io)
+      if (io /= 0) error stop 202
+      write (unit, '(a)', advance='no', iostat=io) text
+      if (io /= 0) error stop 203
+      close (unit, iostat=io)
+      if (io /= 0) error stop 204
+   end subroutine write_text_file
 
    subroutine delete_if_exists(path)
       character(len=*), intent(in) :: path

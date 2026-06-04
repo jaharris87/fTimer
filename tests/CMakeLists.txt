@@ -64,6 +64,13 @@ if(FTIMER_BUILD_SMOKE_TESTS)
     add_test(NAME ftimer_openmp_mpi_summary_smoke COMMAND ${ftimer_openmp_mpi_summary_command})
     set_tests_properties(ftimer_openmp_mpi_summary_smoke PROPERTIES LABELS "mpi;openmp")
   endif()
+
+  if(NOT FTIMER_USE_MPI)
+    add_executable(ftimer_openmp_mpi_disabled_smoke test_openmp_mpi_disabled_smoke.F90)
+    target_link_libraries(ftimer_openmp_mpi_disabled_smoke PRIVATE ftimer)
+    add_test(NAME ftimer_openmp_mpi_disabled_smoke COMMAND ftimer_openmp_mpi_disabled_smoke)
+    set_tests_properties(ftimer_openmp_mpi_disabled_smoke PROPERTIES LABELS "openmp")
+  endif()
 endif()
 
 function(ftimer_add_installed_consumer_test test_name test_binary_dir)

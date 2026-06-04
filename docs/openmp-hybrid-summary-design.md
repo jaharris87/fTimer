@@ -381,7 +381,8 @@ tests for:
 - active worker timers, failed timed-region close diagnostics, and
   stopped-run-only OpenMP summary/report errors;
 - report and CSV golden output for local OpenMP summaries;
-- hybrid MPI+OpenMP reductions with differing rank/lane participation;
+- strict MPI+OpenMP descriptor mismatch cases and future sparse/union hybrid
+  reductions with differing rank/lane participation;
 - compatibility tests proving existing `get_summary()`, `mpi_summary()`,
   `mpi_union_summary()`, and `FTIMER_USE_OPENMP=ON` master-thread-only behavior
   are unchanged.

@@ -6,9 +6,11 @@ module ftimer_openmp
                            FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
                            ftimer_call_stack_t, ftimer_clock_func, ftimer_metadata_t, ftimer_segment_t, wp
 #ifdef FTIMER_USE_MPI
-   use mpi_f08, only: MPI_Allgather, MPI_Allreduce, MPI_Bcast, MPI_Comm, MPI_COMM_WORLD, MPI_Datatype, &
-                      MPI_Comm_rank, MPI_Comm_size, MPI_INTEGER, MPI_MAX, MPI_MIN, MPI_SUCCESS, MPI_SUM, &
-                      MPI_TYPECLASS_INTEGER, MPI_TYPECLASS_REAL, MPI_Type_match_size, MPI_Type_size
+   use mpi_f08, only: MPI_Allgather, MPI_Allreduce, MPI_Bcast, MPI_Comm, MPI_COMM_SELF, MPI_COMM_WORLD, &
+                      MPI_Datatype, MPI_DATATYPE_NULL, MPI_Errhandler, MPI_Errhandler_free, MPI_ERRORS_RETURN, &
+                      MPI_Comm_get_errhandler, MPI_Comm_rank, MPI_Comm_set_errhandler, MPI_Comm_size, &
+                      MPI_INTEGER, MPI_MAX, MPI_MIN, MPI_SUCCESS, MPI_SUM, MPI_TYPECLASS_INTEGER, &
+                      MPI_TYPECLASS_REAL, MPI_Type_match_size, MPI_Type_size
 #endif
 #ifdef FTIMER_USE_OPENMP
    use omp_lib, only: omp_get_level, omp_get_max_threads, omp_get_num_threads, omp_get_thread_num, omp_in_parallel
@@ -2022,36 +2024,73 @@ contains
       integer, intent(out) :: status
       character(len=*), intent(out) :: diagnostic
 #ifdef FTIMER_USE_MPI
+      logical :: cleanup_ok
       integer :: int64_size
       integer :: mpierr
       integer :: type_size
+      type(MPI_Errhandler) :: saved_errhandler
       integer :: wp_size
 
       diagnostic = ''
+      cleanup_ok = .true.
       wp_size = storage_size(1.0_wp)/8
       int64_size = storage_size(0_int64)/8
-      call MPI_Type_match_size(MPI_TYPECLASS_REAL, wp_size, mpi_wp_type, mpierr)
+      if ((8*wp_size /= storage_size(1.0_wp)) .or. (8*int64_size /= storage_size(0_int64))) then
+         status = FTIMER_ERR_UNKNOWN
+         diagnostic = &
+            "ftimer_openmp mpi_openmp_summary could not map real(wp) or integer(int64) to whole bytes"
+         return
+      end if
+
+      call MPI_Comm_get_errhandler(MPI_COMM_SELF, saved_errhandler, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
+         diagnostic = &
+            "ftimer_openmp mpi_openmp_summary could not inspect MPI_COMM_SELF error handler"
+         return
+      end if
+
+      call MPI_Comm_set_errhandler(MPI_COMM_SELF, MPI_ERRORS_RETURN, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         diagnostic = &
+            "ftimer_openmp mpi_openmp_summary could not enable MPI error returns before datatype validation"
+         call free_mpi_openmp_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+         return
+      end if
+
+      call MPI_Type_match_size(MPI_TYPECLASS_REAL, wp_size, mpi_wp_type, mpierr)
+      if ((mpierr /= MPI_SUCCESS) .or. (mpi_wp_type%MPI_VAL == MPI_DATATYPE_NULL%MPI_VAL)) then
+         status = FTIMER_ERR_UNKNOWN
          diagnostic = "ftimer_openmp mpi_openmp_summary could not find an MPI real datatype matching real(wp)"
+         call restore_mpi_openmp_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
          return
       end if
       call MPI_Type_size(mpi_wp_type, type_size, mpierr)
       if ((mpierr /= MPI_SUCCESS) .or. (type_size /= wp_size)) then
          status = FTIMER_ERR_UNKNOWN
          diagnostic = "ftimer_openmp mpi_openmp_summary MPI real datatype size does not match real(wp)"
+         call restore_mpi_openmp_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
          return
       end if
       call MPI_Type_match_size(MPI_TYPECLASS_INTEGER, int64_size, mpi_int64_type, mpierr)
-      if (mpierr /= MPI_SUCCESS) then
+      if ((mpierr /= MPI_SUCCESS) .or. (mpi_int64_type%MPI_VAL == MPI_DATATYPE_NULL%MPI_VAL)) then
          status = FTIMER_ERR_UNKNOWN
          diagnostic = "ftimer_openmp mpi_openmp_summary could not find an MPI integer datatype matching integer(int64)"
+         call restore_mpi_openmp_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
          return
       end if
       call MPI_Type_size(mpi_int64_type, type_size, mpierr)
       if ((mpierr /= MPI_SUCCESS) .or. (type_size /= int64_size)) then
          status = FTIMER_ERR_UNKNOWN
          diagnostic = "ftimer_openmp mpi_openmp_summary MPI integer datatype size does not match integer(int64)"
+         call restore_mpi_openmp_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+         return
+      end if
+
+      call restore_mpi_openmp_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+      if (.not. cleanup_ok) then
+         status = FTIMER_ERR_UNKNOWN
          return
       end if
       status = FTIMER_SUCCESS
@@ -2062,6 +2101,54 @@ contains
       status = FTIMER_ERR_NOT_IMPLEMENTED
 #endif
    end subroutine resolve_mpi_openmp_datatypes
+
+#ifdef FTIMER_USE_MPI
+   subroutine restore_mpi_openmp_comm_self_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+      type(MPI_Errhandler), intent(inout) :: saved_errhandler
+      logical, intent(out) :: cleanup_ok
+      character(len=*), intent(inout) :: diagnostic
+      character(len=256) :: original_diagnostic
+      integer :: mpierr
+
+      cleanup_ok = .true.
+      original_diagnostic = diagnostic
+      call MPI_Comm_set_errhandler(MPI_COMM_SELF, saved_errhandler, mpierr)
+      if (mpierr /= MPI_SUCCESS) cleanup_ok = .false.
+      if (mpierr /= MPI_SUCCESS) &
+         call append_mpi_openmp_datatype_diagnostic(original_diagnostic, &
+                                                    "could not restore MPI_COMM_SELF error handler", &
+                                                    diagnostic)
+      call free_mpi_openmp_errhandler(saved_errhandler, cleanup_ok, diagnostic)
+   end subroutine restore_mpi_openmp_comm_self_errhandler
+
+   subroutine free_mpi_openmp_errhandler(errhandler, cleanup_ok, diagnostic)
+      type(MPI_Errhandler), intent(inout) :: errhandler
+      logical, intent(inout) :: cleanup_ok
+      character(len=*), intent(inout) :: diagnostic
+      character(len=256) :: original_diagnostic
+      integer :: mpierr
+
+      original_diagnostic = diagnostic
+      call MPI_Errhandler_free(errhandler, mpierr)
+      if (mpierr /= MPI_SUCCESS) cleanup_ok = .false.
+      if (mpierr /= MPI_SUCCESS) &
+         call append_mpi_openmp_datatype_diagnostic(original_diagnostic, &
+                                                    "could not free saved MPI error handler", &
+                                                    diagnostic)
+   end subroutine free_mpi_openmp_errhandler
+
+   subroutine append_mpi_openmp_datatype_diagnostic(original_diagnostic, cleanup_diagnostic, diagnostic)
+      character(len=*), intent(in) :: original_diagnostic
+      character(len=*), intent(in) :: cleanup_diagnostic
+      character(len=*), intent(inout) :: diagnostic
+
+      if (len_trim(original_diagnostic) > 0) then
+         diagnostic = trim(original_diagnostic)//"; also "//trim(cleanup_diagnostic)
+      else
+         diagnostic = "ftimer_openmp mpi_openmp_summary "//trim(cleanup_diagnostic)
+      end if
+   end subroutine append_mpi_openmp_datatype_diagnostic
+#endif
 
    subroutine format_mpi_openmp_mismatch_diagnostic(mismatch_flags, reason, diagnostic)
       integer, intent(in) :: mismatch_flags(:)
@@ -2447,9 +2534,21 @@ contains
       character(len=1) :: ch
       character(len=:), allocatable :: expected_header
       character(len=:), allocatable :: header_line
+      character(len=:), allocatable :: record_text
+      character(len=1) :: last_char
+      integer :: expected_field_count
       integer :: io
+      integer :: record_field_count
+      integer :: record_prefix_limit
       integer :: unit
       logical :: exists
+      logical :: after_quoted_field
+      logical :: field_has_content
+      logical :: in_quotes
+      logical :: pending_record_cr
+      logical :: pending_quote
+      logical :: reading_header
+      logical :: saw_any_char
 
       include_header = .true.
       status = FTIMER_SUCCESS
@@ -2460,13 +2559,27 @@ contains
       if (.not. exists) return
 
       expected_header = mpi_openmp_csv_header_line()
+      expected_field_count = openmp_csv_field_count(expected_header)
       header_line = ''
+      record_text = ''
+      record_prefix_limit = 64
+      record_field_count = 1
+      last_char = ''
+      reading_header = .true.
+      after_quoted_field = .false.
+      field_has_content = .false.
+      in_quotes = .false.
+      pending_record_cr = .false.
+      pending_quote = .false.
+      saw_any_char = .false.
+
       open (newunit=unit, file=filename, status='old', access='stream', form='unformatted', &
             action='read', iostat=io, iomsg=iomsg)
       if (io /= 0) then
          status = FTIMER_ERR_IO
          return
       end if
+
       do
          read (unit, iostat=io, iomsg=iomsg) ch
          if (io == iostat_end) exit
@@ -2475,19 +2588,145 @@ contains
             status = FTIMER_ERR_IO
             return
          end if
-         if (ch == new_line('a')) exit
-         header_line = header_line//ch
-         if (len(header_line) > len(expected_header) + 1) exit
+
+         last_char = ch
+         saw_any_char = .true.
+
+         if (reading_header) then
+            if (ch == new_line('a')) then
+               reading_header = .false.
+               call strip_openmp_trailing_carriage_return(header_line)
+               if ((len(header_line) /= len(expected_header)) .or. (header_line /= expected_header)) then
+                  close (unit)
+                  status = FTIMER_ERR_IO
+                  iomsg = 'existing MPI+OpenMP summary CSV header does not match format version 1'
+                  return
+               end if
+            else
+               header_line = header_line//ch
+               if (len(header_line) > len(expected_header) + 1) then
+                  close (unit)
+                  status = FTIMER_ERR_IO
+                  iomsg = 'existing MPI+OpenMP summary CSV header does not match format version 1'
+                  return
+               end if
+            end if
+            cycle
+         end if
+
+         if (pending_record_cr) then
+            if (ch /= new_line('a')) then
+               close (unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing MPI+OpenMP summary CSV records contain a bare carriage return'
+               return
+            end if
+            pending_record_cr = .false.
+         end if
+
+         if (pending_quote) then
+            if (ch == '"') then
+               pending_quote = .false.
+               call append_limited_openmp_csv_record_prefix(record_text, ch, record_prefix_limit)
+               cycle
+            end if
+            in_quotes = .false.
+            pending_quote = .false.
+            after_quoted_field = .true.
+         end if
+
+         if ((ch == achar(13)) .and. (.not. in_quotes)) then
+            pending_record_cr = .true.
+            cycle
+         end if
+
+         if (after_quoted_field) then
+            if ((ch /= ',') .and. (ch /= new_line('a'))) then
+               close (unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing MPI+OpenMP summary CSV records contain malformed quoted fields'
+               return
+            end if
+         end if
+
+         if ((ch == new_line('a')) .and. (.not. in_quotes)) then
+            call strip_openmp_trailing_carriage_return(record_text)
+            if ((record_field_count /= expected_field_count) .or. &
+                (.not. mpi_openmp_csv_record_has_valid_prefix(record_text))) then
+               close (unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing MPI+OpenMP summary CSV records do not match format version 1'
+               return
+            end if
+            record_text = ''
+            record_field_count = 1
+            after_quoted_field = .false.
+            field_has_content = .false.
+            cycle
+         end if
+
+         call append_limited_openmp_csv_record_prefix(record_text, ch, record_prefix_limit)
+
+         if ((ch == ',') .and. (.not. in_quotes)) then
+            record_field_count = record_field_count + 1
+            if (after_quoted_field) after_quoted_field = .false.
+            field_has_content = .false.
+            cycle
+         end if
+
+         if (ch == '"') then
+            if (in_quotes) then
+               pending_quote = .true.
+            else if (field_has_content) then
+               close (unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing MPI+OpenMP summary CSV records contain malformed quoted fields'
+               return
+            else
+               in_quotes = .true.
+               after_quoted_field = .false.
+            end if
+         else if (.not. in_quotes) then
+            field_has_content = .true.
+         end if
       end do
       close (unit)
-      call strip_openmp_trailing_carriage_return(header_line)
-      if ((len(header_line) /= len(expected_header)) .or. (header_line /= expected_header)) then
+
+      if (.not. saw_any_char) return
+
+      if (last_char /= new_line('a')) then
          status = FTIMER_ERR_IO
-         iomsg = 'existing MPI+OpenMP summary CSV header does not match format version 1'
+         iomsg = 'existing MPI+OpenMP summary CSV append target does not end with a newline'
          return
       end if
+
+      if (in_quotes) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing MPI+OpenMP summary CSV records contain an unterminated quoted field'
+         return
+      end if
+
+      if (pending_record_cr) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing MPI+OpenMP summary CSV records contain a bare carriage return'
+         return
+      end if
+
       include_header = .false.
    end subroutine get_mpi_openmp_csv_header_mode
+
+   logical function mpi_openmp_csv_record_has_valid_prefix(line) result(matches)
+      character(len=*), intent(in) :: line
+
+      matches = openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION// &
+                                   '","mpi_openmp","summary",') .or. &
+                openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION// &
+                                   '","mpi_openmp","metadata",') .or. &
+                openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION// &
+                                   '","mpi_openmp","rank",') .or. &
+                openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION// &
+                                   '","mpi_openmp","entry",')
+   end function mpi_openmp_csv_record_has_valid_prefix
 
    subroutine report_mpi_openmp_summary_error(self, ierr, status, diagnostic)
       class(ftimer_openmp_t), intent(inout) :: self

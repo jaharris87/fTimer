@@ -111,26 +111,31 @@ Opt-in lane-detail exports are not part of the current local OpenMP public
 surface. They should move into this matrix only after a dedicated detail result
 or diagnostic CSV mode exists.
 
-## Future MPI+OpenMP Reduction Matrix
+## MPI+OpenMP Reduction Matrix
 
-When #241's reduction contract is implemented, tests should cover at least two
-MPI ranks and at least two OpenMP lanes per rank for:
+Current strict hybrid tests cover at least two MPI ranks and multiple OpenMP
+lanes per rank for:
 
-- participation-aware hybrid summaries with all-rank/all-lane participation;
+- all-rank/all-eligible-lane participation;
+- rank-level imbalance fields;
+- strict descriptor mismatch failures, including descriptor names, execution
+  domain, and eligible lane structure;
+- missing eligible lane participation failures;
+- all-rank active-lane and open-region preflight returning
+  `FTIMER_ERR_ACTIVE` before descriptor or timing-data reductions;
+- all-rank structured result validity after successful hybrid reductions; and
+- hybrid report and CSV output, including append rejection against malformed or
+  incompatible hybrid schemas.
+
+Future sparse/union MPI+OpenMP participation tests should cover:
+
 - rank-conditional descriptors;
 - lane-conditional descriptors inside participating ranks;
 - different OpenMP team sizes across ranks under participation-aware policy;
-- strict-semantics validation failures for descriptor, eligible-lane, missing
-  rank, and missing-lane mismatches, even if strict remains internal or
-  adopter-driven rather than first public API;
-- all-rank active-lane preflight returning `FTIMER_ERR_ACTIVE` before descriptor
-  or timing-data reductions;
-- invalid worker-thread reduction calls failing locally without MPI calls;
-- all-rank structured result validity after successful hybrid reductions;
 - deterministic canonical descriptor ordering and `node_id`/`parent_id`
   assignment when local creation order differs across ranks; and
-- hybrid report and CSV golden output, including append rejection against local,
-  strict MPI, sparse MPI, and incompatible hybrid schemas.
+- participation-aware report and CSV output that is explicitly separate from
+  the strict hybrid schema.
 
 MPI+OpenMP validation must not add automatic barriers around timed user
 regions. Callers own synchronization when they want phase-aligned measurements.
@@ -148,9 +153,10 @@ Installed-package checks should verify the public package story at each stage:
 - current `ftimer_openmp` installed consumers for serial, MPI, OpenMP, and
   MPI+OpenMP package modes, proving that the lifecycle/catalog surface imports,
   links, validates keyword-only init shape, runs serial and timed worker
-  `start_id`/`stop_id`, preserves bounded worker diagnostics, and exercises
-  stopped-run local OpenMP summary/report/CSV entry points; and
-- strict hybrid summary/report/CSV smoke coverage once `FTIMER_USE_MPI=ON` and
+  `start_id`/`stop_id`, preserves bounded worker diagnostics, exercises
+  stopped-run local OpenMP summary/report/CSV entry points, and compile-calls
+  the strict hybrid summary API from installed MPI+OpenMP consumers; and
+- strict hybrid summary/report/CSV smoke coverage when `FTIMER_USE_MPI=ON` and
   `FTIMER_USE_OPENMP=ON` are enabled.
 
 Future sparse/union hybrid installed consumers should compile their documented
