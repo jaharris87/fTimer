@@ -35,6 +35,10 @@ string(FIND "${summary_stderr_normalized}"
   header_diagnostic_pos
 )
 string(FIND "${summary_stderr_normalized}"
+  "existing MPI+OpenMP summary CSV records do not match format version 1"
+  records_diagnostic_pos
+)
+string(FIND "${summary_stderr_normalized}"
   "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"
   active_diagnostic_pos
 )
@@ -69,6 +73,7 @@ string(REGEX MATCHALL
 )
 if(append_diagnostic_pos EQUAL -1 OR
    header_diagnostic_pos EQUAL -1 OR
+   records_diagnostic_pos EQUAL -1 OR
    active_diagnostic_pos EQUAL -1 OR
    descriptor_diagnostic_pos EQUAL -1 OR
    participation_diagnostic_pos EQUAL -1 OR
@@ -85,7 +90,7 @@ list(LENGTH descriptor_diagnostics descriptor_diagnostic_count)
 list(LENGTH participation_diagnostics participation_diagnostic_count)
 list(LENGTH worker_collective_diagnostics worker_collective_diagnostic_count)
 list(LENGTH worker_diagnostics worker_diagnostic_count)
-if(NOT append_diagnostic_count EQUAL 1 OR
+if(NOT append_diagnostic_count EQUAL 4 OR
    NOT active_diagnostic_count EQUAL 3 OR
    NOT descriptor_diagnostic_count EQUAL 1 OR
    NOT participation_diagnostic_count EQUAL 1 OR
@@ -102,15 +107,19 @@ endif()
 
 string(REGEX MATCHALL "ftimer_[^\n]*" ftimer_diagnostic_lines "${summary_stderr_line_scan}")
 list(LENGTH ftimer_diagnostic_lines ftimer_diagnostic_count)
-if(NOT ftimer_diagnostic_count EQUAL 7)
+if(NOT ftimer_diagnostic_count EQUAL 10)
   message(FATAL_ERROR
     "Unexpected number of fTimer diagnostics in stderr: ${ftimer_diagnostic_count}.\n"
     "stderr:\n${summary_stderr_normalized}"
   )
 endif()
-string(CONCAT expected_append_diagnostic
+string(CONCAT expected_append_header_diagnostic
   "ftimer_openmp write_mpi_openmp_summary_csv append validation failed: "
   "existing MPI+OpenMP summary CSV header does not match format version 1"
+)
+string(CONCAT expected_append_record_diagnostic
+  "ftimer_openmp write_mpi_openmp_summary_csv append validation failed: "
+  "existing MPI+OpenMP summary CSV records do not match format version 1"
 )
 string(CONCAT expected_descriptor_diagnostic
   "ftimer_openmp mpi_openmp_summary detected inconsistent strict hybrid descriptors "
@@ -127,7 +136,10 @@ set(expected_diagnostics
   "${expected_descriptor_diagnostic}"
   "${expected_participation_diagnostic}"
   "ftimer_openmp mpi_openmp_summary MPI reduction failed"
-  "${expected_append_diagnostic}"
+  "${expected_append_record_diagnostic}"
+  "${expected_append_record_diagnostic}"
+  "${expected_append_record_diagnostic}"
+  "${expected_append_header_diagnostic}"
 )
 list(LENGTH expected_diagnostics expected_diagnostic_count)
 if(NOT ftimer_diagnostic_count EQUAL expected_diagnostic_count)

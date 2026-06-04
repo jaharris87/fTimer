@@ -896,10 +896,14 @@ contains
 
    subroutine check_strict_hybrid_worker_context_call_counts(rank)
       integer, intent(in) :: rank
+      character(len=*), parameter :: csv_path = 'mpi_openmp_summary_worker_contexts.csv'
+      character(len=*), parameter :: report_path = 'mpi_openmp_summary_worker_contexts.txt'
       type(ftimer_mpi_openmp_summary_t) :: summary
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_parallel_region_t) :: region
       type(ftimer_openmp_t) :: timer
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: report_text
       integer :: call_idx
       integer :: child_id
       integer :: child_under_a_idx
@@ -915,6 +919,13 @@ contains
       real(wp) :: duration
       real(wp) :: total_time_a
       real(wp) :: total_time_b
+
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 649
 
       config%max_lanes = 3
       call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
@@ -1015,8 +1026,60 @@ contains
                         self_imbalance=9.0_wp/5.0_wp, min_calls=2_int64, &
                         avg_calls=3.5_wp, max_calls=5_int64, stop_code=694)
 
+      call timer%write_mpi_openmp_summary(report_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 714)
+      call timer%write_mpi_openmp_summary_csv(csv_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 715)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 716
+      if (rank == 0) then
+         report_text = read_file_text(report_path)
+         call expect_report_entry_count(report_text, 'worker_shared_ctx', 2, 717)
+         call expect_report_entry_line_by_values(report_text, 'worker_shared_ctx', 1, &
+                                                 12.5_wp, 3.125_wp, 6.0_wp, 2.5_wp, 718)
+         call expect_report_entry_line_by_values(report_text, 'worker_shared_ctx', 1, &
+                                                 20.0_wp, 5.0_wp, 9.0_wp, 3.5_wp, 719)
+
+         csv_text = read_file_text(csv_path)
+         call expect_csv_record_count(csv_text, 'entry', 4, 720)
+         call expect_csv_entry_field(csv_text, 'worker_shared_ctx', &
+                                     int_csv_text(summary%entries(parent_a_idx)%node_id), &
+                                     'node_id', int_csv_text(summary%entries(child_under_a_idx)%node_id), 721)
+         call expect_csv_entry_field(csv_text, 'worker_shared_ctx', &
+                                     int_csv_text(summary%entries(parent_a_idx)%node_id), &
+                                     'depth', '1', 722)
+         call expect_csv_entry_field(csv_text, 'worker_shared_ctx', &
+                                     int_csv_text(summary%entries(parent_a_idx)%node_id), &
+                                     'execution_domain', 'openmp_level1_team', 723)
+         call expect_csv_entry_real_field(csv_text, 'worker_shared_ctx', &
+                                          int_csv_text(summary%entries(parent_a_idx)%node_id), &
+                                          'sum_participating_lane_inclusive_time', 12.5_wp, 724)
+         call expect_csv_entry_real_field(csv_text, 'worker_shared_ctx', &
+                                          int_csv_text(summary%entries(parent_a_idx)%node_id), &
+                                          'avg_participating_lane_call_count', 2.5_wp, 725)
+         call expect_csv_entry_field(csv_text, 'worker_shared_ctx', &
+                                     int_csv_text(summary%entries(parent_b_idx)%node_id), &
+                                     'node_id', int_csv_text(summary%entries(child_under_b_idx)%node_id), 726)
+         call expect_csv_entry_field(csv_text, 'worker_shared_ctx', &
+                                     int_csv_text(summary%entries(parent_b_idx)%node_id), &
+                                     'depth', '1', 727)
+         call expect_csv_entry_field(csv_text, 'worker_shared_ctx', &
+                                     int_csv_text(summary%entries(parent_b_idx)%node_id), &
+                                     'execution_domain', 'openmp_level1_team', 728)
+         call expect_csv_entry_real_field(csv_text, 'worker_shared_ctx', &
+                                          int_csv_text(summary%entries(parent_b_idx)%node_id), &
+                                          'sum_participating_lane_inclusive_time', 20.0_wp, 729)
+         call expect_csv_entry_real_field(csv_text, 'worker_shared_ctx', &
+                                          int_csv_text(summary%entries(parent_b_idx)%node_id), &
+                                          'avg_participating_lane_call_count', 3.5_wp, 730)
+      end if
+
       call timer%finalize(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 713)
+      call expect_status(ierr, FTIMER_SUCCESS, 731)
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
    end subroutine check_strict_hybrid_worker_context_call_counts
 
    subroutine check_strict_hybrid_worker_diagnostic_ierr_preflight(rank)
@@ -1030,32 +1093,32 @@ contains
 
       config%max_lanes = 3
       call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 720)
+      call expect_status(ierr, FTIMER_SUCCESS, 740)
       fake_lane_time(0) = 1700.0_wp
       call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 721)
+      call expect_status(ierr, FTIMER_SUCCESS, 741)
       if (rank == 0) then
          call timer%register_timer('diagnostic_rank0_path', timer_id, ierr=ierr)
       else
          call timer%register_timer('diagnostic_rank1_path', timer_id, ierr=ierr)
       end if
-      call expect_status(ierr, FTIMER_SUCCESS, 722)
-      call run_all_worker_lanes(timer, region, timer_id, 1.0_wp, 2.0_wp, 723)
+      call expect_status(ierr, FTIMER_SUCCESS, 742)
+      call run_all_worker_lanes(timer, region, timer_id, 1.0_wp, 2.0_wp, 743)
 
 !$omp parallel num_threads(2) default(shared)
       if ((rank == 1) .and. (omp_get_thread_num() == 0)) call timer%start_id(-999)
 !$omp end parallel
 
       call timer%mpi_openmp_summary(summary, ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 725)
-      call expect_int(summary%num_entries, 0, 726)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 745)
+      call expect_int(summary%num_entries, 0, 746)
 
       call timer%mpi_openmp_summary(summary, ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_MPI_INCON, 727)
-      call expect_int(summary%num_entries, 0, 728)
+      call expect_status(ierr, FTIMER_ERR_MPI_INCON, 747)
+      call expect_int(summary%num_entries, 0, 748)
 
       call timer%finalize(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 729)
+      call expect_status(ierr, FTIMER_SUCCESS, 749)
    end subroutine check_strict_hybrid_worker_diagnostic_ierr_preflight
 
    subroutine check_strict_hybrid_worker_diagnostic_no_ierr_failure(rank)
@@ -1168,6 +1231,9 @@ contains
       call expect_status(ierr, FTIMER_ERR_IO, 193)
       call timer%write_mpi_openmp_summary_csv(wrong_header_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 194)
+      call timer%write_mpi_openmp_summary_csv(bad_record_path, append=.true.)
+      call timer%write_mpi_openmp_summary_csv(truncated_path, append=.true.)
+      call timer%write_mpi_openmp_summary_csv(unknown_record_path, append=.true.)
       call timer%write_mpi_openmp_summary_csv(wrong_header_path, append=.true.)
 
       call timer%finalize(ierr=ierr)
@@ -1366,6 +1432,84 @@ contains
       call expect_time(actual_avg_calls, avg_calls, stop_code)
    end subroutine expect_report_entry_line
 
+   subroutine expect_report_entry_count(report_text, name, expected, stop_code)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: expected
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: candidate
+      character(len=64) :: actual_name
+      integer :: count
+      integer :: io
+      integer :: line_no
+      integer :: max_line
+
+      count = 0
+      max_line = count_occurrences(report_text, new_line('a')) + 1
+      do line_no = 1, max_line
+         candidate = csv_line_at(report_text, line_no)
+         actual_name = ''
+         read (candidate, *, iostat=io) actual_name
+         if ((io == 0) .and. (trim(actual_name) == name)) count = count + 1
+      end do
+      call expect_int(count, expected, stop_code)
+   end subroutine expect_report_entry_count
+
+   subroutine expect_report_entry_line_by_values(report_text, name, depth, sum_inclusive, &
+                                                 avg_inclusive, max_inclusive, avg_calls, stop_code)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: depth
+      real(wp), intent(in) :: sum_inclusive
+      real(wp), intent(in) :: avg_inclusive
+      real(wp), intent(in) :: max_inclusive
+      real(wp), intent(in) :: avg_calls
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: candidate
+      character(len=64) :: actual_domain
+      character(len=64) :: actual_name
+      integer :: actual_indent
+      integer :: actual_missing
+      integer :: actual_ranks
+      integer :: actual_samples
+      integer :: found
+      integer :: first_nonblank
+      integer :: io
+      integer :: line_no
+      integer :: max_line
+      real(wp) :: actual_avg_calls
+      real(wp) :: actual_avg_inclusive
+      real(wp) :: actual_max_inclusive
+      real(wp) :: actual_min_inclusive
+      real(wp) :: actual_sum_inclusive
+      real(wp) :: actual_sum_self
+
+      found = 0
+      max_line = count_occurrences(report_text, new_line('a')) + 1
+      do line_no = 1, max_line
+         candidate = csv_line_at(report_text, line_no)
+         first_nonblank = verify(candidate, ' ')
+         if (first_nonblank <= 0) cycle
+         actual_indent = first_nonblank - 1
+         actual_name = ''
+         read (candidate, *, iostat=io) actual_name, actual_domain, actual_ranks, actual_samples, &
+            actual_missing, actual_sum_inclusive, actual_sum_self, actual_min_inclusive, &
+            actual_avg_inclusive, actual_max_inclusive, actual_avg_calls
+         if (io /= 0) cycle
+         if (trim(actual_name) /= name) cycle
+         if (trim(actual_domain) /= 'openmp_level1_team') cycle
+         if (actual_indent /= 2*depth) cycle
+         if (actual_ranks /= 2 .or. actual_samples /= 4 .or. actual_missing /= 0) cycle
+         if (abs(actual_sum_inclusive - sum_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_sum_self - sum_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_inclusive - avg_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_max_inclusive - max_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_calls - avg_calls) > 1.0e-9_wp) cycle
+         found = found + 1
+      end do
+      call expect_int(found, 1, stop_code)
+   end subroutine expect_report_entry_line_by_values
+
    subroutine expect_contains(text, needle, stop_code)
       character(len=*), intent(in) :: text
       character(len=*), intent(in) :: needle
@@ -1472,6 +1616,82 @@ contains
       if (io /= 0) error stop stop_code
       call expect_time(actual, expected, stop_code)
    end subroutine expect_csv_real_record_field
+
+   subroutine expect_csv_entry_field(csv_text, name, parent_id, column, expected, stop_code)
+      character(len=*), intent(in) :: csv_text
+      character(len=*), intent(in) :: name
+      character(len=*), intent(in) :: parent_id
+      character(len=*), intent(in) :: column
+      character(len=*), intent(in) :: expected
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: row
+      integer :: column_idx
+
+      header = first_line(csv_text)
+      row = find_csv_entry_record(csv_text, name, parent_id)
+      if (len(row) <= 0) error stop stop_code
+      column_idx = csv_column_index(header, column)
+      if (column_idx <= 0) error stop stop_code
+      if (csv_field_value(row, column_idx) /= expected) error stop stop_code
+   end subroutine expect_csv_entry_field
+
+   subroutine expect_csv_entry_real_field(csv_text, name, parent_id, column, expected, stop_code)
+      character(len=*), intent(in) :: csv_text
+      character(len=*), intent(in) :: name
+      character(len=*), intent(in) :: parent_id
+      character(len=*), intent(in) :: column
+      real(wp), intent(in) :: expected
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: field_text
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: row
+      integer :: column_idx
+      integer :: io
+      real(wp) :: actual
+
+      header = first_line(csv_text)
+      row = find_csv_entry_record(csv_text, name, parent_id)
+      if (len(row) <= 0) error stop stop_code
+      column_idx = csv_column_index(header, column)
+      if (column_idx <= 0) error stop stop_code
+      field_text = csv_field_value(row, column_idx)
+      read (field_text, *, iostat=io) actual
+      if (io /= 0) error stop stop_code
+      call expect_time(actual, expected, stop_code)
+   end subroutine expect_csv_entry_real_field
+
+   function find_csv_entry_record(csv_text, name, parent_id) result(row)
+      character(len=*), intent(in) :: csv_text
+      character(len=*), intent(in) :: name
+      character(len=*), intent(in) :: parent_id
+      character(len=:), allocatable :: row
+      character(len=:), allocatable :: candidate
+      character(len=:), allocatable :: header
+      integer :: line_no
+      integer :: name_col
+      integer :: parent_id_col
+      integer :: record_type_col
+
+      row = ''
+      header = first_line(csv_text)
+      record_type_col = csv_column_index(header, 'record_type')
+      parent_id_col = csv_column_index(header, 'parent_id')
+      name_col = csv_column_index(header, 'name')
+      if (record_type_col <= 0 .or. parent_id_col <= 0 .or. name_col <= 0) return
+      line_no = 2
+      do
+         candidate = csv_line_at(csv_text, line_no)
+         if (len(candidate) <= 0) exit
+         if (csv_field_value(candidate, record_type_col) == 'entry' .and. &
+             csv_field_value(candidate, name_col) == name .and. &
+             csv_field_value(candidate, parent_id_col) == parent_id) then
+            row = candidate
+            return
+         end if
+         line_no = line_no + 1
+      end do
+   end function find_csv_entry_record
 
    function find_csv_record(csv_text, record_type, selector) result(row)
       character(len=*), intent(in) :: csv_text
