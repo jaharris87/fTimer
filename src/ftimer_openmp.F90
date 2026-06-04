@@ -1318,7 +1318,7 @@ contains
             continue
          end if
       else if (local_status /= FTIMER_SUCCESS) then
-         did_drain = drain_worker_diagnostics(self)
+         did_drain = drain_worker_diagnostics_silently(self)
       end if
       call MPI_Allreduce(local_status, collective_status, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
@@ -4962,6 +4962,18 @@ contains
          call emit_worker_diagnostics(self)
       end if
    end function drain_worker_diagnostics
+
+   logical function drain_worker_diagnostics_silently(self, ierr) result(did_drain_with_ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+
+      did_drain_with_ierr = .false.
+      if ((self%queued_worker_diagnostics <= 0) .and. (self%worker_diagnostic_overflow <= 0)) return
+
+      if (present(ierr)) ierr = worker_diagnostic_status(self)
+      call clear_worker_diagnostics(self)
+      did_drain_with_ierr = .true.
+   end function drain_worker_diagnostics_silently
 
    subroutine queue_worker_diagnostic(self, code)
       class(ftimer_openmp_t), intent(inout) :: self

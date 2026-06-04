@@ -193,48 +193,52 @@ contains
          call expect_contains(report_text, '43.000000', 65)
          call expect_contains(report_text, '21.000000', 66)
          call expect_contains(report_text, '5.250000', 67)
+         call expect_report_entry_line(report_text, 'root', 2, 4, 0, 64.0_wp, 43.0_wp, &
+                                       10.0_wp, 16.0_wp, 22.0_wp, 1.0_wp, 68)
+         call expect_report_entry_line(report_text, 'child', 2, 4, 0, 21.0_wp, 21.0_wp, &
+                                       3.0_wp, 5.25_wp, 8.0_wp, 1.0_wp, 69)
 
          csv_text = read_file_text(csv_path)
-         call expect_contains(csv_text, 'summary_kind', 68)
-         call expect_contains(csv_text, 'mpi_openmp', 69)
-         call expect_contains(csv_text, 'eligible_rank_lane_sample_count', 70)
-         call expect_contains(csv_text, 'avg_participating_lane_pct_time', 71)
-         call expect_contains(csv_text, '"1","mpi_openmp","summary"', 72)
-         call expect_contains(csv_text, '"1","mpi_openmp","rank"', 73)
-         call expect_contains(csv_text, '"1","mpi_openmp","entry"', 74)
-         call expect_not_contains(csv_text, '"2","mpi","summary"', 75)
-         call expect_csv_record_count(csv_text, 'summary', 1, 76)
-         call expect_csv_record_count(csv_text, 'metadata', 1, 77)
-         call expect_csv_record_count(csv_text, 'rank', 2, 78)
-         call expect_csv_record_count(csv_text, 'entry', 2, 79)
-         call expect_csv_record_field(csv_text, 'summary', '', 'num_ranks', '2', 80)
-         call expect_csv_record_field(csv_text, 'summary', '', 'num_entries', '2', 81)
-         call expect_csv_real_record_field(csv_text, 'summary', '', 'min_rank_summary_window_time', 25.0_wp, 82)
-         call expect_csv_real_record_field(csv_text, 'summary', '', 'avg_rank_summary_window_time', 30.0_wp, 83)
-         call expect_csv_real_record_field(csv_text, 'summary', '', 'max_rank_summary_window_time', 35.0_wp, 84)
-         call expect_csv_record_field(csv_text, 'metadata', 'Case', 'value', 'strict hybrid', 85)
+         call expect_contains(csv_text, 'summary_kind', 70)
+         call expect_contains(csv_text, 'mpi_openmp', 71)
+         call expect_contains(csv_text, 'eligible_rank_lane_sample_count', 72)
+         call expect_contains(csv_text, 'avg_participating_lane_pct_time', 73)
+         call expect_contains(csv_text, '"1","mpi_openmp","summary"', 74)
+         call expect_contains(csv_text, '"1","mpi_openmp","rank"', 75)
+         call expect_contains(csv_text, '"1","mpi_openmp","entry"', 76)
+         call expect_not_contains(csv_text, '"2","mpi","summary"', 77)
+         call expect_csv_record_count(csv_text, 'summary', 1, 78)
+         call expect_csv_record_count(csv_text, 'metadata', 1, 79)
+         call expect_csv_record_count(csv_text, 'rank', 2, 80)
+         call expect_csv_record_count(csv_text, 'entry', 2, 81)
+         call expect_csv_record_field(csv_text, 'summary', '', 'num_ranks', '2', 82)
+         call expect_csv_record_field(csv_text, 'summary', '', 'num_entries', '2', 83)
+         call expect_csv_real_record_field(csv_text, 'summary', '', 'min_rank_summary_window_time', 25.0_wp, 84)
+         call expect_csv_real_record_field(csv_text, 'summary', '', 'avg_rank_summary_window_time', 30.0_wp, 85)
+         call expect_csv_real_record_field(csv_text, 'summary', '', 'max_rank_summary_window_time', 35.0_wp, 86)
+         call expect_csv_record_field(csv_text, 'metadata', 'Case', 'value', 'strict hybrid', 87)
          call expect_csv_record_field(csv_text, 'rank', '0', 'sum_lane_root_inclusive_time', &
-                                      real_csv_text(22.0_wp), 86)
+                                      real_csv_text(22.0_wp), 88)
          call expect_csv_record_field(csv_text, 'rank', '1', 'sum_lane_root_inclusive_time', &
-                                      real_csv_text(42.0_wp), 87)
-         call expect_csv_record_field(csv_text, 'rank', '0', 'observed_participating_lane_count', '2', 88)
-         call expect_csv_record_field(csv_text, 'rank', '1', 'configured_lane_capacity', '3', 89)
+                                      real_csv_text(42.0_wp), 89)
+         call expect_csv_record_field(csv_text, 'rank', '0', 'observed_participating_lane_count', '2', 90)
+         call expect_csv_record_field(csv_text, 'rank', '1', 'configured_lane_capacity', '3', 91)
          call expect_csv_record_field(csv_text, 'entry', 'root', 'execution_domain', &
-                                      'openmp_level1_team', 90)
-         call expect_csv_record_field(csv_text, 'entry', 'root', 'eligible_rank_lane_sample_count', '4', 91)
-         call expect_csv_record_field(csv_text, 'entry', 'root', 'participating_rank_lane_sample_count', '4', 92)
+                                      'openmp_level1_team', 92)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'eligible_rank_lane_sample_count', '4', 93)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'participating_rank_lane_sample_count', '4', 94)
          call expect_csv_real_record_field(csv_text, 'entry', 'root', &
-                                          'sum_participating_lane_self_time', 43.0_wp, 93)
+                                          'sum_participating_lane_self_time', 43.0_wp, 95)
          call expect_csv_real_record_field(csv_text, 'entry', 'root', &
-                                          'max_participating_lane_inclusive_time', 22.0_wp, 94)
-         call expect_csv_record_field(csv_text, 'entry', 'root', 'min_participating_lane_call_count', '1', 95)
-         call expect_csv_record_field(csv_text, 'entry', 'root', 'max_participating_lane_call_count', '1', 96)
+                                          'max_participating_lane_inclusive_time', 22.0_wp, 96)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'min_participating_lane_call_count', '1', 97)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'max_participating_lane_call_count', '1', 98)
          call expect_csv_record_field(csv_text, 'entry', 'child', 'parent_id', &
-                                      int_csv_text(summary%entries(root_idx)%node_id), 97)
+                                      int_csv_text(summary%entries(root_idx)%node_id), 99)
       end if
 
       call timer%finalize(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 98)
+      call expect_status(ierr, FTIMER_SUCCESS, 100)
       if (rank == 0) then
          call delete_if_exists(report_path)
          call delete_if_exists(csv_path)
@@ -1148,6 +1152,54 @@ contains
       if (abs(actual - expected) > 1.0e-9_wp) error stop stop_code
    end subroutine expect_time
 
+   subroutine expect_report_entry_line(report_text, name, ranks, samples, missing, &
+                                       sum_inclusive, sum_self, min_inclusive, avg_inclusive, &
+                                       max_inclusive, avg_calls, stop_code)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: ranks
+      integer, intent(in) :: samples
+      integer, intent(in) :: missing
+      real(wp), intent(in) :: sum_inclusive
+      real(wp), intent(in) :: sum_self
+      real(wp), intent(in) :: min_inclusive
+      real(wp), intent(in) :: avg_inclusive
+      real(wp), intent(in) :: max_inclusive
+      real(wp), intent(in) :: avg_calls
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: line
+      character(len=64) :: actual_domain
+      character(len=64) :: actual_name
+      integer :: actual_missing
+      integer :: actual_ranks
+      integer :: actual_samples
+      integer :: io
+      real(wp) :: actual_avg_calls
+      real(wp) :: actual_avg_inclusive
+      real(wp) :: actual_max_inclusive
+      real(wp) :: actual_min_inclusive
+      real(wp) :: actual_sum_inclusive
+      real(wp) :: actual_sum_self
+
+      line = find_report_entry_line(report_text, name)
+      if (len(line) <= 0) error stop stop_code
+      read (line, *, iostat=io) actual_name, actual_domain, actual_ranks, actual_samples, &
+         actual_missing, actual_sum_inclusive, actual_sum_self, actual_min_inclusive, &
+         actual_avg_inclusive, actual_max_inclusive, actual_avg_calls
+      if (io /= 0) error stop stop_code
+      if (trim(actual_name) /= name) error stop stop_code
+      if (trim(actual_domain) /= 'openmp_level1_team') error stop stop_code
+      call expect_int(actual_ranks, ranks, stop_code)
+      call expect_int(actual_samples, samples, stop_code)
+      call expect_int(actual_missing, missing, stop_code)
+      call expect_time(actual_sum_inclusive, sum_inclusive, stop_code)
+      call expect_time(actual_sum_self, sum_self, stop_code)
+      call expect_time(actual_min_inclusive, min_inclusive, stop_code)
+      call expect_time(actual_avg_inclusive, avg_inclusive, stop_code)
+      call expect_time(actual_max_inclusive, max_inclusive, stop_code)
+      call expect_time(actual_avg_calls, avg_calls, stop_code)
+   end subroutine expect_report_entry_line
+
    subroutine expect_contains(text, needle, stop_code)
       character(len=*), intent(in) :: text
       character(len=*), intent(in) :: needle
@@ -1163,6 +1215,30 @@ contains
 
       if (index(text, needle) > 0) error stop stop_code
    end subroutine expect_not_contains
+
+   function find_report_entry_line(report_text, name) result(line)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: name
+      character(len=:), allocatable :: candidate
+      character(len=:), allocatable :: line
+      character(len=64) :: first_token
+      integer :: io
+      integer :: line_no
+
+      line = ''
+      line_no = 1
+      do
+         candidate = csv_line_at(report_text, line_no)
+         if ((len(candidate) <= 0) .and. (line_no > count_occurrences(report_text, new_line('a')) + 1)) exit
+         first_token = ''
+         read (candidate, *, iostat=io) first_token
+         if ((io == 0) .and. (trim(first_token) == name)) then
+            line = candidate
+            return
+         end if
+         line_no = line_no + 1
+      end do
+   end function find_report_entry_line
 
    subroutine expect_csv_record_count(csv_text, record_type, expected, stop_code)
       character(len=*), intent(in) :: csv_text

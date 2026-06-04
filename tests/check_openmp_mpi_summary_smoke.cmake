@@ -20,6 +20,7 @@ if(NOT summary_result EQUAL 0)
 endif()
 
 string(REPLACE "\r\n" "\n" summary_stderr_normalized "${summary_stderr}")
+string(REPLACE ";" "<semicolon>" summary_stderr_line_scan "${summary_stderr_normalized}")
 string(FIND "${summary_stderr_normalized}"
   "ftimer_openmp write_mpi_openmp_summary_csv append validation failed:"
   append_diagnostic_pos
@@ -61,10 +62,6 @@ string(REGEX MATCHALL
   worker_collective_diagnostics
   "${summary_stderr_normalized}"
 )
-string(FIND "${summary_stderr_normalized}"
-  "ftimer_openmp recorded 1 worker diagnostics"
-  worker_diagnostic_pos
-)
 string(REGEX MATCHALL
   "ftimer_openmp recorded 1 worker diagnostics"
   worker_diagnostics
@@ -75,8 +72,7 @@ if(append_diagnostic_pos EQUAL -1 OR
    active_diagnostic_pos EQUAL -1 OR
    descriptor_diagnostic_pos EQUAL -1 OR
    participation_diagnostic_pos EQUAL -1 OR
-   worker_collective_diagnostic_pos EQUAL -1 OR
-   worker_diagnostic_pos EQUAL -1)
+   worker_collective_diagnostic_pos EQUAL -1)
   message(FATAL_ERROR
     "Expected MPI+OpenMP summary omitted-ierr diagnostics were not written to stderr.\n"
     "stderr:\n${summary_stderr_normalized}"
@@ -94,7 +90,7 @@ if(NOT append_diagnostic_count EQUAL 1 OR
    NOT descriptor_diagnostic_count EQUAL 1 OR
    NOT participation_diagnostic_count EQUAL 1 OR
    NOT worker_collective_diagnostic_count EQUAL 1 OR
-   NOT worker_diagnostic_count EQUAL 1)
+   NOT worker_diagnostic_count EQUAL 0)
   message(FATAL_ERROR
     "Unexpected MPI+OpenMP summary omitted-ierr diagnostic counts.\n"
     "append=${append_diagnostic_count}, active=${active_diagnostic_count}, "
@@ -103,3 +99,42 @@ if(NOT append_diagnostic_count EQUAL 1 OR
     "stderr:\n${summary_stderr_normalized}"
   )
 endif()
+
+string(REGEX MATCHALL "ftimer_[^\n]*" ftimer_diagnostic_lines "${summary_stderr_line_scan}")
+list(LENGTH ftimer_diagnostic_lines ftimer_diagnostic_count)
+if(NOT ftimer_diagnostic_count EQUAL 7)
+  message(FATAL_ERROR
+    "Unexpected number of fTimer diagnostics in stderr: ${ftimer_diagnostic_count}.\n"
+    "stderr:\n${summary_stderr_normalized}"
+  )
+endif()
+string(CONCAT expected_append_diagnostic
+  "ftimer_openmp write_mpi_openmp_summary_csv append validation failed: "
+  "existing MPI+OpenMP summary CSV header does not match format version 1"
+)
+string(CONCAT expected_descriptor_diagnostic
+  "ftimer_openmp mpi_openmp_summary detected inconsistent strict hybrid descriptors "
+  "(descriptor mismatch)<semicolon> disagreeing ranks 1"
+)
+string(CONCAT expected_participation_diagnostic
+  "ftimer_openmp mpi_openmp_summary detected inconsistent strict hybrid descriptors "
+  "(incomplete lane participation)<semicolon> disagreeing ranks 1"
+)
+set(expected_diagnostics
+  "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"
+  "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"
+  "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"
+  "${expected_descriptor_diagnostic}"
+  "${expected_participation_diagnostic}"
+  "ftimer_openmp mpi_openmp_summary MPI reduction failed"
+  "${expected_append_diagnostic}"
+)
+foreach(expected IN LISTS expected_diagnostics)
+  list(FIND ftimer_diagnostic_lines "${expected}" expected_index)
+  if(expected_index EQUAL -1)
+    message(FATAL_ERROR
+      "Expected fTimer diagnostic was missing: ${expected}\n"
+      "stderr:\n${summary_stderr_normalized}"
+    )
+  endif()
+endforeach()
