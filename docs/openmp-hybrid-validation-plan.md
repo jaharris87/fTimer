@@ -144,9 +144,10 @@ Installed-package checks should verify the public package story at each stage:
 - current `ftimer_openmp` installed consumers for serial, MPI, OpenMP, and
   MPI+OpenMP package modes, proving that the lifecycle/catalog surface imports,
   links, validates keyword-only init shape, runs serial and timed worker
-  `start_id`/`stop_id`, and preserves bounded worker diagnostics; and
-- future OpenMP/hybrid summary installed consumers only after the public summary
-  and reduction result types exist.
+  `start_id`/`stop_id`, preserves bounded worker diagnostics, and exercises
+  stopped-run local OpenMP summary/report/CSV entry points; and
+- future hybrid summary installed consumers only after the public hybrid
+  reduction result types exist.
 
 Future installed consumers should compile the documented source shapes, run the
 supported examples, and assert the exported CMake package resolves only the
@@ -208,9 +209,10 @@ comparisons are meaningful.
   tests.
 - #241 provides the hybrid reduction contract that MPI+OpenMP pFUnit and CSV
   tests must enforce.
-- #242 records user-facing timing modes and migration guidance. Later
-  implementation issues add compile-checked future OpenMP/hybrid examples and
-  installed consumers once the future public API exists.
+- #242 records user-facing timing modes and migration guidance. Current local
+  OpenMP examples and installed consumers should stay compile-checked; later
+  implementation issues add future hybrid examples and installed consumers once
+  the future hybrid public API exists.
 
 ## Validation For This Plan
 

@@ -8,8 +8,8 @@ Issue #238 settles the API and compatibility direction for the OpenMP/hybrid
 umbrella in #237. The initial `ftimer_openmp` module added for #268 provides
 the public lifecycle/configuration and timer-catalog surface described here.
 Issue #269 adds the first per-thread lane runtime for timed-region
-`start_id`/`stop_id`; threaded summaries and hybrid MPI reductions remain
-deferred.
+`start_id`/`stop_id`, and #270 adds stopped-run local OpenMP summaries,
+reports, and CSV output. Hybrid MPI reductions remain deferred.
 
 ## Decision
 
@@ -33,7 +33,8 @@ turn existing `start`/`stop` calls into true worker-thread timing.
 
 Current `main` remains the source of truth. The `ftimer_openmp` surface is
 available for compile-time adoption and implements the first thread-lane timing
-runtime; later child issues add summary and hybrid-reduction behavior.
+runtime plus stopped-run local OpenMP summary/report/CSV behavior; later child
+issues add hybrid-reduction behavior.
 
 - Serial users keep the current `use ftimer` and `type(ftimer_t)` behavior.
 - Pure-MPI users keep the current `mpi_f08` `comm=` capture, strict
@@ -87,9 +88,7 @@ call timer%start_id(cell_update_id, ierr=ierr)
 call timer%stop_id(cell_update_id, ierr=ierr)
 !$omp end parallel
 call timer%end_parallel_region(region, ierr=ierr)
-
-! Later #270:
-! call timer%get_openmp_summary(summary, ierr=ierr)
+call timer%get_openmp_summary(summary, ierr=ierr)
 call timer%finalize(ierr=ierr)
 ```
 
@@ -226,7 +225,8 @@ Existing users do not need to change source code.
   should put that choice behind an application-owned instrumentation facade.
 - Users adopting true OpenMP timing should explicitly import `ftimer_openmp`,
   construct a `ftimer_openmp_t`, initialize it with `config=...`, and later
-  consume the new OpenMP/hybrid summary type when that result family lands.
+  consume `ftimer_openmp_summary_t` for stopped-run local OpenMP summaries.
+  Hybrid MPI+OpenMP summaries remain a later result family.
 
 The #242 migration guide keeps `examples/openmp_example.F90` as the
 compatibility example. Later implementation issues should add a separate true
@@ -295,7 +295,7 @@ The original #238 design validation was limited to Markdown and diff checks.
 Issue #268 has since added the public `ftimer_openmp` module surface and focused
 compile/runtime coverage for the lifecycle and timer-catalog subset, and #269
 adds thread-lane runtime coverage through `ftimer_openmp_api_smoke` and
-installed-package consumers. Compile-fail probes still cover unsupported
-positional `init` forms. The summary and hybrid-reduction snippets in this
-document remain future examples until the later #267 child issues add those
-public APIs and their validation.
+installed-package consumers. Issue #270 adds local OpenMP summary/report/CSV
+coverage. Compile-fail probes still cover unsupported positional `init` forms.
+The hybrid-reduction snippets in this document remain future examples until the
+later #267 child issues add those public APIs and their validation.

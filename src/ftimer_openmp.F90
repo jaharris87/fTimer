@@ -559,6 +559,7 @@ contains
       integer :: epoch
       integer :: lane_idx
       integer :: status
+      integer :: worker_lane_count
 
       if (.not. self%initialized) then
          call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp start_id before init")
@@ -571,13 +572,13 @@ contains
          return
       end if
 
-      status = resolve_timing_lane(self, lane_idx, epoch)
+      status = resolve_timing_lane(self, lane_idx, epoch, worker_lane_count)
       if (status /= FTIMER_SUCCESS) then
          call report_timer_status(self, ierr, status, "ftimer_openmp start_id outside a valid timed lane")
          return
       end if
 
-      call start_lane_timer(self, lane_idx, catalog_idx, id, epoch, ierr)
+      call start_lane_timer(self, lane_idx, catalog_idx, id, epoch, worker_lane_count, ierr)
    end subroutine start_id
 
    subroutine stop_id(self, id, ierr)
@@ -588,6 +589,7 @@ contains
       integer :: epoch
       integer :: lane_idx
       integer :: status
+      integer :: worker_lane_count
 
       if (.not. self%initialized) then
          call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp stop_id before init")
@@ -600,7 +602,7 @@ contains
          return
       end if
 
-      status = resolve_timing_lane(self, lane_idx, epoch)
+      status = resolve_timing_lane(self, lane_idx, epoch, worker_lane_count)
       if (status /= FTIMER_SUCCESS) then
          call report_timer_status(self, ierr, status, "ftimer_openmp stop_id outside a valid timed lane")
          return
@@ -2015,15 +2017,17 @@ contains
       end do
    end function has_active_lanes
 
-   integer function resolve_timing_lane(self, lane_idx, epoch) result(status)
+   integer function resolve_timing_lane(self, lane_idx, epoch, worker_lane_count) result(status)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(out) :: lane_idx
       integer, intent(out) :: epoch
+      integer, intent(out) :: worker_lane_count
       integer :: lane_id
 
       lane_id = current_lane_id()
       lane_idx = lane_id + 1
       epoch = 0
+      worker_lane_count = 0
 
       if ((.not. allocated(self%lanes)) .or. (lane_idx < 1) .or. (lane_idx > size(self%lanes))) then
          status = FTIMER_ERR_UNKNOWN
@@ -2046,7 +2050,7 @@ contains
       end if
 
       epoch = self%current_epoch
-      call note_current_epoch_team_size(self, epoch)
+      call note_current_epoch_team_size(self, epoch, worker_lane_count)
       status = FTIMER_SUCCESS
    end function resolve_timing_lane
 
@@ -2106,14 +2110,17 @@ contains
       end if
    end subroutine ensure_epoch_capacity
 
-   subroutine note_current_epoch_team_size(self, epoch)
+   subroutine note_current_epoch_team_size(self, epoch, worker_lane_count)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(in) :: epoch
+      integer, intent(out) :: worker_lane_count
       integer :: team_size
 
+      worker_lane_count = 0
       if (epoch <= 0) return
       team_size = current_team_size()
       if (team_size <= 0) return
+      worker_lane_count = team_size
 
 #ifdef FTIMER_USE_OPENMP
 !$omp critical(ftimer_openmp_epoch_team_size)
@@ -2136,22 +2143,21 @@ contains
       t = ftimer_default_clock()
    end function openmp_clock
 
-   subroutine start_lane_timer(self, lane_idx, catalog_idx, timer_id, epoch, ierr)
+   subroutine start_lane_timer(self, lane_idx, catalog_idx, timer_id, epoch, worker_lane_count, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(in) :: lane_idx
       integer, intent(in) :: catalog_idx
       integer, intent(in) :: timer_id
       integer, intent(in) :: epoch
+      integer, intent(in) :: worker_lane_count
       integer, intent(out), optional :: ierr
       integer :: ctx
-      integer :: worker_lane_count
 
       call ensure_lane_segment_capacity(self%lanes(lane_idx), catalog_idx)
       call ensure_lane_timer_metadata(self%lanes(lane_idx), catalog_idx, self%catalog(catalog_idx)%name)
 
       ctx = self%lanes(lane_idx)%segments(catalog_idx)%contexts%add(self%lanes(lane_idx)%call_stack)
       call ensure_context_storage(self%lanes(lane_idx)%segments(catalog_idx), ctx)
-      worker_lane_count = epoch_worker_lane_count(self, epoch)
       call note_context_epoch(self%lanes(lane_idx)%segments(catalog_idx), ctx, epoch, worker_lane_count)
 
       if (self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx) == &

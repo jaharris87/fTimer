@@ -6,18 +6,17 @@
 
 Issue #240 defines the summary and self-time contract that should sit between
 the opt-in API direction from #238 and the thread-lane runtime model from #239.
-This is a design contract only. It does not add public Fortran symbols, change
-current report output, implement summary generation, or add MPI+OpenMP
-reductions. Issue #268 adds the initial `ftimer_openmp` module and object
-lifecycle/catalog surface, and #269 adds the first thread-lane runtime; the
-summary/result APIs below remain future work.
+This began as a design contract. Issue #268 adds the initial `ftimer_openmp`
+module and object lifecycle/catalog surface, #269 adds the first thread-lane
+runtime, and #270 adds stopped-run local OpenMP summaries, reports, and CSV
+output. MPI+OpenMP reductions remain future work.
 
 ## Decision
 
 True OpenMP worker-thread timing should use new summary/result types and new
 report/CSV entry points behind the current `ftimer_openmp_t` API.
 
-Recommended future type family:
+Current local and future hybrid type family:
 
 - `ftimer_openmp_summary_t` for local OpenMP aggregate summaries;
 - `ftimer_openmp_summary_entry_t` for logical timer/context aggregate rows;
@@ -27,7 +26,7 @@ Recommended future type family:
   MPI+OpenMP reductions defined by #241 in
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md).
 
-Recommended future entry points:
+Current local and future hybrid entry points:
 
 - `timer%get_openmp_summary(summary, ierr=ierr)` for local aggregate summaries;
 - `timer%print_openmp_summary(...)`, `timer%write_openmp_summary(...)`, and
@@ -35,8 +34,8 @@ Recommended future entry points:
 - `timer%mpi_openmp_summary(summary, ierr=ierr)` plus explicit hybrid text and
   CSV writers for MPI+OpenMP summaries.
 
-Those names are proposed source shapes for later implementation issues, not
-symbols available on current `main`.
+The local OpenMP names are available on current `main`; the hybrid MPI+OpenMP
+names remain proposed source shapes for later implementation issues.
 
 Current `get_summary()`, `mpi_summary()`, `mpi_union_summary()`,
 `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, and
@@ -453,7 +452,8 @@ overhead, following the validation plan introduced by #243.
 
 ## Validation For This Design
 
-This issue records the data-model contract without changing runtime behavior.
-Validation for this design-only step is Markdown review and diff checking. No
-Fortran build or pFUnit run is required unless a later change adds code,
-examples, CMake, or tests.
+This issue records the data-model contract. Local OpenMP summary/report/CSV
+runtime behavior is implemented separately by #270; hybrid reductions remain
+design-only until their implementation issue lands. Validation for the original
+design-only step was Markdown review and diff checking; implementation issues
+must add Fortran builds and tests.

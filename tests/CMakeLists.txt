@@ -36,7 +36,11 @@ if(FTIMER_BUILD_SMOKE_TESTS)
 
     add_executable(ftimer_openmp_summary_smoke test_openmp_summary_smoke.F90)
     target_link_libraries(ftimer_openmp_summary_smoke PRIVATE ftimer_smoke_test)
-    add_test(NAME ftimer_openmp_summary_smoke COMMAND ftimer_openmp_summary_smoke)
+    add_test(NAME ftimer_openmp_summary_smoke
+      COMMAND ${CMAKE_COMMAND}
+        -DTEST_EXECUTABLE=$<TARGET_FILE:ftimer_openmp_summary_smoke>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_summary_smoke.cmake
+    )
   endif()
 endif()
 

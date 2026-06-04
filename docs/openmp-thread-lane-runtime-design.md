@@ -128,9 +128,10 @@ teams:
 - `start_id`
 - `stop_id`
 
-OpenMP object clock configuration, summary/report construction, and name-based
-worker `start`/`stop` convenience calls remain future API work. They are not
-part of the current `ftimer_openmp_t` public runtime surface.
+OpenMP object clock configuration and stopped-run local summary/report
+construction are now part of the current `ftimer_openmp_t` public runtime
+surface. Name-based worker `start`/`stop` convenience calls remain future API
+work.
 
 Worker timing calls inside a level-1 team are valid only while a timed
 parallel-region epoch is open for that object. A worker timing call without an

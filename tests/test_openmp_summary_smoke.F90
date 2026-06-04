@@ -165,6 +165,26 @@ contains
       call expect_contains(report_text, 'root', 33)
       call expect_contains(report_text, '22.000000', 34)
       call expect_contains(report_text, 'Missing', 35)
+      call expect_report_entry(report_text, 'root', part=2, missing=0, &
+                               sum_inclusive=22.0_wp, sum_self=19.0_wp, &
+                               min_inclusive=10.0_wp, avg_inclusive=11.0_wp, max_inclusive=12.0_wp, &
+                               avg_self=9.5_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, &
+                               stop_code=74)
+      call expect_report_entry(report_text, 'child', part=1, missing=1, &
+                               sum_inclusive=3.0_wp, sum_self=3.0_wp, &
+                               min_inclusive=3.0_wp, avg_inclusive=3.0_wp, max_inclusive=3.0_wp, &
+                               avg_self=3.0_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, &
+                               stop_code=75)
+      call expect_report_entry(report_text, 'serial', part=1, missing=0, &
+                               sum_inclusive=2.0_wp, sum_self=2.0_wp, &
+                               min_inclusive=2.0_wp, avg_inclusive=2.0_wp, max_inclusive=2.0_wp, &
+                               avg_self=2.0_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, &
+                               stop_code=76)
+      call expect_report_entry(report_text, 'sparse', part=1, missing=1, &
+                               sum_inclusive=5.0_wp, sum_self=5.0_wp, &
+                               min_inclusive=5.0_wp, avg_inclusive=5.0_wp, max_inclusive=5.0_wp, &
+                               avg_self=5.0_wp, min_calls=1_int64, avg_calls=1.0_wp, max_calls=1_int64, &
+                               stop_code=77)
 
       call timer%write_openmp_summary_csv(csv_path, metadata=metadata, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 36)
@@ -505,6 +525,7 @@ contains
       character(len=*), parameter :: bad_csv_path = 'openmp_summary_bad_append.csv'
       character(len=*), parameter :: csv_path = 'openmp_summary_append.csv'
       character(len=*), parameter :: truncated_csv_path = 'openmp_summary_truncated_append.csv'
+      character(len=*), parameter :: wrong_header_csv_path = 'openmp_summary_wrong_header_append.csv'
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_t) :: timer
       character(len=:), allocatable :: bad_text
@@ -516,6 +537,7 @@ contains
       call delete_if_exists(csv_path)
       call delete_if_exists(bad_csv_path)
       call delete_if_exists(truncated_csv_path)
+      call delete_if_exists(wrong_header_csv_path)
 
       config%max_lanes = 1
       config%max_worker_diagnostics = 4
@@ -553,11 +575,18 @@ contains
       call expect_status(ierr, FTIMER_ERR_IO, 190)
       call expect_equal_text(read_file_text(truncated_csv_path), bad_text, 191)
 
+      bad_text = 'format_version,summary_kind,record_type'//new_line('a')
+      call write_text_file(wrong_header_csv_path, bad_text)
+      call timer%write_openmp_summary_csv(wrong_header_csv_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 193)
+      call expect_equal_text(read_file_text(wrong_header_csv_path), bad_text, 194)
+
       call timer%finalize(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 192)
+      call expect_status(ierr, FTIMER_SUCCESS, 195)
       call delete_if_exists(csv_path)
       call delete_if_exists(bad_csv_path)
       call delete_if_exists(truncated_csv_path)
+      call delete_if_exists(wrong_header_csv_path)
    end subroutine check_openmp_summary_csv_append_validation
 
    subroutine check_openmp_summary_no_ierr_worker_diagnostics()
@@ -706,6 +735,112 @@ contains
 
       if (index(text, needle) <= 0) error stop stop_code
    end subroutine expect_contains
+
+   subroutine expect_report_entry(report_text, name, part, missing, sum_inclusive, sum_self, &
+                                  min_inclusive, avg_inclusive, max_inclusive, avg_self, &
+                                  min_calls, avg_calls, max_calls, stop_code)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: part
+      integer, intent(in) :: missing
+      real(wp), intent(in) :: sum_inclusive
+      real(wp), intent(in) :: sum_self
+      real(wp), intent(in) :: min_inclusive
+      real(wp), intent(in) :: avg_inclusive
+      real(wp), intent(in) :: max_inclusive
+      real(wp), intent(in) :: avg_self
+      integer(int64), intent(in) :: min_calls
+      real(wp), intent(in) :: avg_calls
+      integer(int64), intent(in) :: max_calls
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: row
+      character(len=128) :: parsed_name
+      integer :: io
+      integer :: parsed_missing
+      integer :: parsed_part
+      integer(int64) :: parsed_max_calls
+      integer(int64) :: parsed_min_calls
+      real(wp) :: parsed_avg_calls
+      real(wp) :: parsed_avg_inclusive
+      real(wp) :: parsed_avg_self
+      real(wp) :: parsed_max_inclusive
+      real(wp) :: parsed_min_inclusive
+      real(wp) :: parsed_sum_inclusive
+      real(wp) :: parsed_sum_self
+
+      row = find_report_row(report_text, name)
+      if (len(row) <= 0) error stop stop_code
+      read (row, *, iostat=io) parsed_name, parsed_part, parsed_missing, &
+         parsed_sum_inclusive, parsed_sum_self, parsed_min_inclusive, parsed_avg_inclusive, &
+         parsed_max_inclusive, parsed_avg_self, parsed_min_calls, parsed_avg_calls, parsed_max_calls
+      if (io /= 0) error stop stop_code + 1000
+      if (trim(parsed_name) /= name) error stop stop_code + 1100
+      call expect_int(parsed_part, part, stop_code + 1200)
+      call expect_int(parsed_missing, missing, stop_code + 1300)
+      call expect_time(parsed_sum_inclusive, sum_inclusive, stop_code + 1400)
+      call expect_time(parsed_sum_self, sum_self, stop_code + 1500)
+      call expect_time(parsed_min_inclusive, min_inclusive, stop_code + 1600)
+      call expect_time(parsed_avg_inclusive, avg_inclusive, stop_code + 1700)
+      call expect_time(parsed_max_inclusive, max_inclusive, stop_code + 1800)
+      call expect_time(parsed_avg_self, avg_self, stop_code + 1900)
+      call expect_int64(parsed_min_calls, min_calls, stop_code + 2000)
+      call expect_time(parsed_avg_calls, avg_calls, stop_code + 2100)
+      call expect_int64(parsed_max_calls, max_calls, stop_code + 2200)
+   end subroutine expect_report_entry
+
+   function find_report_row(report_text, name) result(row)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: name
+      character(len=:), allocatable :: row
+      character(len=:), allocatable :: candidate
+      integer :: line_end
+      integer :: line_start
+      integer :: newline_pos
+
+      row = ''
+      line_start = 1
+      do while (line_start <= len(report_text))
+         newline_pos = index(report_text(line_start:), new_line('a'))
+         if (newline_pos <= 0) then
+            line_end = len(report_text)
+         else
+            line_end = line_start + newline_pos - 2
+         end if
+         if (line_end >= line_start) then
+            candidate = report_text(line_start:line_end)
+            if (first_token(candidate) == name) then
+               row = candidate
+               return
+            end if
+         end if
+         if (newline_pos <= 0) exit
+         line_start = line_end + 2
+      end do
+   end function find_report_row
+
+   function first_token(line) result(token)
+      character(len=*), intent(in) :: line
+      character(len=:), allocatable :: token
+      integer :: i
+      integer :: start
+
+      token = ''
+      start = 0
+      do i = 1, len_trim(line)
+         if (line(i:i) /= ' ') then
+            start = i
+            exit
+         end if
+      end do
+      if (start <= 0) return
+      do i = start, len_trim(line)
+         if (line(i:i) == ' ') then
+            token = line(start:i - 1)
+            return
+         end if
+      end do
+      token = line(start:len_trim(line))
+   end function first_token
 
    subroutine expect_equal_text(actual, expected, stop_code)
       character(len=*), intent(in) :: actual
