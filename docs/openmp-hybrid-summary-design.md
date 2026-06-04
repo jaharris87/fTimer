@@ -43,7 +43,7 @@ Current `get_summary()`, `mpi_summary()`, `mpi_union_summary()`,
 the local/strict/sparse CSV schemas remain unchanged. A build configured with
 `FTIMER_USE_OPENMP=ON` must continue to expose the current master-thread-only
 compatibility model through the existing APIs unless the caller opts into the
-future OpenMP-specific API.
+explicit OpenMP-specific API.
 
 ## Compatibility Contract
 

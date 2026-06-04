@@ -26,7 +26,7 @@ True OpenMP worker-thread timing should use a separate, explicit API surface:
 The current `ftimer` procedural API, `type(ftimer_t)`, and pure-MPI APIs remain
 unchanged. `FTIMER_USE_OPENMP=ON` continues to mean the existing
 master-thread-only compatibility mode for those current APIs unless a caller
-uses the future OpenMP-specific API. A build option by itself must not silently
+uses the explicit OpenMP-specific API. A build option by itself must not silently
 turn existing `start`/`stop` calls into true worker-thread timing.
 
 ## Current Compatibility Contract
