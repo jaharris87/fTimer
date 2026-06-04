@@ -59,12 +59,13 @@ The first implementation should be object-explicit and keyword-heavy:
 
 The snippets below show the accepted source shape. The `ftimer_openmp` module,
 configuration type, object type, timer catalog calls, and timed-region/timing
-methods now exist and implement the first thread-lane runtime. OpenMP summaries
-and hybrid reductions remain non-functional until later implementation issues
-add the result families.
+methods now exist and implement the first thread-lane runtime. Local OpenMP
+summaries, reports, and CSV output now exist as a stopped-run result family.
+Hybrid reductions remain non-functional until later implementation issues add
+the rank/lane result families.
 
 ```fortran
-! Accepted worker-timing shape. Summary behavior is implemented later.
+! Accepted worker-timing shape. Local summary behavior is a stopped-run API.
 use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, &
                          ftimer_openmp_config_t, &
                          ftimer_openmp_parallel_region_t, &
@@ -196,7 +197,7 @@ ordering guarantees, and unsupported callback-side mutations.
 
 ## Summary And Report Direction
 
-The future OpenMP summary model should distinguish at least these quantities:
+The local OpenMP summary model distinguishes at least these quantities:
 
 - wall-clock envelope time for a region;
 - summed lane work time;

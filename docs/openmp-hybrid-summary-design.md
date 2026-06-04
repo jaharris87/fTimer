@@ -61,7 +61,7 @@ Existing consumers keep their current meaning:
 - The procedural default instance must not participate in true worker-thread
   timing and therefore does not need an OpenMP summary object.
 
-The future OpenMP summary family is an additive opt-in surface. It should not
+The local OpenMP summary family is an additive opt-in surface. It should not
 extend `ftimer_summary_t` with lane fields because that would make current
 serial snapshots appear to be thread-aware and would force downstream code to
 handle fields that cannot be populated meaningfully for the existing runtime.
@@ -436,13 +436,14 @@ overhead, following the validation plan introduced by #243.
   implementation issues must add deterministic validation, active-lane tests,
   report/CSV golden output, and overhead measurements.
 - #242 records the user-facing timing modes and migration guide in
-  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Later
-  implementation issues should add compile-checked OpenMP summary examples
-  after runtime and summary APIs exist.
+  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Current local
+  OpenMP summary/report/CSV behavior should stay compile-checked after the
+  runtime and summary APIs exist.
 
 ## Non-Goals
 
-- Implementing OpenMP summary public types in #240.
+- Replacing the local OpenMP summary family with the existing serial/MPI
+  summary result types.
 - Changing current local, strict MPI, or sparse MPI result types.
 - Changing current CSV schemas or text reports.
 - Changing current `FTIMER_USE_OPENMP=ON` master-thread-only behavior.

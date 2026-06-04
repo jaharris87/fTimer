@@ -23,9 +23,11 @@ Implemented capabilities include:
 - limited OpenMP master-thread-only timer guards for `ftimer` / `ftimer_core`
 - explicit `ftimer_openmp_t` serial-lane and level-1 worker timed-region /
   id-first thread-lane timing
+- stopped-run local OpenMP summaries, text reports, and CSV output through
+  `ftimer_openmp_t`
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
-fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, OpenMP summary/report result families, or general thread-safe access to the existing `ftimer`/`ftimer_core` APIs from OpenMP worker threads.
+fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, hybrid MPI+OpenMP rank/lane reductions, or general thread-safe access to the existing `ftimer`/`ftimer_core` APIs from OpenMP worker threads.
 It also does not provide accelerator/device synchronization hooks or implicit MPI
 barriers; callers own those synchronization decisions when interpreting
 wall-clock intervals.
@@ -125,8 +127,9 @@ The CMake source order reflects the real dependency order:
 
 `ftimer_openmp.F90` is the additive, explicit opt-in API surface for true OpenMP
 worker timing. Its lifecycle/configuration, timer catalog, timed-region, and
-id-first thread-lane timing operations are usable today. OpenMP summary and
-hybrid rank/lane reduction families remain deferred to later #267 child issues.
+id-first thread-lane timing operations are usable today, along with stopped-run
+local OpenMP summary, report, and CSV output. Hybrid rank/lane reduction
+families remain deferred to later #267 child issues.
 
 `ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, self-time computation, and strict/sparse MPI text formatting are assembled for reporting.
 

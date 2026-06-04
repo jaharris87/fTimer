@@ -1,5 +1,5 @@
 module ftimer_openmp
-   use, intrinsic :: iso_fortran_env, only: error_unit, int64, output_unit
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64, iostat_end, output_unit
    use ftimer_clock, only: ftimer_date_string, ftimer_default_clock
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_IO, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
@@ -613,33 +613,14 @@ contains
       class(ftimer_openmp_t), intent(inout) :: self
       type(ftimer_openmp_summary_t), intent(out) :: summary
       integer, intent(out), optional :: ierr
+      integer :: status
 
-      if (.not. self%initialized) then
-         call reset_openmp_summary(summary)
-         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp get_openmp_summary before init")
+      status = prepare_openmp_summary(self, summary, diagnostics_are_explicit=present(ierr))
+      if (status /= FTIMER_SUCCESS) then
+         call report_timer_status(self, ierr, status, "ftimer_openmp get_openmp_summary failed")
          return
       end if
 
-      if (is_inside_parallel_region()) then
-         call reset_openmp_summary(summary)
-         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
-                                  "ftimer_openmp get_openmp_summary called inside an OpenMP parallel region")
-         return
-      end if
-
-      if (self%region_open .or. has_active_lanes(self)) then
-         call reset_openmp_summary(summary)
-         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
-                                  "ftimer_openmp get_openmp_summary with active OpenMP timing")
-         return
-      end if
-
-      if (drain_worker_diagnostics(self, ierr)) then
-         call reset_openmp_summary(summary)
-         return
-      end if
-
-      call build_openmp_summary(self, summary)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine get_openmp_summary
 
@@ -655,7 +636,7 @@ contains
       integer :: out_unit
       integer :: status
 
-      call self%get_openmp_summary(summary, ierr=status)
+      status = prepare_openmp_summary(self, summary, diagnostics_are_explicit=present(ierr))
       if (status /= FTIMER_SUCCESS) then
          call report_timer_status(self, ierr, status, "ftimer_openmp print_openmp_summary summary failed")
          return
@@ -688,7 +669,7 @@ contains
       integer :: status
       logical :: append_mode
 
-      call self%get_openmp_summary(summary, ierr=status)
+      status = prepare_openmp_summary(self, summary, diagnostics_are_explicit=present(ierr))
       if (status /= FTIMER_SUCCESS) then
          call report_timer_status(self, ierr, status, "ftimer_openmp write_openmp_summary summary failed")
          return
@@ -743,7 +724,7 @@ contains
       logical :: append_mode
       logical :: include_header
 
-      call self%get_openmp_summary(summary, ierr=status)
+      status = prepare_openmp_summary(self, summary, diagnostics_are_explicit=present(ierr))
       if (status /= FTIMER_SUCCESS) then
          call report_timer_status(self, ierr, status, "ftimer_openmp write_openmp_summary_csv summary failed")
          return
@@ -787,6 +768,43 @@ contains
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine write_openmp_summary_csv
+
+   integer function prepare_openmp_summary(self, summary, diagnostics_are_explicit) result(status)
+      class(ftimer_openmp_t), intent(inout) :: self
+      type(ftimer_openmp_summary_t), intent(out) :: summary
+      logical, intent(in) :: diagnostics_are_explicit
+      logical :: did_drain
+
+      if (.not. self%initialized) then
+         call reset_openmp_summary(summary)
+         status = FTIMER_ERR_NOT_INIT
+         return
+      end if
+
+      if (is_inside_parallel_region()) then
+         call reset_openmp_summary(summary)
+         status = FTIMER_ERR_ACTIVE
+         return
+      end if
+
+      if (self%region_open .or. has_active_lanes(self)) then
+         call reset_openmp_summary(summary)
+         status = FTIMER_ERR_ACTIVE
+         return
+      end if
+
+      if (diagnostics_are_explicit) then
+         if (drain_worker_diagnostics(self, status)) then
+            call reset_openmp_summary(summary)
+            return
+         end if
+      else
+         did_drain = drain_worker_diagnostics(self)
+      end if
+
+      call build_openmp_summary(self, summary)
+      status = FTIMER_SUCCESS
+   end function prepare_openmp_summary
 
    subroutine build_openmp_summary(self, summary)
       class(ftimer_openmp_t), intent(inout) :: self
@@ -839,6 +857,8 @@ contains
                                                    lane_capacity, acc_idx)
                call add_openmp_accumulator_sample(self, accumulators(acc_idx), self%lanes(lane_idx)%lane_id, &
                                                   self%lanes(lane_idx)%segments(catalog_idx)%context_epoch(ctx), &
+                                                  self%lanes(lane_idx)%segments(catalog_idx)% &
+                                                  context_max_worker_lane_count(ctx), &
                                                   self%lanes(lane_idx)%segments(catalog_idx)%time(ctx), &
                                                   lane_context_self_time(self, lane_idx, catalog_idx, ctx), &
                                                   self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx))
@@ -993,11 +1013,13 @@ contains
       accumulators(idx)%lane_calls = 0_int64
    end subroutine find_or_add_openmp_accumulator
 
-   subroutine add_openmp_accumulator_sample(self, accumulator, lane_id, epoch, inclusive_time, self_time, call_count)
+   subroutine add_openmp_accumulator_sample(self, accumulator, lane_id, epoch, context_worker_lane_count, &
+                                            inclusive_time, self_time, call_count)
       class(ftimer_openmp_t), intent(in) :: self
       type(ftimer_openmp_entry_accumulator_t), intent(inout) :: accumulator
       integer, intent(in) :: lane_id
       integer, intent(in) :: epoch
+      integer, intent(in) :: context_worker_lane_count
       real(wp), intent(in) :: inclusive_time
       real(wp), intent(in) :: self_time
       integer(int64), intent(in) :: call_count
@@ -1015,11 +1037,13 @@ contains
       if (lane_id == 0) then
          accumulator%eligible_serial_lane = .true.
       else
-         worker_lane_count = epoch_worker_lane_count(self, epoch)
+         worker_lane_count = context_worker_lane_count
+         if (worker_lane_count <= 0) worker_lane_count = epoch_worker_lane_count(self, epoch)
          if (worker_lane_count <= 0) then
             worker_lane_count = lane_id
             accumulator%missing_lane_count_known = .false.
          end if
+         if (epoch == FTIMER_OPENMP_CONTEXT_EPOCH_UNKNOWN) accumulator%missing_lane_count_known = .false.
          if ((accumulator%max_worker_lane_id > 0) .and. (accumulator%max_worker_lane_id /= worker_lane_count)) then
             accumulator%missing_lane_count_known = .false.
          end if
@@ -1450,39 +1474,240 @@ contains
       logical, intent(out) :: include_header
       integer, intent(out) :: status
       character(len=*), intent(out) :: iomsg
-      character(len=4096) :: first_line
-      integer :: file_size
+      character(len=1) :: ch
+      character(len=:), allocatable :: expected_header
+      character(len=:), allocatable :: header_line
+      character(len=:), allocatable :: record_text
+      character(len=1) :: last_char
+      integer :: expected_field_count
       integer :: io
+      integer :: record_field_count
+      integer :: record_prefix_limit
       integer :: unit
       logical :: exists
+      logical :: after_quoted_field
+      logical :: field_has_content
+      logical :: in_quotes
+      logical :: pending_record_cr
+      logical :: pending_quote
+      logical :: reading_header
+      logical :: saw_any_char
 
       include_header = .true.
       status = FTIMER_SUCCESS
       iomsg = ''
       if (.not. append_mode) return
 
-      inquire (file=filename, exist=exists, size=file_size)
-      if ((.not. exists) .or. (file_size <= 0)) return
+      inquire (file=filename, exist=exists)
+      if (.not. exists) return
 
-      open (newunit=unit, file=filename, status='old', action='read', iostat=io, iomsg=iomsg)
+      expected_header = openmp_csv_header_line()
+      expected_field_count = openmp_csv_field_count(expected_header)
+      header_line = ''
+      record_text = ''
+      record_prefix_limit = 64
+      record_field_count = 1
+      last_char = ''
+      reading_header = .true.
+      after_quoted_field = .false.
+      field_has_content = .false.
+      in_quotes = .false.
+      pending_record_cr = .false.
+      pending_quote = .false.
+      saw_any_char = .false.
+
+      open (newunit=unit, file=filename, status='old', access='stream', form='unformatted', &
+            action='read', iostat=io, iomsg=iomsg)
       if (io /= 0) then
          status = FTIMER_ERR_IO
          return
       end if
-      read (unit, '(a)', iostat=io, iomsg=iomsg) first_line
+
+      do
+         read (unit, iostat=io, iomsg=iomsg) ch
+         if (io == iostat_end) exit
+         if (io /= 0) then
+            close (unit)
+            status = FTIMER_ERR_IO
+            return
+         end if
+
+         last_char = ch
+         saw_any_char = .true.
+
+         if (reading_header) then
+            if (ch == new_line('a')) then
+               reading_header = .false.
+               call strip_openmp_trailing_carriage_return(header_line)
+               if ((len(header_line) /= len(expected_header)) .or. (header_line /= expected_header)) then
+                  close (unit)
+                  status = FTIMER_ERR_IO
+                  iomsg = 'existing OpenMP summary CSV header does not match format version 1'
+                  return
+               end if
+            else
+               header_line = header_line//ch
+               if (len(header_line) > len(expected_header) + 1) then
+                  close (unit)
+                  status = FTIMER_ERR_IO
+                  iomsg = 'existing OpenMP summary CSV header does not match format version 1'
+                  return
+               end if
+            end if
+            cycle
+         end if
+
+         if (pending_record_cr) then
+            if (ch /= new_line('a')) then
+               close (unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing OpenMP summary CSV records contain a bare carriage return'
+               return
+            end if
+            pending_record_cr = .false.
+         end if
+
+         if (pending_quote) then
+            if (ch == '"') then
+               pending_quote = .false.
+               call append_limited_openmp_csv_record_prefix(record_text, ch, record_prefix_limit)
+               cycle
+            end if
+            in_quotes = .false.
+            pending_quote = .false.
+            after_quoted_field = .true.
+         end if
+
+         if ((ch == achar(13)) .and. (.not. in_quotes)) then
+            pending_record_cr = .true.
+            cycle
+         end if
+
+         if (after_quoted_field) then
+            if ((ch /= ',') .and. (ch /= new_line('a'))) then
+               close (unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing OpenMP summary CSV records contain malformed quoted fields'
+               return
+            end if
+         end if
+
+         if ((ch == new_line('a')) .and. (.not. in_quotes)) then
+            call strip_openmp_trailing_carriage_return(record_text)
+            if ((record_field_count /= expected_field_count) .or. &
+                (.not. openmp_csv_record_has_valid_prefix(record_text))) then
+               close (unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing OpenMP summary CSV records do not match format version 1'
+               return
+            end if
+            record_text = ''
+            record_field_count = 1
+            after_quoted_field = .false.
+            field_has_content = .false.
+            cycle
+         end if
+
+         call append_limited_openmp_csv_record_prefix(record_text, ch, record_prefix_limit)
+
+         if ((ch == ',') .and. (.not. in_quotes)) then
+            record_field_count = record_field_count + 1
+            if (after_quoted_field) after_quoted_field = .false.
+            field_has_content = .false.
+            cycle
+         end if
+
+         if (ch == '"') then
+            if (in_quotes) then
+               pending_quote = .true.
+            else if (field_has_content) then
+               close (unit)
+               status = FTIMER_ERR_IO
+               iomsg = 'existing OpenMP summary CSV records contain malformed quoted fields'
+               return
+            else
+               in_quotes = .true.
+               after_quoted_field = .false.
+            end if
+         else if (.not. in_quotes) then
+            field_has_content = .true.
+         end if
+      end do
       close (unit)
-      if (io /= 0) then
+
+      if (.not. saw_any_char) return
+
+      if (last_char /= new_line('a')) then
          status = FTIMER_ERR_IO
+         iomsg = 'existing OpenMP summary CSV append target does not end with a newline'
          return
       end if
 
-      if (trim(first_line) /= openmp_csv_header_line()) then
+      if (in_quotes) then
          status = FTIMER_ERR_IO
-         iomsg = 'existing OpenMP summary CSV header does not match format version 1'
+         iomsg = 'existing OpenMP summary CSV records contain an unterminated quoted field'
          return
       end if
+
+      if (pending_record_cr) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing OpenMP summary CSV records contain a bare carriage return'
+         return
+      end if
+
       include_header = .false.
    end subroutine get_openmp_csv_header_mode
+
+   subroutine append_limited_openmp_csv_record_prefix(record_text, ch, prefix_limit)
+      character(len=:), allocatable, intent(inout) :: record_text
+      character(len=1), intent(in) :: ch
+      integer, intent(in) :: prefix_limit
+
+      if (len(record_text) >= prefix_limit) return
+      record_text = record_text//ch
+   end subroutine append_limited_openmp_csv_record_prefix
+
+   subroutine strip_openmp_trailing_carriage_return(text)
+      character(len=:), allocatable, intent(inout) :: text
+      integer :: text_len
+
+      text_len = len(text)
+      if (text_len <= 0) return
+      if (text(text_len:text_len) == achar(13)) text = text(:text_len - 1)
+   end subroutine strip_openmp_trailing_carriage_return
+
+   integer function openmp_csv_field_count(line) result(count)
+      character(len=*), intent(in) :: line
+      integer :: i
+      logical :: in_quotes
+
+      count = 1
+      in_quotes = .false.
+      do i = 1, len_trim(line)
+         if (line(i:i) == '"') then
+            in_quotes = .not. in_quotes
+         elseif ((line(i:i) == ',') .and. (.not. in_quotes)) then
+            count = count + 1
+         end if
+      end do
+   end function openmp_csv_field_count
+
+   logical function openmp_csv_record_has_valid_prefix(line) result(matches)
+      character(len=*), intent(in) :: line
+
+      matches = openmp_starts_with(line, '"'//FTIMER_OPENMP_CSV_FORMAT_VERSION//'","openmp","summary",') .or. &
+                openmp_starts_with(line, '"'//FTIMER_OPENMP_CSV_FORMAT_VERSION//'","openmp","metadata",') .or. &
+                openmp_starts_with(line, '"'//FTIMER_OPENMP_CSV_FORMAT_VERSION//'","openmp","entry",')
+   end function openmp_csv_record_has_valid_prefix
+
+   logical function openmp_starts_with(text, prefix) result(matches)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: prefix
+
+      matches = .false.
+      if (len_trim(text) < len(prefix)) return
+      matches = text(1:len(prefix)) == prefix
+   end function openmp_starts_with
 
    subroutine append_empty_openmp_csv_fields(row, count)
       type(openmp_report_buffer_t), intent(inout) :: row
@@ -1890,8 +2115,14 @@ contains
       team_size = current_team_size()
       if (team_size <= 0) return
 
+#ifdef FTIMER_USE_OPENMP
+!$omp critical(ftimer_openmp_epoch_team_size)
+#endif
       call ensure_epoch_capacity(self, epoch)
       self%epoch_team_size(epoch) = max(self%epoch_team_size(epoch), team_size)
+#ifdef FTIMER_USE_OPENMP
+!$omp end critical(ftimer_openmp_epoch_team_size)
+#endif
    end subroutine note_current_epoch_team_size
 
    real(wp) function openmp_clock(self) result(t)
@@ -1913,13 +2144,15 @@ contains
       integer, intent(in) :: epoch
       integer, intent(out), optional :: ierr
       integer :: ctx
+      integer :: worker_lane_count
 
       call ensure_lane_segment_capacity(self%lanes(lane_idx), catalog_idx)
       call ensure_lane_timer_metadata(self%lanes(lane_idx), catalog_idx, self%catalog(catalog_idx)%name)
 
       ctx = self%lanes(lane_idx)%segments(catalog_idx)%contexts%add(self%lanes(lane_idx)%call_stack)
       call ensure_context_storage(self%lanes(lane_idx)%segments(catalog_idx), ctx)
-      call note_context_epoch(self%lanes(lane_idx)%segments(catalog_idx), ctx, epoch)
+      worker_lane_count = epoch_worker_lane_count(self, epoch)
+      call note_context_epoch(self%lanes(lane_idx)%segments(catalog_idx), ctx, epoch, worker_lane_count)
 
       if (self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx) == &
           huge(self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx))) then
@@ -2016,6 +2249,7 @@ contains
       logical, allocatable :: old_is_running(:)
       integer(int64), allocatable :: old_call_count(:)
       integer, allocatable :: old_context_epoch(:)
+      integer, allocatable :: old_context_max_worker_lane_count(:)
 
       if (required_size <= 0) return
 
@@ -2027,23 +2261,27 @@ contains
          call move_alloc(segment%is_running, old_is_running)
          call move_alloc(segment%call_count, old_call_count)
          call move_alloc(segment%context_epoch, old_context_epoch)
+         call move_alloc(segment%context_max_worker_lane_count, old_context_max_worker_lane_count)
          new_size = max(required_size, 2*old_size)
          allocate (segment%time(new_size))
          allocate (segment%start_time(new_size))
          allocate (segment%is_running(new_size))
          allocate (segment%call_count(new_size))
          allocate (segment%context_epoch(new_size))
+         allocate (segment%context_max_worker_lane_count(new_size))
          segment%time = 0.0_wp
          segment%start_time = 0.0_wp
          segment%is_running = .false.
          segment%call_count = 0_int64
          segment%context_epoch = FTIMER_OPENMP_CONTEXT_EPOCH_UNKNOWN
+         segment%context_max_worker_lane_count = 0
          if (old_size > 0) then
             segment%time(1:old_size) = old_time
             segment%start_time(1:old_size) = old_start_time
             segment%is_running(1:old_size) = old_is_running
             segment%call_count(1:old_size) = old_call_count
             segment%context_epoch(1:old_size) = old_context_epoch
+            segment%context_max_worker_lane_count(1:old_size) = old_context_max_worker_lane_count
          end if
       else
          new_size = required_size
@@ -2052,26 +2290,31 @@ contains
          allocate (segment%is_running(new_size))
          allocate (segment%call_count(new_size))
          allocate (segment%context_epoch(new_size))
+         allocate (segment%context_max_worker_lane_count(new_size))
          segment%time = 0.0_wp
          segment%start_time = 0.0_wp
          segment%is_running = .false.
          segment%call_count = 0_int64
          segment%context_epoch = FTIMER_OPENMP_CONTEXT_EPOCH_UNKNOWN
+         segment%context_max_worker_lane_count = 0
       end if
    end subroutine ensure_context_storage
 
-   subroutine note_context_epoch(segment, ctx, epoch)
+   subroutine note_context_epoch(segment, ctx, epoch, worker_lane_count)
       type(ftimer_segment_t), intent(inout) :: segment
       integer, intent(in) :: ctx
       integer, intent(in) :: epoch
+      integer, intent(in) :: worker_lane_count
 
       if ((.not. allocated(segment%context_epoch)) .or. (ctx <= 0) .or. (ctx > size(segment%context_epoch))) return
+      if (.not. allocated(segment%context_max_worker_lane_count)) return
 
       if (segment%call_count(ctx) == 0_int64) then
          segment%context_epoch(ctx) = epoch
       elseif (segment%context_epoch(ctx) /= epoch) then
          segment%context_epoch(ctx) = FTIMER_OPENMP_CONTEXT_EPOCH_UNKNOWN
       end if
+      segment%context_max_worker_lane_count(ctx) = max(segment%context_max_worker_lane_count(ctx), worker_lane_count)
    end subroutine note_context_epoch
 
    logical function normalize_config(config) result(is_valid)

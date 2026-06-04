@@ -93,7 +93,7 @@ ftimer.F90  (procedural wrappers + default global instance)
         ├─► ftimer_summary.F90 (structured summary building + text formatting)
         ├─► ftimer_mpi.F90    (strict MPI reductions + sparse/union descriptor reductions)
         └─► ftimer_core_summary_bindings.F90 (summary/report/CSV file-output bindings)
-ftimer_openmp.F90 (explicit opt-in OpenMP thread-lane runtime; summaries/reductions deferred)
+ftimer_openmp.F90 (explicit opt-in OpenMP thread-lane runtime + local summaries/reports/CSV; hybrid reductions deferred)
 ```
 
 ### Module Dependency Order (build order)
@@ -119,7 +119,7 @@ ftimer_openmp.F90 (explicit opt-in OpenMP thread-lane runtime; summaries/reducti
 - **Scoped guards are explicit lexical helpers**: Procedural `ftimer_scope(guard, name)` uses the saved default instance. OOP scoped timing uses the pointer-based module helper `call ftimer_oop_scope(timer_pointer, guard, name, ierr)` with `type(ftimer_oop_guard_t)`, so the borrowed timer lifetime is visible at the call site without colliding with the procedural helper. The timer target must outlive the guard and remain initialized until the guard is inactive. Explicit `timer%start()` / `timer%stop()` remains the primary OOP API.
 - **MPI interface contract**: The primary validated MPI path is `mpi_f08` with `type(MPI_Comm)` communicator handles captured at `init`. MPI-enabled fTimer must be used after `MPI_Init` and before `MPI_Finalize`; communicator handles are non-owning, so callers must keep subcommunicators valid until all summaries/reports/finalize/reinit operations that may use them are complete. Legacy integer communicator handles and `mpif.h` are not part of the current documented contract. Integer `init` options such as `mismatch_mode` and `ierr` must be passed by keyword so positional integer communicator handles cannot silently bind to non-communicator options.
 - **OpenMP master-thread-only timing**: When built with `FTIMER_USE_OPENMP=ON`, the existing `ftimer`/`ftimer_core` guarded timer operations run only on the master thread (thread 0). Worker-thread calls to those guarded APIs are silent no-ops: no summary entry is created, no call count is incremented, and no `ierr` is set. Timer calls made exclusively on worker threads produce no summary entry. The supported pattern is to place `start`/`stop` outside `!$omp parallel` blocks. Placing `start`/`stop` inside a parallel region expecting each thread to contribute is the misleading anti-pattern. See `docs/semantics.md` "Consequences for timing data" for the full contract.
-- **Explicit OpenMP API surface**: `ftimer_openmp.F90` is the additive, OOP-first surface for true worker timing. Its lifecycle/configuration, timer registration/lookup, timed-region, and id-first serial-lane/level-1 worker `start_id`/`stop_id` methods are real. Calls made inside an OpenMP parallel region use the object API's active-region rejection and queued-diagnostic contract rather than the legacy silent worker no-op carve-out. The procedural default instance does not participate in true worker timing, and OpenMP summaries plus hybrid rank/lane reductions remain deferred.
+- **Explicit OpenMP API surface**: `ftimer_openmp.F90` is the additive, OOP-first surface for true worker timing. Its lifecycle/configuration, timer registration/lookup, timed-region, id-first serial-lane/level-1 worker `start_id`/`stop_id`, and stopped-run local OpenMP summary/report/CSV methods are real. Calls made inside an OpenMP parallel region use the object API's active-region rejection and queued-diagnostic contract rather than the legacy silent worker no-op carve-out. The procedural default instance does not participate in true worker timing, and hybrid rank/lane reductions remain deferred.
 
 ### Key Data Flow
 
@@ -153,9 +153,9 @@ The call stack state CHANGES between start and stop — this is the most common 
 
 ## Development Workflow
 
-Current `main` contains the shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, sparse/union MPI descriptor summaries, limited OpenMP master-thread guards for the existing APIs, and the explicit `ftimer_openmp_t` serial-lane / level-1 worker timing runtime.
+Current `main` contains the shared types/clock foundation, core timer runtime, local summary/report formatting, procedural convenience wrappers, MPI-reduced structured summaries, sparse/union MPI descriptor summaries, limited OpenMP master-thread guards for the existing APIs, and the explicit `ftimer_openmp_t` serial-lane / level-1 worker timing runtime with stopped-run local OpenMP summaries, reports, and CSV output.
 
-During release-readiness work, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep diffs issue-bounded: preserve procedural-wrapper parity with the OOP core unless a tracked issue explicitly defers parity, keep MPI summary behavior correct and explicit, preserve the limited master-thread-only OpenMP guard model, and keep current-state docs/examples honest. Do not pull OpenMP summaries, hybrid rank/lane reductions, or other broader deferred design work forward without a linked issue.
+During release-readiness work, keep the library, examples, install package, smoke tests, and pFUnit suite buildable. Keep diffs issue-bounded: preserve procedural-wrapper parity with the OOP core unless a tracked issue explicitly defers parity, keep MPI summary behavior correct and explicit, preserve the limited master-thread-only OpenMP guard model, and keep current-state docs/examples honest. Do not pull hybrid rank/lane reductions or other broader deferred design work forward without a linked issue.
 
 Detailed repository operations and PR/review handling live in `docs/maintainer.md`. Use that file for GitHub workflow details; keep this file focused on coding/build/test behavior and the short mandatory PR summary below.
 

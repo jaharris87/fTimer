@@ -89,9 +89,10 @@ cover:
 Tests should use the injectable mock clock or a deterministic OpenMP-aware clock
 model. They should not sleep or depend on wall-clock timing jitter.
 
-## Future Summary And Report Matrix
+## Summary And Report Matrix
 
-When #240 adds local OpenMP summaries and reports, tests should cover:
+Local OpenMP summaries, reports, and CSV output are current behavior. Tests
+should cover:
 
 - stopped-run-only summary construction and active-lane refusal;
 - wall-clock `timed_region_envelope_time` distinct from summed lane work;
