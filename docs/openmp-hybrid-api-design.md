@@ -9,7 +9,8 @@ umbrella in #237. The initial `ftimer_openmp` module added for #268 provides
 the public lifecycle/configuration and timer-catalog surface described here.
 Issue #269 adds the first per-thread lane runtime for timed-region
 `start_id`/`stop_id`, and #270 adds stopped-run local OpenMP summaries,
-reports, and CSV output. Hybrid MPI reductions remain deferred.
+reports, and CSV output. Issue #271 adds strict MPI+OpenMP hybrid summaries,
+reports, and CSV output; sparse/union hybrid participation remains deferred.
 
 ## Decision
 
@@ -20,7 +21,7 @@ True OpenMP worker-thread timing should use a separate, explicit API surface:
 - a `type(ftimer_openmp_config_t)` configuration object;
 - explicit named mode constants in that new module, with the first true timing
   mode defined around OpenMP thread lanes;
-- future hybrid summary/result entry points that are separate from today's
+- strict hybrid summary/result entry points that are separate from today's
   `get_summary()`, `mpi_summary()`, and `mpi_union_summary()` contracts.
 
 The current `ftimer` procedural API, `type(ftimer_t)`, and pure-MPI APIs remain
@@ -33,8 +34,8 @@ turn existing `start`/`stop` calls into true worker-thread timing.
 
 Current `main` remains the source of truth. The `ftimer_openmp` surface is
 available for compile-time adoption and implements the first thread-lane timing
-runtime plus stopped-run local OpenMP summary/report/CSV behavior; later child
-issues add hybrid-reduction behavior.
+runtime plus stopped-run local OpenMP and strict MPI+OpenMP hybrid
+summary/report/CSV behavior.
 
 - Serial users keep the current `use ftimer` and `type(ftimer_t)` behavior.
 - Pure-MPI users keep the current `mpi_f08` `comm=` capture, strict
@@ -62,8 +63,9 @@ The snippets below show the accepted source shape. The `ftimer_openmp` module,
 configuration type, object type, timer catalog calls, and timed-region/timing
 methods now exist and implement the first thread-lane runtime. Local OpenMP
 summaries, reports, and CSV output now exist as a stopped-run result family.
-Hybrid reductions remain non-functional until later implementation issues add
-the rank/lane result families.
+Strict hybrid summaries, reports, and CSV output now exist as a separate
+stopped-run result family. Sparse/union hybrid participation remains future
+work.
 
 ```fortran
 ! Accepted worker-timing shape. Local summary behavior is a stopped-run API.
@@ -108,15 +110,16 @@ the team.
 For hybrid runs, the communicator contract should stay keyword-based:
 
 ```fortran
-! Accepted future hybrid shape. Hybrid summary behavior is implemented later.
+! Accepted strict hybrid shape.
 call timer%init(config=config, comm=comm, ierr=ierr)
-! Later #271/#272:
-! call timer%mpi_openmp_summary(summary, ierr=ierr)
+call timer%mpi_openmp_summary(summary, ierr=ierr)
 ```
 
-The future hybrid result type must be separate from `ftimer_mpi_summary_t` and
+The strict hybrid result type is separate from `ftimer_mpi_summary_t` and
 `ftimer_mpi_union_summary_t` so existing strict and sparse MPI callers do not
-silently receive a rank/thread result shape.
+silently receive a rank/thread result shape. Sparse/union hybrid participation
+must remain a later additive surface, not an automatic relaxation of
+`mpi_openmp_summary()`.
 
 ## Procedural And OOP Interaction
 

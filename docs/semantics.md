@@ -355,8 +355,9 @@ enforcement should pass `ierr` and check it.
   now, including keyword-only `init(config=..., comm=...)` in MPI-enabled
   builds. Registered timer ids remain valid across `reset()` and are
   invalidated across `finalize()`/reinit without being recycled in the same
-  object. The MPI communicator handle is stored for future hybrid-reduction
-  work; local OpenMP summary/report behavior does not consume it.
+  object. The MPI communicator handle is used by strict hybrid MPI+OpenMP
+  summary/report calls; local OpenMP summary/report behavior does not consume
+  it.
   `config%max_lanes` counts the serial lane plus worker lanes.
   Serial-context `start_id`/`stop_id` use lane 0. Inside an explicitly opened
   timed level-1 OpenMP region, `start_id`/`stop_id` use one lane per OpenMP
@@ -416,13 +417,46 @@ enforcement should pass `ierr` and check it.
   `metadata`, and aggregate `entry` rows. It is not append-compatible with the
   local/strict MPI version-2 CSV header or the sparse MPI union CSV header.
 - Local OpenMP summaries are summary tables, not traces. They do not expose
-  interval timelines, profiler event streams, per-entry wall-clock interval
-  unions, or MPI+OpenMP reductions.
+  interval timelines, profiler event streams, or per-entry wall-clock interval
+  unions.
+- `ftimer_openmp_t%mpi_openmp_summary(summary, ierr=...)`,
+  `print_mpi_openmp_summary`, `write_mpi_openmp_summary`, and
+  `write_mpi_openmp_summary_csv` are the strict hybrid MPI+OpenMP
+  summary/report family. They are collective over the communicator captured by
+  `ftimer_openmp_t%init(config=..., comm=...)` and return/format
+  `ftimer_mpi_openmp_summary_t`, not `ftimer_mpi_summary_t` or
+  `ftimer_mpi_union_summary_t`.
+- Strict hybrid summaries are stopped-run-only. Before descriptor or timing
+  reductions, every rank exchanges active-lane status; if any rank has an open
+  timed region or active lane stack, every participant returns
+  `FTIMER_ERR_ACTIVE` and the result remains empty.
+- Strict hybrid descriptor identity includes the logical timer/context path,
+  execution domain (`serial_lane` versus `openmp_level1_team`), and eligible
+  lane structure. Ranks must agree on the required descriptor set and every
+  eligible lane must participate. Missing ranks, missing lanes, different
+  timer paths, or different eligible lane structures fail as
+  `FTIMER_ERR_MPI_INCON` before numeric timing reductions. Missing rank/lane
+  data is not silently filled with zero.
+- `ftimer_mpi_openmp_summary_t` stores communicator-level rank extrema and
+  averages for summary-window time, timed-region envelope time, summed lane
+  root work, and summed lane self work; rank rows for each communicator-local
+  rank; and descriptor rows with rank/lane participation counts plus
+  participating-lane inclusive time, self time, call-count, percent, and
+  imbalance fields.
+- Strict hybrid text and CSV reports are communicator-root artifacts. The CSV
+  export uses a dedicated `format_version=1`, `summary_kind=mpi_openmp` schema
+  with `summary`, `metadata`, `rank`, and aggregate `entry` rows. It is not
+  append-compatible with local OpenMP, local serial, strict MPI, or sparse MPI
+  union CSV headers.
+- Sparse or union MPI+OpenMP hybrid participation reductions are not part of
+  this strict surface. Rank- or lane-conditional hybrid work must use a later
+  sparse/union hybrid API rather than relying on `mpi_openmp_summary()` to
+  relax strictness.
 - For user-facing mode selection, accepted instrumentation patterns, and
   migration guidance, see
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
-- Future real hybrid MPI+OpenMP timing is tracked separately from this current
-  compatibility mode; see [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md)
+- Sparse/union hybrid MPI+OpenMP participation remains future work; see
+  [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md)
   and the opt-in API direction in
   [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md), plus the
   OpenMP/hybrid summary model in

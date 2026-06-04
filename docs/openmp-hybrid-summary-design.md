@@ -8,34 +8,36 @@ Issue #240 defines the summary and self-time contract that should sit between
 the opt-in API direction from #238 and the thread-lane runtime model from #239.
 This began as a design contract. Issue #268 adds the initial `ftimer_openmp`
 module and object lifecycle/catalog surface, #269 adds the first thread-lane
-runtime, and #270 adds stopped-run local OpenMP summaries, reports, and CSV
-output. MPI+OpenMP reductions remain future work.
+runtime, #270 adds stopped-run local OpenMP summaries, reports, and CSV
+output, and #271 adds stopped-run strict MPI+OpenMP hybrid summaries, reports,
+and CSV output. Sparse/union hybrid participation reductions remain future
+work under #272.
 
 ## Decision
 
 True OpenMP worker-thread timing should use new summary/result types and new
 report/CSV entry points behind the current `ftimer_openmp_t` API.
 
-Current local and future hybrid type family:
+Current local and strict hybrid type family:
 
 - `ftimer_openmp_summary_t` for local OpenMP aggregate summaries;
 - `ftimer_openmp_summary_entry_t` for logical timer/context aggregate rows;
 - optional `ftimer_openmp_lane_entry_t` detail records for explicit diagnostic
   or detail exports, not for the default aggregate summary path;
-- `ftimer_mpi_openmp_summary_t` and related entry types for hybrid
+- `ftimer_mpi_openmp_summary_t` and related rank/entry types for strict hybrid
   MPI+OpenMP reductions defined by #241 in
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md).
 
-Current local and future hybrid entry points:
+Current local and strict hybrid entry points:
 
 - `timer%get_openmp_summary(summary, ierr=ierr)` for local aggregate summaries;
 - `timer%print_openmp_summary(...)`, `timer%write_openmp_summary(...)`, and
   `timer%write_openmp_summary_csv(...)` for local aggregate reports;
 - `timer%mpi_openmp_summary(summary, ierr=ierr)` plus explicit hybrid text and
-  CSV writers for MPI+OpenMP summaries.
+  CSV writers for strict MPI+OpenMP summaries.
 
-The local OpenMP names are available on current `main`; the hybrid MPI+OpenMP
-names remain proposed source shapes for later implementation issues.
+Sparse or union MPI+OpenMP hybrid participation summaries are intentionally not
+part of the strict surface.
 
 Current `get_summary()`, `mpi_summary()`, `mpi_union_summary()`,
 `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, and
@@ -295,13 +297,11 @@ Hybrid summaries should distinguish:
 - per-entry participating rank/lane sample count;
 - missing ranks versus missing lanes within participating ranks.
 
-Because hybrid OpenMP has no existing callers, #241 chooses one
-participation-aware result that can represent rank and lane absence explicitly.
-Strict identical-participant behavior is documented for tests and future
-adopter-driven use, but should not become required first public policy unless
-future implementation validation or a concrete adopter justifies the added API,
-CSV, and test burden. Whatever implementation follows that design must not
-weaken current `mpi_summary()` or `mpi_union_summary()` by accident.
+The implemented #271 surface is strict-identical: every rank must expose the
+same descriptors and every eligible lane must participate. Missing rank/lane
+data is an error, not zero-filled data. Sparse/union hybrid participation is a
+later additive API and must not weaken current `mpi_summary()`,
+`mpi_union_summary()`, or strict `mpi_openmp_summary()` behavior by accident.
 
 ## Text Reports
 
@@ -449,7 +449,6 @@ overhead, following the validation plan introduced by #243.
 ## Validation For This Design
 
 This issue records the data-model contract. Local OpenMP summary/report/CSV
-runtime behavior is implemented separately by #270; hybrid reductions remain
-design-only until their implementation issue lands. Validation for the original
-design-only step was Markdown review and diff checking; implementation issues
-must add Fortran builds and tests.
+runtime behavior is implemented by #270, and strict MPI+OpenMP hybrid
+summary/report/CSV behavior is implemented by #271. Sparse/union hybrid
+participation remains a later implementation issue.

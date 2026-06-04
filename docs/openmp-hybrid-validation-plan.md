@@ -150,12 +150,12 @@ Installed-package checks should verify the public package story at each stage:
   links, validates keyword-only init shape, runs serial and timed worker
   `start_id`/`stop_id`, preserves bounded worker diagnostics, and exercises
   stopped-run local OpenMP summary/report/CSV entry points; and
-- future hybrid summary installed consumers only after the public hybrid
-  reduction result types exist.
+- strict hybrid summary/report/CSV smoke coverage once `FTIMER_USE_MPI=ON` and
+  `FTIMER_USE_OPENMP=ON` are enabled.
 
-Future installed consumers should compile the documented source shapes, run the
-supported examples, and assert the exported CMake package resolves only the
-dependencies required by the selected feature mode.
+Future sparse/union hybrid installed consumers should compile their documented
+source shapes, run the supported examples, and assert the exported CMake
+package resolves only the dependencies required by the selected feature mode.
 
 ## Toolchain And Skip Policy
 
@@ -198,8 +198,10 @@ comparisons are meaningful.
 ## Non-Goals
 
 - Claiming true OpenMP worker timing from the initial #243 build-only coverage.
-- Adding pFUnit tests for future summary/reduction APIs that do not exist yet.
-- Treating MPI+OpenMP build success as proof of hybrid rank/lane reductions.
+- Adding pFUnit tests for future sparse/union summary/reduction APIs that do
+  not exist yet.
+- Treating MPI+OpenMP build success as proof of sparse/union hybrid rank/lane
+  reductions.
 - Requiring every CI runner to support every MPI/OpenMP/compiler combination.
 - Weakening current worker no-op compatibility tests.
 - Adding automatic MPI barriers, OpenMP task timing, accelerator/device timing,
@@ -215,8 +217,8 @@ comparisons are meaningful.
   tests must enforce.
 - #242 records user-facing timing modes and migration guidance. Current local
   OpenMP examples and installed consumers should stay compile-checked; later
-  implementation issues add future hybrid examples and installed consumers once
-  the future hybrid public API exists.
+  implementation issues add sparse/union hybrid examples and installed
+  consumers once that API exists.
 
 ## Validation For This Plan
 

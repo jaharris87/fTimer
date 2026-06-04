@@ -37,6 +37,9 @@ ftimer_core|ftimer_test_get_state|test-only
 ftimer_core|ftimer_test_set_call_count|test-only
 ftimer_core|ftimer_test_state_t|test-only
 ftimer_openmp|FTIMER_OPENMP_MODE_THREAD_LANES|stable
+ftimer_openmp|ftimer_mpi_openmp_rank_t|stable
+ftimer_openmp|ftimer_mpi_openmp_summary_entry_t|stable
+ftimer_openmp|ftimer_mpi_openmp_summary_t|stable
 ftimer_openmp|ftimer_openmp_config_t|stable
 ftimer_openmp|ftimer_openmp_parallel_region_t|stable
 ftimer_openmp|ftimer_openmp_summary_entry_t|stable

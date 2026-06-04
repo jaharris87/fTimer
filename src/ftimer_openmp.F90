@@ -2,10 +2,13 @@ module ftimer_openmp
    use, intrinsic :: iso_fortran_env, only: error_unit, int64, iostat_end, output_unit
    use ftimer_clock, only: ftimer_date_string, ftimer_default_clock
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_IO, FTIMER_ERR_MISMATCH, &
-                           FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
+                           FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_NOT_INIT, &
+                           FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
                            ftimer_call_stack_t, ftimer_clock_func, ftimer_metadata_t, ftimer_segment_t, wp
 #ifdef FTIMER_USE_MPI
-   use mpi_f08, only: MPI_Comm, MPI_COMM_WORLD
+   use mpi_f08, only: MPI_Allgather, MPI_Allreduce, MPI_Bcast, MPI_Comm, MPI_COMM_WORLD, MPI_Datatype, &
+                      MPI_Comm_rank, MPI_Comm_size, MPI_INTEGER, MPI_MAX, MPI_MIN, MPI_SUCCESS, MPI_SUM, &
+                      MPI_TYPECLASS_INTEGER, MPI_TYPECLASS_REAL, MPI_Type_match_size, MPI_Type_size
 #endif
 #ifdef FTIMER_USE_OPENMP
    use omp_lib, only: omp_get_level, omp_get_max_threads, omp_get_num_threads, omp_get_thread_num, omp_in_parallel
@@ -16,6 +19,9 @@ module ftimer_openmp
    public :: FTIMER_OPENMP_MODE_THREAD_LANES
    public :: ftimer_openmp_config_t
    public :: ftimer_openmp_parallel_region_t
+   public :: ftimer_mpi_openmp_rank_t
+   public :: ftimer_mpi_openmp_summary_entry_t
+   public :: ftimer_mpi_openmp_summary_t
    public :: ftimer_openmp_summary_entry_t
    public :: ftimer_openmp_summary_t
    public :: ftimer_openmp_t
@@ -25,6 +31,7 @@ module ftimer_openmp
    integer, parameter :: FTIMER_OPENMP_DEFAULT_WORKER_DIAGNOSTICS = 32
    integer, parameter :: FTIMER_OPENMP_CONTEXT_EPOCH_UNKNOWN = -1
    character(len=*), parameter :: FTIMER_OPENMP_CSV_FORMAT_VERSION = '1'
+   character(len=*), parameter :: FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION = '1'
    integer, parameter :: default_report_buffer_capacity = 1024
    integer(int64) :: next_object_token = 1_int64
    integer(int64) :: next_region_token = 1_int64
@@ -100,6 +107,78 @@ module ftimer_openmp
       type(ftimer_openmp_summary_entry_t), allocatable :: entries(:)
    end type ftimer_openmp_summary_t
 
+   type :: ftimer_mpi_openmp_rank_t
+      integer :: rank = -1
+      integer :: configured_lane_capacity = 0
+      integer :: observed_participating_lane_count = 0
+      real(wp) :: summary_window_time = 0.0_wp
+      real(wp) :: timed_region_envelope_time = 0.0_wp
+      real(wp) :: sum_lane_root_inclusive_time = 0.0_wp
+      real(wp) :: sum_lane_self_time = 0.0_wp
+   end type ftimer_mpi_openmp_rank_t
+
+   type :: ftimer_mpi_openmp_summary_entry_t
+      character(len=:), allocatable :: name
+      character(len=:), allocatable :: execution_domain
+      integer :: depth = 0
+      integer :: node_id = 0
+      integer :: parent_id = 0
+      integer :: participating_rank_count = 0
+      integer :: missing_rank_count = 0
+      integer :: eligible_rank_lane_sample_count = 0
+      integer :: participating_rank_lane_sample_count = 0
+      integer :: missing_rank_lane_sample_count = 0
+      logical :: missing_rank_lane_sample_count_known = .true.
+      real(wp) :: sum_participating_lane_inclusive_time = 0.0_wp
+      real(wp) :: sum_participating_lane_self_time = 0.0_wp
+      real(wp) :: min_participating_lane_inclusive_time = 0.0_wp
+      real(wp) :: avg_participating_lane_inclusive_time = 0.0_wp
+      real(wp) :: max_participating_lane_inclusive_time = 0.0_wp
+      real(wp) :: participating_lane_inclusive_imbalance = 1.0_wp
+      real(wp) :: min_participating_lane_self_time = 0.0_wp
+      real(wp) :: avg_participating_lane_self_time = 0.0_wp
+      real(wp) :: max_participating_lane_self_time = 0.0_wp
+      real(wp) :: participating_lane_self_imbalance = 1.0_wp
+      integer(int64) :: min_participating_lane_call_count = 0_int64
+      integer(int64) :: max_participating_lane_call_count = 0_int64
+      real(wp) :: avg_participating_lane_call_count = 0.0_wp
+      real(wp) :: min_participating_lane_pct_time = 0.0_wp
+      real(wp) :: avg_participating_lane_pct_time = 0.0_wp
+      real(wp) :: max_participating_lane_pct_time = 0.0_wp
+      real(wp) :: participating_lane_pct_imbalance = 1.0_wp
+   end type ftimer_mpi_openmp_summary_entry_t
+
+   type :: ftimer_mpi_openmp_summary_t
+      integer :: num_ranks = 0
+      integer :: num_entries = 0
+      real(wp) :: min_rank_summary_window_time = 0.0_wp
+      real(wp) :: avg_rank_summary_window_time = 0.0_wp
+      real(wp) :: max_rank_summary_window_time = 0.0_wp
+      real(wp) :: rank_summary_window_imbalance = 1.0_wp
+      integer :: min_rank_summary_window_time_rank = -1
+      integer :: max_rank_summary_window_time_rank = -1
+      real(wp) :: min_rank_timed_region_envelope_time = 0.0_wp
+      real(wp) :: avg_rank_timed_region_envelope_time = 0.0_wp
+      real(wp) :: max_rank_timed_region_envelope_time = 0.0_wp
+      real(wp) :: rank_timed_region_envelope_imbalance = 1.0_wp
+      integer :: min_rank_timed_region_envelope_time_rank = -1
+      integer :: max_rank_timed_region_envelope_time_rank = -1
+      real(wp) :: min_rank_sum_lane_root_inclusive_time = 0.0_wp
+      real(wp) :: avg_rank_sum_lane_root_inclusive_time = 0.0_wp
+      real(wp) :: max_rank_sum_lane_root_inclusive_time = 0.0_wp
+      real(wp) :: rank_sum_lane_root_inclusive_imbalance = 1.0_wp
+      integer :: min_rank_sum_lane_root_inclusive_time_rank = -1
+      integer :: max_rank_sum_lane_root_inclusive_time_rank = -1
+      real(wp) :: min_rank_sum_lane_self_time = 0.0_wp
+      real(wp) :: avg_rank_sum_lane_self_time = 0.0_wp
+      real(wp) :: max_rank_sum_lane_self_time = 0.0_wp
+      real(wp) :: rank_sum_lane_self_imbalance = 1.0_wp
+      integer :: min_rank_sum_lane_self_time_rank = -1
+      integer :: max_rank_sum_lane_self_time_rank = -1
+      type(ftimer_mpi_openmp_rank_t), allocatable :: ranks(:)
+      type(ftimer_mpi_openmp_summary_entry_t), allocatable :: entries(:)
+   end type ftimer_mpi_openmp_summary_t
+
    type :: ftimer_openmp_entry_accumulator_t
       character(len=:), allocatable :: path
       character(len=:), allocatable :: parent_path
@@ -113,6 +192,22 @@ module ftimer_openmp
       real(wp), allocatable :: lane_self(:)
       integer(int64), allocatable :: lane_calls(:)
    end type ftimer_openmp_entry_accumulator_t
+
+   type :: ftimer_mpi_openmp_entry_accumulator_t
+      character(len=:), allocatable :: path
+      character(len=:), allocatable :: parent_path
+      character(len=:), allocatable :: descriptor
+      character(len=:), allocatable :: parent_descriptor
+      character(len=:), allocatable :: name
+      character(len=:), allocatable :: execution_domain
+      integer :: depth = 0
+      integer :: eligible_lane_count = 0
+      logical :: missing_lane_count_known = .true.
+      logical, allocatable :: lane_seen(:)
+      real(wp), allocatable :: lane_inclusive(:)
+      real(wp), allocatable :: lane_self(:)
+      integer(int64), allocatable :: lane_calls(:)
+   end type ftimer_mpi_openmp_entry_accumulator_t
 
    type :: ftimer_openmp_t
       private
@@ -162,6 +257,10 @@ module ftimer_openmp
       procedure :: print_openmp_summary
       procedure :: write_openmp_summary
       procedure :: write_openmp_summary_csv
+      procedure :: mpi_openmp_summary
+      procedure :: print_mpi_openmp_summary
+      procedure :: write_mpi_openmp_summary
+      procedure :: write_mpi_openmp_summary_csv
 #ifdef FTIMER_BUILD_SMOKE_TESTS
       procedure :: test_lane_total_call_count
       procedure :: test_lane_parent_call_count
@@ -770,6 +869,1651 @@ contains
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine write_openmp_summary_csv
+
+   subroutine mpi_openmp_summary(self, summary, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      type(ftimer_mpi_openmp_summary_t), intent(out) :: summary
+      integer, intent(out), optional :: ierr
+      character(len=256) :: diagnostic
+      integer :: status
+
+      call build_current_mpi_openmp_summary(self, summary, status, diagnostic, present(ierr))
+      if (status /= FTIMER_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, status, diagnostic)
+         return
+      end if
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine mpi_openmp_summary
+
+   subroutine print_mpi_openmp_summary(self, unit, metadata, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in), optional :: unit
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      integer, intent(out), optional :: ierr
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      character(len=:), allocatable :: text
+      character(len=256) :: diagnostic
+      character(len=256) :: iomsg
+      integer :: io
+      integer :: out_unit
+      integer :: rank
+      integer :: status
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm) :: active_comm
+      integer :: bcast_status
+      integer :: mpierr
+      integer :: nprocs
+#endif
+
+      call build_current_mpi_openmp_summary(self, summary, status, diagnostic, present(ierr))
+      if (status /= FTIMER_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, status, diagnostic)
+         return
+      end if
+
+#ifdef FTIMER_USE_MPI
+      call get_mpi_openmp_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+      if (status /= FTIMER_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, status, "ftimer_openmp print_mpi_openmp_summary communicator lookup failed")
+         return
+      end if
+
+      bcast_status = FTIMER_SUCCESS
+      if (rank == 0) then
+         call format_mpi_openmp_summary(summary, text, metadata)
+         out_unit = output_unit
+         if (present(unit)) out_unit = unit
+         call write_text_block(out_unit, text, io, iomsg)
+         if (io /= 0) bcast_status = FTIMER_ERR_IO
+      end if
+      call MPI_Bcast(bcast_status, 1, MPI_INTEGER, 0, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) bcast_status = FTIMER_ERR_UNKNOWN
+      if (bcast_status /= FTIMER_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, bcast_status, &
+                                             "ftimer_openmp print_mpi_openmp_summary write failed")
+         return
+      end if
+#else
+      rank = 0
+#endif
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine print_mpi_openmp_summary
+
+   subroutine write_mpi_openmp_summary(self, filename, append, metadata, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      character(len=*), intent(in) :: filename
+      logical, intent(in), optional :: append
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      integer, intent(out), optional :: ierr
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      character(len=:), allocatable :: text
+      character(len=256) :: diagnostic
+      character(len=256) :: iomsg
+      integer :: file_unit
+      integer :: io
+      integer :: rank
+      integer :: status
+      logical :: append_mode
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm) :: active_comm
+      integer :: bcast_status
+      integer :: mpierr
+      integer :: nprocs
+#endif
+
+      call build_current_mpi_openmp_summary(self, summary, status, diagnostic, present(ierr))
+      if (status /= FTIMER_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, status, diagnostic)
+         return
+      end if
+
+#ifdef FTIMER_USE_MPI
+      call get_mpi_openmp_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+      if (status /= FTIMER_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, status, "ftimer_openmp write_mpi_openmp_summary communicator lookup failed")
+         return
+      end if
+
+      bcast_status = FTIMER_SUCCESS
+      if (rank == 0) then
+         call format_mpi_openmp_summary(summary, text, metadata)
+         append_mode = .false.
+         if (present(append)) append_mode = append
+         if (append_mode) then
+            open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', &
+                  iostat=io, iomsg=iomsg)
+         else
+            open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+         end if
+         if (io /= 0) then
+            bcast_status = FTIMER_ERR_IO
+         else
+            call write_text_block(file_unit, text, io, iomsg)
+            if (io /= 0) bcast_status = FTIMER_ERR_IO
+            close (file_unit, iostat=io, iomsg=iomsg)
+            if ((io /= 0) .and. (bcast_status == FTIMER_SUCCESS)) bcast_status = FTIMER_ERR_IO
+         end if
+      end if
+      call MPI_Bcast(bcast_status, 1, MPI_INTEGER, 0, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) bcast_status = FTIMER_ERR_UNKNOWN
+      if (bcast_status /= FTIMER_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, bcast_status, &
+                                             "ftimer_openmp write_mpi_openmp_summary write failed")
+         return
+      end if
+#else
+      rank = 0
+#endif
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine write_mpi_openmp_summary
+
+   subroutine write_mpi_openmp_summary_csv(self, filename, append, metadata, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      character(len=*), intent(in) :: filename
+      logical, intent(in), optional :: append
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      integer, intent(out), optional :: ierr
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      character(len=:), allocatable :: text
+      character(len=256) :: diagnostic
+      character(len=256) :: iomsg
+      integer :: file_unit
+      integer :: header_status
+      integer :: io
+      integer :: rank
+      integer :: status
+      logical :: append_mode
+      logical :: include_header
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm) :: active_comm
+      integer :: bcast_status
+      integer :: mpierr
+      integer :: nprocs
+#endif
+
+      call build_current_mpi_openmp_summary(self, summary, status, diagnostic, present(ierr))
+      if (status /= FTIMER_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, status, diagnostic)
+         return
+      end if
+
+#ifdef FTIMER_USE_MPI
+      call get_mpi_openmp_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+      if (status /= FTIMER_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, status, &
+                                             "ftimer_openmp write_mpi_openmp_summary_csv communicator lookup failed")
+         return
+      end if
+
+      bcast_status = FTIMER_SUCCESS
+      if (rank == 0) then
+         append_mode = .false.
+         if (present(append)) append_mode = append
+         call get_mpi_openmp_csv_header_mode(filename, append_mode, include_header, header_status, iomsg)
+         if (header_status /= FTIMER_SUCCESS) then
+            bcast_status = header_status
+         else
+            call format_mpi_openmp_summary_csv(summary, text, metadata, include_header=include_header)
+            if (append_mode) then
+               open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', &
+                     iostat=io, iomsg=iomsg)
+            else
+               open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+            end if
+            if (io /= 0) then
+               bcast_status = FTIMER_ERR_IO
+            else
+               call write_text_block(file_unit, text, io, iomsg)
+               if (io /= 0) bcast_status = FTIMER_ERR_IO
+               close (file_unit, iostat=io, iomsg=iomsg)
+               if ((io /= 0) .and. (bcast_status == FTIMER_SUCCESS)) bcast_status = FTIMER_ERR_IO
+            end if
+         end if
+      end if
+      call MPI_Bcast(bcast_status, 1, MPI_INTEGER, 0, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) bcast_status = FTIMER_ERR_UNKNOWN
+      if (bcast_status /= FTIMER_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, bcast_status, &
+                                             "ftimer_openmp write_mpi_openmp_summary_csv write failed")
+         return
+      end if
+#else
+      rank = 0
+#endif
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine write_mpi_openmp_summary_csv
+
+   subroutine reset_mpi_openmp_summary(summary)
+      type(ftimer_mpi_openmp_summary_t), intent(out) :: summary
+
+      if (allocated(summary%ranks)) deallocate (summary%ranks)
+      if (allocated(summary%entries)) deallocate (summary%entries)
+      summary%num_ranks = 0
+      summary%num_entries = 0
+      summary%min_rank_summary_window_time = 0.0_wp
+      summary%avg_rank_summary_window_time = 0.0_wp
+      summary%max_rank_summary_window_time = 0.0_wp
+      summary%rank_summary_window_imbalance = 1.0_wp
+      summary%min_rank_summary_window_time_rank = -1
+      summary%max_rank_summary_window_time_rank = -1
+      summary%min_rank_timed_region_envelope_time = 0.0_wp
+      summary%avg_rank_timed_region_envelope_time = 0.0_wp
+      summary%max_rank_timed_region_envelope_time = 0.0_wp
+      summary%rank_timed_region_envelope_imbalance = 1.0_wp
+      summary%min_rank_timed_region_envelope_time_rank = -1
+      summary%max_rank_timed_region_envelope_time_rank = -1
+      summary%min_rank_sum_lane_root_inclusive_time = 0.0_wp
+      summary%avg_rank_sum_lane_root_inclusive_time = 0.0_wp
+      summary%max_rank_sum_lane_root_inclusive_time = 0.0_wp
+      summary%rank_sum_lane_root_inclusive_imbalance = 1.0_wp
+      summary%min_rank_sum_lane_root_inclusive_time_rank = -1
+      summary%max_rank_sum_lane_root_inclusive_time_rank = -1
+      summary%min_rank_sum_lane_self_time = 0.0_wp
+      summary%avg_rank_sum_lane_self_time = 0.0_wp
+      summary%max_rank_sum_lane_self_time = 0.0_wp
+      summary%rank_sum_lane_self_imbalance = 1.0_wp
+      summary%min_rank_sum_lane_self_time_rank = -1
+      summary%max_rank_sum_lane_self_time_rank = -1
+   end subroutine reset_mpi_openmp_summary
+
+   subroutine get_mpi_openmp_comm_info(comm, active_comm, rank, nprocs, status)
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm), intent(in) :: comm
+      type(MPI_Comm), intent(out) :: active_comm
+#else
+      integer, intent(in) :: comm
+      integer, intent(out) :: active_comm
+#endif
+      integer, intent(out) :: rank
+      integer, intent(out) :: nprocs
+      integer, intent(out) :: status
+#ifdef FTIMER_USE_MPI
+      integer :: mpierr
+
+      active_comm = comm
+      call MPI_Comm_rank(active_comm, rank, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         rank = -1
+         nprocs = 0
+         return
+      end if
+
+      call MPI_Comm_size(active_comm, nprocs, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         rank = -1
+         nprocs = 0
+         return
+      end if
+
+      status = FTIMER_SUCCESS
+#else
+      active_comm = comm
+      rank = -1
+      nprocs = 0
+      status = FTIMER_ERR_NOT_IMPLEMENTED
+#endif
+   end subroutine get_mpi_openmp_comm_info
+
+   subroutine build_current_mpi_openmp_summary(self, summary, status, diagnostic, diagnostics_are_explicit)
+      class(ftimer_openmp_t), intent(inout) :: self
+      type(ftimer_mpi_openmp_summary_t), intent(out) :: summary
+      integer, intent(out) :: status
+      character(len=*), intent(out) :: diagnostic
+      logical, intent(in) :: diagnostics_are_explicit
+#ifdef FTIMER_USE_MPI
+      type(MPI_Comm) :: active_comm
+      type(MPI_Datatype) :: mpi_int64_type
+      type(MPI_Datatype) :: mpi_wp_type
+      type(ftimer_openmp_summary_t) :: local_summary
+      type(ftimer_mpi_openmp_entry_accumulator_t), allocatable :: accumulators(:)
+      character(len=:), allocatable :: descriptors(:)
+      integer, allocatable :: all_rank_ints(:)
+      integer, allocatable :: eligible_samples(:)
+      integer, allocatable :: local_eligible_samples(:)
+      integer, allocatable :: local_participating_samples(:)
+      integer, allocatable :: local_present(:)
+      integer, allocatable :: local_max_inclusive_rank(:)
+      integer, allocatable :: local_min_inclusive_rank(:)
+      integer, allocatable :: max_inclusive_rank(:)
+      integer, allocatable :: min_inclusive_rank(:)
+      integer, allocatable :: mismatch_flags(:)
+      integer, allocatable :: order(:)
+      integer, allocatable :: participating_ranks(:)
+      integer, allocatable :: participating_samples(:)
+      integer(int64), allocatable :: local_calls_max(:)
+      integer(int64), allocatable :: local_calls_min(:)
+      integer(int64), allocatable :: max_calls(:)
+      integer(int64), allocatable :: min_calls(:)
+      integer :: acc_idx
+      integer :: all_datatypes_ready
+      integer :: any_active
+      integer :: any_hash_mismatch
+      integer :: any_strict_invalid
+      integer :: collective_status
+      integer :: datatypes_ready
+      integer :: entry_count
+      integer :: i
+      integer :: lane_idx
+      integer :: local_active
+      integer :: local_hash_mismatch
+      integer :: local_status
+      integer :: local_strict_invalid
+      integer :: mpierr
+      integer :: nprocs
+      integer :: rank
+      integer :: rank_slot
+      integer :: sample_count
+      integer(int64) :: local_hashes(2)
+      integer(int64) :: reference_hashes(2)
+      logical :: did_drain
+      real(wp), allocatable :: all_rank_reals(:)
+      real(wp), allocatable :: local_call_delta(:)
+      real(wp), allocatable :: local_inclusive_max(:)
+      real(wp), allocatable :: local_inclusive_min(:)
+      real(wp), allocatable :: local_inclusive_sum(:)
+      real(wp), allocatable :: local_pct_max(:)
+      real(wp), allocatable :: local_pct_min(:)
+      real(wp), allocatable :: local_pct_sum(:)
+      real(wp), allocatable :: local_self_max(:)
+      real(wp), allocatable :: local_self_min(:)
+      real(wp), allocatable :: local_self_sum(:)
+      real(wp), allocatable :: max_inclusive(:)
+      real(wp), allocatable :: max_pct(:)
+      real(wp), allocatable :: max_self(:)
+      real(wp), allocatable :: min_inclusive(:)
+      real(wp), allocatable :: min_pct(:)
+      real(wp), allocatable :: min_self(:)
+      real(wp), allocatable :: sum_call_delta(:)
+      real(wp), allocatable :: sum_inclusive(:)
+      real(wp), allocatable :: sum_pct(:)
+      real(wp), allocatable :: sum_self(:)
+      real(wp) :: lane_pct
+      real(wp) :: local_rank_reals(4)
+      integer :: local_rank_ints(3)
+#endif
+
+      call reset_mpi_openmp_summary(summary)
+      diagnostic = ''
+
+      if (.not. self%initialized) then
+         status = FTIMER_ERR_NOT_INIT
+         return
+      end if
+
+      if (is_inside_parallel_region()) then
+         status = FTIMER_ERR_ACTIVE
+         return
+      end if
+
+#ifdef FTIMER_USE_MPI
+      call get_mpi_openmp_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
+      if (status /= FTIMER_SUCCESS) return
+
+      local_active = 0
+      if (self%region_open .or. has_active_lanes(self)) local_active = 1
+      call MPI_Allreduce(local_active, any_active, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      if (any_active /= 0) then
+         status = FTIMER_ERR_ACTIVE
+         return
+      end if
+
+      local_status = FTIMER_SUCCESS
+      if (diagnostics_are_explicit) then
+         if (drain_worker_diagnostics(self, local_status)) then
+            continue
+         end if
+      else
+         did_drain = drain_worker_diagnostics(self)
+      end if
+      call MPI_Allreduce(local_status, collective_status, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      if (collective_status /= FTIMER_SUCCESS) then
+         status = collective_status
+         return
+      end if
+
+      call build_openmp_summary(self, local_summary)
+      call build_mpi_openmp_accumulators(self, accumulators, entry_count)
+      call finalize_mpi_openmp_accumulators(accumulators, entry_count, local_strict_invalid)
+
+      call MPI_Allreduce(local_strict_invalid, any_strict_invalid, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      if (any_strict_invalid /= 0) then
+         allocate (mismatch_flags(nprocs))
+         call MPI_Allgather(local_strict_invalid, 1, MPI_INTEGER, mismatch_flags, 1, MPI_INTEGER, active_comm, mpierr)
+         if (mpierr /= MPI_SUCCESS) then
+            status = FTIMER_ERR_UNKNOWN
+            return
+         end if
+         call format_mpi_openmp_mismatch_diagnostic(mismatch_flags, &
+                                                    "incomplete lane participation", diagnostic)
+         status = FTIMER_ERR_MPI_INCON
+         return
+      end if
+
+      call resolve_mpi_openmp_datatypes(mpi_wp_type, mpi_int64_type, status, diagnostic)
+      datatypes_ready = 0
+      if (status == FTIMER_SUCCESS) datatypes_ready = 1
+      call MPI_Allreduce(datatypes_ready, all_datatypes_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      if (all_datatypes_ready /= 1) then
+         if (status == FTIMER_SUCCESS) then
+            status = FTIMER_ERR_UNKNOWN
+            diagnostic = "ftimer_openmp mpi_openmp_summary datatype validation failed on another rank"
+         end if
+         return
+      end if
+
+      call build_mpi_openmp_descriptor_order(accumulators, entry_count, descriptors, order)
+      call hash_mpi_openmp_descriptor_list(descriptors, order, local_hashes)
+      reference_hashes = local_hashes
+      call MPI_Bcast(reference_hashes, 2, mpi_int64_type, 0, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      local_hash_mismatch = 0
+      if (any(local_hashes /= reference_hashes)) local_hash_mismatch = 1
+      call MPI_Allreduce(local_hash_mismatch, any_hash_mismatch, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      if (any_hash_mismatch /= 0) then
+         allocate (mismatch_flags(nprocs))
+         call MPI_Allgather(local_hash_mismatch, 1, MPI_INTEGER, mismatch_flags, 1, MPI_INTEGER, active_comm, mpierr)
+         if (mpierr /= MPI_SUCCESS) then
+            status = FTIMER_ERR_UNKNOWN
+            return
+         end if
+         call format_mpi_openmp_mismatch_diagnostic(mismatch_flags, "descriptor mismatch", diagnostic)
+         status = FTIMER_ERR_MPI_INCON
+         return
+      end if
+
+      local_rank_reals(1) = local_summary%summary_window_time
+      local_rank_reals(2) = local_summary%timed_region_envelope_time
+      local_rank_reals(3) = local_summary%sum_lane_root_inclusive_time
+      local_rank_reals(4) = local_summary%sum_lane_self_time
+      local_rank_ints(1) = rank
+      local_rank_ints(2) = local_summary%configured_lane_capacity
+      local_rank_ints(3) = local_summary%observed_participating_lane_count
+      allocate (all_rank_reals(4*nprocs))
+      allocate (all_rank_ints(3*nprocs))
+      call MPI_Allgather(local_rank_reals, 4, mpi_wp_type, all_rank_reals, 4, mpi_wp_type, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allgather(local_rank_ints, 3, MPI_INTEGER, all_rank_ints, 3, MPI_INTEGER, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      summary%num_ranks = nprocs
+      summary%num_entries = entry_count
+      allocate (summary%ranks(nprocs))
+      do rank_slot = 1, nprocs
+         summary%ranks(rank_slot)%rank = all_rank_ints(3*(rank_slot - 1) + 1)
+         summary%ranks(rank_slot)%configured_lane_capacity = all_rank_ints(3*(rank_slot - 1) + 2)
+         summary%ranks(rank_slot)%observed_participating_lane_count = all_rank_ints(3*(rank_slot - 1) + 3)
+         summary%ranks(rank_slot)%summary_window_time = all_rank_reals(4*(rank_slot - 1) + 1)
+         summary%ranks(rank_slot)%timed_region_envelope_time = all_rank_reals(4*(rank_slot - 1) + 2)
+         summary%ranks(rank_slot)%sum_lane_root_inclusive_time = all_rank_reals(4*(rank_slot - 1) + 3)
+         summary%ranks(rank_slot)%sum_lane_self_time = all_rank_reals(4*(rank_slot - 1) + 4)
+      end do
+      call set_mpi_openmp_rank_metric(all_rank_reals, all_rank_ints, nprocs, 1, &
+                                      summary%min_rank_summary_window_time, &
+                                      summary%avg_rank_summary_window_time, &
+                                      summary%max_rank_summary_window_time, &
+                                      summary%rank_summary_window_imbalance, &
+                                      summary%min_rank_summary_window_time_rank, &
+                                      summary%max_rank_summary_window_time_rank)
+      call set_mpi_openmp_rank_metric(all_rank_reals, all_rank_ints, nprocs, 2, &
+                                      summary%min_rank_timed_region_envelope_time, &
+                                      summary%avg_rank_timed_region_envelope_time, &
+                                      summary%max_rank_timed_region_envelope_time, &
+                                      summary%rank_timed_region_envelope_imbalance, &
+                                      summary%min_rank_timed_region_envelope_time_rank, &
+                                      summary%max_rank_timed_region_envelope_time_rank)
+      call set_mpi_openmp_rank_metric(all_rank_reals, all_rank_ints, nprocs, 3, &
+                                      summary%min_rank_sum_lane_root_inclusive_time, &
+                                      summary%avg_rank_sum_lane_root_inclusive_time, &
+                                      summary%max_rank_sum_lane_root_inclusive_time, &
+                                      summary%rank_sum_lane_root_inclusive_imbalance, &
+                                      summary%min_rank_sum_lane_root_inclusive_time_rank, &
+                                      summary%max_rank_sum_lane_root_inclusive_time_rank)
+      call set_mpi_openmp_rank_metric(all_rank_reals, all_rank_ints, nprocs, 4, &
+                                      summary%min_rank_sum_lane_self_time, &
+                                      summary%avg_rank_sum_lane_self_time, &
+                                      summary%max_rank_sum_lane_self_time, &
+                                      summary%rank_sum_lane_self_imbalance, &
+                                      summary%min_rank_sum_lane_self_time_rank, &
+                                      summary%max_rank_sum_lane_self_time_rank)
+
+      if (entry_count <= 0) then
+         allocate (summary%entries(0))
+         status = FTIMER_SUCCESS
+         return
+      end if
+
+      allocate (local_present(entry_count))
+      allocate (local_eligible_samples(entry_count))
+      allocate (local_participating_samples(entry_count))
+      allocate (participating_ranks(entry_count))
+      allocate (eligible_samples(entry_count))
+      allocate (participating_samples(entry_count))
+      allocate (local_inclusive_min(entry_count))
+      allocate (local_inclusive_max(entry_count))
+      allocate (local_inclusive_sum(entry_count))
+      allocate (min_inclusive(entry_count))
+      allocate (max_inclusive(entry_count))
+      allocate (sum_inclusive(entry_count))
+      allocate (local_self_min(entry_count))
+      allocate (local_self_max(entry_count))
+      allocate (local_self_sum(entry_count))
+      allocate (min_self(entry_count))
+      allocate (max_self(entry_count))
+      allocate (sum_self(entry_count))
+      allocate (local_pct_min(entry_count))
+      allocate (local_pct_max(entry_count))
+      allocate (local_pct_sum(entry_count))
+      allocate (min_pct(entry_count))
+      allocate (max_pct(entry_count))
+      allocate (sum_pct(entry_count))
+      allocate (local_calls_min(entry_count))
+      allocate (local_calls_max(entry_count))
+      allocate (min_calls(entry_count))
+      allocate (max_calls(entry_count))
+      allocate (local_call_delta(entry_count))
+      allocate (sum_call_delta(entry_count))
+      allocate (local_min_inclusive_rank(entry_count))
+      allocate (local_max_inclusive_rank(entry_count))
+      allocate (min_inclusive_rank(entry_count))
+      allocate (max_inclusive_rank(entry_count))
+
+      local_present = 1
+      local_eligible_samples = 0
+      local_participating_samples = 0
+      local_inclusive_min = huge(1.0_wp)
+      local_inclusive_max = -huge(1.0_wp)
+      local_inclusive_sum = 0.0_wp
+      local_self_min = huge(1.0_wp)
+      local_self_max = -huge(1.0_wp)
+      local_self_sum = 0.0_wp
+      local_pct_min = huge(1.0_wp)
+      local_pct_max = -huge(1.0_wp)
+      local_pct_sum = 0.0_wp
+      local_calls_min = huge(0_int64)
+      local_calls_max = -huge(0_int64)
+      local_call_delta = 0.0_wp
+
+      do i = 1, entry_count
+         acc_idx = order(i)
+         local_eligible_samples(i) = accumulators(acc_idx)%eligible_lane_count
+         sample_count = count(accumulators(acc_idx)%lane_seen)
+         local_participating_samples(i) = sample_count
+         do lane_idx = 1, size(accumulators(acc_idx)%lane_seen)
+            if (.not. accumulators(acc_idx)%lane_seen(lane_idx)) cycle
+            local_inclusive_sum(i) = local_inclusive_sum(i) + accumulators(acc_idx)%lane_inclusive(lane_idx)
+            local_self_sum(i) = local_self_sum(i) + accumulators(acc_idx)%lane_self(lane_idx)
+            local_inclusive_min(i) = min(local_inclusive_min(i), accumulators(acc_idx)%lane_inclusive(lane_idx))
+            local_inclusive_max(i) = max(local_inclusive_max(i), accumulators(acc_idx)%lane_inclusive(lane_idx))
+            local_self_min(i) = min(local_self_min(i), accumulators(acc_idx)%lane_self(lane_idx))
+            local_self_max(i) = max(local_self_max(i), accumulators(acc_idx)%lane_self(lane_idx))
+            local_calls_min(i) = min(local_calls_min(i), accumulators(acc_idx)%lane_calls(lane_idx))
+            local_calls_max(i) = max(local_calls_max(i), accumulators(acc_idx)%lane_calls(lane_idx))
+            lane_pct = 0.0_wp
+            if (local_summary%summary_window_time > 0.0_wp) then
+               lane_pct = 100.0_wp*accumulators(acc_idx)%lane_inclusive(lane_idx)/ &
+                          local_summary%summary_window_time
+            end if
+            local_pct_sum(i) = local_pct_sum(i) + lane_pct
+            local_pct_min(i) = min(local_pct_min(i), lane_pct)
+            local_pct_max(i) = max(local_pct_max(i), lane_pct)
+         end do
+      end do
+
+      call MPI_Allreduce(local_present, participating_ranks, entry_count, MPI_INTEGER, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_eligible_samples, eligible_samples, entry_count, MPI_INTEGER, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_participating_samples, participating_samples, entry_count, MPI_INTEGER, MPI_SUM, &
+                         active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_inclusive_min, min_inclusive, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_inclusive_max, max_inclusive, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      local_min_inclusive_rank = huge(0)
+      local_max_inclusive_rank = huge(0)
+      do i = 1, entry_count
+         if (local_inclusive_min(i) == min_inclusive(i)) local_min_inclusive_rank(i) = rank
+         if (local_inclusive_max(i) == max_inclusive(i)) local_max_inclusive_rank(i) = rank
+      end do
+      call MPI_Allreduce(local_min_inclusive_rank, min_inclusive_rank, entry_count, MPI_INTEGER, MPI_MIN, &
+                         active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_max_inclusive_rank, max_inclusive_rank, entry_count, MPI_INTEGER, MPI_MIN, &
+                         active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_inclusive_sum, sum_inclusive, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_self_min, min_self, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_self_max, max_self, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_self_sum, sum_self, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_pct_min, min_pct, entry_count, mpi_wp_type, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_pct_max, max_pct, entry_count, mpi_wp_type, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_pct_sum, sum_pct, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_calls_min, min_calls, entry_count, mpi_int64_type, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      do i = 1, entry_count
+         acc_idx = order(i)
+         do lane_idx = 1, size(accumulators(acc_idx)%lane_seen)
+            if (.not. accumulators(acc_idx)%lane_seen(lane_idx)) cycle
+            local_call_delta(i) = local_call_delta(i) + &
+                                  real(accumulators(acc_idx)%lane_calls(lane_idx) - min_calls(i), wp)
+         end do
+      end do
+      call MPI_Allreduce(local_calls_max, max_calls, entry_count, mpi_int64_type, MPI_MAX, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      call MPI_Allreduce(local_call_delta, sum_call_delta, entry_count, mpi_wp_type, MPI_SUM, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call reset_mpi_openmp_summary(summary)
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
+      allocate (summary%entries(entry_count))
+      do i = 1, entry_count
+         acc_idx = order(i)
+         summary%entries(i)%name = accumulators(acc_idx)%name
+         summary%entries(i)%execution_domain = accumulators(acc_idx)%execution_domain
+         summary%entries(i)%depth = accumulators(acc_idx)%depth
+         summary%entries(i)%node_id = i
+         summary%entries(i)%parent_id = find_ordered_mpi_openmp_descriptor(accumulators(acc_idx)%parent_descriptor, &
+                                                                           descriptors, order)
+         summary%entries(i)%participating_rank_count = participating_ranks(i)
+         summary%entries(i)%missing_rank_count = nprocs - participating_ranks(i)
+         summary%entries(i)%eligible_rank_lane_sample_count = eligible_samples(i)
+         summary%entries(i)%participating_rank_lane_sample_count = participating_samples(i)
+         summary%entries(i)%missing_rank_lane_sample_count = eligible_samples(i) - participating_samples(i)
+         summary%entries(i)%missing_rank_lane_sample_count_known = .true.
+         summary%entries(i)%sum_participating_lane_inclusive_time = sum_inclusive(i)
+         summary%entries(i)%sum_participating_lane_self_time = sum_self(i)
+         summary%entries(i)%min_participating_lane_inclusive_time = min_inclusive(i)
+         summary%entries(i)%avg_participating_lane_inclusive_time = &
+            sum_inclusive(i)/real(participating_samples(i), wp)
+         summary%entries(i)%max_participating_lane_inclusive_time = max_inclusive(i)
+         summary%entries(i)%participating_lane_inclusive_imbalance = &
+            compute_openmp_imbalance(max_inclusive(i), summary%entries(i)%avg_participating_lane_inclusive_time)
+         summary%entries(i)%min_participating_lane_self_time = min_self(i)
+         summary%entries(i)%avg_participating_lane_self_time = sum_self(i)/real(participating_samples(i), wp)
+         summary%entries(i)%max_participating_lane_self_time = max_self(i)
+         summary%entries(i)%participating_lane_self_imbalance = &
+            compute_openmp_imbalance(max_self(i), summary%entries(i)%avg_participating_lane_self_time)
+         summary%entries(i)%min_participating_lane_call_count = min_calls(i)
+         summary%entries(i)%max_participating_lane_call_count = max_calls(i)
+         summary%entries(i)%avg_participating_lane_call_count = &
+            bounded_openmp_call_count_average(sum_call_delta(i), participating_samples(i), min_calls(i), max_calls(i))
+         summary%entries(i)%min_participating_lane_pct_time = min_pct(i)
+         summary%entries(i)%avg_participating_lane_pct_time = sum_pct(i)/real(participating_samples(i), wp)
+         summary%entries(i)%max_participating_lane_pct_time = max_pct(i)
+         summary%entries(i)%participating_lane_pct_imbalance = &
+            compute_openmp_imbalance(max_pct(i), summary%entries(i)%avg_participating_lane_pct_time)
+      end do
+
+      status = FTIMER_SUCCESS
+#else
+      status = FTIMER_ERR_NOT_IMPLEMENTED
+#endif
+   end subroutine build_current_mpi_openmp_summary
+
+   subroutine build_mpi_openmp_accumulators(self, accumulators, entry_count)
+      class(ftimer_openmp_t), intent(inout) :: self
+      type(ftimer_mpi_openmp_entry_accumulator_t), allocatable, intent(out) :: accumulators(:)
+      integer, intent(out) :: entry_count
+      character(len=:), allocatable :: execution_domain
+      character(len=:), allocatable :: parent_path
+      character(len=:), allocatable :: path
+      integer :: acc_idx
+      integer :: catalog_idx
+      integer :: ctx
+      integer :: eligible_lane_count
+      integer :: lane_capacity
+      integer :: lane_idx
+      logical :: missing_known
+
+      entry_count = 0
+      lane_capacity = 0
+      if (allocated(self%lanes)) lane_capacity = size(self%lanes)
+
+      do lane_idx = 1, lane_capacity
+         if (.not. allocated(self%lanes(lane_idx)%segments)) cycle
+         do catalog_idx = 1, min(self%num_timers, size(self%lanes(lane_idx)%segments))
+            if (.not. allocated(self%lanes(lane_idx)%segments(catalog_idx)%time)) cycle
+            do ctx = 1, self%lanes(lane_idx)%segments(catalog_idx)%contexts%count
+               if (.not. context_participates(self%lanes(lane_idx)%segments(catalog_idx), ctx)) cycle
+
+               call mpi_openmp_context_domain(self, self%lanes(lane_idx)%lane_id, &
+                                              self%lanes(lane_idx)%segments(catalog_idx)%context_epoch(ctx), &
+                                              self%lanes(lane_idx)%segments(catalog_idx)% &
+                                              context_max_worker_lane_count(ctx), &
+                                              execution_domain, eligible_lane_count, missing_known)
+               parent_path = descriptor_path_for_stack(self, &
+                                                       self%lanes(lane_idx)%segments(catalog_idx)%contexts%stacks(ctx))
+               path = descriptor_path_with_timer(self, parent_path, self%catalog(catalog_idx)%id)
+               call find_or_add_mpi_openmp_accumulator(accumulators, entry_count, path, parent_path, &
+                                                       self%catalog(catalog_idx)%name, execution_domain, &
+                                                       self%lanes(lane_idx)%segments(catalog_idx)%contexts% &
+                                                       stacks(ctx)%depth, lane_capacity, acc_idx)
+               call add_mpi_openmp_accumulator_sample(accumulators(acc_idx), self%lanes(lane_idx)%lane_id, &
+                                                      eligible_lane_count, missing_known, &
+                                                      self%lanes(lane_idx)%segments(catalog_idx)%time(ctx), &
+                                                      lane_context_self_time(self, lane_idx, catalog_idx, ctx), &
+                                                      self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx))
+            end do
+         end do
+      end do
+
+      if (.not. allocated(accumulators)) allocate (accumulators(0))
+   end subroutine build_mpi_openmp_accumulators
+
+   subroutine mpi_openmp_context_domain(self, lane_id, epoch, context_worker_lane_count, execution_domain, &
+                                        eligible_lane_count, missing_known)
+      class(ftimer_openmp_t), intent(in) :: self
+      integer, intent(in) :: lane_id
+      integer, intent(in) :: epoch
+      integer, intent(in) :: context_worker_lane_count
+      character(len=:), allocatable, intent(out) :: execution_domain
+      integer, intent(out) :: eligible_lane_count
+      logical, intent(out) :: missing_known
+
+      missing_known = .true.
+      if (lane_id == 0) then
+         execution_domain = 'serial_lane'
+         eligible_lane_count = 1
+      else
+         execution_domain = 'openmp_level1_team'
+         eligible_lane_count = context_worker_lane_count
+         if (eligible_lane_count <= 0) eligible_lane_count = epoch_worker_lane_count(self, epoch)
+         if (eligible_lane_count <= 0) then
+            eligible_lane_count = lane_id
+            missing_known = .false.
+         end if
+         if (epoch == FTIMER_OPENMP_CONTEXT_EPOCH_UNKNOWN) missing_known = .false.
+         eligible_lane_count = max(eligible_lane_count, lane_id)
+      end if
+   end subroutine mpi_openmp_context_domain
+
+   subroutine find_or_add_mpi_openmp_accumulator(accumulators, entry_count, path, parent_path, name, &
+                                                 execution_domain, depth, lane_capacity, idx)
+      type(ftimer_mpi_openmp_entry_accumulator_t), allocatable, intent(inout) :: accumulators(:)
+      integer, intent(inout) :: entry_count
+      character(len=*), intent(in) :: path
+      character(len=*), intent(in) :: parent_path
+      character(len=*), intent(in) :: name
+      character(len=*), intent(in) :: execution_domain
+      integer, intent(in) :: depth
+      integer, intent(in) :: lane_capacity
+      integer, intent(out) :: idx
+      type(ftimer_mpi_openmp_entry_accumulator_t), allocatable :: old_accumulators(:)
+      integer :: new_size
+
+      if (allocated(accumulators)) then
+         do idx = 1, entry_count
+            if ((accumulators(idx)%path == path) .and. &
+                (accumulators(idx)%execution_domain == execution_domain)) return
+         end do
+      end if
+
+      if (allocated(accumulators)) then
+         if (entry_count >= size(accumulators)) then
+            call move_alloc(accumulators, old_accumulators)
+            new_size = max(entry_count + 1, 2*size(old_accumulators))
+            allocate (accumulators(new_size))
+            if (entry_count > 0) accumulators(1:entry_count) = old_accumulators(1:entry_count)
+         end if
+      else
+         allocate (accumulators(max(1, FTIMER_OPENMP_CATALOG_INITIAL_CAPACITY)))
+      end if
+
+      entry_count = entry_count + 1
+      idx = entry_count
+      accumulators(idx)%path = path
+      accumulators(idx)%parent_path = parent_path
+      accumulators(idx)%name = name
+      accumulators(idx)%execution_domain = execution_domain
+      accumulators(idx)%depth = depth
+      allocate (accumulators(idx)%lane_seen(lane_capacity))
+      allocate (accumulators(idx)%lane_inclusive(lane_capacity))
+      allocate (accumulators(idx)%lane_self(lane_capacity))
+      allocate (accumulators(idx)%lane_calls(lane_capacity))
+      accumulators(idx)%lane_seen = .false.
+      accumulators(idx)%lane_inclusive = 0.0_wp
+      accumulators(idx)%lane_self = 0.0_wp
+      accumulators(idx)%lane_calls = 0_int64
+   end subroutine find_or_add_mpi_openmp_accumulator
+
+   subroutine add_mpi_openmp_accumulator_sample(accumulator, lane_id, eligible_lane_count, missing_known, &
+                                                inclusive_time, self_time, call_count)
+      type(ftimer_mpi_openmp_entry_accumulator_t), intent(inout) :: accumulator
+      integer, intent(in) :: lane_id
+      integer, intent(in) :: eligible_lane_count
+      logical, intent(in) :: missing_known
+      real(wp), intent(in) :: inclusive_time
+      real(wp), intent(in) :: self_time
+      integer(int64), intent(in) :: call_count
+      integer :: lane_idx
+
+      lane_idx = lane_id + 1
+      if ((lane_idx >= 1) .and. (lane_idx <= size(accumulator%lane_seen))) then
+         accumulator%lane_seen(lane_idx) = .true.
+         accumulator%lane_inclusive(lane_idx) = accumulator%lane_inclusive(lane_idx) + inclusive_time
+         accumulator%lane_self(lane_idx) = accumulator%lane_self(lane_idx) + self_time
+         accumulator%lane_calls(lane_idx) = accumulator%lane_calls(lane_idx) + call_count
+      else
+         accumulator%missing_lane_count_known = .false.
+      end if
+
+      if (accumulator%eligible_lane_count <= 0) then
+         accumulator%eligible_lane_count = eligible_lane_count
+      else if (accumulator%eligible_lane_count /= eligible_lane_count) then
+         accumulator%eligible_lane_count = max(accumulator%eligible_lane_count, eligible_lane_count)
+         accumulator%missing_lane_count_known = .false.
+      end if
+      if (.not. missing_known) accumulator%missing_lane_count_known = .false.
+   end subroutine add_mpi_openmp_accumulator_sample
+
+   subroutine finalize_mpi_openmp_accumulators(accumulators, entry_count, local_strict_invalid)
+      type(ftimer_mpi_openmp_entry_accumulator_t), intent(inout) :: accumulators(:)
+      integer, intent(in) :: entry_count
+      integer, intent(out) :: local_strict_invalid
+      integer :: i
+      integer :: participating_count
+
+      local_strict_invalid = 0
+      do i = 1, entry_count
+         participating_count = count(accumulators(i)%lane_seen)
+         if ((accumulators(i)%eligible_lane_count <= 0) .or. &
+             (participating_count /= accumulators(i)%eligible_lane_count) .or. &
+             (.not. accumulators(i)%missing_lane_count_known)) then
+            local_strict_invalid = 1
+         end if
+         accumulators(i)%descriptor = mpi_openmp_descriptor(accumulators(i)%execution_domain, &
+                                                           accumulators(i)%eligible_lane_count, &
+                                                           accumulators(i)%path)
+         if (len(accumulators(i)%parent_path) > 0) then
+            accumulators(i)%parent_descriptor = mpi_openmp_descriptor(accumulators(i)%execution_domain, &
+                                                                      accumulators(i)%eligible_lane_count, &
+                                                                      accumulators(i)%parent_path)
+         else
+            accumulators(i)%parent_descriptor = ''
+         end if
+      end do
+   end subroutine finalize_mpi_openmp_accumulators
+
+   function mpi_openmp_descriptor(execution_domain, eligible_lane_count, path) result(descriptor)
+      character(len=*), intent(in) :: execution_domain
+      integer, intent(in) :: eligible_lane_count
+      character(len=*), intent(in) :: path
+      character(len=:), allocatable :: descriptor
+      character(len=32) :: eligible_text
+
+      write (eligible_text, '(i0)') eligible_lane_count
+      descriptor = 'schema=1|domain='//execution_domain//'|eligible_lanes='//trim(eligible_text)//'|path='//path
+   end function mpi_openmp_descriptor
+
+   subroutine build_mpi_openmp_descriptor_order(accumulators, entry_count, descriptors, order)
+      type(ftimer_mpi_openmp_entry_accumulator_t), intent(in) :: accumulators(:)
+      integer, intent(in) :: entry_count
+      character(len=:), allocatable, intent(out) :: descriptors(:)
+      integer, allocatable, intent(out) :: order(:)
+      integer :: i
+      integer :: max_len
+
+      if (entry_count <= 0) then
+         allocate (character(len=1) :: descriptors(0))
+         allocate (order(0))
+         return
+      end if
+
+      max_len = 1
+      do i = 1, entry_count
+         max_len = max(max_len, len(accumulators(i)%descriptor))
+      end do
+      allocate (character(len=max_len) :: descriptors(entry_count))
+      allocate (order(entry_count))
+      descriptors = ''
+      do i = 1, entry_count
+         descriptors(i) = accumulators(i)%descriptor
+         order(i) = i
+      end do
+      call sort_mpi_openmp_descriptor_order(descriptors, order)
+   end subroutine build_mpi_openmp_descriptor_order
+
+   subroutine sort_mpi_openmp_descriptor_order(descriptors, order)
+      character(len=*), intent(in) :: descriptors(:)
+      integer, intent(inout) :: order(:)
+      integer :: i
+      integer :: j
+      integer :: key
+
+      do i = 2, size(order)
+         key = order(i)
+         j = i - 1
+         do while (j >= 1)
+            if (descriptors(order(j)) <= descriptors(key)) exit
+            order(j + 1) = order(j)
+            j = j - 1
+         end do
+         order(j + 1) = key
+      end do
+   end subroutine sort_mpi_openmp_descriptor_order
+
+   integer function find_ordered_mpi_openmp_descriptor(descriptor, descriptors, order) result(index_value)
+      character(len=*), intent(in) :: descriptor
+      character(len=*), intent(in) :: descriptors(:)
+      integer, intent(in) :: order(:)
+      integer :: i
+
+      index_value = 0
+      if (len(descriptor) <= 0) return
+      do i = 1, size(order)
+         if (descriptors(order(i)) == descriptor) then
+            index_value = i
+            return
+         end if
+      end do
+   end function find_ordered_mpi_openmp_descriptor
+
+   subroutine hash_mpi_openmp_descriptor_list(descriptors, order, hash_values)
+      character(len=*), intent(in) :: descriptors(:)
+      integer, intent(in) :: order(:)
+      integer(int64), intent(out) :: hash_values(2)
+      integer :: i
+      integer :: j
+      integer :: trimmed_len
+      integer(int64) :: high_hash
+      integer(int64) :: low_hash
+
+      high_hash = 2166136261_int64
+      low_hash = 1315423911_int64
+      high_hash = mpi_openmp_hash_step(high_hash, int(size(order), int64), 16777619_int64, 4294967291_int64)
+      low_hash = mpi_openmp_hash_step(low_hash, int(size(order), int64), 65599_int64, 4294967279_int64)
+      do i = 1, size(order)
+         trimmed_len = len_trim(descriptors(order(i)))
+         do j = 1, trimmed_len
+            high_hash = mpi_openmp_hash_step(high_hash, int(iachar(descriptors(order(i)) (j:j)), int64), &
+                                             16777619_int64, 4294967291_int64)
+            low_hash = mpi_openmp_hash_step(low_hash, int(iachar(descriptors(order(i)) (j:j)), int64), &
+                                            65599_int64, 4294967279_int64)
+         end do
+         high_hash = mpi_openmp_hash_step(high_hash, 10_int64, 16777619_int64, 4294967291_int64)
+         low_hash = mpi_openmp_hash_step(low_hash, 10_int64, 65599_int64, 4294967279_int64)
+      end do
+      hash_values(1) = high_hash
+      hash_values(2) = low_hash
+   end subroutine hash_mpi_openmp_descriptor_list
+
+   integer(int64) function mpi_openmp_hash_step(current, value, base, modulus) result(updated)
+      integer(int64), intent(in) :: current
+      integer(int64), intent(in) :: value
+      integer(int64), intent(in) :: base
+      integer(int64), intent(in) :: modulus
+
+      updated = modulo(current*base + value, modulus)
+   end function mpi_openmp_hash_step
+
+   subroutine set_mpi_openmp_rank_metric(all_rank_reals, all_rank_ints, nprocs, metric_index, &
+                                         min_value, avg_value, max_value, imbalance, min_rank, max_rank)
+      real(wp), intent(in) :: all_rank_reals(:)
+      integer, intent(in) :: all_rank_ints(:)
+      integer, intent(in) :: nprocs
+      integer, intent(in) :: metric_index
+      real(wp), intent(out) :: min_value
+      real(wp), intent(out) :: avg_value
+      real(wp), intent(out) :: max_value
+      real(wp), intent(out) :: imbalance
+      integer, intent(out) :: min_rank
+      integer, intent(out) :: max_rank
+      integer :: i
+      integer :: rank_value
+      real(wp) :: sum_value
+      real(wp) :: value
+
+      min_value = huge(1.0_wp)
+      max_value = -huge(1.0_wp)
+      sum_value = 0.0_wp
+      min_rank = -1
+      max_rank = -1
+      do i = 1, nprocs
+         value = all_rank_reals(4*(i - 1) + metric_index)
+         rank_value = all_rank_ints(3*(i - 1) + 1)
+         sum_value = sum_value + value
+         if (value < min_value) then
+            min_value = value
+            min_rank = rank_value
+         end if
+         if (value > max_value) then
+            max_value = value
+            max_rank = rank_value
+         end if
+      end do
+      avg_value = sum_value/real(nprocs, wp)
+      imbalance = compute_openmp_imbalance(max_value, avg_value)
+   end subroutine set_mpi_openmp_rank_metric
+
+   real(wp) function bounded_openmp_call_count_average(sum_delta, count, min_count, max_count) result(avg)
+      real(wp), intent(in) :: sum_delta
+      integer, intent(in) :: count
+      integer(int64), intent(in) :: min_count
+      integer(int64), intent(in) :: max_count
+
+      if (count <= 0) then
+         avg = 0.0_wp
+         return
+      end if
+      avg = real(min_count, wp) + sum_delta/real(count, wp)
+      avg = max(avg, real(min_count, wp))
+      avg = min(avg, real(max_count, wp))
+   end function bounded_openmp_call_count_average
+
+   subroutine resolve_mpi_openmp_datatypes(mpi_wp_type, mpi_int64_type, status, diagnostic)
+#ifdef FTIMER_USE_MPI
+      type(MPI_Datatype), intent(out) :: mpi_wp_type
+      type(MPI_Datatype), intent(out) :: mpi_int64_type
+#else
+      integer, intent(out) :: mpi_wp_type
+      integer, intent(out) :: mpi_int64_type
+#endif
+      integer, intent(out) :: status
+      character(len=*), intent(out) :: diagnostic
+#ifdef FTIMER_USE_MPI
+      integer :: int64_size
+      integer :: mpierr
+      integer :: type_size
+      integer :: wp_size
+
+      diagnostic = ''
+      wp_size = storage_size(1.0_wp)/8
+      int64_size = storage_size(0_int64)/8
+      call MPI_Type_match_size(MPI_TYPECLASS_REAL, wp_size, mpi_wp_type, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         diagnostic = "ftimer_openmp mpi_openmp_summary could not find an MPI real datatype matching real(wp)"
+         return
+      end if
+      call MPI_Type_size(mpi_wp_type, type_size, mpierr)
+      if ((mpierr /= MPI_SUCCESS) .or. (type_size /= wp_size)) then
+         status = FTIMER_ERR_UNKNOWN
+         diagnostic = "ftimer_openmp mpi_openmp_summary MPI real datatype size does not match real(wp)"
+         return
+      end if
+      call MPI_Type_match_size(MPI_TYPECLASS_INTEGER, int64_size, mpi_int64_type, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         diagnostic = "ftimer_openmp mpi_openmp_summary could not find an MPI integer datatype matching integer(int64)"
+         return
+      end if
+      call MPI_Type_size(mpi_int64_type, type_size, mpierr)
+      if ((mpierr /= MPI_SUCCESS) .or. (type_size /= int64_size)) then
+         status = FTIMER_ERR_UNKNOWN
+         diagnostic = "ftimer_openmp mpi_openmp_summary MPI integer datatype size does not match integer(int64)"
+         return
+      end if
+      status = FTIMER_SUCCESS
+#else
+      mpi_wp_type = -1
+      mpi_int64_type = -1
+      diagnostic = ''
+      status = FTIMER_ERR_NOT_IMPLEMENTED
+#endif
+   end subroutine resolve_mpi_openmp_datatypes
+
+   subroutine format_mpi_openmp_mismatch_diagnostic(mismatch_flags, reason, diagnostic)
+      integer, intent(in) :: mismatch_flags(:)
+      character(len=*), intent(in) :: reason
+      character(len=*), intent(out) :: diagnostic
+      character(len=*), parameter :: base_message = &
+         "ftimer_openmp mpi_openmp_summary detected inconsistent strict hybrid descriptors"
+      character(len=*), parameter :: rank_prefix = "; disagreeing ranks "
+      character(len=32) :: rank_text
+      character(len=len(diagnostic)) :: rank_list
+      integer :: available_len
+      integer :: i
+
+      diagnostic = trim(base_message)//" ("//trim(reason)//")"
+      rank_list = ''
+      available_len = len(diagnostic) - len_trim(diagnostic) - len(rank_prefix)
+      if (available_len <= 0) return
+
+      do i = 1, size(mismatch_flags)
+         if (mismatch_flags(i) == 0) cycle
+         write (rank_text, '(i0)') i - 1
+         if (len_trim(rank_list) <= 0) then
+            if (len_trim(rank_text) <= available_len) rank_list = trim(rank_text)
+         else
+            if (len_trim(rank_list) + 2 + len_trim(rank_text) <= available_len) then
+               rank_list = trim(rank_list)//", "//trim(rank_text)
+            end if
+         end if
+      end do
+
+      if (len_trim(rank_list) > 0) diagnostic = trim(diagnostic)//rank_prefix//trim(rank_list)
+   end subroutine format_mpi_openmp_mismatch_diagnostic
+
+   subroutine format_mpi_openmp_summary(summary, text, metadata)
+      type(ftimer_mpi_openmp_summary_t), intent(in) :: summary
+      character(len=:), allocatable, intent(out) :: text
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      type(openmp_report_buffer_t) :: buffer
+      character(len=:), allocatable :: display
+      character(len=:), allocatable :: line
+      integer :: i
+      integer :: key_width
+      integer :: line_width
+      integer :: name_width
+
+      call init_openmp_report_buffer(buffer, default_report_buffer_capacity)
+      call append_openmp_line(buffer, 'MPI+OpenMP summary')
+
+      key_width = openmp_metadata_key_width(metadata)
+      key_width = max(key_width, len('Ranks'))
+      key_width = max(key_width, len('Rank summary window min/avg/max (s)'))
+      key_width = max(key_width, len('Rank timed-region envelope min/avg/max (s)'))
+      key_width = max(key_width, len('Rank summed lane root work min/avg/max (s)'))
+      key_width = max(key_width, len('Rank summed lane self work min/avg/max (s)'))
+
+      call append_openmp_integer_metric(buffer, 'Ranks', key_width, summary%num_ranks)
+      call append_mpi_openmp_real_triplet_metric(buffer, 'Rank summary window min/avg/max (s)', key_width, &
+                                                 summary%min_rank_summary_window_time, &
+                                                 summary%avg_rank_summary_window_time, &
+                                                 summary%max_rank_summary_window_time)
+      call append_mpi_openmp_real_triplet_metric(buffer, 'Rank timed-region envelope min/avg/max (s)', key_width, &
+                                                 summary%min_rank_timed_region_envelope_time, &
+                                                 summary%avg_rank_timed_region_envelope_time, &
+                                                 summary%max_rank_timed_region_envelope_time)
+      call append_mpi_openmp_real_triplet_metric(buffer, 'Rank summed lane root work min/avg/max (s)', key_width, &
+                                                 summary%min_rank_sum_lane_root_inclusive_time, &
+                                                 summary%avg_rank_sum_lane_root_inclusive_time, &
+                                                 summary%max_rank_sum_lane_root_inclusive_time)
+      call append_mpi_openmp_real_triplet_metric(buffer, 'Rank summed lane self work min/avg/max (s)', key_width, &
+                                                 summary%min_rank_sum_lane_self_time, &
+                                                 summary%avg_rank_sum_lane_self_time, &
+                                                 summary%max_rank_sum_lane_self_time)
+      if (present(metadata)) then
+         do i = 1, size(metadata)
+            if (openmp_metadata_key_len(metadata(i)) <= 0) cycle
+            call append_openmp_text_metric(buffer, openmp_metadata_key_text(metadata(i)), key_width, &
+                                           openmp_metadata_value_text(metadata(i)))
+         end do
+      end if
+
+      call append_openmp_line(buffer, '')
+      call append_openmp_line(buffer, &
+                              'Report note: strict hybrid reductions require every rank and eligible lane to match.')
+      call append_openmp_line(buffer, 'Report note: Rank/lane samples are not zero-filled.')
+      call append_openmp_line(buffer, '')
+      call append_openmp_line(buffer, 'Rank details')
+      call append_openmp_line(buffer, &
+                              'Rank  Lanes  Window (s)  Rank timed-region envelope (s)  Lane root work (s)  Lane self work (s)')
+      do i = 1, size(summary%ranks)
+         allocate (character(len=160) :: line)
+         write (line, '(i4,2x,i5,2x,f10.6,2x,f32.6,2x,f18.6,2x,f18.6)') &
+            summary%ranks(i)%rank, summary%ranks(i)%observed_participating_lane_count, &
+            summary%ranks(i)%summary_window_time, summary%ranks(i)%timed_region_envelope_time, &
+            summary%ranks(i)%sum_lane_root_inclusive_time, summary%ranks(i)%sum_lane_self_time
+         call append_openmp_line(buffer, trim(line))
+         deallocate (line)
+      end do
+
+      call append_openmp_line(buffer, '')
+      name_width = mpi_openmp_summary_name_width(summary)
+      line_width = name_width + 230
+      allocate (character(len=line_width) :: line)
+      write (line, '(a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a)') &
+         padded_openmp_text('Timer name', name_width), 'Domain', 'Ranks', 'Rank/lane samples', &
+         'Missing', 'Sum Incl (s)', 'Sum Self (s)', 'Min Incl (s)', 'Avg Incl (s)', &
+         'Max Incl (s)', 'Avg Calls'
+      call append_openmp_line(buffer, trim(line))
+      call append_openmp_line(buffer, repeat('-', len_trim(line)))
+
+      do i = 1, summary%num_entries
+         display = repeat(' ', 2*summary%entries(i)%depth)//mpi_openmp_entry_name(summary%entries(i))
+         write (line, '(a,2x,a,2x,i5,2x,i17,2x,i7,2x,f12.6,2x,f12.6,2x,f12.6,2x,f12.6,2x,f12.6,2x,f9.3)') &
+            padded_openmp_text(display, name_width), mpi_openmp_entry_domain(summary%entries(i)), &
+            summary%entries(i)%participating_rank_count, &
+            summary%entries(i)%participating_rank_lane_sample_count, &
+            summary%entries(i)%missing_rank_lane_sample_count, &
+            summary%entries(i)%sum_participating_lane_inclusive_time, &
+            summary%entries(i)%sum_participating_lane_self_time, &
+            summary%entries(i)%min_participating_lane_inclusive_time, &
+            summary%entries(i)%avg_participating_lane_inclusive_time, &
+            summary%entries(i)%max_participating_lane_inclusive_time, &
+            summary%entries(i)%avg_participating_lane_call_count
+         call append_openmp_line(buffer, trim(line))
+      end do
+
+      call finish_openmp_report_buffer(buffer, text)
+   end subroutine format_mpi_openmp_summary
+
+   subroutine append_mpi_openmp_real_triplet_metric(buffer, label, key_width, min_value, avg_value, max_value)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      character(len=*), intent(in) :: label
+      integer, intent(in) :: key_width
+      real(wp), intent(in) :: min_value
+      real(wp), intent(in) :: avg_value
+      real(wp), intent(in) :: max_value
+      character(len=160) :: value_text
+
+      write (value_text, '(f0.6," / ",f0.6," / ",f0.6)') min_value, avg_value, max_value
+      call append_openmp_text_metric(buffer, label, key_width, trim(value_text))
+   end subroutine append_mpi_openmp_real_triplet_metric
+
+   integer function mpi_openmp_summary_name_width(summary) result(width)
+      type(ftimer_mpi_openmp_summary_t), intent(in) :: summary
+      integer :: i
+
+      width = len('Timer name')
+      do i = 1, summary%num_entries
+         width = max(width, 2*summary%entries(i)%depth + len(mpi_openmp_entry_name(summary%entries(i))))
+      end do
+   end function mpi_openmp_summary_name_width
+
+   function mpi_openmp_entry_name(entry) result(name)
+      type(ftimer_mpi_openmp_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: name
+
+      if (allocated(entry%name)) then
+         name = entry%name
+      else
+         name = ''
+      end if
+   end function mpi_openmp_entry_name
+
+   function mpi_openmp_entry_domain(entry) result(domain)
+      type(ftimer_mpi_openmp_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: domain
+
+      if (allocated(entry%execution_domain)) then
+         domain = entry%execution_domain
+      else
+         domain = ''
+      end if
+   end function mpi_openmp_entry_domain
+
+   subroutine format_mpi_openmp_summary_csv(summary, text, metadata, include_header)
+      type(ftimer_mpi_openmp_summary_t), intent(in) :: summary
+      character(len=:), allocatable, intent(out) :: text
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      logical, intent(in), optional :: include_header
+      type(openmp_report_buffer_t) :: buffer
+      integer :: i
+      logical :: emit_header
+
+      call init_openmp_report_buffer(buffer, default_report_buffer_capacity)
+      emit_header = .true.
+      if (present(include_header)) emit_header = include_header
+      if (emit_header) call append_openmp_line(buffer, mpi_openmp_csv_header_line())
+      call append_mpi_openmp_summary_csv_record(buffer, summary)
+      if (present(metadata)) then
+         do i = 1, size(metadata)
+            if (openmp_metadata_key_len(metadata(i)) <= 0) cycle
+            call append_mpi_openmp_metadata_csv_record(buffer, metadata(i))
+         end do
+      end if
+      do i = 1, size(summary%ranks)
+         call append_mpi_openmp_rank_csv_record(buffer, summary%ranks(i))
+      end do
+      do i = 1, summary%num_entries
+         call append_mpi_openmp_entry_csv_record(buffer, summary%entries(i))
+      end do
+      call finish_openmp_report_buffer(buffer, text)
+   end subroutine format_mpi_openmp_summary_csv
+
+   subroutine append_mpi_openmp_summary_csv_record(buffer, summary)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      type(ftimer_mpi_openmp_summary_t), intent(in) :: summary
+      type(openmp_report_buffer_t) :: row
+
+      call begin_mpi_openmp_csv_row(row, 'summary')
+      call append_empty_openmp_csv_fields(row, 2)
+      call append_openmp_csv_field(row, openmp_integer_csv_text(summary%num_ranks))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(summary%num_entries))
+      call append_empty_openmp_csv_fields(row, 7)
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%min_rank_summary_window_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%avg_rank_summary_window_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%max_rank_summary_window_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%rank_summary_window_imbalance))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%min_rank_timed_region_envelope_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%avg_rank_timed_region_envelope_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%max_rank_timed_region_envelope_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%rank_timed_region_envelope_imbalance))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%min_rank_sum_lane_root_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%avg_rank_sum_lane_root_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%max_rank_sum_lane_root_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%rank_sum_lane_root_inclusive_imbalance))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%min_rank_sum_lane_self_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%avg_rank_sum_lane_self_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%max_rank_sum_lane_self_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%rank_sum_lane_self_imbalance))
+      call append_empty_openmp_csv_fields(row, 28)
+      call append_openmp_row(buffer, row)
+   end subroutine append_mpi_openmp_summary_csv_record
+
+   subroutine append_mpi_openmp_metadata_csv_record(buffer, item)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      type(ftimer_metadata_t), intent(in) :: item
+      type(openmp_report_buffer_t) :: row
+
+      call begin_mpi_openmp_csv_row(row, 'metadata')
+      call append_openmp_csv_field(row, openmp_metadata_key_text(item))
+      call append_openmp_csv_field(row, openmp_metadata_value_text(item))
+      call append_empty_openmp_csv_fields(row, 53)
+      call append_openmp_row(buffer, row)
+   end subroutine append_mpi_openmp_metadata_csv_record
+
+   subroutine append_mpi_openmp_rank_csv_record(buffer, rank_entry)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      type(ftimer_mpi_openmp_rank_t), intent(in) :: rank_entry
+      type(openmp_report_buffer_t) :: row
+
+      call begin_mpi_openmp_csv_row(row, 'rank')
+      call append_empty_openmp_csv_fields(row, 4)
+      call append_openmp_csv_field(row, openmp_integer_csv_text(rank_entry%rank))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(rank_entry%configured_lane_capacity))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(rank_entry%observed_participating_lane_count))
+      call append_openmp_csv_field(row, openmp_real_csv_text(rank_entry%summary_window_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(rank_entry%timed_region_envelope_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(rank_entry%sum_lane_root_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(rank_entry%sum_lane_self_time))
+      call append_empty_openmp_csv_fields(row, 44)
+      call append_openmp_row(buffer, row)
+   end subroutine append_mpi_openmp_rank_csv_record
+
+   subroutine append_mpi_openmp_entry_csv_record(buffer, entry)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      type(ftimer_mpi_openmp_summary_entry_t), intent(in) :: entry
+      type(openmp_report_buffer_t) :: row
+
+      call begin_mpi_openmp_csv_row(row, 'entry')
+      call append_empty_openmp_csv_fields(row, 27)
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%node_id))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%parent_id))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%depth))
+      call append_openmp_csv_field(row, mpi_openmp_entry_name(entry))
+      call append_openmp_csv_field(row, mpi_openmp_entry_domain(entry))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%participating_rank_count))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%missing_rank_count))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%eligible_rank_lane_sample_count))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%participating_rank_lane_sample_count))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%missing_rank_lane_sample_count))
+      call append_openmp_csv_field(row, openmp_logical_csv_text(entry%missing_rank_lane_sample_count_known))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%sum_participating_lane_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%sum_participating_lane_self_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%min_participating_lane_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%avg_participating_lane_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%max_participating_lane_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%participating_lane_inclusive_imbalance))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%min_participating_lane_self_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%avg_participating_lane_self_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%max_participating_lane_self_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%participating_lane_self_imbalance))
+      call append_openmp_csv_field(row, openmp_int64_csv_text(entry%min_participating_lane_call_count))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%avg_participating_lane_call_count))
+      call append_openmp_csv_field(row, openmp_int64_csv_text(entry%max_participating_lane_call_count))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%min_participating_lane_pct_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%avg_participating_lane_pct_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%max_participating_lane_pct_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%participating_lane_pct_imbalance))
+      call append_openmp_row(buffer, row)
+   end subroutine append_mpi_openmp_entry_csv_record
+
+   subroutine begin_mpi_openmp_csv_row(row, record_type)
+      type(openmp_report_buffer_t), intent(out) :: row
+      character(len=*), intent(in) :: record_type
+
+      call init_openmp_report_buffer(row, 512)
+      call append_openmp_csv_field(row, FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION)
+      call append_openmp_csv_field(row, 'mpi_openmp')
+      call append_openmp_csv_field(row, record_type)
+   end subroutine begin_mpi_openmp_csv_row
+
+   function mpi_openmp_csv_header_line() result(line)
+      character(len=:), allocatable :: line
+      type(openmp_report_buffer_t) :: row
+
+      call init_openmp_report_buffer(row, 2048)
+      call append_openmp_csv_field(row, 'format_version')
+      call append_openmp_csv_field(row, 'summary_kind')
+      call append_openmp_csv_field(row, 'record_type')
+      call append_openmp_csv_field(row, 'key')
+      call append_openmp_csv_field(row, 'value')
+      call append_openmp_csv_field(row, 'num_ranks')
+      call append_openmp_csv_field(row, 'num_entries')
+      call append_openmp_csv_field(row, 'rank')
+      call append_openmp_csv_field(row, 'configured_lane_capacity')
+      call append_openmp_csv_field(row, 'observed_participating_lane_count')
+      call append_openmp_csv_field(row, 'summary_window_time')
+      call append_openmp_csv_field(row, 'timed_region_envelope_time')
+      call append_openmp_csv_field(row, 'sum_lane_root_inclusive_time')
+      call append_openmp_csv_field(row, 'sum_lane_self_time')
+      call append_openmp_csv_field(row, 'min_rank_summary_window_time')
+      call append_openmp_csv_field(row, 'avg_rank_summary_window_time')
+      call append_openmp_csv_field(row, 'max_rank_summary_window_time')
+      call append_openmp_csv_field(row, 'rank_summary_window_imbalance')
+      call append_openmp_csv_field(row, 'min_rank_timed_region_envelope_time')
+      call append_openmp_csv_field(row, 'avg_rank_timed_region_envelope_time')
+      call append_openmp_csv_field(row, 'max_rank_timed_region_envelope_time')
+      call append_openmp_csv_field(row, 'rank_timed_region_envelope_imbalance')
+      call append_openmp_csv_field(row, 'min_rank_sum_lane_root_inclusive_time')
+      call append_openmp_csv_field(row, 'avg_rank_sum_lane_root_inclusive_time')
+      call append_openmp_csv_field(row, 'max_rank_sum_lane_root_inclusive_time')
+      call append_openmp_csv_field(row, 'rank_sum_lane_root_inclusive_imbalance')
+      call append_openmp_csv_field(row, 'min_rank_sum_lane_self_time')
+      call append_openmp_csv_field(row, 'avg_rank_sum_lane_self_time')
+      call append_openmp_csv_field(row, 'max_rank_sum_lane_self_time')
+      call append_openmp_csv_field(row, 'rank_sum_lane_self_imbalance')
+      call append_openmp_csv_field(row, 'node_id')
+      call append_openmp_csv_field(row, 'parent_id')
+      call append_openmp_csv_field(row, 'depth')
+      call append_openmp_csv_field(row, 'name')
+      call append_openmp_csv_field(row, 'execution_domain')
+      call append_openmp_csv_field(row, 'participating_rank_count')
+      call append_openmp_csv_field(row, 'missing_rank_count')
+      call append_openmp_csv_field(row, 'eligible_rank_lane_sample_count')
+      call append_openmp_csv_field(row, 'participating_rank_lane_sample_count')
+      call append_openmp_csv_field(row, 'missing_rank_lane_sample_count')
+      call append_openmp_csv_field(row, 'missing_rank_lane_sample_count_known')
+      call append_openmp_csv_field(row, 'sum_participating_lane_inclusive_time')
+      call append_openmp_csv_field(row, 'sum_participating_lane_self_time')
+      call append_openmp_csv_field(row, 'min_participating_lane_inclusive_time')
+      call append_openmp_csv_field(row, 'avg_participating_lane_inclusive_time')
+      call append_openmp_csv_field(row, 'max_participating_lane_inclusive_time')
+      call append_openmp_csv_field(row, 'participating_lane_inclusive_imbalance')
+      call append_openmp_csv_field(row, 'min_participating_lane_self_time')
+      call append_openmp_csv_field(row, 'avg_participating_lane_self_time')
+      call append_openmp_csv_field(row, 'max_participating_lane_self_time')
+      call append_openmp_csv_field(row, 'participating_lane_self_imbalance')
+      call append_openmp_csv_field(row, 'min_participating_lane_call_count')
+      call append_openmp_csv_field(row, 'avg_participating_lane_call_count')
+      call append_openmp_csv_field(row, 'max_participating_lane_call_count')
+      call append_openmp_csv_field(row, 'min_participating_lane_pct_time')
+      call append_openmp_csv_field(row, 'avg_participating_lane_pct_time')
+      call append_openmp_csv_field(row, 'max_participating_lane_pct_time')
+      call append_openmp_csv_field(row, 'participating_lane_pct_imbalance')
+      call finish_openmp_report_buffer(row, line)
+   end function mpi_openmp_csv_header_line
+
+   subroutine get_mpi_openmp_csv_header_mode(filename, append_mode, include_header, status, iomsg)
+      character(len=*), intent(in) :: filename
+      logical, intent(in) :: append_mode
+      logical, intent(out) :: include_header
+      integer, intent(out) :: status
+      character(len=*), intent(out) :: iomsg
+      character(len=1) :: ch
+      character(len=:), allocatable :: expected_header
+      character(len=:), allocatable :: header_line
+      integer :: io
+      integer :: unit
+      logical :: exists
+
+      include_header = .true.
+      status = FTIMER_SUCCESS
+      iomsg = ''
+      if (.not. append_mode) return
+
+      inquire (file=filename, exist=exists)
+      if (.not. exists) return
+
+      expected_header = mpi_openmp_csv_header_line()
+      header_line = ''
+      open (newunit=unit, file=filename, status='old', access='stream', form='unformatted', &
+            action='read', iostat=io, iomsg=iomsg)
+      if (io /= 0) then
+         status = FTIMER_ERR_IO
+         return
+      end if
+      do
+         read (unit, iostat=io, iomsg=iomsg) ch
+         if (io == iostat_end) exit
+         if (io /= 0) then
+            close (unit)
+            status = FTIMER_ERR_IO
+            return
+         end if
+         if (ch == new_line('a')) exit
+         header_line = header_line//ch
+         if (len(header_line) > len(expected_header) + 1) exit
+      end do
+      close (unit)
+      call strip_openmp_trailing_carriage_return(header_line)
+      if ((len(header_line) /= len(expected_header)) .or. (header_line /= expected_header)) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing MPI+OpenMP summary CSV header does not match format version 1'
+         return
+      end if
+      include_header = .false.
+   end subroutine get_mpi_openmp_csv_header_mode
+
+   subroutine report_mpi_openmp_summary_error(self, ierr, status, diagnostic)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+      integer, intent(in) :: status
+      character(len=*), intent(in) :: diagnostic
+
+      select case (status)
+      case (FTIMER_ERR_NOT_IMPLEMENTED)
+         call report_timer_status(self, ierr, status, "ftimer_openmp mpi_openmp_summary requires FTIMER_USE_MPI=ON")
+      case (FTIMER_ERR_ACTIVE)
+         call report_timer_status(self, ierr, status, &
+                                  "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks")
+      case (FTIMER_ERR_MPI_INCON)
+         if (len_trim(diagnostic) > 0) then
+            call report_timer_status(self, ierr, status, trim(diagnostic))
+         else
+            call report_timer_status(self, ierr, status, &
+                                     "ftimer_openmp mpi_openmp_summary detected inconsistent strict hybrid descriptors")
+         end if
+      case default
+         if (len_trim(diagnostic) > 0) then
+            call report_timer_status(self, ierr, status, trim(diagnostic))
+         else
+            call report_timer_status(self, ierr, status, "ftimer_openmp mpi_openmp_summary MPI reduction failed")
+         end if
+      end select
+   end subroutine report_mpi_openmp_summary_error
 
    integer function prepare_openmp_summary(self, summary, diagnostics_are_explicit) result(status)
       class(ftimer_openmp_t), intent(inout) :: self

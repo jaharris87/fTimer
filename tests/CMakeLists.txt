@@ -42,6 +42,28 @@ if(FTIMER_BUILD_SMOKE_TESTS)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_summary_smoke.cmake
     )
   endif()
+
+  if(FTIMER_USE_MPI AND FTIMER_USE_OPENMP)
+    add_executable(ftimer_openmp_mpi_summary_smoke test_openmp_mpi_summary_smoke.F90)
+    target_link_libraries(ftimer_openmp_mpi_summary_smoke PRIVATE ftimer_smoke_test)
+
+    set(ftimer_openmp_mpi_summary_command "${MPIEXEC_EXECUTABLE}")
+    if(DEFINED MPIEXEC_NUMPROC_FLAG AND NOT MPIEXEC_NUMPROC_FLAG STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_command "${MPIEXEC_NUMPROC_FLAG}" 2)
+    else()
+      list(APPEND ftimer_openmp_mpi_summary_command -n 2)
+    endif()
+    if(DEFINED MPIEXEC_PREFLAGS AND NOT MPIEXEC_PREFLAGS STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_command ${MPIEXEC_PREFLAGS})
+    endif()
+    list(APPEND ftimer_openmp_mpi_summary_command "$<TARGET_FILE:ftimer_openmp_mpi_summary_smoke>")
+    if(DEFINED MPIEXEC_POSTFLAGS AND NOT MPIEXEC_POSTFLAGS STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_command ${MPIEXEC_POSTFLAGS})
+    endif()
+
+    add_test(NAME ftimer_openmp_mpi_summary_smoke COMMAND ${ftimer_openmp_mpi_summary_command})
+    set_tests_properties(ftimer_openmp_mpi_summary_smoke PROPERTIES LABELS "mpi;openmp")
+  endif()
 endif()
 
 function(ftimer_add_installed_consumer_test test_name test_binary_dir)
