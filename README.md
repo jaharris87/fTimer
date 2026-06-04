@@ -416,13 +416,14 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - `FTIMER_USE_OPENMP=ON` enables limited master-thread-only guards for the current `ftimer` and `ftimer_core` APIs. Worker-thread timer calls through those APIs inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole through existing APIs, place `start`/`stop` outside the `!$omp parallel` block. To time level-1 worker lanes, use the explicit `ftimer_openmp_t` object with pre-registered ids and an opened timed region.
 - `use ftimer_openmp` exposes the opt-in worker-timing API without changing current `ftimer` behavior. The object lifecycle/configuration, timer catalog, timed parallel-region, and id-first thread-lane timing calls are available now. Serial timing uses lane 0; worker timing uses one lane per level-1 OpenMP thread id inside an explicitly opened timed region. Cross-lane mismatches, calls outside an open timed region, and out-of-capacity lanes return errors without repairing or popping another lane.
 - `ftimer_openmp_t%get_openmp_summary`, `print_openmp_summary`, `write_openmp_summary`, and `write_openmp_summary_csv` are separate from current local and MPI summary/report APIs. They require a stopped OpenMP run and return `FTIMER_ERR_ACTIVE` without a normal artifact if any lane is active or a timed region remains open.
+- In MPI+OpenMP builds, `ftimer_openmp_t%mpi_openmp_summary`, `print_mpi_openmp_summary`, `write_mpi_openmp_summary`, and `write_mpi_openmp_summary_csv` provide the strict hybrid rank/lane result and report surface. These entry points are collective, require matching descriptor and lane-participation structure across ranks, and do not relax to sparse/union behavior.
 - `FTIMER_USE_OPENMP` is the source-level switch for that carve-out; global OpenMP compiler flags alone do not enable the guards when the option is `OFF`.
 - The `ftimer`/`ftimer_core` OpenMP guard path does not make those APIs thread-safe, does not provide thread-local timer instances, and should not be read as a general hybrid MPI+OpenMP timing model.
 - OpenMP mode selection, accepted instrumentation patterns, and migration
   guidance are collected in
-  [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md). Future real
-  hybrid MPI+OpenMP timing is tracked separately from the current
-  compatibility mode; see
+  [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md). Strict
+  MPI+OpenMP hybrid timing is separate from the compatibility mode, and
+  sparse/union hybrid participation remains deferred; see
   [`docs/openmp-hybrid-strategy-decision.md`](docs/openmp-hybrid-strategy-decision.md),
   the opt-in API direction in
   [`docs/openmp-hybrid-api-design.md`](docs/openmp-hybrid-api-design.md),
@@ -436,7 +437,7 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
   [`docs/openmp-hybrid-validation-plan.md`](docs/openmp-hybrid-validation-plan.md).
 - `on_event` remains a lightweight intra-run hook, not a serious profiler-backend integration contract with stable semantic timer identity.
 - If `FTIMER_USE_MPI=OFF`, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` and leave their MPI result objects empty. MPI report APIs, including the sparse union report and CSV APIs, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output or creating/replacing report files.
-- Formatted local and MPI report output are separate paths: `print_summary()`/`write_summary()` are local, `print_mpi_summary()`/`write_mpi_summary()` are strict MPI reports, and `print_mpi_union_summary()`/`write_mpi_union_summary()` are opt-in sparse MPI union reports. MPI reports are deliberately abbreviated; `ftimer_mpi_summary_t` and `ftimer_mpi_union_summary_t` remain the complete structured data models.
+- Formatted local, MPI, and strict MPI+OpenMP report output are separate paths: `print_summary()`/`write_summary()` are local, `print_mpi_summary()`/`write_mpi_summary()` are strict MPI reports, `print_mpi_union_summary()`/`write_mpi_union_summary()` are opt-in sparse MPI union reports, and `print_mpi_openmp_summary()`/`write_mpi_openmp_summary()` are strict hybrid reports on `ftimer_openmp_t`. MPI reports are deliberately abbreviated; `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, and `ftimer_mpi_openmp_summary_t` remain the complete structured data models.
 
 ## Performance Measurement
 

@@ -61,7 +61,11 @@ if(FTIMER_BUILD_SMOKE_TESTS)
       list(APPEND ftimer_openmp_mpi_summary_command ${MPIEXEC_POSTFLAGS})
     endif()
 
-    add_test(NAME ftimer_openmp_mpi_summary_smoke COMMAND ${ftimer_openmp_mpi_summary_command})
+    add_test(NAME ftimer_openmp_mpi_summary_smoke
+      COMMAND ${CMAKE_COMMAND}
+        "-DTEST_COMMAND=${ftimer_openmp_mpi_summary_command}"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_mpi_summary_smoke.cmake
+    )
     set_tests_properties(ftimer_openmp_mpi_summary_smoke PROPERTIES LABELS "mpi;openmp")
   endif()
 

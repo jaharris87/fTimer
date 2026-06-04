@@ -12,8 +12,10 @@ evolve without making today's master-thread-only behavior look accidental.
 Current `main` includes opt-in worker-thread timing through `ftimer_openmp`.
 Timed-region worker `start_id`/`stop_id` calls are available inside explicit
 level-1 OpenMP epochs, and stopped-run local OpenMP summaries, text reports,
-and CSV exports are available through the same object. Hybrid MPI+OpenMP
-reductions remain deferred to later implementation issues.
+and CSV exports are available through the same object. MPI+OpenMP builds also
+provide strict rank/lane hybrid summaries, text reports, and CSV exports
+through `ftimer_openmp_t`; sparse/union hybrid participation reductions remain
+deferred to later implementation issues.
 
 The `ftimer_openmp` module is installed in all package modes: serial, MPI,
 OpenMP, and MPI+OpenMP. Packages built without `FTIMER_USE_OPENMP=ON` support
@@ -103,7 +105,8 @@ Also avoid:
 - scoped guards with block-local finalization inside OpenMP parallel regions;
 - summary, report, reset, finalize, clock, or callback operations from inside
   a parallel region;
-- reading MPI+OpenMP smoke coverage as proof of hybrid rank/lane reductions;
+- reading MPI+OpenMP smoke coverage as proof of sparse/union hybrid rank/lane
+  reductions;
 - using global OpenMP compiler flags as a substitute for `FTIMER_USE_OPENMP=ON`.
 
 ## Migration Story
@@ -156,8 +159,9 @@ Keep current and future examples separate.
 - Future true OpenMP worker examples should use `ftimer_openmp_t` and should be
   added only when the example can present a complete stopped-run reporting story
   without implying trace/profiler behavior.
-- Future MPI+OpenMP examples should use the future `ftimer_openmp_t` hybrid
-  summary path, not the current procedural default instance.
+- MPI+OpenMP examples should use the strict `ftimer_openmp_t` hybrid summary
+  path, not the procedural default instance. Sparse/union hybrid examples
+  should wait for the later participation-aware API.
 - Future examples should show the id-first worker hot path, explicit timed
   region begin/end, stopped-run summaries, and participation-aware terminology.
 - Examples must not imply support for nested OpenMP teams, OpenMP task

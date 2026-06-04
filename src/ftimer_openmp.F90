@@ -9,7 +9,7 @@ module ftimer_openmp
    use mpi_f08, only: MPI_Allgather, MPI_Allreduce, MPI_Bcast, MPI_Comm, MPI_COMM_SELF, MPI_COMM_WORLD, &
                       MPI_Datatype, MPI_DATATYPE_NULL, MPI_Errhandler, MPI_Errhandler_free, MPI_ERRORS_RETURN, &
                       MPI_Comm_get_errhandler, MPI_Comm_rank, MPI_Comm_set_errhandler, MPI_Comm_size, &
-                      MPI_INTEGER, MPI_MAX, MPI_MIN, MPI_SUCCESS, MPI_SUM, MPI_TYPECLASS_INTEGER, &
+                      MPI_CHARACTER, MPI_INTEGER, MPI_MAX, MPI_MIN, MPI_SUCCESS, MPI_SUM, MPI_TYPECLASS_INTEGER, &
                       MPI_TYPECLASS_REAL, MPI_Type_match_size, MPI_Type_size
 #endif
 #ifdef FTIMER_USE_OPENMP
@@ -952,6 +952,7 @@ contains
       integer, intent(out), optional :: ierr
       type(ftimer_mpi_openmp_summary_t) :: summary
       character(len=:), allocatable :: text
+      character(len=256) :: collective_message
       character(len=256) :: diagnostic
       character(len=256) :: iomsg
       integer :: file_unit
@@ -981,6 +982,7 @@ contains
       end if
 
       bcast_status = FTIMER_SUCCESS
+      collective_message = ''
       if (rank == 0) then
          call format_mpi_openmp_summary(summary, text, metadata)
          append_mode = .false.
@@ -993,18 +995,36 @@ contains
          end if
          if (io /= 0) then
             bcast_status = FTIMER_ERR_IO
+            collective_message = "ftimer_openmp write_mpi_openmp_summary open failed: "//trim(iomsg)
          else
             call write_text_block(file_unit, text, io, iomsg)
-            if (io /= 0) bcast_status = FTIMER_ERR_IO
-            close (file_unit, iostat=io, iomsg=iomsg)
-            if ((io /= 0) .and. (bcast_status == FTIMER_SUCCESS)) bcast_status = FTIMER_ERR_IO
+            if (io /= 0) then
+               bcast_status = FTIMER_ERR_IO
+               collective_message = "ftimer_openmp write_mpi_openmp_summary write failed: "//trim(iomsg)
+               close (file_unit)
+            else
+               close (file_unit, iostat=io, iomsg=iomsg)
+               if (io /= 0) then
+                  bcast_status = FTIMER_ERR_IO
+                  collective_message = "ftimer_openmp write_mpi_openmp_summary close failed: "//trim(iomsg)
+               end if
+            end if
          end if
       end if
       call MPI_Bcast(bcast_status, 1, MPI_INTEGER, 0, active_comm, mpierr)
-      if (mpierr /= MPI_SUCCESS) bcast_status = FTIMER_ERR_UNKNOWN
+      if (mpierr /= MPI_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                             "ftimer_openmp write_mpi_openmp_summary status sync failed")
+         return
+      end if
+      call MPI_Bcast(collective_message, len(collective_message), MPI_CHARACTER, 0, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                             "ftimer_openmp write_mpi_openmp_summary message sync failed")
+         return
+      end if
       if (bcast_status /= FTIMER_SUCCESS) then
-         call report_mpi_openmp_summary_error(self, ierr, bcast_status, &
-                                             "ftimer_openmp write_mpi_openmp_summary write failed")
+         call report_mpi_openmp_summary_error(self, ierr, bcast_status, trim(collective_message))
          return
       end if
 #else
@@ -1022,6 +1042,7 @@ contains
       integer, intent(out), optional :: ierr
       type(ftimer_mpi_openmp_summary_t) :: summary
       character(len=:), allocatable :: text
+      character(len=256) :: collective_message
       character(len=256) :: diagnostic
       character(len=256) :: iomsg
       integer :: file_unit
@@ -1053,12 +1074,14 @@ contains
       end if
 
       bcast_status = FTIMER_SUCCESS
+      collective_message = ''
       if (rank == 0) then
          append_mode = .false.
          if (present(append)) append_mode = append
          call get_mpi_openmp_csv_header_mode(filename, append_mode, include_header, header_status, iomsg)
          if (header_status /= FTIMER_SUCCESS) then
             bcast_status = header_status
+            collective_message = "ftimer_openmp write_mpi_openmp_summary_csv append validation failed: "//trim(iomsg)
          else
             call format_mpi_openmp_summary_csv(summary, text, metadata, include_header=include_header)
             if (append_mode) then
@@ -1069,19 +1092,37 @@ contains
             end if
             if (io /= 0) then
                bcast_status = FTIMER_ERR_IO
+               collective_message = "ftimer_openmp write_mpi_openmp_summary_csv open failed: "//trim(iomsg)
             else
                call write_text_block(file_unit, text, io, iomsg)
-               if (io /= 0) bcast_status = FTIMER_ERR_IO
-               close (file_unit, iostat=io, iomsg=iomsg)
-               if ((io /= 0) .and. (bcast_status == FTIMER_SUCCESS)) bcast_status = FTIMER_ERR_IO
+               if (io /= 0) then
+                  bcast_status = FTIMER_ERR_IO
+                  collective_message = "ftimer_openmp write_mpi_openmp_summary_csv write failed: "//trim(iomsg)
+                  close (file_unit)
+               else
+                  close (file_unit, iostat=io, iomsg=iomsg)
+                  if (io /= 0) then
+                     bcast_status = FTIMER_ERR_IO
+                     collective_message = "ftimer_openmp write_mpi_openmp_summary_csv close failed: "//trim(iomsg)
+                  end if
+               end if
             end if
          end if
       end if
       call MPI_Bcast(bcast_status, 1, MPI_INTEGER, 0, active_comm, mpierr)
-      if (mpierr /= MPI_SUCCESS) bcast_status = FTIMER_ERR_UNKNOWN
+      if (mpierr /= MPI_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                             "ftimer_openmp write_mpi_openmp_summary_csv status sync failed")
+         return
+      end if
+      call MPI_Bcast(collective_message, len(collective_message), MPI_CHARACTER, 0, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         call report_mpi_openmp_summary_error(self, ierr, FTIMER_ERR_UNKNOWN, &
+                                             "ftimer_openmp write_mpi_openmp_summary_csv message sync failed")
+         return
+      end if
       if (bcast_status /= FTIMER_SUCCESS) then
-         call report_mpi_openmp_summary_error(self, ierr, bcast_status, &
-                                             "ftimer_openmp write_mpi_openmp_summary_csv write failed")
+         call report_mpi_openmp_summary_error(self, ierr, bcast_status, trim(collective_message))
          return
       end if
 #else

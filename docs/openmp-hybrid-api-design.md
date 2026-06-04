@@ -303,5 +303,7 @@ compile/runtime coverage for the lifecycle and timer-catalog subset, and #269
 adds thread-lane runtime coverage through `ftimer_openmp_api_smoke` and
 installed-package consumers. Issue #270 adds local OpenMP summary/report/CSV
 coverage. Compile-fail probes still cover unsupported positional `init` forms.
-The hybrid-reduction snippets in this document remain future examples until the
-later #267 child issues add those public APIs and their validation.
+Issue #271 adds strict MPI+OpenMP hybrid summaries, reports, CSV output, and
+focused two-rank/two-lane validation through the public `ftimer_openmp_t`
+hybrid entry points. Sparse/union hybrid participation snippets remain future
+examples until later #267 child issues add those APIs and their validation.

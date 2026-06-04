@@ -478,9 +478,11 @@ introduced by #243.
 - #243 records the validation plan in
   [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
   and starts current installed-consumer checks for `mpi_f08` plus OpenMP.
-  Later implementation issues must add deterministic MPI+OpenMP validation,
-  strict-semantics and participation-aware test matrices, report/CSV golden
-  output, and overhead measurements.
+  Issue #271 adds deterministic strict MPI+OpenMP validation, strict-semantics
+  descriptor and participation tests, report/CSV output checks, and installed
+  consumer coverage. Later implementation issues must add sparse/union
+  participation-aware test matrices and overhead measurements as those APIs
+  exist.
 - #242 records the user-facing timing modes and migration guide in
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Later
   implementation issues should add compile-checked hybrid examples after the
@@ -497,9 +499,11 @@ introduced by #243.
 - Supporting nested OpenMP teams, OpenMP task migration, accelerator/device
   timing, hardware counters, callback identity, or trace/timeline output.
 
-## Validation For This Design
+## Validation
 
-This issue records the reduction contract without changing runtime behavior.
-Validation for this design-only step is Markdown review and diff checking. No
-Fortran build or pFUnit run is required unless a later change adds code,
-examples, CMake, or tests.
+This document originally recorded the reduction contract before runtime changes.
+The strict #271 implementation now validates the public hybrid API with
+two-rank/two-lane MPI+OpenMP smoke coverage, active-lane and active-region
+preflight failures, descriptor mismatch failures, rank/lane imbalance fields,
+and strict hybrid report/CSV output. Sparse/union hybrid participation
+reductions remain deferred to later implementation issues.
