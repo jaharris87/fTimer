@@ -915,7 +915,8 @@ contains
 #ifdef FTIMER_USE_MPI
       call get_mpi_openmp_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
       if (status /= FTIMER_SUCCESS) then
-         call report_mpi_openmp_summary_error(self, ierr, status, "ftimer_openmp print_mpi_openmp_summary communicator lookup failed")
+         call report_mpi_openmp_summary_error(self, ierr, status, &
+                                             "ftimer_openmp print_mpi_openmp_summary communicator lookup failed")
          return
       end if
 
@@ -972,7 +973,8 @@ contains
 #ifdef FTIMER_USE_MPI
       call get_mpi_openmp_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
       if (status /= FTIMER_SUCCESS) then
-         call report_mpi_openmp_summary_error(self, ierr, status, "ftimer_openmp write_mpi_openmp_summary communicator lookup failed")
+         call report_mpi_openmp_summary_error(self, ierr, status, &
+                                             "ftimer_openmp write_mpi_openmp_summary communicator lookup failed")
          return
       end if
 
