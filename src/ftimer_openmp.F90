@@ -1,14 +1,14 @@
 module ftimer_openmp
-   use, intrinsic :: iso_fortran_env, only: error_unit, int64
-   use ftimer_clock, only: ftimer_default_clock
-   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64, output_unit
+   use ftimer_clock, only: ftimer_date_string, ftimer_default_clock
+   use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_IO, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
-                           ftimer_call_stack_t, ftimer_clock_func, ftimer_segment_t, wp
+                           ftimer_call_stack_t, ftimer_clock_func, ftimer_metadata_t, ftimer_segment_t, wp
 #ifdef FTIMER_USE_MPI
    use mpi_f08, only: MPI_Comm, MPI_COMM_WORLD
 #endif
 #ifdef FTIMER_USE_OPENMP
-   use omp_lib, only: omp_get_level, omp_get_max_threads, omp_get_thread_num, omp_in_parallel
+   use omp_lib, only: omp_get_level, omp_get_max_threads, omp_get_num_threads, omp_get_thread_num, omp_in_parallel
 #endif
    implicit none
    private
@@ -16,13 +16,23 @@ module ftimer_openmp
    public :: FTIMER_OPENMP_MODE_THREAD_LANES
    public :: ftimer_openmp_config_t
    public :: ftimer_openmp_parallel_region_t
+   public :: ftimer_openmp_summary_entry_t
+   public :: ftimer_openmp_summary_t
    public :: ftimer_openmp_t
 
    integer, parameter :: FTIMER_OPENMP_MODE_THREAD_LANES = 1
    integer, parameter :: FTIMER_OPENMP_CATALOG_INITIAL_CAPACITY = 16
    integer, parameter :: FTIMER_OPENMP_DEFAULT_WORKER_DIAGNOSTICS = 32
+   integer, parameter :: FTIMER_OPENMP_CONTEXT_EPOCH_UNKNOWN = -1
+   character(len=*), parameter :: FTIMER_OPENMP_CSV_FORMAT_VERSION = '1'
+   integer, parameter :: default_report_buffer_capacity = 1024
    integer(int64) :: next_object_token = 1_int64
    integer(int64) :: next_region_token = 1_int64
+
+   type :: openmp_report_buffer_t
+      character(len=:), allocatable :: chars
+      integer :: used = 0
+   end type openmp_report_buffer_t
 
    type :: ftimer_openmp_config_t
       integer :: mode = FTIMER_OPENMP_MODE_THREAD_LANES
@@ -53,6 +63,57 @@ module ftimer_openmp
       type(ftimer_segment_t), allocatable :: segments(:)
    end type ftimer_openmp_lane_t
 
+   type :: ftimer_openmp_summary_entry_t
+      character(len=:), allocatable :: name
+      integer :: depth = 0
+      integer :: node_id = 0
+      integer :: parent_id = 0
+      integer :: eligible_lane_count = 0
+      integer :: participating_lane_count = 0
+      integer :: missing_lane_count = 0
+      logical :: missing_lane_count_known = .true.
+      real(wp) :: sum_lane_inclusive_time = 0.0_wp
+      real(wp) :: sum_lane_self_time = 0.0_wp
+      real(wp) :: min_lane_inclusive_time = 0.0_wp
+      real(wp) :: avg_lane_inclusive_time = 0.0_wp
+      real(wp) :: max_lane_inclusive_time = 0.0_wp
+      real(wp) :: lane_inclusive_imbalance = 1.0_wp
+      real(wp) :: min_lane_self_time = 0.0_wp
+      real(wp) :: avg_lane_self_time = 0.0_wp
+      real(wp) :: max_lane_self_time = 0.0_wp
+      real(wp) :: lane_self_imbalance = 1.0_wp
+      integer(int64) :: min_lane_call_count = 0_int64
+      integer(int64) :: max_lane_call_count = 0_int64
+      real(wp) :: avg_lane_call_count = 0.0_wp
+   end type ftimer_openmp_summary_entry_t
+
+   type :: ftimer_openmp_summary_t
+      character(len=40) :: start_date = ''
+      character(len=40) :: end_date = ''
+      real(wp) :: summary_window_time = 0.0_wp
+      real(wp) :: timed_region_envelope_time = 0.0_wp
+      real(wp) :: sum_lane_root_inclusive_time = 0.0_wp
+      real(wp) :: sum_lane_self_time = 0.0_wp
+      integer :: configured_lane_capacity = 0
+      integer :: observed_participating_lane_count = 0
+      integer :: num_entries = 0
+      type(ftimer_openmp_summary_entry_t), allocatable :: entries(:)
+   end type ftimer_openmp_summary_t
+
+   type :: ftimer_openmp_entry_accumulator_t
+      character(len=:), allocatable :: path
+      character(len=:), allocatable :: parent_path
+      character(len=:), allocatable :: name
+      integer :: depth = 0
+      logical :: eligible_serial_lane = .false.
+      integer :: max_worker_lane_id = 0
+      logical :: missing_lane_count_known = .true.
+      logical, allocatable :: lane_seen(:)
+      real(wp), allocatable :: lane_inclusive(:)
+      real(wp), allocatable :: lane_self(:)
+      integer(int64), allocatable :: lane_calls(:)
+   end type ftimer_openmp_entry_accumulator_t
+
    type :: ftimer_openmp_t
       private
       logical :: initialized = .false.
@@ -67,10 +128,15 @@ module ftimer_openmp
       logical :: region_open = .false.
       integer :: current_epoch = 0
       integer(int64) :: current_region_token = 0_int64
+      real(wp) :: current_region_start_time = 0.0_wp
+      real(wp) :: timed_region_envelope_time = 0.0_wp
       integer :: next_epoch = 1
+      integer, allocatable :: epoch_team_size(:)
       integer :: queued_worker_diagnostics = 0
       integer :: worker_diagnostic_overflow = 0
       integer :: first_worker_status = FTIMER_SUCCESS
+      real(wp) :: init_wtime = 0.0_wp
+      character(len=40) :: init_date = ''
       procedure(ftimer_clock_func), pointer, nopass :: clock => null()
 #ifdef FTIMER_USE_MPI
       type(MPI_Comm) :: mpi_comm
@@ -92,6 +158,10 @@ module ftimer_openmp
       procedure :: end_parallel_region
       procedure :: start_id
       procedure :: stop_id
+      procedure :: get_openmp_summary
+      procedure :: print_openmp_summary
+      procedure :: write_openmp_summary
+      procedure :: write_openmp_summary_csv
 #ifdef FTIMER_BUILD_SMOKE_TESTS
       procedure :: test_lane_total_call_count
       procedure :: test_lane_parent_call_count
@@ -184,6 +254,10 @@ contains
       self%initialized = .true.
       self%config = effective_config
       call allocate_lanes(self)
+      self%init_wtime = openmp_clock(self)
+      self%init_date = ftimer_date_string()
+      self%timed_region_envelope_time = 0.0_wp
+      self%current_region_start_time = 0.0_wp
 #ifdef FTIMER_USE_MPI
       self%mpi_comm = MPI_COMM_WORLD
       self%mpi_comm_was_present = .false.
@@ -266,9 +340,14 @@ contains
       self%region_open = .false.
       self%current_epoch = 0
       self%current_region_token = 0_int64
+      self%current_region_start_time = 0.0_wp
+      self%timed_region_envelope_time = 0.0_wp
       self%next_epoch = 1
+      if (allocated(self%epoch_team_size)) deallocate (self%epoch_team_size)
       call clear_all_lanes(self)
       call clear_worker_diagnostics(self)
+      self%init_wtime = openmp_clock(self)
+      self%init_date = ftimer_date_string()
 #ifdef FTIMER_USE_MPI
       self%mpi_comm = saved_mpi_comm
       self%mpi_comm_was_present = saved_mpi_comm_was_present
@@ -416,6 +495,9 @@ contains
       self%region_open = .true.
       self%current_epoch = self%next_epoch
       if (self%next_epoch < huge(self%next_epoch)) self%next_epoch = self%next_epoch + 1
+      call ensure_epoch_capacity(self, self%current_epoch)
+      self%epoch_team_size(self%current_epoch) = 0
+      self%current_region_start_time = openmp_clock(self)
       region%epoch = self%current_epoch
       region%object_token = self%object_token
       region%region_token = self%current_region_token
@@ -458,9 +540,12 @@ contains
 
       if (drain_worker_diagnostics(self, ierr)) return
 
+      self%timed_region_envelope_time = self%timed_region_envelope_time + &
+                                        (openmp_clock(self) - self%current_region_start_time)
       self%region_open = .false.
       self%current_epoch = 0
       self%current_region_token = 0_int64
+      self%current_region_start_time = 0.0_wp
       call clear_region(region)
 
       if (present(ierr)) ierr = FTIMER_SUCCESS
@@ -524,6 +609,1111 @@ contains
       call stop_lane_timer(self, lane_idx, catalog_idx, id, epoch, ierr)
    end subroutine stop_id
 
+   subroutine get_openmp_summary(self, summary, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      type(ftimer_openmp_summary_t), intent(out) :: summary
+      integer, intent(out), optional :: ierr
+
+      if (.not. self%initialized) then
+         call reset_openmp_summary(summary)
+         call report_timer_status(self, ierr, FTIMER_ERR_NOT_INIT, "ftimer_openmp get_openmp_summary before init")
+         return
+      end if
+
+      if (is_inside_parallel_region()) then
+         call reset_openmp_summary(summary)
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp get_openmp_summary called inside an OpenMP parallel region")
+         return
+      end if
+
+      if (self%region_open .or. has_active_lanes(self)) then
+         call reset_openmp_summary(summary)
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp get_openmp_summary with active OpenMP timing")
+         return
+      end if
+
+      if (drain_worker_diagnostics(self, ierr)) then
+         call reset_openmp_summary(summary)
+         return
+      end if
+
+      call build_openmp_summary(self, summary)
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine get_openmp_summary
+
+   subroutine print_openmp_summary(self, unit, metadata, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in), optional :: unit
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      integer, intent(out), optional :: ierr
+      type(ftimer_openmp_summary_t) :: summary
+      character(len=:), allocatable :: text
+      character(len=256) :: iomsg
+      integer :: io
+      integer :: out_unit
+      integer :: status
+
+      call self%get_openmp_summary(summary, ierr=status)
+      if (status /= FTIMER_SUCCESS) then
+         call report_timer_status(self, ierr, status, "ftimer_openmp print_openmp_summary summary failed")
+         return
+      end if
+
+      call format_openmp_summary(summary, text, metadata)
+      out_unit = output_unit
+      if (present(unit)) out_unit = unit
+      call write_text_block(out_unit, text, io, iomsg)
+      if (io /= 0) then
+         call report_timer_status(self, ierr, FTIMER_ERR_IO, &
+                                  "ftimer_openmp print_openmp_summary write failed: "//trim(iomsg))
+         return
+      end if
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine print_openmp_summary
+
+   subroutine write_openmp_summary(self, filename, append, metadata, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      character(len=*), intent(in) :: filename
+      logical, intent(in), optional :: append
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      integer, intent(out), optional :: ierr
+      type(ftimer_openmp_summary_t) :: summary
+      character(len=:), allocatable :: text
+      character(len=256) :: iomsg
+      integer :: file_unit
+      integer :: io
+      integer :: status
+      logical :: append_mode
+
+      call self%get_openmp_summary(summary, ierr=status)
+      if (status /= FTIMER_SUCCESS) then
+         call report_timer_status(self, ierr, status, "ftimer_openmp write_openmp_summary summary failed")
+         return
+      end if
+
+      call format_openmp_summary(summary, text, metadata)
+      append_mode = .false.
+      if (present(append)) append_mode = append
+
+      if (append_mode) then
+         open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', iostat=io, iomsg=iomsg)
+      else
+         open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+      end if
+      if (io /= 0) then
+         call report_timer_status(self, ierr, FTIMER_ERR_IO, &
+                                  "ftimer_openmp write_openmp_summary open failed: "//trim(iomsg))
+         return
+      end if
+
+      call write_text_block(file_unit, text, io, iomsg)
+      if (io /= 0) then
+         close (file_unit)
+         call report_timer_status(self, ierr, FTIMER_ERR_IO, &
+                                  "ftimer_openmp write_openmp_summary write failed: "//trim(iomsg))
+         return
+      end if
+
+      close (file_unit, iostat=io, iomsg=iomsg)
+      if (io /= 0) then
+         call report_timer_status(self, ierr, FTIMER_ERR_IO, &
+                                  "ftimer_openmp write_openmp_summary close failed: "//trim(iomsg))
+         return
+      end if
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine write_openmp_summary
+
+   subroutine write_openmp_summary_csv(self, filename, append, metadata, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      character(len=*), intent(in) :: filename
+      logical, intent(in), optional :: append
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      integer, intent(out), optional :: ierr
+      type(ftimer_openmp_summary_t) :: summary
+      character(len=:), allocatable :: text
+      character(len=256) :: iomsg
+      integer :: file_unit
+      integer :: header_status
+      integer :: io
+      integer :: status
+      logical :: append_mode
+      logical :: include_header
+
+      call self%get_openmp_summary(summary, ierr=status)
+      if (status /= FTIMER_SUCCESS) then
+         call report_timer_status(self, ierr, status, "ftimer_openmp write_openmp_summary_csv summary failed")
+         return
+      end if
+
+      append_mode = .false.
+      if (present(append)) append_mode = append
+      call get_openmp_csv_header_mode(filename, append_mode, include_header, header_status, iomsg)
+      if (header_status /= FTIMER_SUCCESS) then
+         call report_timer_status(self, ierr, header_status, &
+                                  "ftimer_openmp write_openmp_summary_csv append validation failed: "//trim(iomsg))
+         return
+      end if
+
+      call format_openmp_summary_csv(summary, text, metadata, include_header=include_header)
+      if (append_mode) then
+         open (newunit=file_unit, file=filename, status='unknown', position='append', action='write', iostat=io, iomsg=iomsg)
+      else
+         open (newunit=file_unit, file=filename, status='replace', action='write', iostat=io, iomsg=iomsg)
+      end if
+      if (io /= 0) then
+         call report_timer_status(self, ierr, FTIMER_ERR_IO, &
+                                  "ftimer_openmp write_openmp_summary_csv open failed: "//trim(iomsg))
+         return
+      end if
+
+      call write_text_block(file_unit, text, io, iomsg)
+      if (io /= 0) then
+         close (file_unit)
+         call report_timer_status(self, ierr, FTIMER_ERR_IO, &
+                                  "ftimer_openmp write_openmp_summary_csv write failed: "//trim(iomsg))
+         return
+      end if
+
+      close (file_unit, iostat=io, iomsg=iomsg)
+      if (io /= 0) then
+         call report_timer_status(self, ierr, FTIMER_ERR_IO, &
+                                  "ftimer_openmp write_openmp_summary_csv close failed: "//trim(iomsg))
+         return
+      end if
+
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine write_openmp_summary_csv
+
+   subroutine build_openmp_summary(self, summary)
+      class(ftimer_openmp_t), intent(inout) :: self
+      type(ftimer_openmp_summary_t), intent(out) :: summary
+      type(ftimer_openmp_entry_accumulator_t), allocatable :: accumulators(:)
+      integer, allocatable :: order(:)
+      logical, allocatable :: observed_lanes(:)
+      character(len=:), allocatable :: parent_path
+      character(len=:), allocatable :: path
+      integer :: acc_idx
+      integer :: catalog_idx
+      integer :: ctx
+      integer :: entry_count
+      integer :: lane_idx
+      integer :: lane_capacity
+      integer :: pos
+      real(wp) :: end_time
+
+      call reset_openmp_summary(summary)
+      end_time = openmp_clock(self)
+      summary%start_date = self%init_date
+      summary%end_date = ftimer_date_string()
+      summary%summary_window_time = end_time - self%init_wtime
+      summary%timed_region_envelope_time = self%timed_region_envelope_time
+      summary%configured_lane_capacity = self%config%max_lanes
+
+      lane_capacity = 0
+      if (allocated(self%lanes)) lane_capacity = size(self%lanes)
+      if (lane_capacity > 0) then
+         allocate (observed_lanes(lane_capacity))
+         observed_lanes = .false.
+      else
+         allocate (observed_lanes(0))
+      end if
+
+      entry_count = 0
+      do lane_idx = 1, lane_capacity
+         if (.not. allocated(self%lanes(lane_idx)%segments)) cycle
+         do catalog_idx = 1, min(self%num_timers, size(self%lanes(lane_idx)%segments))
+            if (.not. allocated(self%lanes(lane_idx)%segments(catalog_idx)%time)) cycle
+            do ctx = 1, self%lanes(lane_idx)%segments(catalog_idx)%contexts%count
+               if (.not. context_participates(self%lanes(lane_idx)%segments(catalog_idx), ctx)) cycle
+
+               parent_path = descriptor_path_for_stack(self, &
+                                                       self%lanes(lane_idx)%segments(catalog_idx)%contexts%stacks(ctx))
+               path = descriptor_path_with_timer(self, parent_path, self%catalog(catalog_idx)%id)
+               call find_or_add_openmp_accumulator(accumulators, entry_count, path, parent_path, &
+                                                   self%catalog(catalog_idx)%name, &
+                                                   self%lanes(lane_idx)%segments(catalog_idx)%contexts%stacks(ctx)%depth, &
+                                                   lane_capacity, acc_idx)
+               call add_openmp_accumulator_sample(self, accumulators(acc_idx), self%lanes(lane_idx)%lane_id, &
+                                                  self%lanes(lane_idx)%segments(catalog_idx)%context_epoch(ctx), &
+                                                  self%lanes(lane_idx)%segments(catalog_idx)%time(ctx), &
+                                                  lane_context_self_time(self, lane_idx, catalog_idx, ctx), &
+                                                  self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx))
+               observed_lanes(lane_idx) = .true.
+            end do
+         end do
+      end do
+
+      summary%observed_participating_lane_count = count(observed_lanes)
+      if (entry_count <= 0) then
+         allocate (summary%entries(0))
+         return
+      end if
+
+      allocate (order(entry_count))
+      do pos = 1, entry_count
+         order(pos) = pos
+      end do
+      call sort_openmp_accumulator_order(order, accumulators)
+
+      summary%num_entries = entry_count
+      allocate (summary%entries(entry_count))
+      do pos = 1, entry_count
+         call populate_openmp_summary_entry(summary%entries(pos), accumulators(order(pos)))
+         summary%entries(pos)%node_id = pos
+      end do
+
+      do pos = 1, entry_count
+         summary%entries(pos)%parent_id = ordered_parent_id(accumulators(order(pos))%parent_path, accumulators, order)
+         if (summary%entries(pos)%depth == 0) then
+            summary%sum_lane_root_inclusive_time = summary%sum_lane_root_inclusive_time + &
+                                                   summary%entries(pos)%sum_lane_inclusive_time
+         end if
+         summary%sum_lane_self_time = summary%sum_lane_self_time + summary%entries(pos)%sum_lane_self_time
+      end do
+   end subroutine build_openmp_summary
+
+   subroutine reset_openmp_summary(summary)
+      type(ftimer_openmp_summary_t), intent(out) :: summary
+
+      if (allocated(summary%entries)) deallocate (summary%entries)
+      summary%start_date = ''
+      summary%end_date = ''
+      summary%summary_window_time = 0.0_wp
+      summary%timed_region_envelope_time = 0.0_wp
+      summary%sum_lane_root_inclusive_time = 0.0_wp
+      summary%sum_lane_self_time = 0.0_wp
+      summary%configured_lane_capacity = 0
+      summary%observed_participating_lane_count = 0
+      summary%num_entries = 0
+   end subroutine reset_openmp_summary
+
+   logical function context_participates(segment, ctx) result(participates)
+      type(ftimer_segment_t), intent(in) :: segment
+      integer, intent(in) :: ctx
+
+      participates = .false.
+      if ((.not. allocated(segment%time)) .or. (.not. allocated(segment%call_count))) return
+      if ((ctx < 1) .or. (ctx > size(segment%time)) .or. (ctx > size(segment%call_count))) return
+
+      participates = (segment%call_count(ctx) > 0_int64) .or. (segment%time(ctx) /= 0.0_wp)
+   end function context_participates
+
+   real(wp) function lane_context_self_time(self, lane_idx, catalog_idx, ctx) result(self_time)
+      class(ftimer_openmp_t), intent(in) :: self
+      integer, intent(in) :: lane_idx
+      integer, intent(in) :: catalog_idx
+      integer, intent(in) :: ctx
+      type(ftimer_call_stack_t) :: parent_stack
+      integer :: child_catalog_idx
+      integer :: child_ctx
+      real(wp) :: child_sum
+      real(wp) :: inclusive_time
+
+      inclusive_time = self%lanes(lane_idx)%segments(catalog_idx)%time(ctx)
+      parent_stack = self%lanes(lane_idx)%segments(catalog_idx)%contexts%stacks(ctx)
+      child_sum = 0.0_wp
+
+      if (allocated(self%lanes(lane_idx)%segments)) then
+         do child_catalog_idx = 1, min(self%num_timers, size(self%lanes(lane_idx)%segments))
+            if (.not. allocated(self%lanes(lane_idx)%segments(child_catalog_idx)%time)) cycle
+            do child_ctx = 1, self%lanes(lane_idx)%segments(child_catalog_idx)%contexts%count
+               if (.not. context_participates(self%lanes(lane_idx)%segments(child_catalog_idx), child_ctx)) cycle
+               if (is_direct_child_context(self%lanes(lane_idx)%segments(child_catalog_idx)%contexts%stacks(child_ctx), &
+                                           parent_stack, self%catalog(catalog_idx)%id)) then
+                  child_sum = child_sum + self%lanes(lane_idx)%segments(child_catalog_idx)%time(child_ctx)
+               end if
+            end do
+         end do
+      end if
+
+      self_time = inclusive_time - child_sum
+      if (self_time < 0.0_wp) self_time = 0.0_wp
+      if (self_time > inclusive_time) self_time = inclusive_time
+   end function lane_context_self_time
+
+   logical function is_direct_child_context(child_stack, parent_stack, timer_id) result(is_child)
+      type(ftimer_call_stack_t), intent(in) :: child_stack
+      type(ftimer_call_stack_t), intent(in) :: parent_stack
+      integer, intent(in) :: timer_id
+
+      is_child = .false.
+      if (child_stack%depth /= parent_stack%depth + 1) return
+      if (parent_stack%depth > 0) then
+         if (.not. all(child_stack%ids(1:parent_stack%depth) == parent_stack%ids(1:parent_stack%depth))) return
+      end if
+      is_child = child_stack%ids(parent_stack%depth + 1) == timer_id
+   end function is_direct_child_context
+
+   subroutine find_or_add_openmp_accumulator(accumulators, entry_count, path, parent_path, name, depth, lane_capacity, idx)
+      type(ftimer_openmp_entry_accumulator_t), allocatable, intent(inout) :: accumulators(:)
+      integer, intent(inout) :: entry_count
+      character(len=*), intent(in) :: path
+      character(len=*), intent(in) :: parent_path
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: depth
+      integer, intent(in) :: lane_capacity
+      integer, intent(out) :: idx
+      type(ftimer_openmp_entry_accumulator_t), allocatable :: old_accumulators(:)
+      integer :: new_size
+
+      if (allocated(accumulators)) then
+         do idx = 1, entry_count
+            if (accumulators(idx)%path == path) return
+         end do
+      end if
+
+      if (allocated(accumulators)) then
+         if (entry_count >= size(accumulators)) then
+            call move_alloc(accumulators, old_accumulators)
+            new_size = max(entry_count + 1, 2*size(old_accumulators))
+            allocate (accumulators(new_size))
+            if (entry_count > 0) accumulators(1:entry_count) = old_accumulators(1:entry_count)
+         end if
+      else
+         allocate (accumulators(max(1, FTIMER_OPENMP_CATALOG_INITIAL_CAPACITY)))
+      end if
+
+      entry_count = entry_count + 1
+      idx = entry_count
+      accumulators(idx)%path = path
+      accumulators(idx)%parent_path = parent_path
+      accumulators(idx)%name = name
+      accumulators(idx)%depth = depth
+      allocate (accumulators(idx)%lane_seen(lane_capacity))
+      allocate (accumulators(idx)%lane_inclusive(lane_capacity))
+      allocate (accumulators(idx)%lane_self(lane_capacity))
+      allocate (accumulators(idx)%lane_calls(lane_capacity))
+      accumulators(idx)%lane_seen = .false.
+      accumulators(idx)%lane_inclusive = 0.0_wp
+      accumulators(idx)%lane_self = 0.0_wp
+      accumulators(idx)%lane_calls = 0_int64
+   end subroutine find_or_add_openmp_accumulator
+
+   subroutine add_openmp_accumulator_sample(self, accumulator, lane_id, epoch, inclusive_time, self_time, call_count)
+      class(ftimer_openmp_t), intent(in) :: self
+      type(ftimer_openmp_entry_accumulator_t), intent(inout) :: accumulator
+      integer, intent(in) :: lane_id
+      integer, intent(in) :: epoch
+      real(wp), intent(in) :: inclusive_time
+      real(wp), intent(in) :: self_time
+      integer(int64), intent(in) :: call_count
+      integer :: lane_idx
+      integer :: worker_lane_count
+
+      lane_idx = lane_id + 1
+      if ((lane_idx >= 1) .and. (lane_idx <= size(accumulator%lane_seen))) then
+         accumulator%lane_seen(lane_idx) = .true.
+         accumulator%lane_inclusive(lane_idx) = accumulator%lane_inclusive(lane_idx) + inclusive_time
+         accumulator%lane_self(lane_idx) = accumulator%lane_self(lane_idx) + self_time
+         accumulator%lane_calls(lane_idx) = accumulator%lane_calls(lane_idx) + call_count
+      end if
+
+      if (lane_id == 0) then
+         accumulator%eligible_serial_lane = .true.
+      else
+         worker_lane_count = epoch_worker_lane_count(self, epoch)
+         if (worker_lane_count <= 0) then
+            worker_lane_count = lane_id
+            accumulator%missing_lane_count_known = .false.
+         end if
+         if ((accumulator%max_worker_lane_id > 0) .and. (accumulator%max_worker_lane_id /= worker_lane_count)) then
+            accumulator%missing_lane_count_known = .false.
+         end if
+         accumulator%max_worker_lane_id = max(accumulator%max_worker_lane_id, worker_lane_count)
+      end if
+   end subroutine add_openmp_accumulator_sample
+
+   integer function epoch_worker_lane_count(self, epoch) result(worker_lane_count)
+      class(ftimer_openmp_t), intent(in) :: self
+      integer, intent(in) :: epoch
+
+      worker_lane_count = 0
+      if (epoch <= 0) return
+      if (.not. allocated(self%epoch_team_size)) return
+      if (epoch > size(self%epoch_team_size)) return
+      worker_lane_count = self%epoch_team_size(epoch)
+   end function epoch_worker_lane_count
+
+   subroutine populate_openmp_summary_entry(entry, accumulator)
+      type(ftimer_openmp_summary_entry_t), intent(out) :: entry
+      type(ftimer_openmp_entry_accumulator_t), intent(in) :: accumulator
+      integer :: i
+      integer :: participating_count
+      real(wp) :: sum_calls
+
+      entry%name = accumulator%name
+      entry%depth = accumulator%depth
+      entry%eligible_lane_count = accumulator%max_worker_lane_id
+      if (accumulator%eligible_serial_lane) entry%eligible_lane_count = entry%eligible_lane_count + 1
+      participating_count = count(accumulator%lane_seen)
+      entry%participating_lane_count = participating_count
+      entry%missing_lane_count = max(0, entry%eligible_lane_count - participating_count)
+      entry%missing_lane_count_known = accumulator%missing_lane_count_known
+
+      if (participating_count <= 0) return
+
+      entry%min_lane_inclusive_time = huge(entry%min_lane_inclusive_time)
+      entry%min_lane_self_time = huge(entry%min_lane_self_time)
+      entry%min_lane_call_count = huge(entry%min_lane_call_count)
+      sum_calls = 0.0_wp
+      do i = 1, size(accumulator%lane_seen)
+         if (.not. accumulator%lane_seen(i)) cycle
+         entry%sum_lane_inclusive_time = entry%sum_lane_inclusive_time + accumulator%lane_inclusive(i)
+         entry%sum_lane_self_time = entry%sum_lane_self_time + accumulator%lane_self(i)
+         entry%min_lane_inclusive_time = min(entry%min_lane_inclusive_time, accumulator%lane_inclusive(i))
+         entry%max_lane_inclusive_time = max(entry%max_lane_inclusive_time, accumulator%lane_inclusive(i))
+         entry%min_lane_self_time = min(entry%min_lane_self_time, accumulator%lane_self(i))
+         entry%max_lane_self_time = max(entry%max_lane_self_time, accumulator%lane_self(i))
+         entry%min_lane_call_count = min(entry%min_lane_call_count, accumulator%lane_calls(i))
+         entry%max_lane_call_count = max(entry%max_lane_call_count, accumulator%lane_calls(i))
+         sum_calls = sum_calls + real(accumulator%lane_calls(i), wp)
+      end do
+
+      entry%avg_lane_inclusive_time = entry%sum_lane_inclusive_time/real(participating_count, wp)
+      entry%avg_lane_self_time = entry%sum_lane_self_time/real(participating_count, wp)
+      entry%avg_lane_call_count = sum_calls/real(participating_count, wp)
+      entry%lane_inclusive_imbalance = compute_openmp_imbalance(entry%max_lane_inclusive_time, &
+                                                                entry%avg_lane_inclusive_time)
+      entry%lane_self_imbalance = compute_openmp_imbalance(entry%max_lane_self_time, entry%avg_lane_self_time)
+   end subroutine populate_openmp_summary_entry
+
+   real(wp) function compute_openmp_imbalance(max_value, avg_value) result(imbalance)
+      real(wp), intent(in) :: max_value
+      real(wp), intent(in) :: avg_value
+
+      if (avg_value > 0.0_wp) then
+         imbalance = max_value/avg_value
+      else
+         imbalance = 1.0_wp
+      end if
+   end function compute_openmp_imbalance
+
+   subroutine sort_openmp_accumulator_order(order, accumulators)
+      integer, intent(inout) :: order(:)
+      type(ftimer_openmp_entry_accumulator_t), intent(in) :: accumulators(:)
+      integer :: i
+      integer :: j
+      integer :: tmp
+
+      do i = 2, size(order)
+         tmp = order(i)
+         j = i - 1
+         do while (j >= 1)
+            if (accumulators(order(j))%path <= accumulators(tmp)%path) exit
+            order(j + 1) = order(j)
+            j = j - 1
+         end do
+         order(j + 1) = tmp
+      end do
+   end subroutine sort_openmp_accumulator_order
+
+   integer function ordered_parent_id(parent_path, accumulators, order) result(parent_id)
+      character(len=*), intent(in) :: parent_path
+      type(ftimer_openmp_entry_accumulator_t), intent(in) :: accumulators(:)
+      integer, intent(in) :: order(:)
+      integer :: i
+
+      parent_id = 0
+      if (len(parent_path) <= 0) return
+      do i = 1, size(order)
+         if (accumulators(order(i))%path == parent_path) then
+            parent_id = i
+            return
+         end if
+      end do
+   end function ordered_parent_id
+
+   function descriptor_path_for_stack(self, stack) result(path)
+      class(ftimer_openmp_t), intent(in) :: self
+      type(ftimer_call_stack_t), intent(in) :: stack
+      character(len=:), allocatable :: path
+      integer :: i
+
+      path = ''
+      do i = 1, stack%depth
+         path = descriptor_path_with_timer(self, path, stack%ids(i))
+      end do
+   end function descriptor_path_for_stack
+
+   function descriptor_path_with_timer(self, parent_path, timer_id) result(path)
+      class(ftimer_openmp_t), intent(in) :: self
+      character(len=*), intent(in) :: parent_path
+      integer, intent(in) :: timer_id
+      character(len=:), allocatable :: component
+      character(len=:), allocatable :: name
+      character(len=:), allocatable :: path
+      character(len=32) :: len_text
+
+      name = timer_name_for_id(self, timer_id)
+      write (len_text, '(i0)') len(name)
+      component = trim(len_text)//':'//name
+      if (len(parent_path) > 0) then
+         path = parent_path//'/'//component
+      else
+         path = component
+      end if
+   end function descriptor_path_with_timer
+
+   function timer_name_for_id(self, timer_id) result(name)
+      class(ftimer_openmp_t), intent(in) :: self
+      integer, intent(in) :: timer_id
+      character(len=:), allocatable :: name
+      integer :: idx
+
+      idx = find_timer_id_index(self, timer_id)
+      if (idx > 0) then
+         name = self%catalog(idx)%name
+      else
+         name = '<unknown>'
+      end if
+   end function timer_name_for_id
+
+   subroutine format_openmp_summary(summary, text, metadata)
+      type(ftimer_openmp_summary_t), intent(in) :: summary
+      character(len=:), allocatable, intent(out) :: text
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      type(openmp_report_buffer_t) :: buffer
+      character(len=:), allocatable :: display
+      character(len=:), allocatable :: line
+      integer :: i
+      integer :: key_width
+      integer :: line_width
+      integer :: name_width
+
+      call init_openmp_report_buffer(buffer, default_report_buffer_capacity)
+      call append_openmp_line(buffer, 'OpenMP summary')
+
+      key_width = openmp_metadata_key_width(metadata)
+      key_width = max(key_width, len('Summary window time (s)'))
+      key_width = max(key_width, len('Timed region envelope time (s)'))
+      key_width = max(key_width, len('Configured lane capacity'))
+      key_width = max(key_width, len('Observed participating lanes'))
+      key_width = max(key_width, len('Summed lane root work (s)'))
+      key_width = max(key_width, len('Summed lane self work (s)'))
+
+      call append_openmp_real_metric(buffer, 'Summary window time (s)', key_width, summary%summary_window_time)
+      call append_openmp_real_metric(buffer, 'Timed region envelope time (s)', key_width, &
+                                     summary%timed_region_envelope_time)
+      call append_openmp_integer_metric(buffer, 'Configured lane capacity', key_width, &
+                                        summary%configured_lane_capacity)
+      call append_openmp_integer_metric(buffer, 'Observed participating lanes', key_width, &
+                                        summary%observed_participating_lane_count)
+      call append_openmp_real_metric(buffer, 'Summed lane root work (s)', key_width, &
+                                     summary%sum_lane_root_inclusive_time)
+      call append_openmp_real_metric(buffer, 'Summed lane self work (s)', key_width, summary%sum_lane_self_time)
+
+      if (present(metadata)) then
+         do i = 1, size(metadata)
+            if (openmp_metadata_key_len(metadata(i)) <= 0) cycle
+            call append_openmp_text_metric(buffer, openmp_metadata_key_text(metadata(i)), key_width, &
+                                           openmp_metadata_value_text(metadata(i)))
+         end do
+      end if
+
+      call append_openmp_line(buffer, '')
+      call append_openmp_line(buffer, &
+                              'Report note: lane min/avg/max fields are over participating lanes only; '// &
+                              'missing lanes are not zero-filled.')
+      call append_openmp_line(buffer, &
+                              'Report note: timed-region envelope time is wall-clock time, not summed lane work.')
+      call append_openmp_line(buffer, '')
+
+      name_width = openmp_summary_name_width(summary)
+      line_width = name_width + 220
+      allocate (character(len=line_width) :: line)
+      write (line, '(a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a)') &
+         padded_openmp_text('Timer name', name_width), 'Part', 'Missing', 'Sum Incl (s)', 'Sum Self (s)', &
+         'Min Lane Incl (s)', 'Avg Lane Incl (s)', 'Max Lane Incl (s)', 'Avg Lane Self (s)', &
+         'Min Calls', 'Avg Calls', 'Max Calls'
+      call append_openmp_line(buffer, trim(line))
+      call append_openmp_line(buffer, repeat('-', len_trim(line)))
+
+      do i = 1, summary%num_entries
+         display = repeat(' ', 2*summary%entries(i)%depth)//openmp_entry_name(summary%entries(i))
+         write (line, '(a,2x,i4,2x,i7,2x,f12.6,2x,f12.6,2x,f17.6,2x,f17.6,2x,f17.6,2x,f17.6,2x,i9,2x,f9.3,2x,i9)') &
+            padded_openmp_text(display, name_width), summary%entries(i)%participating_lane_count, &
+            summary%entries(i)%missing_lane_count, summary%entries(i)%sum_lane_inclusive_time, &
+            summary%entries(i)%sum_lane_self_time, summary%entries(i)%min_lane_inclusive_time, &
+            summary%entries(i)%avg_lane_inclusive_time, summary%entries(i)%max_lane_inclusive_time, &
+            summary%entries(i)%avg_lane_self_time, summary%entries(i)%min_lane_call_count, &
+            summary%entries(i)%avg_lane_call_count, summary%entries(i)%max_lane_call_count
+         call append_openmp_line(buffer, trim(line))
+      end do
+
+      call finish_openmp_report_buffer(buffer, text)
+   end subroutine format_openmp_summary
+
+   subroutine append_openmp_real_metric(buffer, label, key_width, value)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      character(len=*), intent(in) :: label
+      integer, intent(in) :: key_width
+      real(wp), intent(in) :: value
+      character(len=64) :: value_text
+
+      write (value_text, '(f0.6)') value
+      call append_openmp_text_metric(buffer, label, key_width, trim(value_text))
+   end subroutine append_openmp_real_metric
+
+   subroutine append_openmp_integer_metric(buffer, label, key_width, value)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      character(len=*), intent(in) :: label
+      integer, intent(in) :: key_width
+      integer, intent(in) :: value
+      character(len=32) :: value_text
+
+      write (value_text, '(i0)') value
+      call append_openmp_text_metric(buffer, label, key_width, trim(value_text))
+   end subroutine append_openmp_integer_metric
+
+   subroutine append_openmp_text_metric(buffer, label, key_width, value)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      character(len=*), intent(in) :: label
+      integer, intent(in) :: key_width
+      character(len=*), intent(in) :: value
+
+      call append_openmp_line(buffer, padded_openmp_text(label, key_width)//' : '//value)
+   end subroutine append_openmp_text_metric
+
+   integer function openmp_summary_name_width(summary) result(width)
+      type(ftimer_openmp_summary_t), intent(in) :: summary
+      integer :: i
+
+      width = len('Timer name')
+      do i = 1, summary%num_entries
+         width = max(width, 2*summary%entries(i)%depth + len(openmp_entry_name(summary%entries(i))))
+      end do
+   end function openmp_summary_name_width
+
+   function padded_openmp_text(value, width) result(text)
+      character(len=*), intent(in) :: value
+      integer, intent(in) :: width
+      character(len=:), allocatable :: text
+      integer :: copy_len
+
+      allocate (character(len=max(width, len_trim(value))) :: text)
+      text = repeat(' ', len(text))
+      copy_len = min(len(text), len_trim(value))
+      if (copy_len > 0) text(1:copy_len) = value(1:copy_len)
+   end function padded_openmp_text
+
+   subroutine format_openmp_summary_csv(summary, text, metadata, include_header)
+      type(ftimer_openmp_summary_t), intent(in) :: summary
+      character(len=:), allocatable, intent(out) :: text
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      logical, intent(in), optional :: include_header
+      type(openmp_report_buffer_t) :: buffer
+      integer :: i
+      logical :: emit_header
+
+      call init_openmp_report_buffer(buffer, default_report_buffer_capacity)
+      emit_header = .true.
+      if (present(include_header)) emit_header = include_header
+
+      if (emit_header) call append_openmp_line(buffer, openmp_csv_header_line())
+      call append_openmp_summary_csv_record(buffer, summary)
+      if (present(metadata)) then
+         do i = 1, size(metadata)
+            if (openmp_metadata_key_len(metadata(i)) <= 0) cycle
+            call append_openmp_metadata_csv_record(buffer, metadata(i))
+         end do
+      end if
+      do i = 1, summary%num_entries
+         call append_openmp_entry_csv_record(buffer, summary%entries(i))
+      end do
+
+      call finish_openmp_report_buffer(buffer, text)
+   end subroutine format_openmp_summary_csv
+
+   subroutine append_openmp_summary_csv_record(buffer, summary)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      type(ftimer_openmp_summary_t), intent(in) :: summary
+      type(openmp_report_buffer_t) :: row
+
+      call begin_openmp_csv_row(row, 'summary')
+      call append_empty_openmp_csv_fields(row, 2)
+      call append_openmp_csv_field(row, summary%start_date)
+      call append_openmp_csv_field(row, summary%end_date)
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%summary_window_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%timed_region_envelope_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%sum_lane_root_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(summary%sum_lane_self_time))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(summary%configured_lane_capacity))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(summary%observed_participating_lane_count))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(summary%num_entries))
+      call append_empty_openmp_csv_fields(row, 21)
+      call append_openmp_row(buffer, row)
+   end subroutine append_openmp_summary_csv_record
+
+   subroutine append_openmp_metadata_csv_record(buffer, item)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      type(ftimer_metadata_t), intent(in) :: item
+      type(openmp_report_buffer_t) :: row
+
+      call begin_openmp_csv_row(row, 'metadata')
+      call append_openmp_csv_field(row, openmp_metadata_key_text(item))
+      call append_openmp_csv_field(row, openmp_metadata_value_text(item))
+      call append_empty_openmp_csv_fields(row, 30)
+      call append_openmp_row(buffer, row)
+   end subroutine append_openmp_metadata_csv_record
+
+   subroutine append_openmp_entry_csv_record(buffer, entry)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      type(ftimer_openmp_summary_entry_t), intent(in) :: entry
+      type(openmp_report_buffer_t) :: row
+
+      call begin_openmp_csv_row(row, 'entry')
+      call append_empty_openmp_csv_fields(row, 11)
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%node_id))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%parent_id))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%depth))
+      call append_openmp_csv_field(row, openmp_entry_name(entry))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%eligible_lane_count))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%participating_lane_count))
+      call append_openmp_csv_field(row, openmp_integer_csv_text(entry%missing_lane_count))
+      call append_openmp_csv_field(row, openmp_logical_csv_text(entry%missing_lane_count_known))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%sum_lane_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%sum_lane_self_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%min_lane_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%avg_lane_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%max_lane_inclusive_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%lane_inclusive_imbalance))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%min_lane_self_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%avg_lane_self_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%max_lane_self_time))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%lane_self_imbalance))
+      call append_openmp_csv_field(row, openmp_int64_csv_text(entry%min_lane_call_count))
+      call append_openmp_csv_field(row, openmp_real_csv_text(entry%avg_lane_call_count))
+      call append_openmp_csv_field(row, openmp_int64_csv_text(entry%max_lane_call_count))
+      call append_openmp_row(buffer, row)
+   end subroutine append_openmp_entry_csv_record
+
+   subroutine begin_openmp_csv_row(row, record_type)
+      type(openmp_report_buffer_t), intent(out) :: row
+      character(len=*), intent(in) :: record_type
+
+      call init_openmp_report_buffer(row, 512)
+      call append_openmp_csv_field(row, FTIMER_OPENMP_CSV_FORMAT_VERSION)
+      call append_openmp_csv_field(row, 'openmp')
+      call append_openmp_csv_field(row, record_type)
+   end subroutine begin_openmp_csv_row
+
+   function openmp_csv_header_line() result(line)
+      character(len=:), allocatable :: line
+      type(openmp_report_buffer_t) :: row
+
+      call init_openmp_report_buffer(row, 1024)
+      call append_openmp_csv_field(row, 'format_version')
+      call append_openmp_csv_field(row, 'summary_kind')
+      call append_openmp_csv_field(row, 'record_type')
+      call append_openmp_csv_field(row, 'key')
+      call append_openmp_csv_field(row, 'value')
+      call append_openmp_csv_field(row, 'start_date')
+      call append_openmp_csv_field(row, 'end_date')
+      call append_openmp_csv_field(row, 'summary_window_time')
+      call append_openmp_csv_field(row, 'timed_region_envelope_time')
+      call append_openmp_csv_field(row, 'sum_lane_root_inclusive_time')
+      call append_openmp_csv_field(row, 'sum_lane_self_time')
+      call append_openmp_csv_field(row, 'configured_lane_capacity')
+      call append_openmp_csv_field(row, 'observed_participating_lane_count')
+      call append_openmp_csv_field(row, 'num_entries')
+      call append_openmp_csv_field(row, 'node_id')
+      call append_openmp_csv_field(row, 'parent_id')
+      call append_openmp_csv_field(row, 'depth')
+      call append_openmp_csv_field(row, 'name')
+      call append_openmp_csv_field(row, 'eligible_lane_count')
+      call append_openmp_csv_field(row, 'participating_lane_count')
+      call append_openmp_csv_field(row, 'missing_lane_count')
+      call append_openmp_csv_field(row, 'missing_lane_count_known')
+      call append_openmp_csv_field(row, 'sum_lane_inclusive_time')
+      call append_openmp_csv_field(row, 'sum_lane_self_time')
+      call append_openmp_csv_field(row, 'min_lane_inclusive_time')
+      call append_openmp_csv_field(row, 'avg_lane_inclusive_time')
+      call append_openmp_csv_field(row, 'max_lane_inclusive_time')
+      call append_openmp_csv_field(row, 'lane_inclusive_imbalance')
+      call append_openmp_csv_field(row, 'min_lane_self_time')
+      call append_openmp_csv_field(row, 'avg_lane_self_time')
+      call append_openmp_csv_field(row, 'max_lane_self_time')
+      call append_openmp_csv_field(row, 'lane_self_imbalance')
+      call append_openmp_csv_field(row, 'min_lane_call_count')
+      call append_openmp_csv_field(row, 'avg_lane_call_count')
+      call append_openmp_csv_field(row, 'max_lane_call_count')
+      call finish_openmp_report_buffer(row, line)
+   end function openmp_csv_header_line
+
+   subroutine get_openmp_csv_header_mode(filename, append_mode, include_header, status, iomsg)
+      character(len=*), intent(in) :: filename
+      logical, intent(in) :: append_mode
+      logical, intent(out) :: include_header
+      integer, intent(out) :: status
+      character(len=*), intent(out) :: iomsg
+      character(len=4096) :: first_line
+      integer :: file_size
+      integer :: io
+      integer :: unit
+      logical :: exists
+
+      include_header = .true.
+      status = FTIMER_SUCCESS
+      iomsg = ''
+      if (.not. append_mode) return
+
+      inquire (file=filename, exist=exists, size=file_size)
+      if ((.not. exists) .or. (file_size <= 0)) return
+
+      open (newunit=unit, file=filename, status='old', action='read', iostat=io, iomsg=iomsg)
+      if (io /= 0) then
+         status = FTIMER_ERR_IO
+         return
+      end if
+      read (unit, '(a)', iostat=io, iomsg=iomsg) first_line
+      close (unit)
+      if (io /= 0) then
+         status = FTIMER_ERR_IO
+         return
+      end if
+
+      if (trim(first_line) /= openmp_csv_header_line()) then
+         status = FTIMER_ERR_IO
+         iomsg = 'existing OpenMP summary CSV header does not match format version 1'
+         return
+      end if
+      include_header = .false.
+   end subroutine get_openmp_csv_header_mode
+
+   subroutine append_empty_openmp_csv_fields(row, count)
+      type(openmp_report_buffer_t), intent(inout) :: row
+      integer, intent(in) :: count
+      integer :: i
+
+      do i = 1, count
+         call append_openmp_csv_field(row, '')
+      end do
+   end subroutine append_empty_openmp_csv_fields
+
+   subroutine append_openmp_csv_field(row, value)
+      type(openmp_report_buffer_t), intent(inout) :: row
+      character(len=*), intent(in) :: value
+      integer :: i
+
+      if (row%used > 0) call append_openmp_text(row, ',')
+      call append_openmp_text(row, '"')
+      do i = 1, len_trim(value)
+         if (value(i:i) == '"') then
+            call append_openmp_text(row, '""')
+         else
+            call append_openmp_text(row, value(i:i))
+         end if
+      end do
+      call append_openmp_text(row, '"')
+   end subroutine append_openmp_csv_field
+
+   subroutine append_openmp_row(buffer, row)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      type(openmp_report_buffer_t), intent(in) :: row
+
+      if (row%used > 0) call append_openmp_text(buffer, row%chars(1:row%used))
+      call append_openmp_text(buffer, new_line('a'))
+   end subroutine append_openmp_row
+
+   function openmp_integer_csv_text(value) result(text)
+      integer, intent(in) :: value
+      character(len=:), allocatable :: text
+      character(len=32) :: buffer
+
+      write (buffer, '(i0)') value
+      text = trim(buffer)
+   end function openmp_integer_csv_text
+
+   function openmp_int64_csv_text(value) result(text)
+      integer(int64), intent(in) :: value
+      character(len=:), allocatable :: text
+      character(len=32) :: buffer
+
+      write (buffer, '(i0)') value
+      text = trim(buffer)
+   end function openmp_int64_csv_text
+
+   function openmp_real_csv_text(value) result(text)
+      real(wp), intent(in) :: value
+      character(len=:), allocatable :: text
+      character(len=48) :: buffer
+
+      write (buffer, '(es32.17e4)') value
+      text = trim(adjustl(buffer))
+   end function openmp_real_csv_text
+
+   function openmp_logical_csv_text(value) result(text)
+      logical, intent(in) :: value
+      character(len=:), allocatable :: text
+
+      if (value) then
+         text = 'true'
+      else
+         text = 'false'
+      end if
+   end function openmp_logical_csv_text
+
+   subroutine write_text_block(unit, text, io, iomsg)
+      integer, intent(in) :: unit
+      character(len=*), intent(in) :: text
+      integer, intent(out) :: io
+      character(len=*), intent(out) :: iomsg
+      integer :: start
+      integer :: line_end
+
+      io = 0
+      iomsg = ''
+      start = 1
+      do
+         if (start > len(text)) exit
+         line_end = index(text(start:), new_line('a'))
+         if (line_end == 0) then
+            write (unit, '(a)', iostat=io, iomsg=iomsg) text(start:)
+            exit
+         else
+            line_end = start + line_end - 2
+            if (line_end >= start) then
+               write (unit, '(a)', iostat=io, iomsg=iomsg) text(start:line_end)
+            else
+               write (unit, '(a)', iostat=io, iomsg=iomsg) ''
+            end if
+            if (io /= 0) exit
+            start = line_end + 2
+         end if
+      end do
+   end subroutine write_text_block
+
+   subroutine append_openmp_line(buffer, line)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      character(len=*), intent(in) :: line
+
+      call append_openmp_text(buffer, trim(line))
+      call append_openmp_text(buffer, new_line('a'))
+   end subroutine append_openmp_line
+
+   subroutine init_openmp_report_buffer(buffer, initial_capacity)
+      type(openmp_report_buffer_t), intent(out) :: buffer
+      integer, intent(in) :: initial_capacity
+      integer :: capacity
+
+      capacity = max(1, initial_capacity)
+      allocate (character(len=capacity) :: buffer%chars)
+      buffer%used = 0
+   end subroutine init_openmp_report_buffer
+
+   subroutine append_openmp_text(buffer, fragment)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      character(len=*), intent(in) :: fragment
+      integer :: fragment_len
+      integer :: next_used
+
+      fragment_len = len(fragment)
+      if (fragment_len <= 0) return
+
+      next_used = buffer%used + fragment_len
+      call ensure_openmp_report_capacity(buffer, next_used)
+      buffer%chars(buffer%used + 1:next_used) = fragment
+      buffer%used = next_used
+   end subroutine append_openmp_text
+
+   subroutine finish_openmp_report_buffer(buffer, text)
+      type(openmp_report_buffer_t), intent(in) :: buffer
+      character(len=:), allocatable, intent(out) :: text
+
+      if (buffer%used > 0) then
+         text = buffer%chars(1:buffer%used)
+      else
+         text = ''
+      end if
+   end subroutine finish_openmp_report_buffer
+
+   subroutine ensure_openmp_report_capacity(buffer, required_capacity)
+      type(openmp_report_buffer_t), intent(inout) :: buffer
+      integer, intent(in) :: required_capacity
+      character(len=:), allocatable :: grown
+      integer :: current_capacity
+      integer :: new_capacity
+
+      if (allocated(buffer%chars)) then
+         current_capacity = len(buffer%chars)
+      else
+         current_capacity = 0
+      end if
+      if (current_capacity >= required_capacity) return
+
+      new_capacity = max(default_report_buffer_capacity, current_capacity)
+      if (new_capacity <= 0) new_capacity = default_report_buffer_capacity
+      do while (new_capacity < required_capacity)
+         if (new_capacity > huge(new_capacity)/2) then
+            new_capacity = required_capacity
+         else
+            new_capacity = new_capacity*2
+         end if
+      end do
+
+      allocate (character(len=new_capacity) :: grown)
+      if (buffer%used > 0) grown(1:buffer%used) = buffer%chars(1:buffer%used)
+      call move_alloc(grown, buffer%chars)
+   end subroutine ensure_openmp_report_capacity
+
+   integer function openmp_metadata_key_width(metadata) result(width)
+      type(ftimer_metadata_t), intent(in), optional :: metadata(:)
+      integer :: i
+
+      width = 0
+      if (.not. present(metadata)) return
+      do i = 1, size(metadata)
+         width = max(width, len(openmp_metadata_key_text(metadata(i))))
+      end do
+   end function openmp_metadata_key_width
+
+   integer function openmp_metadata_key_len(item) result(key_len)
+      type(ftimer_metadata_t), intent(in) :: item
+
+      if (allocated(item%key)) then
+         key_len = len_trim(item%key)
+      else
+         key_len = 0
+      end if
+   end function openmp_metadata_key_len
+
+   function openmp_metadata_key_text(item) result(text)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      if (allocated(item%key)) then
+         text = trim(item%key)
+      else
+         text = ''
+      end if
+   end function openmp_metadata_key_text
+
+   function openmp_metadata_value_text(item) result(text)
+      type(ftimer_metadata_t), intent(in) :: item
+      character(len=:), allocatable :: text
+
+      if (allocated(item%value)) then
+         text = trim(item%value)
+      else
+         text = ''
+      end if
+   end function openmp_metadata_value_text
+
+   function openmp_entry_name(entry) result(name)
+      type(ftimer_openmp_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: name
+
+      if (allocated(entry%name)) then
+         name = entry%name
+      else
+         name = '<unnamed>'
+      end if
+   end function openmp_entry_name
+
    subroutine clear_state(self)
       class(ftimer_openmp_t), intent(inout) :: self
 
@@ -537,7 +1727,12 @@ contains
       self%region_open = .false.
       self%current_epoch = 0
       self%current_region_token = 0_int64
+      self%current_region_start_time = 0.0_wp
+      self%timed_region_envelope_time = 0.0_wp
       self%next_epoch = 1
+      self%init_wtime = 0.0_wp
+      self%init_date = ''
+      if (allocated(self%epoch_team_size)) deallocate (self%epoch_team_size)
       nullify (self%clock)
       call clear_worker_diagnostics(self)
 #ifdef FTIMER_USE_MPI
@@ -596,7 +1791,7 @@ contains
    end function has_active_lanes
 
    integer function resolve_timing_lane(self, lane_idx, epoch) result(status)
-      class(ftimer_openmp_t), intent(in) :: self
+      class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(out) :: lane_idx
       integer, intent(out) :: epoch
       integer :: lane_id
@@ -626,6 +1821,7 @@ contains
       end if
 
       epoch = self%current_epoch
+      call note_current_epoch_team_size(self, epoch)
       status = FTIMER_SUCCESS
    end function resolve_timing_lane
 
@@ -648,6 +1844,55 @@ contains
       level = 0
 #endif
    end function current_parallel_level
+
+   integer function current_team_size() result(team_size)
+#ifdef FTIMER_USE_OPENMP
+      if (omp_in_parallel()) then
+         team_size = omp_get_num_threads()
+      else
+         team_size = 0
+      end if
+#else
+      team_size = 0
+#endif
+   end function current_team_size
+
+   subroutine ensure_epoch_capacity(self, required_epoch)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in) :: required_epoch
+      integer, allocatable :: old_sizes(:)
+      integer :: old_size
+      integer :: new_size
+
+      if (required_epoch <= 0) return
+
+      if (allocated(self%epoch_team_size)) then
+         if (size(self%epoch_team_size) >= required_epoch) return
+         old_size = size(self%epoch_team_size)
+         call move_alloc(self%epoch_team_size, old_sizes)
+         new_size = max(required_epoch, 2*old_size)
+         allocate (self%epoch_team_size(new_size))
+         self%epoch_team_size = 0
+         if (old_size > 0) self%epoch_team_size(1:old_size) = old_sizes
+      else
+         new_size = max(required_epoch, 8)
+         allocate (self%epoch_team_size(new_size))
+         self%epoch_team_size = 0
+      end if
+   end subroutine ensure_epoch_capacity
+
+   subroutine note_current_epoch_team_size(self, epoch)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in) :: epoch
+      integer :: team_size
+
+      if (epoch <= 0) return
+      team_size = current_team_size()
+      if (team_size <= 0) return
+
+      call ensure_epoch_capacity(self, epoch)
+      self%epoch_team_size(epoch) = max(self%epoch_team_size(epoch), team_size)
+   end subroutine note_current_epoch_team_size
 
    real(wp) function openmp_clock(self) result(t)
       class(ftimer_openmp_t), intent(in) :: self
@@ -674,6 +1919,7 @@ contains
 
       ctx = self%lanes(lane_idx)%segments(catalog_idx)%contexts%add(self%lanes(lane_idx)%call_stack)
       call ensure_context_storage(self%lanes(lane_idx)%segments(catalog_idx), ctx)
+      call note_context_epoch(self%lanes(lane_idx)%segments(catalog_idx), ctx, epoch)
 
       if (self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx) == &
           huge(self%lanes(lane_idx)%segments(catalog_idx)%call_count(ctx))) then
@@ -769,6 +2015,7 @@ contains
       real(wp), allocatable :: old_start_time(:)
       logical, allocatable :: old_is_running(:)
       integer(int64), allocatable :: old_call_count(:)
+      integer, allocatable :: old_context_epoch(:)
 
       if (required_size <= 0) return
 
@@ -779,20 +2026,24 @@ contains
          call move_alloc(segment%start_time, old_start_time)
          call move_alloc(segment%is_running, old_is_running)
          call move_alloc(segment%call_count, old_call_count)
+         call move_alloc(segment%context_epoch, old_context_epoch)
          new_size = max(required_size, 2*old_size)
          allocate (segment%time(new_size))
          allocate (segment%start_time(new_size))
          allocate (segment%is_running(new_size))
          allocate (segment%call_count(new_size))
+         allocate (segment%context_epoch(new_size))
          segment%time = 0.0_wp
          segment%start_time = 0.0_wp
          segment%is_running = .false.
          segment%call_count = 0_int64
+         segment%context_epoch = FTIMER_OPENMP_CONTEXT_EPOCH_UNKNOWN
          if (old_size > 0) then
             segment%time(1:old_size) = old_time
             segment%start_time(1:old_size) = old_start_time
             segment%is_running(1:old_size) = old_is_running
             segment%call_count(1:old_size) = old_call_count
+            segment%context_epoch(1:old_size) = old_context_epoch
          end if
       else
          new_size = required_size
@@ -800,12 +2051,28 @@ contains
          allocate (segment%start_time(new_size))
          allocate (segment%is_running(new_size))
          allocate (segment%call_count(new_size))
+         allocate (segment%context_epoch(new_size))
          segment%time = 0.0_wp
          segment%start_time = 0.0_wp
          segment%is_running = .false.
          segment%call_count = 0_int64
+         segment%context_epoch = FTIMER_OPENMP_CONTEXT_EPOCH_UNKNOWN
       end if
    end subroutine ensure_context_storage
+
+   subroutine note_context_epoch(segment, ctx, epoch)
+      type(ftimer_segment_t), intent(inout) :: segment
+      integer, intent(in) :: ctx
+      integer, intent(in) :: epoch
+
+      if ((.not. allocated(segment%context_epoch)) .or. (ctx <= 0) .or. (ctx > size(segment%context_epoch))) return
+
+      if (segment%call_count(ctx) == 0_int64) then
+         segment%context_epoch(ctx) = epoch
+      elseif (segment%context_epoch(ctx) /= epoch) then
+         segment%context_epoch(ctx) = FTIMER_OPENMP_CONTEXT_EPOCH_UNKNOWN
+      end if
+   end subroutine note_context_epoch
 
    logical function normalize_config(config) result(is_valid)
       type(ftimer_openmp_config_t), intent(inout) :: config
@@ -1017,6 +2284,10 @@ contains
       end if
 
       self%clock => clock
+      if (self%initialized) then
+         self%init_wtime = openmp_clock(self)
+         self%init_date = ftimer_date_string()
+      end if
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine test_set_clock
 

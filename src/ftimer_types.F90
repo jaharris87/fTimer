@@ -199,6 +199,7 @@ module ftimer_types
       real(wp), allocatable :: start_time(:)
       logical, allocatable :: is_running(:)
       integer(int64), allocatable :: call_count(:)
+      integer, allocatable :: context_epoch(:)
       type(ftimer_context_list_t) :: contexts
    end type ftimer_segment_t
 

@@ -39,6 +39,8 @@ ftimer_core|ftimer_test_state_t|test-only
 ftimer_openmp|FTIMER_OPENMP_MODE_THREAD_LANES|stable
 ftimer_openmp|ftimer_openmp_config_t|stable
 ftimer_openmp|ftimer_openmp_parallel_region_t|stable
+ftimer_openmp|ftimer_openmp_summary_entry_t|stable
+ftimer_openmp|ftimer_openmp_summary_t|stable
 ftimer_openmp|ftimer_openmp_t|stable
 ftimer_types|FTIMER_SUCCESS|stable
 ftimer_types|FTIMER_ERR_NOT_INIT|stable

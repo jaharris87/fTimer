@@ -11,11 +11,12 @@ The supported source-level import surface is intentionally narrow:
   pointer-based `ftimer_oop_scope` scoped guard helper
 - `use ftimer_openmp` for the explicit opt-in OpenMP timing API surface. In
   this release line, its lifecycle/configuration, timer catalog,
-  timed-region, and id-first thread-lane timing entry points are real.
+  timed-region, id-first thread-lane timing, stopped-run local summary, text
+  report, and CSV entry points are real.
   `ftimer_openmp_t%init` requires `config=` and accepts `comm=` only by keyword
   in MPI builds. The MPI communicator handle is stored for future hybrid
-  reductions; no current public `ftimer_openmp` summary/report behavior consumes
-  it. Registered timer ids remain valid across `reset()` and are invalidated
+  reductions; local OpenMP summary/report behavior does not consume it.
+  Registered timer ids remain valid across `reset()` and are invalidated
   across `finalize()`/reinit without being recycled in the same object.
   Current `ftimer_openmp_t` timing uses the non-MPI wall clock even in
   MPI-enabled packages, so worker timing does not call `MPI_Wtime()` from
@@ -33,7 +34,9 @@ The supported source-level import surface is intentionally narrow:
   first queued status without stderr and leaves lifecycle state unchanged; repeat
   the lifecycle call after that explicit drain to proceed. In non-OpenMP
   packages, this module is supported only for serial-context lifecycle/catalog/
-  timing use.
+  timing use. The local OpenMP summary family is separate from `ftimer_summary_t`
+  and reports participation-aware lane aggregates rather than serial snapshot
+  fields.
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
 ## MPI lifecycle and communicator ownership
@@ -107,6 +110,8 @@ Stable public symbols in `ftimer_openmp`:
 - `FTIMER_OPENMP_MODE_THREAD_LANES`
 - `ftimer_openmp_config_t`
 - `ftimer_openmp_parallel_region_t`
+- `ftimer_openmp_summary_entry_t`
+- `ftimer_openmp_summary_t`
 - `ftimer_openmp_t`
 
 Stable public symbols in `ftimer_types`:
