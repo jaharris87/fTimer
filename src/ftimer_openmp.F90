@@ -1312,12 +1312,12 @@ contains
          return
       end if
 
-      local_status = FTIMER_SUCCESS
+      local_status = worker_diagnostic_status(self)
       if (diagnostics_are_explicit) then
          if (drain_worker_diagnostics(self, local_status)) then
             continue
          end if
-      else
+      else if (local_status /= FTIMER_SUCCESS) then
          did_drain = drain_worker_diagnostics(self)
       end if
       call MPI_Allreduce(local_status, collective_status, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
@@ -2774,28 +2774,61 @@ contains
       integer, intent(out), optional :: ierr
       integer, intent(in) :: status
       character(len=*), intent(in) :: diagnostic
+      character(len=256) :: message
 
       select case (status)
       case (FTIMER_ERR_NOT_IMPLEMENTED)
-         call report_timer_status(self, ierr, status, "ftimer_openmp mpi_openmp_summary requires FTIMER_USE_MPI=ON")
+         message = "ftimer_openmp mpi_openmp_summary requires FTIMER_USE_MPI=ON"
       case (FTIMER_ERR_ACTIVE)
-         call report_timer_status(self, ierr, status, &
-                                  "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks")
+         message = "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"
       case (FTIMER_ERR_MPI_INCON)
          if (len_trim(diagnostic) > 0) then
-            call report_timer_status(self, ierr, status, trim(diagnostic))
+            message = diagnostic
          else
-            call report_timer_status(self, ierr, status, &
-                                     "ftimer_openmp mpi_openmp_summary detected inconsistent strict hybrid descriptors")
+            message = "ftimer_openmp mpi_openmp_summary detected inconsistent strict hybrid descriptors"
          end if
       case default
          if (len_trim(diagnostic) > 0) then
-            call report_timer_status(self, ierr, status, trim(diagnostic))
+            message = diagnostic
          else
-            call report_timer_status(self, ierr, status, "ftimer_openmp mpi_openmp_summary MPI reduction failed")
+            message = "ftimer_openmp mpi_openmp_summary MPI reduction failed"
          end if
       end select
+      call report_mpi_openmp_summary_status(self, ierr, status, trim(message))
    end subroutine report_mpi_openmp_summary_error
+
+   subroutine report_mpi_openmp_summary_status(self, ierr, status, message)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(out), optional :: ierr
+      integer, intent(in) :: status
+      character(len=*), intent(in) :: message
+
+      if (present(ierr)) then
+         call report_timer_status(self, ierr, status, message)
+         return
+      end if
+
+#ifdef FTIMER_USE_MPI
+      if ((.not. is_inside_parallel_region()) .and. &
+          (.not. should_emit_mpi_openmp_summary_diagnostic(self))) return
+#endif
+      call report_timer_status(self, ierr, status, message)
+   end subroutine report_mpi_openmp_summary_status
+
+   logical function should_emit_mpi_openmp_summary_diagnostic(self) result(should_emit)
+      class(ftimer_openmp_t), intent(in) :: self
+#ifdef FTIMER_USE_MPI
+      integer :: mpierr
+      integer :: rank
+#endif
+
+      should_emit = .true.
+#ifdef FTIMER_USE_MPI
+      if (.not. self%initialized) return
+      call MPI_Comm_rank(self%mpi_comm, rank, mpierr)
+      if (mpierr == MPI_SUCCESS) should_emit = (rank == 0)
+#endif
+   end function should_emit_mpi_openmp_summary_diagnostic
 
    integer function prepare_openmp_summary(self, summary, diagnostics_are_explicit) result(status)
       class(ftimer_openmp_t), intent(inout) :: self

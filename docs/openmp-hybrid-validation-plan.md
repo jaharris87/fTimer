@@ -7,9 +7,10 @@ Issue #243 defines the validation strategy for the OpenMP/hybrid direction
 recorded in #238, #239, #240, and #241. This document is a validation contract.
 Issue #268 adds the initial `ftimer_openmp` public API surface and lifecycle
 coverage, #269 adds the first true OpenMP thread-lane runtime, and #270 adds
-stopped-run local OpenMP summary, report, and CSV coverage. Hybrid reductions
-and changes to the current `FTIMER_USE_OPENMP=ON` master-thread-only
-compatibility mode remain deferred to later #267 child issues.
+stopped-run local OpenMP summary, report, and CSV coverage. Issue #271 adds
+strict MPI+OpenMP rank/lane summary, report, and CSV coverage through
+`ftimer_openmp_t`. Sparse/union hybrid participation reductions remain
+deferred to later #267 child issues.
 
 ## Decision
 
@@ -28,10 +29,12 @@ The initial #243 change adds current build-only hybrid coverage:
   installed-consumer path, including an MPI-initialized OpenMP region that
   preserves current worker no-op behavior.
 
-That initial coverage proves the current MPI and OpenMP compatibility options
-can coexist. It must not be read as evidence that the current `ftimer`/
-`ftimer_core` APIs perform true worker-thread timing or that hybrid rank/lane
-reductions are implemented.
+That initial coverage proved the MPI and OpenMP compatibility options could
+coexist before true worker timing and strict hybrid reductions landed. Current
+strict hybrid smoke coverage now exercises `ftimer_openmp_t` rank/lane
+reductions. None of this should be read as evidence that the current `ftimer`/
+`ftimer_core` APIs perform true worker-thread timing or that sparse/union
+hybrid participation reductions are implemented.
 
 ## Current Compatibility Coverage
 
@@ -46,7 +49,8 @@ Current `main` should keep these validation gates:
 - option-off/global-OpenMP regression coverage for #199;
 - build-contract regression coverage for configure gates and Makefile wrapper
   behavior;
-- MPI+OpenMP build-only smoke coverage for the current compatibility mode; and
+- MPI+OpenMP smoke coverage for the current compatibility mode and strict
+  `ftimer_openmp_t` rank/lane reductions; and
 - `ftimer_openmp` API/lifecycle, timed-region, thread-lane runtime,
   diagnostics, public-symbol, and installed-package consumer coverage for the
   current opt-in worker timing boundary.

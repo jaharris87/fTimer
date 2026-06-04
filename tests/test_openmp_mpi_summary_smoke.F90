@@ -40,6 +40,7 @@ program ftimer_openmp_mpi_summary_smoke
    call check_strict_hybrid_eligible_lane_mismatch(rank)
    call check_strict_hybrid_varied_call_counts(rank)
    call check_strict_hybrid_worker_varied_call_counts(rank)
+   call check_strict_hybrid_worker_diagnostic_no_ierr_failure(rank)
    call check_strict_hybrid_csv_append_validation(rank)
 
    call MPI_Finalize(ierr)
@@ -183,48 +184,57 @@ contains
          call expect_contains(report_text, 'strict hybrid', 56)
          call expect_contains(report_text, 'root', 57)
          call expect_contains(report_text, 'child', 58)
+         call expect_contains(report_text, '25.000000 / 30.000000 / 35.000000', 59)
+         call expect_contains(report_text, '10.000000 / 15.000000 / 20.000000', 60)
+         call expect_contains(report_text, '22.000000 / 32.000000 / 42.000000', 61)
+         call expect_contains(report_text, 'Rank  Lanes', 62)
+         call expect_contains(report_text, 'openmp_level1_team', 63)
+         call expect_contains(report_text, '64.000000', 64)
+         call expect_contains(report_text, '43.000000', 65)
+         call expect_contains(report_text, '21.000000', 66)
+         call expect_contains(report_text, '5.250000', 67)
 
          csv_text = read_file_text(csv_path)
-         call expect_contains(csv_text, 'summary_kind', 59)
-         call expect_contains(csv_text, 'mpi_openmp', 60)
-         call expect_contains(csv_text, 'eligible_rank_lane_sample_count', 61)
-         call expect_contains(csv_text, 'avg_participating_lane_pct_time', 62)
-         call expect_contains(csv_text, '"1","mpi_openmp","summary"', 63)
-         call expect_contains(csv_text, '"1","mpi_openmp","rank"', 64)
-         call expect_contains(csv_text, '"1","mpi_openmp","entry"', 65)
-         call expect_not_contains(csv_text, '"2","mpi","summary"', 66)
-         call expect_csv_record_count(csv_text, 'summary', 1, 67)
-         call expect_csv_record_count(csv_text, 'metadata', 1, 68)
-         call expect_csv_record_count(csv_text, 'rank', 2, 69)
-         call expect_csv_record_count(csv_text, 'entry', 2, 70)
-         call expect_csv_record_field(csv_text, 'summary', '', 'num_ranks', '2', 71)
-         call expect_csv_record_field(csv_text, 'summary', '', 'num_entries', '2', 72)
-         call expect_csv_real_record_field(csv_text, 'summary', '', 'min_rank_summary_window_time', 25.0_wp, 73)
-         call expect_csv_real_record_field(csv_text, 'summary', '', 'avg_rank_summary_window_time', 30.0_wp, 74)
-         call expect_csv_real_record_field(csv_text, 'summary', '', 'max_rank_summary_window_time', 35.0_wp, 75)
-         call expect_csv_record_field(csv_text, 'metadata', 'Case', 'value', 'strict hybrid', 76)
+         call expect_contains(csv_text, 'summary_kind', 68)
+         call expect_contains(csv_text, 'mpi_openmp', 69)
+         call expect_contains(csv_text, 'eligible_rank_lane_sample_count', 70)
+         call expect_contains(csv_text, 'avg_participating_lane_pct_time', 71)
+         call expect_contains(csv_text, '"1","mpi_openmp","summary"', 72)
+         call expect_contains(csv_text, '"1","mpi_openmp","rank"', 73)
+         call expect_contains(csv_text, '"1","mpi_openmp","entry"', 74)
+         call expect_not_contains(csv_text, '"2","mpi","summary"', 75)
+         call expect_csv_record_count(csv_text, 'summary', 1, 76)
+         call expect_csv_record_count(csv_text, 'metadata', 1, 77)
+         call expect_csv_record_count(csv_text, 'rank', 2, 78)
+         call expect_csv_record_count(csv_text, 'entry', 2, 79)
+         call expect_csv_record_field(csv_text, 'summary', '', 'num_ranks', '2', 80)
+         call expect_csv_record_field(csv_text, 'summary', '', 'num_entries', '2', 81)
+         call expect_csv_real_record_field(csv_text, 'summary', '', 'min_rank_summary_window_time', 25.0_wp, 82)
+         call expect_csv_real_record_field(csv_text, 'summary', '', 'avg_rank_summary_window_time', 30.0_wp, 83)
+         call expect_csv_real_record_field(csv_text, 'summary', '', 'max_rank_summary_window_time', 35.0_wp, 84)
+         call expect_csv_record_field(csv_text, 'metadata', 'Case', 'value', 'strict hybrid', 85)
          call expect_csv_record_field(csv_text, 'rank', '0', 'sum_lane_root_inclusive_time', &
-                                      real_csv_text(22.0_wp), 77)
+                                      real_csv_text(22.0_wp), 86)
          call expect_csv_record_field(csv_text, 'rank', '1', 'sum_lane_root_inclusive_time', &
-                                      real_csv_text(42.0_wp), 78)
-         call expect_csv_record_field(csv_text, 'rank', '0', 'observed_participating_lane_count', '2', 79)
-         call expect_csv_record_field(csv_text, 'rank', '1', 'configured_lane_capacity', '3', 80)
+                                      real_csv_text(42.0_wp), 87)
+         call expect_csv_record_field(csv_text, 'rank', '0', 'observed_participating_lane_count', '2', 88)
+         call expect_csv_record_field(csv_text, 'rank', '1', 'configured_lane_capacity', '3', 89)
          call expect_csv_record_field(csv_text, 'entry', 'root', 'execution_domain', &
-                                      'openmp_level1_team', 81)
-         call expect_csv_record_field(csv_text, 'entry', 'root', 'eligible_rank_lane_sample_count', '4', 82)
-         call expect_csv_record_field(csv_text, 'entry', 'root', 'participating_rank_lane_sample_count', '4', 83)
+                                      'openmp_level1_team', 90)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'eligible_rank_lane_sample_count', '4', 91)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'participating_rank_lane_sample_count', '4', 92)
          call expect_csv_real_record_field(csv_text, 'entry', 'root', &
-                                          'sum_participating_lane_self_time', 43.0_wp, 84)
+                                          'sum_participating_lane_self_time', 43.0_wp, 93)
          call expect_csv_real_record_field(csv_text, 'entry', 'root', &
-                                          'max_participating_lane_inclusive_time', 22.0_wp, 85)
-         call expect_csv_record_field(csv_text, 'entry', 'root', 'min_participating_lane_call_count', '1', 86)
-         call expect_csv_record_field(csv_text, 'entry', 'root', 'max_participating_lane_call_count', '1', 87)
+                                          'max_participating_lane_inclusive_time', 22.0_wp, 94)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'min_participating_lane_call_count', '1', 95)
+         call expect_csv_record_field(csv_text, 'entry', 'root', 'max_participating_lane_call_count', '1', 96)
          call expect_csv_record_field(csv_text, 'entry', 'child', 'parent_id', &
-                                      int_csv_text(summary%entries(root_idx)%node_id), 88)
+                                      int_csv_text(summary%entries(root_idx)%node_id), 97)
       end if
 
       call timer%finalize(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 89)
+      call expect_status(ierr, FTIMER_SUCCESS, 98)
       if (rank == 0) then
          call delete_if_exists(report_path)
          call delete_if_exists(csv_path)
@@ -822,6 +832,8 @@ contains
       integer :: repeats
       integer :: timer_id
       integer :: varied_idx
+      real(wp) :: duration
+      real(wp) :: total_time
 
       config%max_lanes = 3
       call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
@@ -835,14 +847,20 @@ contains
       fake_lane_time(0) = 1410.0_wp
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 453)
-!$omp parallel num_threads(2) default(shared) private(call_idx, ierr, lane_id, repeats)
+!$omp parallel num_threads(2) default(shared) private(call_idx, duration, ierr, lane_id, repeats, total_time)
       lane_id = 1 + omp_get_thread_num()
       repeats = 1 + omp_get_thread_num() + 2*rank
+      if (rank == 0) then
+         total_time = merge(4.0_wp, 0.5_wp, omp_get_thread_num() == 0)
+      else
+         total_time = merge(6.0_wp, 2.0_wp, omp_get_thread_num() == 0)
+      end if
+      duration = total_time/real(repeats, wp)
       do call_idx = 1, repeats
          fake_lane_time(lane_id) = 10.0_wp*real(call_idx, wp)
          call timer%start_id(timer_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) error stop 454
-         fake_lane_time(lane_id) = fake_lane_time(lane_id) + 1.0_wp
+         fake_lane_time(lane_id) = fake_lane_time(lane_id) + duration
          call timer%stop_id(timer_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) error stop 455
       end do
@@ -859,16 +877,57 @@ contains
       if (varied_idx <= 0) error stop 459
       if (summary%entries(varied_idx)%execution_domain /= 'openmp_level1_team') error stop 460
       call expect_entry(summary, varied_idx, rank_count=2, eligible_samples=4, &
-                        participating_samples=4, missing_samples=0, sum_inclusive=10.0_wp, &
-                        sum_self=10.0_wp, min_inclusive=1.0_wp, avg_inclusive=2.5_wp, &
-                        max_inclusive=4.0_wp, inclusive_imbalance=4.0_wp/2.5_wp, &
-                        min_self=1.0_wp, avg_self=2.5_wp, max_self=4.0_wp, &
-                        self_imbalance=4.0_wp/2.5_wp, min_calls=1_int64, &
+                        participating_samples=4, missing_samples=0, sum_inclusive=12.5_wp, &
+                        sum_self=12.5_wp, min_inclusive=0.5_wp, avg_inclusive=3.125_wp, &
+                        max_inclusive=6.0_wp, inclusive_imbalance=6.0_wp/3.125_wp, &
+                        min_self=0.5_wp, avg_self=3.125_wp, max_self=6.0_wp, &
+                        self_imbalance=6.0_wp/3.125_wp, min_calls=1_int64, &
                         avg_calls=2.5_wp, max_calls=4_int64, stop_code=461)
 
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 480)
    end subroutine check_strict_hybrid_worker_varied_call_counts
+
+   subroutine check_strict_hybrid_worker_diagnostic_no_ierr_failure(rank)
+      integer, intent(in) :: rank
+      character(len=*), parameter :: csv_path = 'mpi_openmp_summary_worker_diagnostic.csv'
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+      integer :: timer_id
+      logical :: exists
+
+      if (rank == 0) call delete_if_exists(csv_path)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 490
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 491)
+      fake_lane_time(0) = 1500.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 492)
+      call timer%register_timer('worker_diagnostic', timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 493)
+      call run_all_worker_lanes(timer, region, timer_id, 1.0_wp, 2.0_wp, 494)
+
+!$omp parallel num_threads(2) default(shared)
+      if ((rank == 1) .and. (omp_get_thread_num() == 0)) call timer%start_id(-999)
+!$omp end parallel
+
+      call timer%write_mpi_openmp_summary_csv(csv_path)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 496
+      if (rank == 0) then
+         inquire (file=csv_path, exist=exists)
+         if (exists) error stop 497
+      end if
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 498)
+      if (rank == 0) call delete_if_exists(csv_path)
+   end subroutine check_strict_hybrid_worker_diagnostic_no_ierr_failure
 
    subroutine check_strict_hybrid_csv_append_validation(rank)
       integer, intent(in) :: rank
