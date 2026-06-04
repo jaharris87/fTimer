@@ -404,19 +404,15 @@ diagnostic storage and the validation plan introduced by #243, but the
 implementation must not solve hybrid error noise by silently treating worker or
 rank errors as success.
 
-## Validation Expectations For Implementation
+## Validation Expectations
 
-The implementation issue that adds hybrid reductions should include tests for:
+The strict #271 implementation adds tests for:
 
 - at least two MPI ranks and at least two OpenMP worker lanes per rank;
-- all-rank/all-lane participation under the participation-aware policy;
-- rank-conditional descriptors where some ranks are missing;
-- lane-conditional descriptors where some eligible lanes are missing within a
-  participating rank;
-- different OpenMP team sizes across ranks under participation-aware policy;
+- all-rank/all-lane participation under the strict policy;
 - strict-semantics validation coverage for different descriptor sets,
-  different eligible lane sets, missing ranks, and missing lanes, even if strict
-  remains an internal invariant rather than the first public policy;
+  different eligible lane sets, missing ranks, missing lanes, serial versus
+  worker execution domains, and same timer names under different parent paths;
 - active lane stacks before the collective, proving every rank returns
   `FTIMER_ERR_ACTIVE` without entering descriptor reductions;
 - invalid calls from inside OpenMP parallel regions, proving the local worker
@@ -426,17 +422,19 @@ The implementation issue that adds hybrid reductions should include tests for:
   paths and for serial versus worker execution domains;
 - deterministic canonical entry order and `node_id`/`parent_id` assignment when
   local timer creation order differs across ranks;
-- report and CSV golden output, including schema-append rejection for local,
-  strict MPI, sparse MPI, and incompatible hybrid headers;
+- report and CSV output checks, including strict hybrid schema-append
+  rejection;
 - compatibility tests proving current `mpi_summary()`, `mpi_union_summary()`,
   and `FTIMER_USE_OPENMP=ON` master-thread-only behavior are unchanged.
 
 Tests should use the injectable clock or an OpenMP-aware deterministic clock
-model wherever possible. The implementation issue that first adds hybrid
-reductions should also measure descriptor-union cost, rank-level
-materialization cost, optional rank/lane detail cost, and warmed worker
-`start_id`/`stop_id` overhead separately, following the validation plan
-introduced by #243.
+model wherever possible. The later sparse/union hybrid participation issue
+should add tests for rank-conditional descriptors where some ranks are missing,
+lane-conditional descriptors where some eligible lanes are missing within a
+participating rank, different OpenMP team sizes across ranks under the
+participation-aware policy, descriptor-union cost, rank-level materialization
+cost, optional rank/lane detail cost, and warmed worker `start_id`/`stop_id`
+overhead separately, following the validation plan introduced by #243.
 
 ## Rejected Alternatives
 
@@ -490,8 +488,9 @@ introduced by #243.
 
 ## Non-Goals
 
-- Implementing MPI+OpenMP reductions in #241.
-- Adding public hybrid Fortran symbols or code stubs in this design PR.
+- Implementing sparse/union MPI+OpenMP participation reductions as part of the
+  strict #271 API.
+- Adding hybrid reductions to the procedural default instance.
 - Changing `mpi_summary()`, `mpi_union_summary()`, pure-MPI result types, or
   current MPI CSV/report schemas.
 - Changing current `FTIMER_USE_OPENMP=ON` master-thread-only behavior.

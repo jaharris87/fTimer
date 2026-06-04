@@ -28,9 +28,25 @@ string(FIND "${summary_stderr_normalized}"
   "existing MPI+OpenMP summary CSV header does not match format version 1"
   header_diagnostic_pos
 )
-if(append_diagnostic_pos EQUAL -1 OR header_diagnostic_pos EQUAL -1)
+string(FIND "${summary_stderr_normalized}"
+  "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"
+  active_diagnostic_pos
+)
+string(FIND "${summary_stderr_normalized}"
+  "descriptor mismatch"
+  descriptor_diagnostic_pos
+)
+string(FIND "${summary_stderr_normalized}"
+  "incomplete lane participation"
+  participation_diagnostic_pos
+)
+if(append_diagnostic_pos EQUAL -1 OR
+   header_diagnostic_pos EQUAL -1 OR
+   active_diagnostic_pos EQUAL -1 OR
+   descriptor_diagnostic_pos EQUAL -1 OR
+   participation_diagnostic_pos EQUAL -1)
   message(FATAL_ERROR
-    "Expected MPI+OpenMP summary CSV append diagnostic was not written to stderr.\n"
+    "Expected MPI+OpenMP summary omitted-ierr diagnostics were not written to stderr.\n"
     "stderr:\n${summary_stderr_normalized}"
   )
 endif()
