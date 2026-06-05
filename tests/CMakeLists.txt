@@ -71,7 +71,7 @@ if(FTIMER_BUILD_SMOKE_TESTS)
       if(ftimer_mpiexec_version_result EQUAL 0)
         set(ftimer_mpiexec_version_text
           "${ftimer_mpiexec_version_stdout}\n${ftimer_mpiexec_version_stderr}")
-        if(ftimer_mpiexec_version_text MATCHES "Open MPI")
+        if(ftimer_mpiexec_version_text MATCHES "Open MPI|OpenRTE|PRTE|PRRTE")
           set(ftimer_mpiexec_oversubscribe_flag "--oversubscribe")
         endif()
       endif()
