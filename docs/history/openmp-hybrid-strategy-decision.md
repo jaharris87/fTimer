@@ -15,7 +15,7 @@ and the #240 summary/self-time model is recorded in
 The #241 MPI+OpenMP reduction model is recorded in
 [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md).
 The #242 user-facing timing modes and migration guide is recorded in
-[`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
+[`docs/openmp-timing-modes.md`](../openmp-timing-modes.md).
 Issue #268 landed the first public `ftimer_openmp` symbols for the opt-in
 surface: configuration, lifecycle, timer registration/lookup, and placeholder
 timed-region/worker method names. Issue #269 then landed the first

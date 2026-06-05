@@ -320,16 +320,18 @@ same runner family after the launcher probe.
 The hybrid `build-mpi-openmp` job configures both `FTIMER_USE_MPI=ON` and
 `FTIMER_USE_OPENMP=ON`, builds, and runs smoke/install-consumer checks for
 today's compatibility mode plus the installed opt-in `ftimer_openmp` worker
-API and strict MPI+OpenMP rank/lane summary/report/CSV path. Local Homebrew MPICH 5.0.1
-was not a valid reproduction path because it does not install `mpi_f08.mod`,
-so it fails fTimer's configure-time MPI contract probe. A GitHub-hosted NVHPC
-26.3 serial smoke/install-consumer trial installed and built successfully, but the
-generated executables aborted at runtime with `DEALLOCATE: memory at (nil) not
-allocated`, so NVHPC validation remains deferred rather than claimed. The
-contract-regression job also verifies the configure-time MPI/OpenMP gates and
-the documented Makefile wrapper behavior. Future true OpenMP/hybrid test
-expectations are tracked in
-[`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md).
+API and strict plus sparse union MPI+OpenMP rank/lane summary/report/CSV paths.
+Local Homebrew MPICH 5.0.1 was not a valid reproduction path because it does
+not install `mpi_f08.mod`, so it fails fTimer's configure-time MPI contract
+probe. A GitHub-hosted NVHPC 26.3 serial smoke/install-consumer trial installed
+and built successfully, but the generated executables aborted at runtime with
+`DEALLOCATE: memory at (nil) not allocated`, so NVHPC validation remains
+deferred rather than claimed. The contract-regression job also verifies the
+configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
+Dedicated OpenMP and MPI+OpenMP benchmark CI smoke coverage remains follow-up
+work under issue #285; the validation-plan refresh for the landed
+`ftimer_openmp_t` APIs remains follow-up work under issue #286, and the
+remaining CI-reality cleanup is tracked under issue #287.
 
 ## Maintainer Workflow
 
@@ -360,6 +362,8 @@ The docs set is intentionally split by purpose:
 - [`docs/design.md`](design.md): current repository architecture, validation reality, and workflow context
 - [`docs/openmp-timing-modes.md`](openmp-timing-modes.md): OpenMP and
   MPI+OpenMP mode selection, accepted current examples, and migration guidance
+- `docs/history/`: historical decision records and implementation-planning
+  artifacts. These are not the navigation surface for current behavior.
 - [`docs/implementation-history.md`](implementation-history.md): historical phase roadmap and landing history
 - [`docs/maintainer.md`](maintainer.md) and [`docs/workflows/`](workflows/): issue/PR/review operating procedures
 
@@ -372,22 +376,11 @@ Future-facing ideas should stay clearly separated from the current architecture 
 - built-in hardware counter or power-measurement backends
 - richer export formats beyond summary CSV, such as JSON or trace/event formats
 - broader OpenMP support beyond the landed `ftimer_openmp_t` serial-lane /
-  level-1 worker runtime, with the historical #160 deferral recorded in
-  [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md),
-  the reopened opt-in API direction tracked in
-  [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md),
-  the landed thread-lane runtime model tracked in
-  [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md),
-  the landed local summary/self-time model tracked in
-  [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md),
-  the landed strict and sparse union MPI+OpenMP reduction model tracked in
-  [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md),
-  and the validation plan tracked in
-  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md).
-  Remaining deferred areas include nested/task support, broader thread-safe behavior for the existing
+  level-1 worker runtime. Remaining deferred areas include nested/team support,
+  OpenMP task migration, broader thread-safe behavior for the existing
   `ftimer` / `ftimer_core` APIs, and production black-box accounting coverage
-  around the public OpenMP summary/result surface.
-  User-facing mode selection and migration guidance live in
+  around the public OpenMP summary/result surface. User-facing mode selection
+  and migration guidance live in
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
 - stable semantic callback identity or a stronger external-profiler integration contract
 - explicit reservation/preallocation APIs for known timer sets, if profiling shows the new internal capacity strategy is still not enough for an adopter workload

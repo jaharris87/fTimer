@@ -229,7 +229,7 @@ This disabled-facade behavior is an application integration contract, not an alt
 - Hash-based timer-descriptor preflight before the reduction phase
 - The strict MPI preflight compares rank-local descriptor hashes against a rank-0 reference hash, then reduces a mismatch flag across the communicator. Successful summaries do not allgather every rank's hashes or exchange exact descriptor strings.
 - Extra timers, missing timers, renamed timers, and hierarchy/context mismatches fail the MPI summary with `FTIMER_ERR_MPI_INCON`; they do not fall back to a local summary object through the MPI API
-- Rank-conditional timer reductions are not supported by the strict `mpi_summary()` API. Sparse/union MPI summaries are available through the separate opt-in `mpi_union_summary()` / `ftimer_mpi_union_summary()` API and `ftimer_mpi_union_summary_t` result model. See [`docs/mpi-sparse-summary-decision.md`](mpi-sparse-summary-decision.md).
+- Rank-conditional timer reductions are not supported by the strict `mpi_summary()` API. Sparse/union MPI summaries are available through the separate opt-in `mpi_union_summary()` / `ftimer_mpi_union_summary()` API and `ftimer_mpi_union_summary_t` result model. Sparse entries report explicit participation counts, derive missing-rank counts from the communicator size, and define per-entry statistics over participating ranks only.
 - When that descriptor preflight fails inside one communicator, the omitted-`ierr` diagnostic reports the disagreeing communicator-local ranks when possible
 - MPI descriptor matching is based on the local summary tree shape and names, not on raw local `node_id` values
 - The MPI descriptor preflight materializes deterministic length-prefixed path strings at summary time so names that differ only after the legacy 64-character threshold remain distinguishable. This is outside the start/stop hot path, but its memory and sort cost scales with summary entry count and encoded path length for very large timer trees.
@@ -518,16 +518,9 @@ enforcement should pass `ierr` and check it.
   and `examples/mpi_openmp_example.F90` for strict plus sparse union hybrid
   timing.
 - Sparse union hybrid MPI+OpenMP participation is implemented as a separate
-  `ftimer_openmp_t` family; see
-  [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md)
-  and the opt-in API direction in
-  [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md), plus the
-  OpenMP/hybrid summary model in
-  [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md)
-  and the MPI+OpenMP reduction model in
-  [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md)
-  plus the validation plan in
-  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
+  `ftimer_openmp_t` family. It preserves the strict hybrid surface by using
+  distinct structured result, text report, and CSV entry points with explicit
+  rank/lane participation counts and participating-sample statistics.
 
 ### Consequences for timing data
 

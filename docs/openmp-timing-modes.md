@@ -187,15 +187,32 @@ Keep current and future examples separate.
 Release notes name the supported examples, the toolchain matrix that validates
 them, and the remaining non-goals for the first release containing these APIs.
 
-## Design References
+## Current Contract References
 
-- API and compatibility direction:
-  [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md)
-- Thread-lane runtime model:
-  [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md)
-- Local OpenMP summary and report model:
-  [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md)
-- MPI+OpenMP reduction model:
-  [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md)
-- Validation plan:
-  [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
+Use the regular documentation surface for current behavior:
+
+- [`README.md`](../README.md) gives user-facing build commands, examples,
+  current limitations, and CSV schema notes.
+- [`docs/semantics.md`](semantics.md) owns the runtime contract, including
+  worker no-op compatibility behavior, `ftimer_openmp_t` lifecycle errors,
+  strict MPI+OpenMP descriptor matching, and sparse union participation
+  semantics.
+- [`docs/installed-api.md`](installed-api.md) owns the stable source-level
+  module and public-symbol boundary.
+- [`docs/design.md`](design.md) owns the current architecture and CI validation
+  reality.
+
+The durable OpenMP/hybrid contract is:
+
+- existing `ftimer` and `ftimer_core` APIs remain master-thread-only when
+  `FTIMER_USE_OPENMP=ON`;
+- true worker timing is explicit and OOP-first through `ftimer_openmp_t`;
+- worker hot paths use pre-registered ids inside an opened level-1 timed
+  region;
+- local OpenMP, strict MPI+OpenMP, and sparse union MPI+OpenMP summaries are
+  stopped-run report families separate from serial local, strict MPI, and
+  sparse MPI union summaries;
+- strict hybrid reductions require matching descriptors and eligible lane
+  participation across ranks; and
+- sparse union hybrid reductions use separate APIs with explicit rank/lane
+  participation metadata rather than zero-filled absent contributors.
