@@ -236,7 +236,7 @@ module ftimer_openmp
       character(len=40) :: init_date = ''
       procedure(ftimer_clock_func), pointer, nopass :: clock => null()
 #ifdef FTIMER_USE_MPI
-      type(MPI_Comm) :: mpi_comm
+      type(MPI_Comm) :: mpi_comm = MPI_COMM_WORLD
       logical :: mpi_comm_was_present = .false.
 #endif
    contains
@@ -1237,6 +1237,7 @@ contains
       integer(int64), allocatable :: min_calls(:)
       integer :: acc_idx
       integer :: all_datatypes_ready
+      integer :: all_initialized
       integer :: any_active
       integer :: any_hash_mismatch
       integer :: any_strict_invalid
@@ -1247,6 +1248,7 @@ contains
       integer :: lane_idx
       integer :: local_active
       integer :: local_hash_mismatch
+      integer :: local_initialized
       integer :: local_status
       integer :: local_strict_invalid
       integer :: mpierr
@@ -1286,14 +1288,29 @@ contains
       call reset_mpi_openmp_summary(summary)
       diagnostic = ''
 
+#ifndef FTIMER_USE_MPI
       if (.not. self%initialized) then
          status = FTIMER_ERR_NOT_INIT
          return
       end if
+#endif
 
 #ifdef FTIMER_USE_MPI
       call get_mpi_openmp_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
       if (status /= FTIMER_SUCCESS) return
+
+      local_initialized = 0
+      if (self%initialized) local_initialized = 1
+      call MPI_Allreduce(local_initialized, all_initialized, 1, MPI_INTEGER, MPI_MIN, &
+                         active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) then
+         status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+      if (all_initialized /= 1) then
+         status = FTIMER_ERR_NOT_INIT
+         return
+      end if
 
       local_active = 0
       if (is_inside_parallel_region()) local_active = 1

@@ -47,6 +47,10 @@ if(FTIMER_BUILD_SMOKE_TESTS)
     add_executable(ftimer_openmp_mpi_summary_smoke test_openmp_mpi_summary_smoke.F90)
     target_link_libraries(ftimer_openmp_mpi_summary_smoke PRIVATE ftimer_smoke_test)
 
+    add_executable(ftimer_openmp_mpi_summary_3rank_smoke
+      test_openmp_mpi_summary_3rank_smoke.F90)
+    target_link_libraries(ftimer_openmp_mpi_summary_3rank_smoke PRIVATE ftimer_smoke_test)
+
     set(ftimer_openmp_mpi_summary_command "${MPIEXEC_EXECUTABLE}")
     if(DEFINED MPIEXEC_NUMPROC_FLAG AND NOT MPIEXEC_NUMPROC_FLAG STREQUAL "")
       list(APPEND ftimer_openmp_mpi_summary_command "${MPIEXEC_NUMPROC_FLAG}" 2)
@@ -64,9 +68,31 @@ if(FTIMER_BUILD_SMOKE_TESTS)
     add_test(NAME ftimer_openmp_mpi_summary_smoke
       COMMAND ${CMAKE_COMMAND}
         "-DTEST_COMMAND=${ftimer_openmp_mpi_summary_command}"
+        -DSMOKE_TIMEOUT_SECONDS=60
         -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_mpi_summary_smoke.cmake
     )
     set_tests_properties(ftimer_openmp_mpi_summary_smoke PROPERTIES LABELS "mpi;openmp")
+
+    set(ftimer_openmp_mpi_summary_3rank_command "${MPIEXEC_EXECUTABLE}")
+    if(DEFINED MPIEXEC_NUMPROC_FLAG AND NOT MPIEXEC_NUMPROC_FLAG STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_3rank_command "${MPIEXEC_NUMPROC_FLAG}" 3)
+    else()
+      list(APPEND ftimer_openmp_mpi_summary_3rank_command -n 3)
+    endif()
+    if(DEFINED MPIEXEC_PREFLAGS AND NOT MPIEXEC_PREFLAGS STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_3rank_command ${MPIEXEC_PREFLAGS})
+    endif()
+    list(APPEND ftimer_openmp_mpi_summary_3rank_command
+      "$<TARGET_FILE:ftimer_openmp_mpi_summary_3rank_smoke>")
+    if(DEFINED MPIEXEC_POSTFLAGS AND NOT MPIEXEC_POSTFLAGS STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_3rank_command ${MPIEXEC_POSTFLAGS})
+    endif()
+
+    add_test(NAME ftimer_openmp_mpi_summary_3rank_smoke
+      COMMAND ${ftimer_openmp_mpi_summary_3rank_command}
+    )
+    set_tests_properties(ftimer_openmp_mpi_summary_3rank_smoke
+      PROPERTIES LABELS "mpi;openmp" TIMEOUT 60)
   endif()
 
   if(NOT FTIMER_USE_MPI)

@@ -3,7 +3,8 @@ program ftimer_openmp_mpi_summary_smoke
    use ftimer_openmp, only: ftimer_mpi_openmp_summary_t, ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MPI_INCON, &
-                           FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, ftimer_metadata_t, wp
+                           FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
+                           ftimer_metadata_t, wp
    use mpi_f08, only: MPI_Barrier, MPI_COMM_WORLD, MPI_Comm_rank, MPI_Comm_size, &
                       MPI_Finalize, MPI_Init, MPI_SUCCESS
    use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, omp_set_num_threads
@@ -29,6 +30,7 @@ program ftimer_openmp_mpi_summary_smoke
    call check_strict_hybrid_identical_participation(rank)
    call check_strict_hybrid_serial_lane_success(rank)
    call check_strict_hybrid_registration_order_independent(rank)
+   call check_strict_hybrid_uninitialized_rank_failure(rank)
    call check_strict_hybrid_active_lane_failure(rank)
    call check_strict_hybrid_serial_lane_active_failure(rank)
    call check_strict_hybrid_open_region_failure(rank)
@@ -429,6 +431,35 @@ contains
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 247)
    end subroutine check_strict_hybrid_serial_lane_active_failure
+
+   subroutine check_strict_hybrid_uninitialized_rank_failure(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+
+      config%max_lanes = 3
+      if (rank == 1) then
+         call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1240)
+         fake_lane_time(0) = 180.0_wp
+         call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1241)
+      end if
+
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 1242
+
+      call timer%mpi_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_NOT_INIT, 1243)
+      call expect_int(summary%num_entries, 0, 1244)
+
+      if (rank == 1) then
+         call timer%finalize(ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1245)
+      end if
+   end subroutine check_strict_hybrid_uninitialized_rank_failure
 
    subroutine check_strict_hybrid_active_lane_failure(rank)
       integer, intent(in) :: rank

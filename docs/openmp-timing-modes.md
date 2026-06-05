@@ -133,8 +133,9 @@ The additive migration surface starts with `ftimer_openmp`:
 - import the `ftimer_openmp` module explicitly;
 - construct a `type(ftimer_openmp_t)` object, not the procedural
   default instance;
-- initialize it with a keyword `config=` object and, for hybrid runs, a keyword
-  `comm=`;
+- initialize it with a keyword `config=` object; in MPI-enabled builds,
+  omitted `comm=` captures `MPI_COMM_WORLD`, while an explicit keyword `comm=`
+  captures a caller-owned communicator;
 - register timer names in serial context before hot worker use;
 - pass timer ids into an explicitly opened timed OpenMP region; and
 - run an untimed warm-up region for short hot loops when first-touch allocation

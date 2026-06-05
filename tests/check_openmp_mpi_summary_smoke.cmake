@@ -4,9 +4,13 @@ if(NOT DEFINED TEST_COMMAND OR TEST_COMMAND STREQUAL "")
   message(FATAL_ERROR "TEST_COMMAND must launch ftimer_openmp_mpi_summary_smoke.")
 endif()
 
+if(NOT DEFINED SMOKE_TIMEOUT_SECONDS OR SMOKE_TIMEOUT_SECONDS STREQUAL "")
+  set(SMOKE_TIMEOUT_SECONDS 60)
+endif()
+
 execute_process(
   COMMAND ${TEST_COMMAND}
-  TIMEOUT 10
+  TIMEOUT ${SMOKE_TIMEOUT_SECONDS}
   RESULT_VARIABLE summary_result
   OUTPUT_VARIABLE summary_stdout
   ERROR_VARIABLE summary_stderr

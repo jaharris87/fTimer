@@ -152,7 +152,8 @@ keyword:
 
 - `config=config` for OpenMP timing mode and lane policy;
 - `comm=comm` for storing a non-owning MPI communicator handle in MPI-enabled
-  builds, ready for later hybrid reduction work;
+  builds when a caller-owned communicator is needed instead of the default
+  captured `MPI_COMM_WORLD` used by strict hybrid summaries and reports;
 - `mismatch_mode=...` and `ierr=...` preserved as keyword-friendly arguments.
 
 This keeps removed integer communicator handles, existing mismatch-mode
