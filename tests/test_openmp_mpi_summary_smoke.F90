@@ -1,6 +1,7 @@
 program ftimer_openmp_mpi_summary_smoke
    use, intrinsic :: iso_fortran_env, only: int64, iostat_end
-   use ftimer_openmp, only: ftimer_mpi_openmp_summary_t, ftimer_openmp_config_t, &
+   use ftimer_openmp, only: ftimer_mpi_openmp_summary_t, ftimer_mpi_openmp_union_summary_t, &
+                            ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MPI_INCON, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
@@ -29,6 +30,17 @@ program ftimer_openmp_mpi_summary_smoke
    call omp_set_num_threads(2)
 
    call check_strict_hybrid_identical_participation(rank)
+   call check_sparse_hybrid_rank_lane_participation(rank)
+   call check_sparse_hybrid_domain_identity_and_zero_participation(rank)
+   call check_sparse_hybrid_active_lane_failure(rank)
+   call check_sparse_hybrid_open_region_failure(rank)
+   call check_sparse_hybrid_parallel_entry_local_failure(rank)
+   call check_sparse_hybrid_serial_active_failure(rank)
+   call check_sparse_hybrid_descriptor_fault_injection(rank)
+   call check_sparse_hybrid_null_comm_failure(rank)
+   call check_sparse_hybrid_post_finalize_subcomm_failure(rank)
+   call check_sparse_hybrid_uninitialized_rank_failure(rank)
+   call check_sparse_hybrid_unregistered_rank_missing(rank)
    call check_strict_hybrid_serial_lane_success(rank)
    call check_strict_hybrid_registration_order_independent(rank)
    call check_strict_hybrid_null_comm_failure(rank)
@@ -50,6 +62,7 @@ program ftimer_openmp_mpi_summary_smoke
    call check_strict_hybrid_worker_diagnostic_ierr_preflight(rank)
    call check_strict_hybrid_worker_diagnostic_no_ierr_failure(rank)
    call check_strict_hybrid_csv_append_validation(rank)
+   call check_sparse_hybrid_csv_append_validation(rank)
 
    call MPI_Finalize(ierr)
    if (ierr /= MPI_SUCCESS) error stop 5
@@ -247,9 +260,9 @@ contains
          call expect_csv_record_field(csv_text, 'entry', 'root', 'eligible_rank_lane_sample_count', '4', 93)
          call expect_csv_record_field(csv_text, 'entry', 'root', 'participating_rank_lane_sample_count', '4', 94)
          call expect_csv_real_record_field(csv_text, 'entry', 'root', &
-                                          'sum_participating_lane_self_time', 43.0_wp, 95)
+                                           'sum_participating_lane_self_time', 43.0_wp, 95)
          call expect_csv_real_record_field(csv_text, 'entry', 'root', &
-                                          'max_participating_lane_inclusive_time', 22.0_wp, 96)
+                                           'max_participating_lane_inclusive_time', 22.0_wp, 96)
          call expect_csv_record_field(csv_text, 'entry', 'root', 'min_participating_lane_call_count', '1', 97)
          call expect_csv_record_field(csv_text, 'entry', 'root', 'max_participating_lane_call_count', '1', 98)
          call expect_csv_record_field(csv_text, 'entry', 'child', 'parent_id', &
@@ -263,6 +276,1029 @@ contains
          call delete_if_exists(csv_path)
       end if
    end subroutine check_strict_hybrid_identical_participation
+
+   subroutine check_sparse_hybrid_rank_lane_participation(rank)
+      integer, intent(in) :: rank
+      character(len=*), parameter :: csv_path = 'mpi_openmp_union_summary.csv'
+      character(len=*), parameter :: report_path = 'mpi_openmp_union_summary.txt'
+      type(ftimer_metadata_t) :: metadata(1)
+      type(ftimer_mpi_openmp_summary_t) :: strict_summary
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: report_text
+      integer :: all_id
+      integer :: all_idx
+      integer :: child_id
+      integer :: child_rank0_idx
+      integer :: child_rank1_idx
+      integer :: ierr
+      integer :: lane_sparse_id
+      integer :: lane_sparse_idx
+      integer :: parent_id
+      integer :: rank0_parent_id
+      integer :: rank0_parent_idx
+      integer :: rank1_parent_id
+      integer :: rank1_parent_idx
+      integer :: rank0_only_id
+      integer :: rank0_only_idx
+
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2000
+
+      config%max_lanes = 3
+      config%max_worker_diagnostics = 4
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2001)
+
+      fake_lane_time(0) = 2000.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2002)
+
+      call timer%register_timer('all_worker_sparse', all_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2003)
+      call timer%register_timer('rank0_only_sparse', rank0_only_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2004)
+      call timer%register_timer('lane0_only_sparse', lane_sparse_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2005)
+      call timer%register_timer('rank0_sparse_parent', rank0_parent_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2006)
+      call timer%register_timer('rank1_sparse_parent', rank1_parent_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2007)
+      call timer%register_timer('shared_sparse_child', child_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2008)
+
+      fake_lane_time(0) = 2010.0_wp
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2009)
+!$omp parallel num_threads(2) default(shared) private(ierr, parent_id)
+      fake_lane_time(1 + omp_get_thread_num()) = 0.0_wp
+      call timer%start_id(all_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 2010
+      fake_lane_time(1 + omp_get_thread_num()) = all_worker_duration(rank, omp_get_thread_num())
+      call timer%stop_id(all_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 2011
+
+      if (rank == 0) then
+         fake_lane_time(1 + omp_get_thread_num()) = 20.0_wp
+         call timer%start_id(rank0_only_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 2012
+         fake_lane_time(1 + omp_get_thread_num()) = 20.0_wp + rank0_only_duration(omp_get_thread_num())
+         call timer%stop_id(rank0_only_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 2013
+      end if
+
+      if (omp_get_thread_num() == 0) then
+         fake_lane_time(1 + omp_get_thread_num()) = 40.0_wp
+         call timer%start_id(lane_sparse_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 2014
+         fake_lane_time(1 + omp_get_thread_num()) = 40.0_wp + merge(4.0_wp, 5.0_wp, rank == 0)
+         call timer%stop_id(lane_sparse_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 2015
+      end if
+
+      if (rank == 0) then
+         parent_id = rank0_parent_id
+      else
+         parent_id = rank1_parent_id
+      end if
+      fake_lane_time(1 + omp_get_thread_num()) = 60.0_wp
+      call timer%start_id(parent_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 2016
+      fake_lane_time(1 + omp_get_thread_num()) = 61.0_wp
+      call timer%start_id(child_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 2017
+      fake_lane_time(1 + omp_get_thread_num()) = 61.0_wp + mixed_child_duration(rank, omp_get_thread_num())
+      call timer%stop_id(child_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 2018
+      fake_lane_time(1 + omp_get_thread_num()) = 60.0_wp + mixed_parent_duration(rank, omp_get_thread_num())
+      call timer%stop_id(parent_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 2019
+!$omp end parallel
+
+      fake_lane_time(0) = merge(2025.0_wp, 2030.0_wp, rank == 0)
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2020)
+
+      call timer%mpi_openmp_summary(strict_summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_MPI_INCON, 2021)
+      call expect_int(strict_summary%num_entries, 0, 2022)
+
+      fake_lane_time(0) = merge(2035.0_wp, 2045.0_wp, rank == 0)
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2023)
+      call expect_int(summary%num_ranks, 2, 2024)
+      call expect_int(summary%num_entries, 7, 2025)
+      call expect_int(size(summary%ranks), 2, 2026)
+      call expect_int(summary%ranks(1)%rank, 0, 2027)
+      call expect_int(summary%ranks(2)%rank, 1, 2028)
+      call expect_time(summary%min_rank_summary_window_time, 35.0_wp, 2220)
+      call expect_time(summary%avg_rank_summary_window_time, 40.0_wp, 2221)
+      call expect_time(summary%max_rank_summary_window_time, 45.0_wp, 2222)
+      call expect_time(summary%rank_summary_window_imbalance, 45.0_wp/40.0_wp, 2223)
+      call expect_int(summary%min_rank_summary_window_time_rank, 0, 2224)
+      call expect_int(summary%max_rank_summary_window_time_rank, 1, 2225)
+      call expect_time(summary%min_rank_timed_region_envelope_time, 15.0_wp, 2226)
+      call expect_time(summary%avg_rank_timed_region_envelope_time, 17.5_wp, 2227)
+      call expect_time(summary%max_rank_timed_region_envelope_time, 20.0_wp, 2228)
+      call expect_time(summary%rank_timed_region_envelope_imbalance, 20.0_wp/17.5_wp, 2229)
+      call expect_int(summary%min_rank_timed_region_envelope_time_rank, 0, 2230)
+      call expect_int(summary%max_rank_timed_region_envelope_time_rank, 1, 2231)
+      call expect_time(summary%min_rank_sum_lane_root_inclusive_time, 36.0_wp, 2232)
+      call expect_time(summary%avg_rank_sum_lane_root_inclusive_time, 41.5_wp, 2233)
+      call expect_time(summary%max_rank_sum_lane_root_inclusive_time, 47.0_wp, 2234)
+      call expect_time(summary%rank_sum_lane_root_inclusive_imbalance, 47.0_wp/41.5_wp, 2235)
+      call expect_int(summary%min_rank_sum_lane_root_inclusive_time_rank, 0, 2236)
+      call expect_int(summary%max_rank_sum_lane_root_inclusive_time_rank, 1, 2237)
+      call expect_time(summary%min_rank_sum_lane_self_time, 36.0_wp, 2238)
+      call expect_time(summary%avg_rank_sum_lane_self_time, 41.5_wp, 2239)
+      call expect_time(summary%max_rank_sum_lane_self_time, 47.0_wp, 2240)
+      call expect_time(summary%rank_sum_lane_self_imbalance, 47.0_wp/41.5_wp, 2241)
+      call expect_int(summary%min_rank_sum_lane_self_time_rank, 0, 2242)
+      call expect_int(summary%max_rank_sum_lane_self_time_rank, 1, 2243)
+      call expect_time(summary%ranks(1)%summary_window_time, 35.0_wp, 2244)
+      call expect_time(summary%ranks(1)%timed_region_envelope_time, 15.0_wp, 2245)
+      call expect_time(summary%ranks(1)%sum_lane_root_inclusive_time, 36.0_wp, 2246)
+      call expect_time(summary%ranks(1)%sum_lane_self_time, 36.0_wp, 2247)
+      call expect_time(summary%ranks(2)%summary_window_time, 45.0_wp, 2248)
+      call expect_time(summary%ranks(2)%timed_region_envelope_time, 20.0_wp, 2249)
+      call expect_time(summary%ranks(2)%sum_lane_root_inclusive_time, 47.0_wp, 2250)
+      call expect_time(summary%ranks(2)%sum_lane_self_time, 47.0_wp, 2251)
+
+      all_idx = find_union_entry(summary, 'all_worker_sparse', 0)
+      rank0_only_idx = find_union_entry(summary, 'rank0_only_sparse', 0)
+      lane_sparse_idx = find_union_entry(summary, 'lane0_only_sparse', 0)
+      rank0_parent_idx = find_union_entry(summary, 'rank0_sparse_parent', 0)
+      rank1_parent_idx = find_union_entry(summary, 'rank1_sparse_parent', 0)
+      if (all_idx <= 0) error stop 2029
+      if (rank0_only_idx <= 0) error stop 2030
+      if (lane_sparse_idx <= 0) error stop 2031
+      if (rank0_parent_idx <= 0) error stop 2032
+      if (rank1_parent_idx <= 0) error stop 2033
+      child_rank0_idx = find_union_entry(summary, 'shared_sparse_child', &
+                                         summary%entries(rank0_parent_idx)%node_id)
+      child_rank1_idx = find_union_entry(summary, 'shared_sparse_child', &
+                                         summary%entries(rank1_parent_idx)%node_id)
+      if (child_rank0_idx <= 0) error stop 2034
+      if (child_rank1_idx <= 0) error stop 2035
+      if (summary%entries(child_rank0_idx)%node_id == summary%entries(child_rank1_idx)%node_id) &
+         error stop 2036
+      call expect_union_entry_identity(summary, 1, 'all_worker_sparse', 0, &
+                                       'openmp_level1_team', 0, 2284)
+      call expect_union_entry_identity(summary, 2, 'lane0_only_sparse', 0, &
+                                       'openmp_level1_team', 0, 2285)
+      call expect_union_entry_identity(summary, 3, 'rank0_only_sparse', 0, &
+                                       'openmp_level1_team', 0, 2286)
+      call expect_union_entry_identity(summary, 4, 'rank0_sparse_parent', 0, &
+                                       'openmp_level1_team', 0, 2287)
+      call expect_union_entry_identity(summary, 5, 'shared_sparse_child', &
+                                       summary%entries(4)%node_id, 'openmp_level1_team', 1, 2288)
+      call expect_union_entry_identity(summary, 6, 'rank1_sparse_parent', 0, &
+                                       'openmp_level1_team', 0, 2289)
+      call expect_union_entry_identity(summary, 7, 'shared_sparse_child', &
+                                       summary%entries(6)%node_id, 'openmp_level1_team', 1, 2290)
+
+      call expect_union_entry(summary, all_idx, execution_domain='openmp_level1_team', depth=0, &
+                              rank_count=2, missing_ranks=0, eligible_samples=4, &
+                              participating_samples=4, missing_samples=0, sum_inclusive=17.0_wp, &
+                              sum_self=17.0_wp, min_inclusive=2.0_wp, avg_inclusive=4.25_wp, &
+                              max_inclusive=7.0_wp, inclusive_imbalance=7.0_wp/4.25_wp, &
+                              min_self=2.0_wp, avg_self=4.25_wp, max_self=7.0_wp, &
+                              self_imbalance=7.0_wp/4.25_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=pct_time(2.0_wp, 35.0_wp), &
+                              avg_pct=0.25_wp*(pct_time(2.0_wp, 35.0_wp) + &
+                                               pct_time(3.0_wp, 35.0_wp) + &
+                                               pct_time(5.0_wp, 45.0_wp) + &
+                                               pct_time(7.0_wp, 45.0_wp)), &
+                              max_pct=pct_time(7.0_wp, 45.0_wp), &
+                              pct_imbalance=pct_time(7.0_wp, 45.0_wp)/ &
+                              (0.25_wp*(pct_time(2.0_wp, 35.0_wp) + &
+                                        pct_time(3.0_wp, 35.0_wp) + &
+                                        pct_time(5.0_wp, 45.0_wp) + &
+                                        pct_time(7.0_wp, 45.0_wp))), &
+                              stop_code=2037)
+      call expect_union_entry(summary, rank0_only_idx, execution_domain='openmp_level1_team', depth=0, &
+                              rank_count=1, missing_ranks=1, eligible_samples=2, &
+                              participating_samples=2, missing_samples=0, sum_inclusive=5.0_wp, &
+                              sum_self=5.0_wp, min_inclusive=2.0_wp, avg_inclusive=2.5_wp, &
+                              max_inclusive=3.0_wp, inclusive_imbalance=3.0_wp/2.5_wp, &
+                              min_self=2.0_wp, avg_self=2.5_wp, max_self=3.0_wp, &
+                              self_imbalance=3.0_wp/2.5_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=pct_time(2.0_wp, 35.0_wp), &
+                              avg_pct=0.5_wp*(pct_time(2.0_wp, 35.0_wp) + pct_time(3.0_wp, 35.0_wp)), &
+                              max_pct=pct_time(3.0_wp, 35.0_wp), &
+                              pct_imbalance=pct_time(3.0_wp, 35.0_wp)/ &
+                              (0.5_wp*(pct_time(2.0_wp, 35.0_wp) + &
+                                       pct_time(3.0_wp, 35.0_wp))), &
+                              stop_code=2057)
+      call expect_union_entry(summary, lane_sparse_idx, execution_domain='openmp_level1_team', depth=0, &
+                              rank_count=2, missing_ranks=0, eligible_samples=4, &
+                              participating_samples=2, missing_samples=2, sum_inclusive=9.0_wp, &
+                              sum_self=9.0_wp, min_inclusive=4.0_wp, avg_inclusive=4.5_wp, &
+                              max_inclusive=5.0_wp, inclusive_imbalance=5.0_wp/4.5_wp, &
+                              min_self=4.0_wp, avg_self=4.5_wp, max_self=5.0_wp, &
+                              self_imbalance=5.0_wp/4.5_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=pct_time(5.0_wp, 45.0_wp), &
+                              avg_pct=0.5_wp*(pct_time(4.0_wp, 35.0_wp) + pct_time(5.0_wp, 45.0_wp)), &
+                              max_pct=pct_time(4.0_wp, 35.0_wp), &
+                              pct_imbalance=pct_time(4.0_wp, 35.0_wp)/ &
+                              (0.5_wp*(pct_time(4.0_wp, 35.0_wp) + &
+                                       pct_time(5.0_wp, 45.0_wp))), &
+                              stop_code=2077)
+      call expect_union_entry(summary, rank0_parent_idx, execution_domain='openmp_level1_team', depth=0, &
+                              rank_count=1, missing_ranks=1, eligible_samples=2, &
+                              participating_samples=2, missing_samples=0, sum_inclusive=22.0_wp, &
+                              sum_self=15.0_wp, min_inclusive=10.0_wp, avg_inclusive=11.0_wp, &
+                              max_inclusive=12.0_wp, inclusive_imbalance=12.0_wp/11.0_wp, &
+                              min_self=7.0_wp, avg_self=7.5_wp, max_self=8.0_wp, &
+                              self_imbalance=8.0_wp/7.5_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=pct_time(10.0_wp, 35.0_wp), &
+                              avg_pct=pct_time(11.0_wp, 35.0_wp), max_pct=pct_time(12.0_wp, 35.0_wp), &
+                              pct_imbalance=12.0_wp/11.0_wp, stop_code=2097)
+      call expect_union_entry(summary, child_rank0_idx, execution_domain='openmp_level1_team', depth=1, &
+                              rank_count=1, missing_ranks=1, eligible_samples=2, &
+                              participating_samples=2, missing_samples=0, sum_inclusive=7.0_wp, &
+                              sum_self=7.0_wp, min_inclusive=3.0_wp, avg_inclusive=3.5_wp, &
+                              max_inclusive=4.0_wp, inclusive_imbalance=4.0_wp/3.5_wp, &
+                              min_self=3.0_wp, avg_self=3.5_wp, max_self=4.0_wp, &
+                              self_imbalance=4.0_wp/3.5_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=pct_time(3.0_wp, 35.0_wp), &
+                              avg_pct=pct_time(3.5_wp, 35.0_wp), max_pct=pct_time(4.0_wp, 35.0_wp), &
+                              pct_imbalance=4.0_wp/3.5_wp, stop_code=2117)
+      call expect_union_entry(summary, rank1_parent_idx, execution_domain='openmp_level1_team', depth=0, &
+                              rank_count=1, missing_ranks=1, eligible_samples=2, &
+                              participating_samples=2, missing_samples=0, sum_inclusive=30.0_wp, &
+                              sum_self=19.0_wp, min_inclusive=14.0_wp, avg_inclusive=15.0_wp, &
+                              max_inclusive=16.0_wp, inclusive_imbalance=16.0_wp/15.0_wp, &
+                              min_self=9.0_wp, avg_self=9.5_wp, max_self=10.0_wp, &
+                              self_imbalance=10.0_wp/9.5_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=pct_time(14.0_wp, 45.0_wp), &
+                              avg_pct=pct_time(15.0_wp, 45.0_wp), max_pct=pct_time(16.0_wp, 45.0_wp), &
+                              pct_imbalance=16.0_wp/15.0_wp, stop_code=2137)
+      call expect_union_entry(summary, child_rank1_idx, execution_domain='openmp_level1_team', depth=1, &
+                              rank_count=1, missing_ranks=1, eligible_samples=2, &
+                              participating_samples=2, missing_samples=0, sum_inclusive=11.0_wp, &
+                              sum_self=11.0_wp, min_inclusive=5.0_wp, avg_inclusive=5.5_wp, &
+                              max_inclusive=6.0_wp, inclusive_imbalance=6.0_wp/5.5_wp, &
+                              min_self=5.0_wp, avg_self=5.5_wp, max_self=6.0_wp, &
+                              self_imbalance=6.0_wp/5.5_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=pct_time(5.0_wp, 45.0_wp), &
+                              avg_pct=pct_time(5.5_wp, 45.0_wp), max_pct=pct_time(6.0_wp, 45.0_wp), &
+                              pct_imbalance=6.0_wp/5.5_wp, stop_code=2157)
+
+      metadata(1)%key = 'Case'
+      metadata(1)%value = 'sparse hybrid'
+      call timer%write_mpi_openmp_union_summary(report_path, metadata=metadata, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2177)
+      call timer%write_mpi_openmp_union_summary_csv(csv_path, metadata=metadata, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2178)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2179
+
+      if (rank == 0) then
+         report_text = read_file_text(report_path)
+         call expect_contains(report_text, 'Sparse MPI+OpenMP union summary', 2180)
+         call expect_contains(report_text, 'Missing ranks', 2181)
+         call expect_contains(report_text, 'Missing samples', 2182)
+         call expect_contains(report_text, 'rank0_only_sparse', 2183)
+         call expect_contains(report_text, 'lane0_only_sparse', 2184)
+         call expect_contains(report_text, 'sparse hybrid', 2185)
+         call expect_text_before(report_text, 'all_worker_sparse', 'lane0_only_sparse', 2291)
+         call expect_text_before(report_text, 'lane0_only_sparse', 'rank0_only_sparse', 2292)
+         call expect_text_before(report_text, 'rank0_only_sparse', 'rank0_sparse_parent', 2293)
+         call expect_text_before(report_text, 'rank0_sparse_parent', 'rank1_sparse_parent', 2294)
+         call expect_sparse_union_report_entry_line(report_text, 'rank0_only_sparse', &
+                                                    depth=0, ranks=1, missing_ranks=1, &
+                                                    samples=2, missing_samples=0, &
+                                                    sum_inclusive=5.0_wp, sum_self=5.0_wp, &
+                                                    min_inclusive=2.0_wp, avg_inclusive=2.5_wp, &
+                                                    max_inclusive=3.0_wp, avg_calls=1.0_wp, &
+                                                    stop_code=2259)
+         call expect_sparse_union_report_entry_line(report_text, 'lane0_only_sparse', &
+                                                    depth=0, ranks=2, missing_ranks=0, &
+                                                    samples=2, missing_samples=2, &
+                                                    sum_inclusive=9.0_wp, sum_self=9.0_wp, &
+                                                    min_inclusive=4.0_wp, avg_inclusive=4.5_wp, &
+                                                    max_inclusive=5.0_wp, avg_calls=1.0_wp, &
+                                                    stop_code=2260)
+         call expect_sparse_union_report_child_entry(report_text, 'rank0_sparse_parent', &
+                                                     'shared_sparse_child', ranks=1, missing_ranks=1, &
+                                                     samples=2, missing_samples=0, &
+                                                     sum_inclusive=7.0_wp, sum_self=7.0_wp, &
+                                                     min_inclusive=3.0_wp, avg_inclusive=3.5_wp, &
+                                                     max_inclusive=4.0_wp, avg_calls=1.0_wp, &
+                                                     stop_code=2261)
+         call expect_sparse_union_report_child_entry(report_text, 'rank1_sparse_parent', &
+                                                     'shared_sparse_child', ranks=1, missing_ranks=1, &
+                                                     samples=2, missing_samples=0, &
+                                                     sum_inclusive=11.0_wp, sum_self=11.0_wp, &
+                                                     min_inclusive=5.0_wp, avg_inclusive=5.5_wp, &
+                                                     max_inclusive=6.0_wp, avg_calls=1.0_wp, &
+                                                     stop_code=2262)
+
+         csv_text = read_file_text(csv_path)
+         call expect_contains(csv_text, 'mpi_openmp_union', 2186)
+         call expect_contains(csv_text, 'missing_rank_count', 2187)
+         call expect_contains(csv_text, 'missing_rank_lane_sample_count', 2188)
+         call expect_not_contains(csv_text, '"1","mpi_openmp","entry"', 2189)
+         call expect_csv_record_count(csv_text, 'summary', 1, 2190)
+         call expect_csv_record_count(csv_text, 'metadata', 1, 2191)
+         call expect_csv_record_count(csv_text, 'rank', 2, 2192)
+         call expect_csv_record_count(csv_text, 'entry', 7, 2193)
+         call expect_csv_record_field(csv_text, 'metadata', 'Case', 'value', 'sparse hybrid', 2194)
+         call expect_csv_record_field(csv_text, 'summary', '', 'participation_policy', 'sparse_union', 2252)
+         call expect_csv_record_field(csv_text, 'metadata', 'Case', 'participation_policy', 'sparse_union', &
+                                      2540)
+         call expect_csv_real_record_field(csv_text, 'summary', '', 'rank_summary_window_imbalance', &
+                                           45.0_wp/40.0_wp, 2253)
+         call expect_csv_record_field(csv_text, 'rank', '0', 'observed_participating_lane_count', '2', 2254)
+         call expect_csv_record_field(csv_text, 'rank', '0', 'participation_policy', 'sparse_union', 2541)
+         call expect_csv_real_record_field(csv_text, 'rank', '1', 'sum_lane_self_time', 47.0_wp, 2255)
+         call expect_text_before(csv_text, 'all_worker_sparse', 'lane0_only_sparse', 2295)
+         call expect_text_before(csv_text, 'lane0_only_sparse', 'rank0_only_sparse', 2296)
+         call expect_text_before(csv_text, 'rank0_only_sparse', 'rank0_sparse_parent', 2297)
+         call expect_text_before(csv_text, 'rank0_sparse_parent', 'rank1_sparse_parent', 2298)
+         call expect_csv_record_field(csv_text, 'entry', 'rank0_only_sparse', 'participating_rank_count', '1', 2195)
+         call expect_csv_record_field(csv_text, 'entry', 'rank0_only_sparse', 'participation_policy', &
+                                      'sparse_union', 2542)
+         call expect_csv_record_field(csv_text, 'entry', 'rank0_only_sparse', 'missing_rank_count', '1', 2196)
+         call expect_csv_record_field(csv_text, 'entry', 'rank0_only_sparse', 'execution_domain', &
+                                      'openmp_level1_team', 2256)
+         call expect_csv_real_record_field(csv_text, 'entry', 'rank0_only_sparse', &
+                                           'participating_lane_self_imbalance', 3.0_wp/2.5_wp, 2257)
+         call expect_csv_real_record_field(csv_text, 'entry', 'rank0_only_sparse', &
+                                           'participating_lane_pct_imbalance', &
+                                           pct_time(3.0_wp, 35.0_wp)/ &
+                                           (0.5_wp*(pct_time(2.0_wp, 35.0_wp) + &
+                                                    pct_time(3.0_wp, 35.0_wp))), 2258)
+         call expect_csv_record_field(csv_text, 'entry', 'lane0_only_sparse', &
+                                      'missing_rank_lane_sample_count', '2', 2197)
+         call expect_csv_entry_field(csv_text, 'shared_sparse_child', &
+                                     int_csv_text(summary%entries(rank0_parent_idx)%node_id), &
+                                     'parent_id', int_csv_text(summary%entries(rank0_parent_idx)%node_id), 2198)
+         call expect_csv_entry_field(csv_text, 'shared_sparse_child', &
+                                     int_csv_text(summary%entries(rank1_parent_idx)%node_id), &
+                                     'parent_id', int_csv_text(summary%entries(rank1_parent_idx)%node_id), 2199)
+      end if
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2200)
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+   end subroutine check_sparse_hybrid_rank_lane_participation
+
+   subroutine check_sparse_hybrid_domain_identity_and_zero_participation(rank)
+      integer, intent(in) :: rank
+      character(len=*), parameter :: csv_path = 'mpi_openmp_union_domain_zero.csv'
+      character(len=*), parameter :: report_path = 'mpi_openmp_union_domain_zero.txt'
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: report_text
+      integer :: domain_id
+      integer :: ierr
+      integer :: serial_idx
+      integer :: worker_idx
+      integer :: unknown_id
+      integer :: unknown_idx
+      integer :: zero_id
+      integer :: zero_idx
+
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2299
+
+      config%max_lanes = 4
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2300)
+      fake_lane_time(0) = 3000.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2301)
+      call timer%register_timer('domain_split_sparse', domain_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2302)
+      call timer%register_timer('zero_sparse', zero_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2303)
+      call timer%register_timer('unknown_sparse', unknown_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2431)
+
+      if (rank == 0) then
+         fake_lane_time(0) = 3001.0_wp
+         call timer%start_id(domain_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2304)
+         fake_lane_time(0) = 3005.0_wp
+         call timer%stop_id(domain_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2305)
+      else
+         fake_lane_time(0) = 3001.0_wp
+         call timer%begin_parallel_region(region, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2306)
+!$omp parallel num_threads(2) default(shared) private(ierr)
+         fake_lane_time(1 + omp_get_thread_num()) = 10.0_wp
+         call timer%start_id(domain_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 2307
+         fake_lane_time(1 + omp_get_thread_num()) = merge(16.0_wp, 17.0_wp, omp_get_thread_num() == 0)
+         call timer%stop_id(domain_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 2308
+!$omp end parallel
+         fake_lane_time(0) = 3009.0_wp
+         call timer%end_parallel_region(region, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2309)
+      end if
+
+      if (rank == 0) then
+         fake_lane_time(0) = 3010.0_wp
+         call timer%begin_parallel_region(region, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2310)
+!$omp parallel num_threads(2) default(shared) private(ierr)
+         if (omp_get_thread_num() == 0) then
+            fake_lane_time(1) = 22.0_wp
+            call timer%start_id(zero_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) error stop 2311
+            fake_lane_time(1) = 22.0_wp
+            call timer%stop_id(zero_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) error stop 2312
+         end if
+!$omp end parallel
+         fake_lane_time(0) = 3012.0_wp
+         call timer%end_parallel_region(region, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2313)
+
+         fake_lane_time(0) = 3013.0_wp
+         call timer%begin_parallel_region(region, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2432)
+!$omp parallel num_threads(2) default(shared) private(ierr)
+         if (omp_get_thread_num() == 0) then
+            fake_lane_time(1) = 30.0_wp
+            call timer%start_id(unknown_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) error stop 2433
+            fake_lane_time(1) = 31.0_wp
+            call timer%stop_id(unknown_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) error stop 2434
+         end if
+!$omp end parallel
+         fake_lane_time(0) = 3015.0_wp
+         call timer%end_parallel_region(region, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2435)
+
+         fake_lane_time(0) = 3016.0_wp
+         call timer%begin_parallel_region(region, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2436)
+!$omp parallel num_threads(3) default(shared) private(ierr)
+         if (omp_get_thread_num() == 0) then
+            fake_lane_time(1) = 32.0_wp
+            call timer%start_id(unknown_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) error stop 2437
+            fake_lane_time(1) = 34.0_wp
+            call timer%stop_id(unknown_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) error stop 2438
+         end if
+!$omp end parallel
+         fake_lane_time(0) = 3019.0_wp
+         call timer%end_parallel_region(region, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2439)
+      end if
+
+      fake_lane_time(0) = 3020.0_wp
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2314)
+      call expect_int(summary%num_entries, 4, 2315)
+      call expect_union_entry_identity(summary, 1, 'zero_sparse', 0, &
+                                       'openmp_level1_team', 0, 2316)
+      call expect_union_entry_identity(summary, 2, 'unknown_sparse', 0, &
+                                       'openmp_level1_team', 0, 2317)
+      call expect_union_entry_identity(summary, 3, 'domain_split_sparse', 0, &
+                                       'openmp_level1_team', 0, 2318)
+      call expect_union_entry_identity(summary, 4, 'domain_split_sparse', 0, &
+                                       'serial_lane', 0, 2440)
+
+      zero_idx = find_union_entry_by_domain(summary, 'zero_sparse', 0, 'openmp_level1_team')
+      unknown_idx = find_union_entry_by_domain(summary, 'unknown_sparse', 0, 'openmp_level1_team')
+      worker_idx = find_union_entry_by_domain(summary, 'domain_split_sparse', 0, 'openmp_level1_team')
+      serial_idx = find_union_entry_by_domain(summary, 'domain_split_sparse', 0, 'serial_lane')
+      if (zero_idx <= 0) error stop 2319
+      if (unknown_idx <= 0) error stop 2320
+      if (worker_idx <= 0) error stop 2321
+      if (serial_idx <= 0) error stop 2441
+
+      call expect_union_entry(summary, zero_idx, execution_domain='openmp_level1_team', depth=0, &
+                              rank_count=1, missing_ranks=1, eligible_samples=2, &
+                              participating_samples=1, missing_samples=1, sum_inclusive=0.0_wp, &
+                              sum_self=0.0_wp, min_inclusive=0.0_wp, avg_inclusive=0.0_wp, &
+                              max_inclusive=0.0_wp, inclusive_imbalance=1.0_wp, &
+                              min_self=0.0_wp, avg_self=0.0_wp, max_self=0.0_wp, &
+                              self_imbalance=1.0_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=0.0_wp, avg_pct=0.0_wp, max_pct=0.0_wp, &
+                              pct_imbalance=1.0_wp, stop_code=2322)
+      call expect_union_entry_unknown_missing(summary, unknown_idx, execution_domain='openmp_level1_team', &
+                                              depth=0, rank_count=1, missing_ranks=1, eligible_samples=3, &
+                                              participating_samples=1, sum_inclusive=3.0_wp, sum_self=3.0_wp, &
+                                              min_inclusive=3.0_wp, avg_inclusive=3.0_wp, &
+                                              max_inclusive=3.0_wp, min_calls=2_int64, &
+                                              avg_calls=2.0_wp, max_calls=2_int64, stop_code=2442)
+      call expect_union_entry(summary, worker_idx, execution_domain='openmp_level1_team', depth=0, &
+                              rank_count=1, missing_ranks=1, eligible_samples=2, &
+                              participating_samples=2, missing_samples=0, sum_inclusive=13.0_wp, &
+                              sum_self=13.0_wp, min_inclusive=6.0_wp, avg_inclusive=6.5_wp, &
+                              max_inclusive=7.0_wp, inclusive_imbalance=7.0_wp/6.5_wp, &
+                              min_self=6.0_wp, avg_self=6.5_wp, max_self=7.0_wp, &
+                              self_imbalance=7.0_wp/6.5_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=pct_time(6.0_wp, 20.0_wp), &
+                              avg_pct=0.5_wp*(pct_time(6.0_wp, 20.0_wp) + pct_time(7.0_wp, 20.0_wp)), &
+                              max_pct=pct_time(7.0_wp, 20.0_wp), &
+                              pct_imbalance=pct_time(7.0_wp, 20.0_wp)/ &
+                              (0.5_wp*(pct_time(6.0_wp, 20.0_wp) + pct_time(7.0_wp, 20.0_wp))), &
+                              stop_code=2347)
+      call expect_union_entry(summary, serial_idx, execution_domain='serial_lane', depth=0, &
+                              rank_count=1, missing_ranks=1, eligible_samples=1, &
+                              participating_samples=1, missing_samples=0, sum_inclusive=4.0_wp, &
+                              sum_self=4.0_wp, min_inclusive=4.0_wp, avg_inclusive=4.0_wp, &
+                              max_inclusive=4.0_wp, inclusive_imbalance=1.0_wp, &
+                              min_self=4.0_wp, avg_self=4.0_wp, max_self=4.0_wp, &
+                              self_imbalance=1.0_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=pct_time(4.0_wp, 20.0_wp), &
+                              avg_pct=pct_time(4.0_wp, 20.0_wp), max_pct=pct_time(4.0_wp, 20.0_wp), &
+                              pct_imbalance=1.0_wp, stop_code=2372)
+
+      call timer%write_mpi_openmp_union_summary(report_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2397)
+      call timer%write_mpi_openmp_union_summary_csv(csv_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2398)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2399
+
+      if (rank == 0) then
+         report_text = read_file_text(report_path)
+         call expect_text_before(report_text, 'zero_sparse', 'unknown_sparse', 2400)
+         call expect_text_before(report_text, 'unknown_sparse', 'domain_split_sparse', 2445)
+         call expect_sparse_union_report_entry_line(report_text, 'zero_sparse', &
+                                                    depth=0, ranks=1, missing_ranks=1, &
+                                                    samples=1, missing_samples=1, &
+                                                    sum_inclusive=0.0_wp, sum_self=0.0_wp, &
+                                                    min_inclusive=0.0_wp, avg_inclusive=0.0_wp, &
+                                                    max_inclusive=0.0_wp, avg_calls=1.0_wp, &
+                                                    stop_code=2401)
+         call expect_sparse_union_report_entry_line_text_missing(report_text, 'unknown_sparse', &
+                                                                 'openmp_level1_team', depth=0, &
+                                                                 ranks=1, missing_ranks=1, samples=1, &
+                                                                 missing_samples_text='unknown', &
+                                                                 sum_inclusive=3.0_wp, sum_self=3.0_wp, &
+                                                                 min_inclusive=3.0_wp, avg_inclusive=3.0_wp, &
+                                                                 max_inclusive=3.0_wp, avg_calls=2.0_wp, &
+                                                                 stop_code=2446)
+         call expect_sparse_union_report_entry_line_text_missing(report_text, 'domain_split_sparse', &
+                                                                 'openmp_level1_team', depth=0, &
+                                                                 ranks=1, missing_ranks=1, samples=2, &
+                                                                 missing_samples_text='0', &
+                                                                 sum_inclusive=13.0_wp, sum_self=13.0_wp, &
+                                                                 min_inclusive=6.0_wp, avg_inclusive=6.5_wp, &
+                                                                 max_inclusive=7.0_wp, avg_calls=1.0_wp, &
+                                                                 stop_code=2447)
+         call expect_sparse_union_report_entry_line_text_missing(report_text, 'domain_split_sparse', &
+                                                                 'serial_lane', depth=0, &
+                                                                 ranks=1, missing_ranks=1, samples=1, &
+                                                                 missing_samples_text='0', &
+                                                                 sum_inclusive=4.0_wp, sum_self=4.0_wp, &
+                                                                 min_inclusive=4.0_wp, avg_inclusive=4.0_wp, &
+                                                                 max_inclusive=4.0_wp, avg_calls=1.0_wp, &
+                                                                 stop_code=2448)
+         csv_text = read_file_text(csv_path)
+         call expect_csv_record_count(csv_text, 'entry', 4, 2402)
+         call expect_text_before(csv_text, 'zero_sparse', 'unknown_sparse', 2403)
+         call expect_csv_entry_field_by_domain(csv_text, 'domain_split_sparse', '0', &
+                                               'openmp_level1_team', 'sum_participating_lane_inclusive_time', &
+                                               real_csv_text(13.0_wp), 2404)
+         call expect_csv_entry_field_by_domain(csv_text, 'domain_split_sparse', '0', &
+                                               'serial_lane', 'sum_participating_lane_inclusive_time', &
+                                               real_csv_text(4.0_wp), 2449)
+         call expect_csv_entry_field_by_domain(csv_text, 'unknown_sparse', '0', &
+                                               'openmp_level1_team', &
+                                               'missing_rank_lane_sample_count_known', 'false', 2450)
+         call expect_csv_entry_real_field(csv_text, 'zero_sparse', '0', &
+                                          'min_participating_lane_inclusive_time', 0.0_wp, 2405)
+         call expect_csv_entry_field(csv_text, 'zero_sparse', '0', &
+                                     'participating_rank_lane_sample_count', '1', 2406)
+         call expect_csv_entry_field(csv_text, 'zero_sparse', '0', &
+                                     'missing_rank_lane_sample_count', '1', 2407)
+      end if
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2408)
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+   end subroutine check_sparse_hybrid_domain_identity_and_zero_participation
+
+   subroutine check_sparse_hybrid_active_lane_failure(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      integer :: active_id
+      integer :: ierr
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2210)
+      fake_lane_time(0) = 2100.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2211)
+      call timer%register_timer('sparse_active', active_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2212)
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2213)
+!$omp parallel num_threads(2) default(shared) private(ierr)
+      if ((rank == 0) .and. (omp_get_thread_num() == 0)) then
+         fake_lane_time(1) = 0.0_wp
+         call timer%start_id(active_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 2214
+      end if
+!$omp end parallel
+
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2215)
+      call expect_int(summary%num_entries, 0, 2216)
+
+!$omp parallel num_threads(2) default(shared) private(ierr)
+      if ((rank == 0) .and. (omp_get_thread_num() == 0)) then
+         fake_lane_time(1) = 2.0_wp
+         call timer%stop_id(active_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 2217
+      end if
+!$omp end parallel
+      fake_lane_time(0) = 2105.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2218)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2219)
+   end subroutine check_sparse_hybrid_active_lane_failure
+
+   subroutine check_sparse_hybrid_open_region_failure(rank)
+      integer, intent(in) :: rank
+      character(len=*), parameter :: csv_path = 'mpi_openmp_union_open_region_failure.csv'
+      character(len=*), parameter :: report_path = 'mpi_openmp_union_open_region_failure.txt'
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2409
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2410)
+      fake_lane_time(0) = 3100.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2411)
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2412)
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2413)
+      call expect_int(summary%num_entries, 0, 2414)
+      call timer%write_mpi_openmp_union_summary(report_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2415)
+      call timer%write_mpi_openmp_union_summary_csv(csv_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2416)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2417
+      if (rank == 0) then
+         call expect_file_absent(report_path, 2418)
+         call expect_file_absent(csv_path, 2419)
+      end if
+
+      fake_lane_time(0) = 3102.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2420)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2421)
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+   end subroutine check_sparse_hybrid_open_region_failure
+
+   subroutine check_sparse_hybrid_parallel_entry_local_failure(rank)
+      integer, intent(in) :: rank
+      character(len=*), parameter :: csv_path = 'mpi_openmp_union_parallel_entry_failure.csv'
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+      integer :: worker_ierr
+
+      if (rank == 0) call delete_if_exists(csv_path)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2422
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2423)
+      fake_lane_time(0) = 3120.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2424)
+
+      worker_ierr = -999
+!$omp parallel num_threads(2) default(shared)
+      if (omp_get_thread_num() == 0) call timer%mpi_openmp_union_summary(summary, ierr=worker_ierr)
+!$omp end parallel
+      ierr = worker_ierr
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2425)
+      call expect_int(summary%num_entries, 0, 2426)
+
+      worker_ierr = -999
+!$omp parallel num_threads(2) default(shared)
+      if (omp_get_thread_num() == 0) call timer%write_mpi_openmp_union_summary_csv(csv_path, ierr=worker_ierr)
+!$omp end parallel
+      ierr = worker_ierr
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2427)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2430
+      if (rank == 0) call expect_file_absent(csv_path, 2428)
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2429)
+      if (rank == 0) call delete_if_exists(csv_path)
+   end subroutine check_sparse_hybrid_parallel_entry_local_failure
+
+   subroutine check_sparse_hybrid_serial_active_failure(rank)
+      integer, intent(in) :: rank
+      character(len=*), parameter :: csv_path = 'mpi_openmp_union_serial_active_failure.csv'
+      character(len=*), parameter :: report_path = 'mpi_openmp_union_serial_active_failure.txt'
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      integer :: active_id
+      integer :: ierr
+
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2482
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2483)
+      fake_lane_time(0) = 3180.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2484)
+      call timer%register_timer('serial_sparse_active', active_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2485)
+
+      fake_lane_time(0) = 3181.0_wp
+      call timer%start_id(active_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2486)
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2487)
+      call expect_int(summary%num_entries, 0, 2488)
+      call timer%write_mpi_openmp_union_summary(report_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2489)
+      call timer%write_mpi_openmp_union_summary_csv(csv_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2490)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2491
+      if (rank == 0) then
+         call expect_file_absent(report_path, 2492)
+         call expect_file_absent(csv_path, 2493)
+      end if
+
+      fake_lane_time(0) = 3182.0_wp
+      call timer%stop_id(active_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2494)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2495)
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+   end subroutine check_sparse_hybrid_serial_active_failure
+
+   subroutine check_sparse_hybrid_descriptor_fault_injection(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+      integer :: timer_id
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2451)
+      fake_lane_time(0) = 3140.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2452)
+      call timer%register_timer('descriptor_fault_sparse', timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2453)
+      call run_all_worker_lanes(timer, region, timer_id, 1.0_wp, 2.0_wp, 2454)
+
+      call timer%test_set_mpi_openmp_union_descriptor_faults(rank == 0, .false., ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2456)
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 2457)
+      call expect_int(summary%num_entries, 0, 2458)
+
+      call timer%test_set_mpi_openmp_union_descriptor_faults(.false., rank == 1, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2459)
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 2460)
+      call expect_int(summary%num_entries, 0, 2461)
+
+      call timer%test_set_mpi_openmp_union_descriptor_faults(.false., .false., ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2462)
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2463)
+      call expect_int(summary%num_entries, 1, 2464)
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2465)
+   end subroutine check_sparse_hybrid_descriptor_fault_injection
+
+   subroutine check_sparse_hybrid_null_comm_failure(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_NULL, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2466)
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 2467)
+      call expect_int(summary%num_entries, 0, 2468)
+      if (rank == 0) call timer%mpi_openmp_union_summary(summary)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2469)
+   end subroutine check_sparse_hybrid_null_comm_failure
+
+   subroutine check_sparse_hybrid_post_finalize_subcomm_failure(rank)
+      integer, intent(in) :: rank
+      type(MPI_Comm) :: subcomm
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+
+      config%max_lanes = 3
+      call MPI_Comm_split(MPI_COMM_WORLD, 0, rank, subcomm, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2470
+      call timer%init(config=config, comm=subcomm, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2471)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2472)
+      call MPI_Comm_free(subcomm, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2473
+
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_NOT_INIT, 2474)
+      call expect_int(summary%num_entries, 0, 2475)
+   end subroutine check_sparse_hybrid_post_finalize_subcomm_failure
+
+   subroutine check_sparse_hybrid_uninitialized_rank_failure(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+
+      config%max_lanes = 3
+      if (rank == 1) then
+         call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2476)
+         fake_lane_time(0) = 3160.0_wp
+         call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2477)
+      end if
+
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2478
+
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_NOT_INIT, 2479)
+      call expect_int(summary%num_entries, 0, 2480)
+
+      if (rank == 1) then
+         call timer%finalize(ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2481)
+      end if
+   end subroutine check_sparse_hybrid_uninitialized_rank_failure
+
+   subroutine check_sparse_hybrid_unregistered_rank_missing(rank)
+      integer, intent(in) :: rank
+      character(len=*), parameter :: csv_path = 'mpi_openmp_union_unregistered_rank.csv'
+      character(len=*), parameter :: report_path = 'mpi_openmp_union_unregistered_rank.txt'
+      type(ftimer_mpi_openmp_summary_t) :: strict_summary
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: report_text
+      integer :: ierr
+      integer :: timer_id
+      integer :: timer_idx
+
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2496
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2497)
+      fake_lane_time(0) = 3200.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2498)
+
+      if (rank == 0) then
+         call timer%register_timer('rank0_unregistered_sparse', timer_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2499)
+         fake_lane_time(0) = 3201.0_wp
+         call timer%start_id(timer_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2500)
+         fake_lane_time(0) = 3205.0_wp
+         call timer%stop_id(timer_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2501)
+      end if
+
+      fake_lane_time(0) = 3210.0_wp
+      call timer%mpi_openmp_summary(strict_summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_MPI_INCON, 2502)
+      call expect_int(strict_summary%num_entries, 0, 2503)
+
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2504)
+      call expect_int(summary%num_entries, 1, 2505)
+      timer_idx = find_union_entry_by_domain(summary, 'rank0_unregistered_sparse', 0, 'serial_lane')
+      if (timer_idx <= 0) error stop 2506
+      call expect_union_entry(summary, timer_idx, execution_domain='serial_lane', depth=0, &
+                              rank_count=1, missing_ranks=1, eligible_samples=1, &
+                              participating_samples=1, missing_samples=0, sum_inclusive=4.0_wp, &
+                              sum_self=4.0_wp, min_inclusive=4.0_wp, avg_inclusive=4.0_wp, &
+                              max_inclusive=4.0_wp, inclusive_imbalance=1.0_wp, &
+                              min_self=4.0_wp, avg_self=4.0_wp, max_self=4.0_wp, &
+                              self_imbalance=1.0_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=pct_time(4.0_wp, 10.0_wp), &
+                              avg_pct=pct_time(4.0_wp, 10.0_wp), max_pct=pct_time(4.0_wp, 10.0_wp), &
+                              pct_imbalance=1.0_wp, stop_code=2507)
+
+      call timer%write_mpi_openmp_union_summary(report_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2532)
+      call timer%write_mpi_openmp_union_summary_csv(csv_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2533)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2534
+
+      if (rank == 0) then
+         report_text = read_file_text(report_path)
+         call expect_sparse_union_report_entry_line_text_missing(report_text, 'rank0_unregistered_sparse', &
+                                                                 'serial_lane', depth=0, &
+                                                                 ranks=1, missing_ranks=1, samples=1, &
+                                                                 missing_samples_text='0', &
+                                                                 sum_inclusive=4.0_wp, sum_self=4.0_wp, &
+                                                                 min_inclusive=4.0_wp, avg_inclusive=4.0_wp, &
+                                                                 max_inclusive=4.0_wp, avg_calls=1.0_wp, &
+                                                                 stop_code=2535)
+         csv_text = read_file_text(csv_path)
+         call expect_csv_record_count(csv_text, 'entry', 1, 2536)
+         call expect_csv_entry_field_by_domain(csv_text, 'rank0_unregistered_sparse', '0', &
+                                               'serial_lane', 'participating_rank_count', '1', 2537)
+         call expect_csv_entry_field_by_domain(csv_text, 'rank0_unregistered_sparse', '0', &
+                                               'serial_lane', 'missing_rank_count', '1', 2538)
+      end if
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2539)
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+   end subroutine check_sparse_hybrid_unregistered_rank_missing
 
    subroutine check_strict_hybrid_serial_lane_success(rank)
       integer, intent(in) :: rank
@@ -1391,6 +2427,139 @@ contains
       end if
    end subroutine check_strict_hybrid_csv_append_validation
 
+   subroutine check_sparse_hybrid_csv_append_validation(rank)
+      integer, intent(in) :: rank
+      character(len=*), parameter :: bad_record_path = 'mpi_openmp_union_summary_bad_record_append.csv'
+      character(len=*), parameter :: bare_cr_path = 'mpi_openmp_union_summary_bare_cr_append.csv'
+      character(len=*), parameter :: csv_path = 'mpi_openmp_union_summary_append.csv'
+      character(len=*), parameter :: malformed_quote_path = 'mpi_openmp_union_summary_malformed_quote_append.csv'
+      character(len=*), parameter :: no_newline_path = 'mpi_openmp_union_summary_no_newline_append.csv'
+      character(len=*), parameter :: report_path = 'mpi_openmp_union_summary_append.txt'
+      character(len=*), parameter :: strict_target_path = 'mpi_openmp_union_summary_strict_target_append.csv'
+      character(len=*), parameter :: unterminated_quote_path = &
+                                     'mpi_openmp_union_summary_unterminated_quote_append.csv'
+      character(len=*), parameter :: unknown_record_path = 'mpi_openmp_union_summary_unknown_record_append.csv'
+      character(len=*), parameter :: wrong_header_path = 'mpi_openmp_union_summary_wrong_header_append.csv'
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      character(len=:), allocatable :: bad_text
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: report_text
+      integer :: ierr
+      integer :: timer_id
+
+      if (rank == 0) then
+         call delete_if_exists(csv_path)
+         call delete_if_exists(bad_record_path)
+         call delete_if_exists(bare_cr_path)
+         call delete_if_exists(malformed_quote_path)
+         call delete_if_exists(no_newline_path)
+         call delete_if_exists(report_path)
+         call delete_if_exists(strict_target_path)
+         call delete_if_exists(unterminated_quote_path)
+         call delete_if_exists(unknown_record_path)
+         call delete_if_exists(wrong_header_path)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2260
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2261)
+      fake_lane_time(0) = 720.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2262)
+      call timer%register_timer('union_append', timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2263)
+      call run_all_worker_lanes(timer, region, timer_id, 1.0_wp, 3.0_wp, 2264)
+
+      call timer%write_mpi_openmp_union_summary(report_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2284)
+      call timer%write_mpi_openmp_union_summary(report_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2285)
+      call timer%write_mpi_openmp_union_summary_csv(csv_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2266)
+      call timer%write_mpi_openmp_union_summary_csv(csv_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2267)
+      call timer%write_mpi_openmp_summary_csv(strict_target_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2268)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2269
+
+      if (rank == 0) then
+         report_text = read_file_text(report_path)
+         call expect_int(count_occurrences(report_text, 'Sparse MPI+OpenMP union summary'), 2, 2286)
+         call expect_int(count_occurrences(report_text, 'union_append'), 2, 2287)
+         csv_text = read_file_text(csv_path)
+         header = first_line(csv_text)
+         call expect_int(count_occurrences(csv_text, header), 1, 2270)
+         call expect_csv_record_count(csv_text, 'summary', 2, 2281)
+         call expect_csv_record_count(csv_text, 'rank', 4, 2282)
+         call expect_csv_record_count(csv_text, 'entry', 2, 2283)
+
+         bad_text = header//new_line('a')//'"1","mpi_openmp_union","summary"'//new_line('a')
+         call write_raw_text_file(bad_record_path, bad_text)
+         bad_text = header//new_line('a')//'"1","mpi_openmp_union","summary",'
+         call write_raw_text_file(no_newline_path, bad_text)
+         bad_text = header//new_line('a')// &
+                    replace_first(csv_line_at(csv_text, 2), '"summary"', '"invalid"')//new_line('a')
+         call write_raw_text_file(unknown_record_path, bad_text)
+         bad_text = header//new_line('a')//'"1","mpi_openmp_union","summary'//new_line('a')
+         call write_raw_text_file(unterminated_quote_path, bad_text)
+         bad_text = header//new_line('a')//'1"bad'//new_line('a')
+         call write_raw_text_file(malformed_quote_path, bad_text)
+         bad_text = header//new_line('a')//'"1","mpi_openmp_union","summary"'//achar(13)//'x'// &
+                    new_line('a')
+         call write_raw_text_file(bare_cr_path, bad_text)
+         bad_text = 'format_version,summary_kind,record_type'//new_line('a')
+         call write_raw_text_file(wrong_header_path, bad_text)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2271
+
+      call timer%write_mpi_openmp_union_summary_csv(bad_record_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 2272)
+      call timer%write_mpi_openmp_union_summary_csv(unknown_record_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 2273)
+      call timer%write_mpi_openmp_union_summary_csv(no_newline_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 2274)
+      call timer%write_mpi_openmp_union_summary_csv(unterminated_quote_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 2275)
+      call timer%write_mpi_openmp_union_summary_csv(malformed_quote_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 2276)
+      call timer%write_mpi_openmp_union_summary_csv(bare_cr_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 2277)
+      call timer%write_mpi_openmp_union_summary_csv(wrong_header_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 2278)
+      call timer%write_mpi_openmp_union_summary_csv(strict_target_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 2279)
+      call timer%write_mpi_openmp_union_summary_csv(bad_record_path, append=.true.)
+      call timer%write_mpi_openmp_union_summary_csv(unknown_record_path, append=.true.)
+      call timer%write_mpi_openmp_union_summary_csv(no_newline_path, append=.true.)
+      call timer%write_mpi_openmp_union_summary_csv(unterminated_quote_path, append=.true.)
+      call timer%write_mpi_openmp_union_summary_csv(malformed_quote_path, append=.true.)
+      call timer%write_mpi_openmp_union_summary_csv(bare_cr_path, append=.true.)
+      call timer%write_mpi_openmp_union_summary_csv(wrong_header_path, append=.true.)
+      call timer%write_mpi_openmp_union_summary_csv(strict_target_path, append=.true.)
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2280)
+      if (rank == 0) then
+         call delete_if_exists(csv_path)
+         call delete_if_exists(bad_record_path)
+         call delete_if_exists(bare_cr_path)
+         call delete_if_exists(malformed_quote_path)
+         call delete_if_exists(no_newline_path)
+         call delete_if_exists(report_path)
+         call delete_if_exists(strict_target_path)
+         call delete_if_exists(unterminated_quote_path)
+         call delete_if_exists(unknown_record_path)
+         call delete_if_exists(wrong_header_path)
+      end if
+   end subroutine check_sparse_hybrid_csv_append_validation
+
    subroutine run_all_worker_lanes(timer, region, timer_id, start_time, stop_time, stop_code)
       type(ftimer_openmp_t), intent(inout) :: timer
       type(ftimer_openmp_parallel_region_t), intent(inout) :: region
@@ -1416,6 +2585,52 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, stop_code + 1)
    end subroutine run_all_worker_lanes
 
+   real(wp) function all_worker_duration(rank, thread_num) result(duration)
+      integer, intent(in) :: rank
+      integer, intent(in) :: thread_num
+
+      if (rank == 0) then
+         duration = merge(2.0_wp, 3.0_wp, thread_num == 0)
+      else
+         duration = merge(5.0_wp, 7.0_wp, thread_num == 0)
+      end if
+   end function all_worker_duration
+
+   real(wp) function rank0_only_duration(thread_num) result(duration)
+      integer, intent(in) :: thread_num
+
+      duration = merge(2.0_wp, 3.0_wp, thread_num == 0)
+   end function rank0_only_duration
+
+   real(wp) function mixed_parent_duration(rank, thread_num) result(duration)
+      integer, intent(in) :: rank
+      integer, intent(in) :: thread_num
+
+      if (rank == 0) then
+         duration = merge(10.0_wp, 12.0_wp, thread_num == 0)
+      else
+         duration = merge(14.0_wp, 16.0_wp, thread_num == 0)
+      end if
+   end function mixed_parent_duration
+
+   real(wp) function mixed_child_duration(rank, thread_num) result(duration)
+      integer, intent(in) :: rank
+      integer, intent(in) :: thread_num
+
+      if (rank == 0) then
+         duration = merge(3.0_wp, 4.0_wp, thread_num == 0)
+      else
+         duration = merge(5.0_wp, 6.0_wp, thread_num == 0)
+      end if
+   end function mixed_child_duration
+
+   real(wp) function pct_time(duration, window) result(percent)
+      real(wp), intent(in) :: duration
+      real(wp), intent(in) :: window
+
+      percent = 100.0_wp*duration/window
+   end function pct_time
+
    integer function find_entry(summary, name, parent_id) result(idx)
       type(ftimer_mpi_openmp_summary_t), intent(in) :: summary
       character(len=*), intent(in) :: name
@@ -1430,6 +2645,38 @@ contains
          return
       end do
    end function find_entry
+
+   integer function find_union_entry(summary, name, parent_id) result(idx)
+      type(ftimer_mpi_openmp_union_summary_t), intent(in) :: summary
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: parent_id
+      integer :: i
+
+      idx = 0
+      do i = 1, summary%num_entries
+         if (summary%entries(i)%parent_id /= parent_id) cycle
+         if (trim(summary%entries(i)%name) /= name) cycle
+         idx = i
+         return
+      end do
+   end function find_union_entry
+
+   integer function find_union_entry_by_domain(summary, name, parent_id, execution_domain) result(idx)
+      type(ftimer_mpi_openmp_union_summary_t), intent(in) :: summary
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: parent_id
+      character(len=*), intent(in) :: execution_domain
+      integer :: i
+
+      idx = 0
+      do i = 1, summary%num_entries
+         if (summary%entries(i)%parent_id /= parent_id) cycle
+         if (trim(summary%entries(i)%name) /= name) cycle
+         if (trim(summary%entries(i)%execution_domain) /= execution_domain) cycle
+         idx = i
+         return
+      end do
+   end function find_union_entry_by_domain
 
    subroutine expect_entry(summary, idx, rank_count, eligible_samples, participating_samples, &
                            missing_samples, sum_inclusive, sum_self, min_inclusive, avg_inclusive, &
@@ -1482,6 +2729,133 @@ contains
       call expect_time(summary%entries(idx)%avg_participating_lane_call_count, avg_calls, stop_code + 17)
       call expect_int64(summary%entries(idx)%max_participating_lane_call_count, max_calls, stop_code + 18)
    end subroutine expect_entry
+
+   subroutine expect_union_entry(summary, idx, execution_domain, depth, rank_count, missing_ranks, eligible_samples, &
+                                 participating_samples, missing_samples, sum_inclusive, sum_self, &
+                                 min_inclusive, avg_inclusive, max_inclusive, inclusive_imbalance, min_self, &
+                                 avg_self, max_self, self_imbalance, min_calls, avg_calls, max_calls, &
+                                 min_pct, avg_pct, max_pct, pct_imbalance, stop_code)
+      type(ftimer_mpi_openmp_union_summary_t), intent(in) :: summary
+      integer, intent(in) :: idx
+      character(len=*), intent(in) :: execution_domain
+      integer, intent(in) :: depth
+      integer, intent(in) :: rank_count
+      integer, intent(in) :: missing_ranks
+      integer, intent(in) :: eligible_samples
+      integer, intent(in) :: participating_samples
+      integer, intent(in) :: missing_samples
+      real(wp), intent(in) :: sum_inclusive
+      real(wp), intent(in) :: sum_self
+      real(wp), intent(in) :: min_inclusive
+      real(wp), intent(in) :: avg_inclusive
+      real(wp), intent(in) :: max_inclusive
+      real(wp), intent(in) :: inclusive_imbalance
+      real(wp), intent(in) :: min_self
+      real(wp), intent(in) :: avg_self
+      real(wp), intent(in) :: max_self
+      real(wp), intent(in) :: self_imbalance
+      integer(int64), intent(in) :: min_calls
+      real(wp), intent(in) :: avg_calls
+      integer(int64), intent(in) :: max_calls
+      real(wp), intent(in) :: min_pct
+      real(wp), intent(in) :: avg_pct
+      real(wp), intent(in) :: max_pct
+      real(wp), intent(in) :: pct_imbalance
+      integer, intent(in) :: stop_code
+
+      if (trim(summary%entries(idx)%execution_domain) /= execution_domain) error stop stop_code
+      call expect_int(summary%entries(idx)%depth, depth, stop_code + 1)
+      call expect_int(summary%entries(idx)%participating_rank_count, rank_count, stop_code + 2)
+      call expect_int(summary%entries(idx)%missing_rank_count, missing_ranks, stop_code + 3)
+      call expect_int(summary%entries(idx)%eligible_rank_lane_sample_count, eligible_samples, stop_code + 4)
+      call expect_int(summary%entries(idx)%participating_rank_lane_sample_count, &
+                      participating_samples, stop_code + 5)
+      call expect_int(summary%entries(idx)%missing_rank_lane_sample_count, missing_samples, stop_code + 6)
+      if (.not. summary%entries(idx)%missing_rank_lane_sample_count_known) error stop stop_code + 7
+      call expect_time(summary%entries(idx)%sum_participating_lane_inclusive_time, &
+                       sum_inclusive, stop_code + 8)
+      call expect_time(summary%entries(idx)%sum_participating_lane_self_time, sum_self, stop_code + 9)
+      call expect_time(summary%entries(idx)%min_participating_lane_inclusive_time, &
+                       min_inclusive, stop_code + 10)
+      call expect_time(summary%entries(idx)%avg_participating_lane_inclusive_time, &
+                       avg_inclusive, stop_code + 11)
+      call expect_time(summary%entries(idx)%max_participating_lane_inclusive_time, &
+                       max_inclusive, stop_code + 12)
+      call expect_time(summary%entries(idx)%participating_lane_inclusive_imbalance, &
+                       inclusive_imbalance, stop_code + 13)
+      call expect_time(summary%entries(idx)%min_participating_lane_self_time, min_self, stop_code + 14)
+      call expect_time(summary%entries(idx)%avg_participating_lane_self_time, avg_self, stop_code + 15)
+      call expect_time(summary%entries(idx)%max_participating_lane_self_time, max_self, stop_code + 16)
+      call expect_time(summary%entries(idx)%participating_lane_self_imbalance, self_imbalance, stop_code + 17)
+      call expect_int64(summary%entries(idx)%min_participating_lane_call_count, min_calls, stop_code + 18)
+      call expect_time(summary%entries(idx)%avg_participating_lane_call_count, avg_calls, stop_code + 19)
+      call expect_int64(summary%entries(idx)%max_participating_lane_call_count, max_calls, stop_code + 20)
+      call expect_time(summary%entries(idx)%min_participating_lane_pct_time, min_pct, stop_code + 21)
+      call expect_time(summary%entries(idx)%avg_participating_lane_pct_time, avg_pct, stop_code + 22)
+      call expect_time(summary%entries(idx)%max_participating_lane_pct_time, max_pct, stop_code + 23)
+      call expect_time(summary%entries(idx)%participating_lane_pct_imbalance, pct_imbalance, stop_code + 24)
+   end subroutine expect_union_entry
+
+   subroutine expect_union_entry_unknown_missing(summary, idx, execution_domain, depth, rank_count, missing_ranks, &
+                                                 eligible_samples, participating_samples, sum_inclusive, sum_self, &
+                                                 min_inclusive, avg_inclusive, max_inclusive, min_calls, avg_calls, &
+                                                 max_calls, stop_code)
+      type(ftimer_mpi_openmp_union_summary_t), intent(in) :: summary
+      integer, intent(in) :: idx
+      character(len=*), intent(in) :: execution_domain
+      integer, intent(in) :: depth
+      integer, intent(in) :: rank_count
+      integer, intent(in) :: missing_ranks
+      integer, intent(in) :: eligible_samples
+      integer, intent(in) :: participating_samples
+      real(wp), intent(in) :: sum_inclusive
+      real(wp), intent(in) :: sum_self
+      real(wp), intent(in) :: min_inclusive
+      real(wp), intent(in) :: avg_inclusive
+      real(wp), intent(in) :: max_inclusive
+      integer(int64), intent(in) :: min_calls
+      real(wp), intent(in) :: avg_calls
+      integer(int64), intent(in) :: max_calls
+      integer, intent(in) :: stop_code
+
+      if (trim(summary%entries(idx)%execution_domain) /= execution_domain) error stop stop_code
+      call expect_int(summary%entries(idx)%depth, depth, stop_code + 1)
+      call expect_int(summary%entries(idx)%participating_rank_count, rank_count, stop_code + 2)
+      call expect_int(summary%entries(idx)%missing_rank_count, missing_ranks, stop_code + 3)
+      call expect_int(summary%entries(idx)%eligible_rank_lane_sample_count, eligible_samples, stop_code + 4)
+      call expect_int(summary%entries(idx)%participating_rank_lane_sample_count, &
+                      participating_samples, stop_code + 5)
+      if (summary%entries(idx)%missing_rank_lane_sample_count_known) error stop stop_code + 6
+      call expect_int(summary%entries(idx)%missing_rank_lane_sample_count, 0, stop_code + 7)
+      call expect_time(summary%entries(idx)%sum_participating_lane_inclusive_time, &
+                       sum_inclusive, stop_code + 8)
+      call expect_time(summary%entries(idx)%sum_participating_lane_self_time, sum_self, stop_code + 9)
+      call expect_time(summary%entries(idx)%min_participating_lane_inclusive_time, &
+                       min_inclusive, stop_code + 10)
+      call expect_time(summary%entries(idx)%avg_participating_lane_inclusive_time, &
+                       avg_inclusive, stop_code + 11)
+      call expect_time(summary%entries(idx)%max_participating_lane_inclusive_time, &
+                       max_inclusive, stop_code + 12)
+      call expect_int64(summary%entries(idx)%min_participating_lane_call_count, min_calls, stop_code + 13)
+      call expect_time(summary%entries(idx)%avg_participating_lane_call_count, avg_calls, stop_code + 14)
+      call expect_int64(summary%entries(idx)%max_participating_lane_call_count, max_calls, stop_code + 15)
+   end subroutine expect_union_entry_unknown_missing
+
+   subroutine expect_union_entry_identity(summary, idx, name, parent_id, execution_domain, depth, stop_code)
+      type(ftimer_mpi_openmp_union_summary_t), intent(in) :: summary
+      integer, intent(in) :: idx
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: parent_id
+      character(len=*), intent(in) :: execution_domain
+      integer, intent(in) :: depth
+      integer, intent(in) :: stop_code
+
+      if (idx < 1 .or. idx > summary%num_entries) error stop stop_code
+      if (trim(summary%entries(idx)%name) /= name) error stop stop_code
+      call expect_int(summary%entries(idx)%parent_id, parent_id, stop_code)
+      if (trim(summary%entries(idx)%execution_domain) /= execution_domain) error stop stop_code
+      call expect_int(summary%entries(idx)%depth, depth, stop_code)
+   end subroutine expect_union_entry_identity
 
    real(wp) function mock_openmp_clock() result(t)
       integer :: lane_id
@@ -1718,6 +3092,182 @@ contains
       call expect_int(found, 1, stop_code)
    end subroutine expect_report_child_under_parent_by_values
 
+   subroutine expect_sparse_union_report_entry_line(report_text, name, depth, ranks, missing_ranks, &
+                                                    samples, missing_samples, sum_inclusive, sum_self, &
+                                                    min_inclusive, avg_inclusive, max_inclusive, &
+                                                    avg_calls, stop_code)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: depth
+      integer, intent(in) :: ranks
+      integer, intent(in) :: missing_ranks
+      integer, intent(in) :: samples
+      integer, intent(in) :: missing_samples
+      real(wp), intent(in) :: sum_inclusive
+      real(wp), intent(in) :: sum_self
+      real(wp), intent(in) :: min_inclusive
+      real(wp), intent(in) :: avg_inclusive
+      real(wp), intent(in) :: max_inclusive
+      real(wp), intent(in) :: avg_calls
+      integer, intent(in) :: stop_code
+
+      call expect_sparse_union_report_entry_line_text_missing(report_text, name, 'openmp_level1_team', depth, &
+                                                              ranks, missing_ranks, samples, &
+                                                              int_csv_text(missing_samples), &
+                                                              sum_inclusive, sum_self, min_inclusive, &
+                                                              avg_inclusive, max_inclusive, avg_calls, stop_code)
+   end subroutine expect_sparse_union_report_entry_line
+
+   subroutine expect_sparse_union_report_entry_line_text_missing(report_text, name, execution_domain, depth, ranks, &
+                                                                 missing_ranks, samples, missing_samples_text, &
+                                                                 sum_inclusive, sum_self, min_inclusive, &
+                                                                 avg_inclusive, max_inclusive, avg_calls, &
+                                                                 stop_code)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: name
+      character(len=*), intent(in) :: execution_domain
+      integer, intent(in) :: depth
+      integer, intent(in) :: ranks
+      integer, intent(in) :: missing_ranks
+      integer, intent(in) :: samples
+      character(len=*), intent(in) :: missing_samples_text
+      real(wp), intent(in) :: sum_inclusive
+      real(wp), intent(in) :: sum_self
+      real(wp), intent(in) :: min_inclusive
+      real(wp), intent(in) :: avg_inclusive
+      real(wp), intent(in) :: max_inclusive
+      real(wp), intent(in) :: avg_calls
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: candidate
+      character(len=64) :: actual_domain
+      character(len=64) :: actual_name
+      integer :: actual_indent
+      integer :: actual_missing_ranks
+      character(len=64) :: actual_missing_samples_text
+      integer :: actual_ranks
+      integer :: actual_samples
+      integer :: first_nonblank
+      integer :: found
+      integer :: io
+      integer :: line_no
+      integer :: max_line
+      real(wp) :: actual_avg_calls
+      real(wp) :: actual_avg_inclusive
+      real(wp) :: actual_max_inclusive
+      real(wp) :: actual_min_inclusive
+      real(wp) :: actual_sum_inclusive
+      real(wp) :: actual_sum_self
+
+      found = 0
+      max_line = count_occurrences(report_text, new_line('a')) + 1
+      do line_no = 1, max_line
+         candidate = csv_line_at(report_text, line_no)
+         first_nonblank = verify(candidate, ' ')
+         if (first_nonblank <= 0) cycle
+         actual_indent = first_nonblank - 1
+         actual_name = ''
+         actual_missing_samples_text = ''
+         read (candidate, *, iostat=io) actual_name, actual_domain, actual_ranks, &
+            actual_missing_ranks, actual_samples, actual_missing_samples_text, actual_sum_inclusive, &
+            actual_sum_self, actual_min_inclusive, actual_avg_inclusive, actual_max_inclusive, &
+            actual_avg_calls
+         if (io /= 0) cycle
+         if (trim(actual_name) /= name) cycle
+         if (trim(actual_domain) /= execution_domain) cycle
+         if (actual_indent /= 2*depth) cycle
+         if (actual_ranks /= ranks) cycle
+         if (actual_missing_ranks /= missing_ranks) cycle
+         if (actual_samples /= samples) cycle
+         if (trim(actual_missing_samples_text) /= missing_samples_text) cycle
+         if (abs(actual_sum_inclusive - sum_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_sum_self - sum_self) > 1.0e-9_wp) cycle
+         if (abs(actual_min_inclusive - min_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_inclusive - avg_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_max_inclusive - max_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_calls - avg_calls) > 1.0e-9_wp) cycle
+         found = found + 1
+      end do
+      call expect_int(found, 1, stop_code)
+   end subroutine expect_sparse_union_report_entry_line_text_missing
+
+   subroutine expect_sparse_union_report_child_entry(report_text, parent_name, child_name, ranks, &
+                                                     missing_ranks, samples, missing_samples, &
+                                                     sum_inclusive, sum_self, min_inclusive, &
+                                                     avg_inclusive, max_inclusive, avg_calls, &
+                                                     stop_code)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: parent_name
+      character(len=*), intent(in) :: child_name
+      integer, intent(in) :: ranks
+      integer, intent(in) :: missing_ranks
+      integer, intent(in) :: samples
+      integer, intent(in) :: missing_samples
+      real(wp), intent(in) :: sum_inclusive
+      real(wp), intent(in) :: sum_self
+      real(wp), intent(in) :: min_inclusive
+      real(wp), intent(in) :: avg_inclusive
+      real(wp), intent(in) :: max_inclusive
+      real(wp), intent(in) :: avg_calls
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: candidate
+      character(len=64) :: actual_domain
+      character(len=64) :: actual_name
+      integer :: actual_indent
+      integer :: actual_missing_ranks
+      integer :: actual_missing_samples
+      integer :: actual_ranks
+      integer :: actual_samples
+      integer :: first_nonblank
+      integer :: found
+      integer :: in_parent
+      integer :: io
+      integer :: line_no
+      integer :: max_line
+      real(wp) :: actual_avg_calls
+      real(wp) :: actual_avg_inclusive
+      real(wp) :: actual_max_inclusive
+      real(wp) :: actual_min_inclusive
+      real(wp) :: actual_sum_inclusive
+      real(wp) :: actual_sum_self
+
+      found = 0
+      in_parent = 0
+      max_line = count_occurrences(report_text, new_line('a')) + 1
+      do line_no = 1, max_line
+         candidate = csv_line_at(report_text, line_no)
+         first_nonblank = verify(candidate, ' ')
+         if (first_nonblank <= 0) cycle
+         actual_indent = first_nonblank - 1
+         actual_name = ''
+         read (candidate, *, iostat=io) actual_name, actual_domain, actual_ranks, &
+            actual_missing_ranks, actual_samples, actual_missing_samples, actual_sum_inclusive, &
+            actual_sum_self, actual_min_inclusive, actual_avg_inclusive, actual_max_inclusive, &
+            actual_avg_calls
+         if (io /= 0) cycle
+         if (actual_indent == 0) then
+            in_parent = 0
+            if (trim(actual_name) == parent_name) in_parent = 1
+            cycle
+         end if
+         if (in_parent == 0) cycle
+         if (actual_indent /= 2) cycle
+         if (trim(actual_name) /= child_name) cycle
+         if (trim(actual_domain) /= 'openmp_level1_team') cycle
+         if (actual_ranks /= ranks) cycle
+         if (actual_missing_ranks /= missing_ranks) cycle
+         if (actual_samples /= samples) cycle
+         if (actual_missing_samples /= missing_samples) cycle
+         if (abs(actual_sum_inclusive - sum_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_sum_self - sum_self) > 1.0e-9_wp) cycle
+         if (abs(actual_min_inclusive - min_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_inclusive - avg_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_max_inclusive - max_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_calls - avg_calls) > 1.0e-9_wp) cycle
+         found = found + 1
+      end do
+      call expect_int(found, 1, stop_code)
+   end subroutine expect_sparse_union_report_child_entry
+
    subroutine expect_contains(text, needle, stop_code)
       character(len=*), intent(in) :: text
       character(len=*), intent(in) :: needle
@@ -1733,6 +3283,29 @@ contains
 
       if (index(text, needle) > 0) error stop stop_code
    end subroutine expect_not_contains
+
+   subroutine expect_text_before(text, first, second, stop_code)
+      character(len=*), intent(in) :: text
+      character(len=*), intent(in) :: first
+      character(len=*), intent(in) :: second
+      integer, intent(in) :: stop_code
+      integer :: first_pos
+      integer :: second_pos
+
+      first_pos = index(text, first)
+      second_pos = index(text, second)
+      if (first_pos <= 0 .or. second_pos <= 0) error stop stop_code
+      if (first_pos >= second_pos) error stop stop_code
+   end subroutine expect_text_before
+
+   subroutine expect_file_absent(path, stop_code)
+      character(len=*), intent(in) :: path
+      integer, intent(in) :: stop_code
+      logical :: exists
+
+      inquire (file=path, exist=exists)
+      if (exists) error stop stop_code
+   end subroutine expect_file_absent
 
    function find_report_entry_line(report_text, name) result(line)
       character(len=*), intent(in) :: report_text
@@ -1844,6 +3417,27 @@ contains
       if (csv_field_value(row, column_idx) /= expected) error stop stop_code
    end subroutine expect_csv_entry_field
 
+   subroutine expect_csv_entry_field_by_domain(csv_text, name, parent_id, execution_domain, column, expected, &
+                                               stop_code)
+      character(len=*), intent(in) :: csv_text
+      character(len=*), intent(in) :: name
+      character(len=*), intent(in) :: parent_id
+      character(len=*), intent(in) :: execution_domain
+      character(len=*), intent(in) :: column
+      character(len=*), intent(in) :: expected
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: header
+      character(len=:), allocatable :: row
+      integer :: column_idx
+
+      header = first_line(csv_text)
+      row = find_csv_entry_record_by_domain(csv_text, name, parent_id, execution_domain)
+      if (len(row) <= 0) error stop stop_code
+      column_idx = csv_column_index(header, column)
+      if (column_idx <= 0) error stop stop_code
+      if (csv_field_value(row, column_idx) /= expected) error stop stop_code
+   end subroutine expect_csv_entry_field_by_domain
+
    subroutine expect_csv_entry_real_field(csv_text, name, parent_id, column, expected, stop_code)
       character(len=*), intent(in) :: csv_text
       character(len=*), intent(in) :: name
@@ -1900,6 +3494,42 @@ contains
          line_no = line_no + 1
       end do
    end function find_csv_entry_record
+
+   function find_csv_entry_record_by_domain(csv_text, name, parent_id, execution_domain) result(row)
+      character(len=*), intent(in) :: csv_text
+      character(len=*), intent(in) :: name
+      character(len=*), intent(in) :: parent_id
+      character(len=*), intent(in) :: execution_domain
+      character(len=:), allocatable :: row
+      character(len=:), allocatable :: candidate
+      character(len=:), allocatable :: header
+      integer :: domain_col
+      integer :: line_no
+      integer :: name_col
+      integer :: parent_id_col
+      integer :: record_type_col
+
+      row = ''
+      header = first_line(csv_text)
+      record_type_col = csv_column_index(header, 'record_type')
+      parent_id_col = csv_column_index(header, 'parent_id')
+      name_col = csv_column_index(header, 'name')
+      domain_col = csv_column_index(header, 'execution_domain')
+      if (record_type_col <= 0 .or. parent_id_col <= 0 .or. name_col <= 0 .or. domain_col <= 0) return
+      line_no = 2
+      do
+         candidate = csv_line_at(csv_text, line_no)
+         if (len(candidate) <= 0) exit
+         if (csv_field_value(candidate, record_type_col) == 'entry' .and. &
+             csv_field_value(candidate, name_col) == name .and. &
+             csv_field_value(candidate, parent_id_col) == parent_id .and. &
+             csv_field_value(candidate, domain_col) == execution_domain) then
+            row = candidate
+            return
+         end if
+         line_no = line_no + 1
+      end do
+   end function find_csv_entry_record_by_domain
 
    function find_csv_record(csv_text, record_type, selector) result(row)
       character(len=*), intent(in) :: csv_text

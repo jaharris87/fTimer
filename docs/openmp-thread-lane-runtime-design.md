@@ -234,7 +234,7 @@ active-timer state according to the future summary contract.
 ## Merge Points
 
 Timed-region close, summary construction, reset, finalize, current strict
-hybrid MPI summary/reduction entry points, and future sparse/union hybrid
+hybrid MPI summary/reduction entry points, and current sparse union hybrid
 entry points are merge points. They should run only outside OpenMP parallel
 regions.
 
@@ -427,6 +427,6 @@ implementation slice: current `ftimer_openmp_t` lifecycle/catalog calls,
 timed-region tokens, and id-first serial-lane / level-1 worker timing are real
 public behavior. That implementation is covered by smoke tests, installed
 consumer checks, and benchmark rows. Issue #270 extends that coverage to local
-OpenMP summaries/reports/CSV, and issue #271 adds strict MPI+OpenMP rank/lane
-summaries/reports/CSV. Sparse/union hybrid participation reductions remain
-deferred to later issues.
+OpenMP summaries/reports/CSV, issue #271 adds strict MPI+OpenMP rank/lane
+summaries/reports/CSV, and issue #272 adds separate sparse union MPI+OpenMP
+participation summaries/reports/CSV.

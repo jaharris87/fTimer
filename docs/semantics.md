@@ -4,9 +4,9 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`, and the explicit `ftimer_openmp` thread-lane runtime with stopped-run local OpenMP summary, text report, CSV output, and strict MPI+OpenMP hybrid summary/report/CSV output for opt-in serial-lane and level-1 OpenMP worker timing. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output. The `ftimer_openmp_t` strict MPI+OpenMP report family returns `FTIMER_ERR_NOT_IMPLEMENTED` for initialized objects in non-MPI builds, after the usual lifecycle checks such as `FTIMER_ERR_NOT_INIT` for uninitialized objects.
+Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`, and the explicit `ftimer_openmp` thread-lane runtime with stopped-run local OpenMP summary, text report, CSV output, strict MPI+OpenMP hybrid summary/report/CSV output, and sparse MPI+OpenMP union summary/report/CSV output for opt-in serial-lane and level-1 OpenMP worker timing. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output. The `ftimer_openmp_t` MPI+OpenMP report families return `FTIMER_ERR_NOT_IMPLEMENTED` for initialized objects in non-MPI builds, after the usual lifecycle checks such as `FTIMER_ERR_NOT_INIT` for uninitialized objects.
 
-This contract is strongest for disciplined serial and pure-MPI wall-clock timing. OpenMP support has two current paths: existing `ftimer`/`ftimer_core` calls keep the master-thread-only carve-out for bracketing a parallel region as a whole, while `ftimer_openmp_t` provides explicit opt-in serial-lane and level-1 worker timing with local OpenMP summaries and strict MPI+OpenMP rank/lane reductions. Sparse/union hybrid participation reductions remain deferred. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
+This contract is strongest for disciplined serial and pure-MPI wall-clock timing. OpenMP support has two current paths: existing `ftimer`/`ftimer_core` calls keep the master-thread-only carve-out for bracketing a parallel region as a whole, while `ftimer_openmp_t` provides explicit opt-in serial-lane and level-1 worker timing with local OpenMP summaries plus strict and sparse union MPI+OpenMP rank/lane reductions. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
 Current architecture, validation, and workflow notes belong in `docs/design.md`. Historical phase-roadmap notes belong in `docs/implementation-history.md`. When current-state sources disagree, use this repository-wide precedence order: current code under `src/`, then current behavioral tests, then `docs/semantics.md`, then `README.md`, then `docs/design.md`.
 
@@ -308,6 +308,61 @@ strict or sparse MPI summaries, MPI report writers, `finalize()`, or an
 - Sparse union CSV uses `format_version=1` and `summary_kind=mpi_union` in a dedicated header that is not append-compatible with the local/strict MPI CSV format-version-2 header. Entry rows include `participating_rank_count`, explicit `missing_rank_count`, tree links, and participating-rank statistic columns such as `min_participating_inclusive_time`, `avg_participating_self_time`, and `max_participating_call_count`. Participating call-count extrema are emitted as signed-64-bit decimal text.
 - Sparse union CSV does not emit all-rank zero-filled or amortized entry statistics. If such a view is added later, its columns must be explicitly named as all-rank or amortized.
 
+## MPI+OpenMP Sparse/Union Summary Contract
+
+`ftimer_openmp_t%mpi_openmp_union_summary()` is the explicit opt-in path for
+rank- or lane-conditional hybrid worker timing. It is a separate API from
+strict `mpi_openmp_summary()`, not a mode argument, so strict hybrid calls cannot
+silently relax descriptor or lane-participation consistency.
+
+- The sparse hybrid result type is `ftimer_mpi_openmp_union_summary_t`, with
+  `ftimer_mpi_openmp_union_summary_entry_t` entries and
+  `ftimer_mpi_openmp_union_rank_t` rank rows. It does not reuse or extend
+  `ftimer_mpi_openmp_summary_t`, whose semantics remain strict identical
+  rank/lane semantics.
+- The call is collective over the communicator captured by
+  `ftimer_openmp_t%init`, and uses the same lifecycle, valid-communicator,
+  serial-context, worker-diagnostic, and stopped-run active-lane preflight as
+  strict hybrid summaries.
+- The canonical entry set is the union of aggregate descriptors materialized by
+  any rank or lane. Descriptor identity includes the timer/context path and
+  execution domain, so serial-lane and OpenMP-team entries with the same timer
+  name remain distinct.
+- `participating_rank_count` records how many communicator ranks materialized
+  a descriptor on at least one eligible lane. `missing_rank_count` is explicit
+  in sparse hybrid entries and is derived as
+  `num_ranks - participating_rank_count`.
+- `eligible_rank_lane_sample_count`,
+  `participating_rank_lane_sample_count`, and
+  `missing_rank_lane_sample_count` describe lane participation over known
+  eligible rank/lane samples. Missing lane counts are derived from the observed
+  eligible lane set for contributing timed-region epochs, not from configured
+  lane capacity. When a precise missing-lane interpretation is not available,
+  `missing_rank_lane_sample_count_known` is false.
+- Entry min/avg/max, call-count, percent, and imbalance fields are defined over
+  participating rank/lane samples only. Absent ranks and absent lanes are not
+  zero-filled. A materialized present zero-time or zero-call descriptor
+  participates and contributes real zero values.
+- Sparse hybrid result ordering is deterministic across ranks and follows the
+  canonical descriptor union, not local creation order on one rank or lane.
+
+## MPI+OpenMP Sparse/Union Reporting Contract
+
+- `print_mpi_openmp_union_summary()` and
+  `write_mpi_openmp_union_summary()` are the explicit sparse hybrid text
+  reporting paths for `ftimer_mpi_openmp_union_summary_t`.
+- `write_mpi_openmp_union_summary_csv()` is the explicit sparse hybrid CSV
+  reporting path. It uses a dedicated `format_version=1`,
+  `summary_kind=mpi_openmp_union`, `participation_policy=sparse_union` schema
+  with `summary`, `metadata`, `rank`, and aggregate `entry` rows.
+- Sparse hybrid reports are collective over the init communicator, build the
+  same participation-aware object as `mpi_openmp_union_summary()`, and emit one
+  communicator-root artifact. They do not weaken strict hybrid text or CSV
+  reports.
+- Sparse hybrid report and CSV entry statistics are over participating
+  rank/lane samples only. Missing ranks and missing lanes are exposed as
+  participation fields, not hidden as zero-valued contributors.
+
 ## Name Validation Error Contract
 
 Name validation failures return `FTIMER_ERR_INVALID_NAME` (code 8).
@@ -356,9 +411,9 @@ enforcement should pass `ierr` and check it.
   Without `comm=`, MPI-enabled builds capture `MPI_COMM_WORLD`. Registered
   timer ids remain valid across `reset()` and are
   invalidated across `finalize()`/reinit without being recycled in the same
-  object. The MPI communicator handle is used by strict hybrid MPI+OpenMP
-  summary/report calls; local OpenMP summary/report behavior does not consume
-  it.
+  object. The MPI communicator handle is used by strict and sparse union
+  MPI+OpenMP summary/report calls; local OpenMP summary/report behavior does
+  not consume it.
   `config%max_lanes` counts the serial lane plus worker lanes.
   Serial-context `start_id`/`stop_id` use lane 0. Inside an explicitly opened
   timed level-1 OpenMP region, `start_id`/`stop_id` use one lane per OpenMP
@@ -452,13 +507,14 @@ enforcement should pass `ierr` and check it.
   append-compatible with local OpenMP, local serial, strict MPI, or sparse MPI
   union CSV headers.
 - Sparse or union MPI+OpenMP hybrid participation reductions are not part of
-  this strict surface. Rank- or lane-conditional hybrid work must use a later
-  sparse/union hybrid API rather than relying on `mpi_openmp_summary()` to
-  relax strictness.
+  this strict surface. Rank- or lane-conditional hybrid work must use
+  `mpi_openmp_union_summary()` and its report/CSV family rather than relying on
+  `mpi_openmp_summary()` to relax strictness.
 - For user-facing mode selection, accepted instrumentation patterns, and
   migration guidance, see
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
-- Sparse/union hybrid MPI+OpenMP participation remains future work; see
+- Sparse union hybrid MPI+OpenMP participation is implemented as a separate
+  `ftimer_openmp_t` family; see
   [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md)
   and the opt-in API direction in
   [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md), plus the

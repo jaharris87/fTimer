@@ -10,7 +10,8 @@ the public lifecycle/configuration and timer-catalog surface described here.
 Issue #269 adds the first per-thread lane runtime for timed-region
 `start_id`/`stop_id`, and #270 adds stopped-run local OpenMP summaries,
 reports, and CSV output. Issue #271 adds strict MPI+OpenMP hybrid summaries,
-reports, and CSV output; sparse/union hybrid participation remains deferred.
+reports, and CSV output; #272 adds the separate sparse union MPI+OpenMP
+hybrid participation summary/report/CSV surface.
 
 ## Decision
 
@@ -21,8 +22,9 @@ True OpenMP worker-thread timing should use a separate, explicit API surface:
 - a `type(ftimer_openmp_config_t)` configuration object;
 - explicit named mode constants in that new module, with the first true timing
   mode defined around OpenMP thread lanes;
-- strict hybrid summary/result entry points that are separate from today's
-  `get_summary()`, `mpi_summary()`, and `mpi_union_summary()` contracts.
+- strict and sparse union hybrid summary/result entry points that are separate
+  from today's `get_summary()`, `mpi_summary()`, and `mpi_union_summary()`
+  contracts.
 
 The current `ftimer` procedural API, `type(ftimer_t)`, and pure-MPI APIs remain
 unchanged. `FTIMER_USE_OPENMP=ON` continues to mean the existing
@@ -34,8 +36,8 @@ turn existing `start`/`stop` calls into true worker-thread timing.
 
 Current `main` remains the source of truth. The `ftimer_openmp` surface is
 available for compile-time adoption and implements the first thread-lane timing
-runtime plus stopped-run local OpenMP and strict MPI+OpenMP hybrid
-summary/report/CSV behavior.
+runtime plus stopped-run local OpenMP, strict MPI+OpenMP hybrid, and sparse
+union MPI+OpenMP hybrid summary/report/CSV behavior.
 
 - Serial users keep the current `use ftimer` and `type(ftimer_t)` behavior.
 - Pure-MPI users keep the current `mpi_f08` `comm=` capture, strict
@@ -64,8 +66,8 @@ configuration type, object type, timer catalog calls, and timed-region/timing
 methods now exist and implement the first thread-lane runtime. Local OpenMP
 summaries, reports, and CSV output now exist as a stopped-run result family.
 Strict hybrid summaries, reports, and CSV output now exist as a separate
-stopped-run result family. Sparse/union hybrid participation remains future
-work.
+stopped-run result family. Sparse union hybrid participation summaries, reports,
+and CSV output now exist as their own additive stopped-run result family.
 
 ```fortran
 ! Accepted worker-timing shape. Local summary behavior is a stopped-run API.
@@ -117,9 +119,15 @@ call timer%mpi_openmp_summary(summary, ierr=ierr)
 
 The strict hybrid result type is separate from `ftimer_mpi_summary_t` and
 `ftimer_mpi_union_summary_t` so existing strict and sparse MPI callers do not
-silently receive a rank/thread result shape. Sparse/union hybrid participation
-must remain a later additive surface, not an automatic relaxation of
-`mpi_openmp_summary()`.
+silently receive a rank/thread result shape. Sparse union hybrid participation
+uses a separate additive surface, not an automatic relaxation of
+`mpi_openmp_summary()`:
+
+```fortran
+! Accepted sparse union hybrid shape.
+call timer%init(config=config, comm=comm, ierr=ierr)
+call timer%mpi_openmp_union_summary(union_summary, ierr=ierr)
+```
 
 ## Procedural And OOP Interaction
 
@@ -153,7 +161,8 @@ keyword:
 - `config=config` for OpenMP timing mode and lane policy;
 - `comm=comm` for storing a non-owning MPI communicator handle in MPI-enabled
   builds when a caller-owned communicator is needed instead of the default
-  captured `MPI_COMM_WORLD` used by strict hybrid summaries and reports;
+  captured `MPI_COMM_WORLD` used by strict and sparse union hybrid summaries
+  and reports;
 - `mismatch_mode=...` and `ierr=...` preserved as keyword-friendly arguments.
 
 This keeps removed integer communicator handles, existing mismatch-mode
@@ -232,8 +241,9 @@ Existing users do not need to change source code.
 - Users adopting true OpenMP timing should explicitly import `ftimer_openmp`,
   construct a `ftimer_openmp_t`, initialize it with `config=...`, and later
   consume `ftimer_openmp_summary_t` for stopped-run local OpenMP summaries or
-  `ftimer_mpi_openmp_summary_t` for strict MPI+OpenMP rank/lane reductions.
-  Sparse/union hybrid participation summaries remain a later result family.
+  `ftimer_mpi_openmp_summary_t` for strict MPI+OpenMP rank/lane reductions, or
+  `ftimer_mpi_openmp_union_summary_t` for sparse union MPI+OpenMP rank/lane
+  participation reductions.
 
 The #242 migration guide keeps `examples/openmp_example.F90` as the
 compatibility example. Later implementation issues should add a separate true
@@ -271,8 +281,8 @@ behavior for that example to compile.
   [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md),
   including envelope time, summed work, participation, self-time boundaries,
   and CSV/report schemas.
-- #241 defines strict hybrid MPI+OpenMP reductions and future sparse/union
-  participation policy in
+- #241 defines strict hybrid MPI+OpenMP reductions and the sparse/union
+  participation policy later implemented by #272 in
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md)
   without changing current `mpi_summary()` or `mpi_union_summary()` semantics
   by accident.
@@ -306,5 +316,6 @@ installed-package consumers. Issue #270 adds local OpenMP summary/report/CSV
 coverage. Compile-fail probes still cover unsupported positional `init` forms.
 Issue #271 adds strict MPI+OpenMP hybrid summaries, reports, CSV output, and
 focused two-rank/two-lane validation through the public `ftimer_openmp_t`
-hybrid entry points. Sparse/union hybrid participation snippets remain future
-examples until later #267 child issues add those APIs and their validation.
+hybrid entry points. Issue #272 adds sparse union MPI+OpenMP hybrid
+participation summaries, reports, CSV output, and focused two-rank plus
+three-rank validation through separate `ftimer_openmp_t` entry points.

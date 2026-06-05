@@ -9,16 +9,16 @@ the opt-in API direction from #238 and the thread-lane runtime model from #239.
 This began as a design contract. Issue #268 adds the initial `ftimer_openmp`
 module and object lifecycle/catalog surface, #269 adds the first thread-lane
 runtime, #270 adds stopped-run local OpenMP summaries, reports, and CSV
-output, and #271 adds stopped-run strict MPI+OpenMP hybrid summaries, reports,
-and CSV output. Sparse/union hybrid participation reductions remain future
-work under #272.
+output, #271 adds stopped-run strict MPI+OpenMP hybrid summaries, reports,
+and CSV output, and #272 adds sparse MPI+OpenMP union participation summaries,
+reports, and CSV output.
 
 ## Decision
 
 True OpenMP worker-thread timing should use new summary/result types and new
 report/CSV entry points behind the current `ftimer_openmp_t` API.
 
-Current local and strict hybrid type family:
+Current local and hybrid type family:
 
 - `ftimer_openmp_summary_t` for local OpenMP aggregate summaries;
 - `ftimer_openmp_summary_entry_t` for logical timer/context aggregate rows;
@@ -28,20 +28,27 @@ Current local and strict hybrid type family:
 - `ftimer_mpi_openmp_rank_t` for strict hybrid rank aggregate rows defined by
   #241 in
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md).
+- `ftimer_mpi_openmp_union_summary_t`,
+  `ftimer_mpi_openmp_union_summary_entry_t`, and
+  `ftimer_mpi_openmp_union_rank_t` for sparse hybrid rank/lane participation
+  reductions.
 
 Optional lane-detail records remain future work and are not part of the
 current public local or strict hybrid structured-summary API.
 
-Current local and strict hybrid entry points:
+Current local and hybrid entry points:
 
 - `timer%get_openmp_summary(summary, ierr=ierr)` for local aggregate summaries;
 - `timer%print_openmp_summary(...)`, `timer%write_openmp_summary(...)`, and
   `timer%write_openmp_summary_csv(...)` for local aggregate reports;
 - `timer%mpi_openmp_summary(summary, ierr=ierr)` plus explicit hybrid text and
-  CSV writers for strict MPI+OpenMP summaries.
+  CSV writers for strict MPI+OpenMP summaries;
+- `timer%mpi_openmp_union_summary(summary, ierr=ierr)` plus explicit sparse
+  union hybrid text and CSV writers for rank/lane-conditional MPI+OpenMP
+  summaries.
 
-Sparse or union MPI+OpenMP hybrid participation summaries are intentionally not
-part of the strict surface.
+Sparse or union MPI+OpenMP hybrid participation summaries are intentionally a
+separate result family, not part of the strict surface.
 
 Current `get_summary()`, `mpi_summary()`, `mpi_union_summary()`,
 `ftimer_summary_t`, `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, and
@@ -305,7 +312,7 @@ Hybrid summaries should distinguish:
 The implemented #271 surface is strict-identical: every rank must expose the
 same descriptors and every eligible lane must participate. Missing rank/lane
 data is an error, not zero-filled data. Sparse/union hybrid participation is a
-later additive API and must not weaken current `mpi_summary()`,
+separate additive API and must not weaken current `mpi_summary()`,
 `mpi_union_summary()`, or strict `mpi_openmp_summary()` behavior by accident.
 
 ## Text Reports
@@ -354,10 +361,14 @@ Recommended hybrid CSV record types:
 - `record_type=entry` for descriptor aggregate rows;
 - `record_type=rank_lane_entry` for participant detail rows when exported.
 
-CSV columns should include `summary_kind=openmp` or
-`summary_kind=mpi_openmp` and an independent format version. Appending to an
-existing CSV should require the exact header for the chosen OpenMP or hybrid
-schema, following the current CSV append-safety principle.
+CSV columns should include `summary_kind=openmp` for local OpenMP exports,
+`summary_kind=mpi_openmp` for strict hybrid exports, or
+`summary_kind=mpi_openmp_union` plus `participation_policy=sparse_union` for
+sparse union hybrid exports. Each schema has an independent format version.
+Appending to an existing CSV should require the exact header and compatible
+`summary_kind` for the chosen OpenMP or hybrid schema. Strict hybrid and sparse
+union hybrid append targets are intentionally not interchangeable, following the
+current CSV append-safety principle.
 
 OpenMP CSV field names should make semantics visible:
 
@@ -386,7 +397,7 @@ tests for:
 - active worker timers, failed timed-region close diagnostics, and
   stopped-run-only OpenMP summary/report errors;
 - report and CSV golden output for local OpenMP summaries;
-- strict MPI+OpenMP descriptor mismatch cases and future sparse/union hybrid
+- strict MPI+OpenMP descriptor mismatch cases and sparse/union hybrid
   reductions with differing rank/lane participation;
 - compatibility tests proving existing `get_summary()`, `mpi_summary()`,
   `mpi_union_summary()`, and `FTIMER_USE_OPENMP=ON` master-thread-only behavior
@@ -434,7 +445,7 @@ overhead, following the validation plan introduced by #243.
 - #243 records the validation plan in
   [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md)
   and starts current MPI+OpenMP compatibility smoke coverage. Later
-  implementation issues must add deterministic validation, active-lane tests,
+  implementation issues add deterministic validation, active-lane tests,
   report/CSV golden output, and overhead measurements.
 - #242 records the user-facing timing modes and migration guide in
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Current local
@@ -455,6 +466,6 @@ overhead, following the validation plan introduced by #243.
 ## Validation For This Design
 
 This issue records the data-model contract. Local OpenMP summary/report/CSV
-runtime behavior is implemented by #270, and strict MPI+OpenMP hybrid
-summary/report/CSV behavior is implemented by #271. Sparse/union hybrid
-participation remains a later implementation issue.
+runtime behavior is implemented by #270, strict MPI+OpenMP hybrid
+summary/report/CSV behavior is implemented by #271, and sparse/union hybrid
+participation is implemented by #272.

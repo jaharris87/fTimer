@@ -27,9 +27,11 @@ Implemented capabilities include:
   `ftimer_openmp_t`
 - strict stopped-run MPI+OpenMP rank/lane summaries, text reports, and CSV
   output through `ftimer_openmp_t`
+- sparse union MPI+OpenMP participation summaries, text reports, and CSV output
+  through `ftimer_openmp_t`
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
-fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, sparse/union MPI+OpenMP hybrid participation reductions, or general thread-safe access to the existing `ftimer`/`ftimer_core` APIs from OpenMP worker threads.
+fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, or general thread-safe access to the existing `ftimer`/`ftimer_core` APIs from OpenMP worker threads.
 It also does not provide accelerator/device synchronization hooks or implicit MPI
 barriers; callers own those synchronization decisions when interpreting
 wall-clock intervals.
@@ -131,8 +133,8 @@ The CMake source order reflects the real dependency order:
 worker timing. Its lifecycle/configuration, timer catalog, timed-region, and
 id-first thread-lane timing operations are usable today, along with stopped-run
 local OpenMP summary, report, and CSV output plus strict stopped-run MPI+OpenMP
-rank/lane summary, report, and CSV output. Sparse/union hybrid participation
-families remain deferred to later #267 child issues.
+rank/lane summary, report, and CSV output plus sparse union stopped-run
+MPI+OpenMP rank/lane summary, report, and CSV output.
 
 `ftimer_summary.F90` is an internal summary/report helper module. It turns timer state into structured local summaries and formatted report text. This is where entry ordering, explicit summary-tree linkage (`node_id`/`parent_id`), depth attribution, percentages, self-time computation, and strict/sparse MPI text formatting are assembled for reporting.
 
@@ -161,7 +163,7 @@ The current implementation is organized around a few design choices that show up
   `MPI_Init` and before `MPI_Finalize`. The communicator captured by
   `init(comm=...)` is a non-owning handle that the caller must keep valid while
   fTimer summaries, reports, finalization, or reinitialization may use it.
-- OpenMP support has two distinct paths: guarded `ftimer`/`ftimer_core` operations still run only on the master thread when `FTIMER_USE_OPENMP=ON`, while `ftimer_openmp_t` provides opt-in id-first timing for serial and level-1 OpenMP worker lanes plus stopped-run local OpenMP summary, report, CSV output, and strict MPI+OpenMP hybrid rank/lane reductions. Sparse/union hybrid participation reductions remain deferred.
+- OpenMP support has two distinct paths: guarded `ftimer`/`ftimer_core` operations still run only on the master thread when `FTIMER_USE_OPENMP=ON`, while `ftimer_openmp_t` provides opt-in id-first timing for serial and level-1 OpenMP worker lanes plus stopped-run local OpenMP summary, report, CSV output, strict MPI+OpenMP hybrid rank/lane reductions, and separate sparse union MPI+OpenMP hybrid rank/lane reductions.
 
 Those runtime semantics are specified in detail in [`docs/semantics.md`](semantics.md); this document focuses on how the repository realizes them.
 
@@ -174,7 +176,7 @@ The public surface on current `main` is split between:
 - the explicit opt-in OpenMP API surface in `use ftimer_openmp`
 - shared types and constants from `use ftimer_types`
 
-The supported source-level module surface is intentionally limited to `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the additive opt-in API surface for true OpenMP worker timing; its lifecycle/configuration, timer catalog, timed-region, id-first thread-lane timing, local OpenMP summary/report methods, and strict MPI+OpenMP hybrid summary/report methods are available now, while sparse/union hybrid participation reductions remain deferred. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt` so runtime storage helpers are not accidentally promoted into the stable downstream contract. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md` and `share/doc/fTimer/LICENSE`, and the installed-consumer smoke test checks those documentation artifacts against the source tree.
+The supported source-level module surface is intentionally limited to `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the additive opt-in API surface for true OpenMP worker timing; its lifecycle/configuration, timer catalog, timed-region, id-first thread-lane timing, local OpenMP summary/report methods, strict MPI+OpenMP hybrid summary/report methods, and sparse union MPI+OpenMP hybrid summary/report methods are available now. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt` so runtime storage helpers are not accidentally promoted into the stable downstream contract. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md` and `share/doc/fTimer/LICENSE`, and the installed-consumer smoke test checks those documentation artifacts against the source tree.
 
 The currently exported procedural entry points are:
 
@@ -247,7 +249,7 @@ Supported local build paths today are:
 - serial pFUnit tests with `gfortran` plus a matching pFUnit install
 - MPI builds through GNU Fortran MPI wrapper compilers, with CI smoke/install-consumer coverage for OpenMPI and MPICH and MPI pFUnit coverage for OpenMPI plus MPICH on hosted Ubuntu 22.04
 - OpenMP builds with GNU Fortran and LLVM Flang for the master-thread-only carve-out plus the explicit `ftimer_openmp_t` worker timing runtime; pFUnit OpenMP guard coverage remains on `gfortran`
-- MPI+OpenMP smoke coverage for the current compatibility mode, installed opt-in `ftimer_openmp` worker API, and strict hybrid rank/lane summary/report/CSV path
+- MPI+OpenMP smoke coverage for the current compatibility mode, installed opt-in `ftimer_openmp` worker API, strict hybrid rank/lane summary/report/CSV path, and sparse union hybrid participation summary/report/CSV path
 - benchmark harness builds with `FTIMER_BUILD_BENCH=ON`
 
 The top-level CMake options that shape those paths are:
@@ -376,12 +378,11 @@ Future-facing ideas should stay clearly separated from the current architecture 
   [`docs/openmp-thread-lane-runtime-design.md`](openmp-thread-lane-runtime-design.md),
   the landed local summary/self-time model tracked in
   [`docs/openmp-hybrid-summary-design.md`](openmp-hybrid-summary-design.md),
-  the landed strict MPI+OpenMP reduction model tracked in
+  the landed strict and sparse union MPI+OpenMP reduction model tracked in
   [`docs/openmp-hybrid-mpi-reduction-design.md`](openmp-hybrid-mpi-reduction-design.md),
   and the validation plan tracked in
   [`docs/openmp-hybrid-validation-plan.md`](openmp-hybrid-validation-plan.md).
-  Remaining deferred areas include sparse/union hybrid MPI+OpenMP participation
-  reductions, nested/task support, broader thread-safe behavior for the existing
+  Remaining deferred areas include nested/task support, broader thread-safe behavior for the existing
   `ftimer` / `ftimer_core` APIs, and production black-box accounting coverage
   around the public OpenMP summary/result surface.
   User-facing mode selection and migration guidance live in

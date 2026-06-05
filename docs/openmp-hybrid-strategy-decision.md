@@ -22,8 +22,8 @@ timed-region/worker method names. Issue #269 then landed the first
 serial-lane / level-1 worker timing runtime behind those method names. Issue
 #270 landed stopped-run local OpenMP summaries, reports, and CSV output.
 Issue #271 landed strict MPI+OpenMP rank/lane summaries, reports, and CSV
-output through `ftimer_openmp_t`. Sparse/union hybrid participation reductions
-remain deferred under the #267 umbrella.
+output through `ftimer_openmp_t`. Issue #272 then landed the separate sparse
+union MPI+OpenMP participation summary, report, and CSV surface.
 
 Issue #160 asked whether fTimer should ever support real hybrid MPI+OpenMP
 timing beyond the documented master-thread-only carve-out.
@@ -42,8 +42,9 @@ thread, and worker-thread calls remain silent no-ops. The separate
 `ftimer_openmp_t` opt-in surface now owns the staged worker-timing path: #269
 implements serial-lane and level-1 worker `start_id`/`stop_id` timing, and
 #270 implements local aggregate summary/report/CSV contracts. #271 implements
-strict MPI+OpenMP rank/lane reductions. Later issues still own migration
-expansion and sparse/union hybrid participation reductions.
+strict MPI+OpenMP rank/lane reductions, and #272 implements separate sparse
+union MPI+OpenMP participation reductions. Later issues still own migration
+expansion beyond those summary/report/CSV surfaces.
 
 No child implementation issues were opened from #160. The later OpenMP umbrella
 is the place that now tracks staged design, API, runtime, summary, reduction,

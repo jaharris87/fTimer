@@ -124,6 +124,14 @@ if(FTIMER_BUILD_SMOKE_TESTS)
     )
     set_tests_properties(ftimer_openmp_mpi_summary_3rank_smoke
       PROPERTIES LABELS "mpi;openmp" TIMEOUT ${FTIMER_OPENMP_MPI_SUMMARY_SMOKE_CTEST_TIMEOUT})
+
+    add_test(NAME ftimer_openmp_mpi_union_descriptor_contract
+      COMMAND ${CMAKE_COMMAND}
+        -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_mpi_union_descriptor_contract.cmake
+    )
+    set_tests_properties(ftimer_openmp_mpi_union_descriptor_contract
+      PROPERTIES LABELS "mpi;openmp")
   endif()
 
   if(NOT FTIMER_USE_MPI)
