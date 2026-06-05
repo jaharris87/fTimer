@@ -14,9 +14,11 @@ The supported source-level import surface is intentionally narrow:
   timed-region, id-first thread-lane timing, stopped-run local summary, strict
   MPI+OpenMP summary, text report, and CSV entry points are real.
   `ftimer_openmp_t%init` requires `config=` and accepts `comm=` only by keyword
-  in MPI builds. The MPI communicator handle is used by the strict hybrid
-  MPI+OpenMP summary/report family; local OpenMP summary/report behavior does
-  not consume it.
+  in MPI builds. When `comm=` is omitted, MPI+OpenMP builds capture
+  `MPI_COMM_WORLD`; pass `comm=` to use a caller-owned communicator explicitly.
+  The MPI communicator handle is used by the strict hybrid MPI+OpenMP
+  summary/report family; local OpenMP summary/report behavior does not consume
+  it.
   Registered timer ids remain valid across `reset()` and are invalidated
   across `finalize()`/reinit without being recycled in the same object.
   Current `ftimer_openmp_t` timing uses the non-MPI wall clock even in
@@ -57,6 +59,7 @@ rule above: worker timing currently uses the non-MPI wall clock. The stored
 communicator is used later at strict hybrid summary/report calls, not during
 timed OpenMP regions.
 
+`init(config=...)` in an MPI build captures `MPI_COMM_WORLD` by default.
 `init(comm=...)` stores the selected communicator as a non-owning handle. The
 selected communicator is an `mpi_f08` `type(MPI_Comm)` value; legacy integer
 communicator handles are not part of the installed MPI API. fTimer does not

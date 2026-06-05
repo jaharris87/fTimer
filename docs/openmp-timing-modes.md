@@ -35,7 +35,7 @@ retrofit OpenMP runtime introspection into a non-OpenMP fTimer package.
 | `FTIMER_USE_OPENMP=ON` compatibility mode | Yes | Current APIs run guarded timer operations only on OpenMP thread 0. Worker-thread calls are silent no-ops. |
 | `FTIMER_USE_MPI=ON` plus `FTIMER_USE_OPENMP=ON` | Yes, as compatibility and strict hybrid smoke coverage | MPI and OpenMP package dependencies can coexist. Procedural and `ftimer_core` timing still use the master-thread-only OpenMP behavior. |
 | True OpenMP worker timing | Yes, through `ftimer_openmp` | Use `ftimer_openmp_t`, pre-register timer ids, open a timed level-1 region from serial context, call `start_id`/`stop_id` on worker lanes, and consume the separate OpenMP summary/report family. |
-| Strict MPI+OpenMP rank/lane reductions | Yes, through `ftimer_openmp` | Initialize `ftimer_openmp_t` with `comm=`, stop all timed regions/lanes, then call the strict `mpi_openmp_summary` report family. Descriptor and eligible-lane mismatches fail; sparse/union hybrid participation remains deferred. |
+| Strict MPI+OpenMP rank/lane reductions | Yes, through `ftimer_openmp` | Initialize `ftimer_openmp_t` in an MPI+OpenMP build, using the default captured `MPI_COMM_WORLD` or an explicit `comm=`, stop all timed regions/lanes, then call the strict `mpi_openmp_summary` report family. Descriptor and eligible-lane mismatches fail; sparse/union hybrid participation remains deferred. |
 
 ## Current Accepted Patterns
 

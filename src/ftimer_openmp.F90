@@ -1291,16 +1291,12 @@ contains
          return
       end if
 
-      if (is_inside_parallel_region()) then
-         status = FTIMER_ERR_ACTIVE
-         return
-      end if
-
 #ifdef FTIMER_USE_MPI
       call get_mpi_openmp_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
       if (status /= FTIMER_SUCCESS) return
 
       local_active = 0
+      if (is_inside_parallel_region()) local_active = 1
       if (self%region_open .or. has_active_lanes(self)) local_active = 1
       call MPI_Allreduce(local_active, any_active, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then
@@ -1700,6 +1696,10 @@ contains
 
       status = FTIMER_SUCCESS
 #else
+      if (is_inside_parallel_region()) then
+         status = FTIMER_ERR_ACTIVE
+         return
+      end if
       status = FTIMER_ERR_NOT_IMPLEMENTED
 #endif
    end subroutine build_current_mpi_openmp_summary

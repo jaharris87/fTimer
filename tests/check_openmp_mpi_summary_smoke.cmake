@@ -6,6 +6,7 @@ endif()
 
 execute_process(
   COMMAND ${TEST_COMMAND}
+  TIMEOUT 10
   RESULT_VARIABLE summary_result
   OUTPUT_VARIABLE summary_stdout
   ERROR_VARIABLE summary_stderr
@@ -37,6 +38,22 @@ string(FIND "${summary_stderr_normalized}"
 string(FIND "${summary_stderr_normalized}"
   "existing MPI+OpenMP summary CSV records do not match format version 1"
   records_diagnostic_pos
+)
+string(FIND "${summary_stderr_normalized}"
+  "existing MPI+OpenMP summary CSV append target does not end with a newline"
+  newline_diagnostic_pos
+)
+string(FIND "${summary_stderr_normalized}"
+  "existing MPI+OpenMP summary CSV records contain an unterminated quoted field"
+  unterminated_quote_diagnostic_pos
+)
+string(FIND "${summary_stderr_normalized}"
+  "existing MPI+OpenMP summary CSV records contain malformed quoted fields"
+  malformed_quote_diagnostic_pos
+)
+string(FIND "${summary_stderr_normalized}"
+  "existing MPI+OpenMP summary CSV records contain a bare carriage return"
+  bare_cr_diagnostic_pos
 )
 string(FIND "${summary_stderr_normalized}"
   "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"
@@ -74,6 +91,10 @@ string(REGEX MATCHALL
 if(append_diagnostic_pos EQUAL -1 OR
    header_diagnostic_pos EQUAL -1 OR
    records_diagnostic_pos EQUAL -1 OR
+   newline_diagnostic_pos EQUAL -1 OR
+   unterminated_quote_diagnostic_pos EQUAL -1 OR
+   malformed_quote_diagnostic_pos EQUAL -1 OR
+   bare_cr_diagnostic_pos EQUAL -1 OR
    active_diagnostic_pos EQUAL -1 OR
    descriptor_diagnostic_pos EQUAL -1 OR
    participation_diagnostic_pos EQUAL -1 OR
@@ -90,7 +111,7 @@ list(LENGTH descriptor_diagnostics descriptor_diagnostic_count)
 list(LENGTH participation_diagnostics participation_diagnostic_count)
 list(LENGTH worker_collective_diagnostics worker_collective_diagnostic_count)
 list(LENGTH worker_diagnostics worker_diagnostic_count)
-if(NOT append_diagnostic_count EQUAL 4 OR
+if(NOT append_diagnostic_count EQUAL 7 OR
    NOT active_diagnostic_count EQUAL 3 OR
    NOT descriptor_diagnostic_count EQUAL 1 OR
    NOT participation_diagnostic_count EQUAL 1 OR
@@ -107,7 +128,7 @@ endif()
 
 string(REGEX MATCHALL "ftimer_[^\n]*" ftimer_diagnostic_lines "${summary_stderr_line_scan}")
 list(LENGTH ftimer_diagnostic_lines ftimer_diagnostic_count)
-if(NOT ftimer_diagnostic_count EQUAL 10)
+if(NOT ftimer_diagnostic_count EQUAL 13)
   message(FATAL_ERROR
     "Unexpected number of fTimer diagnostics in stderr: ${ftimer_diagnostic_count}.\n"
     "stderr:\n${summary_stderr_normalized}"
@@ -120,6 +141,22 @@ string(CONCAT expected_append_header_diagnostic
 string(CONCAT expected_append_record_diagnostic
   "ftimer_openmp write_mpi_openmp_summary_csv append validation failed: "
   "existing MPI+OpenMP summary CSV records do not match format version 1"
+)
+string(CONCAT expected_append_newline_diagnostic
+  "ftimer_openmp write_mpi_openmp_summary_csv append validation failed: "
+  "existing MPI+OpenMP summary CSV append target does not end with a newline"
+)
+string(CONCAT expected_append_unterminated_quote_diagnostic
+  "ftimer_openmp write_mpi_openmp_summary_csv append validation failed: "
+  "existing MPI+OpenMP summary CSV records contain an unterminated quoted field"
+)
+string(CONCAT expected_append_malformed_quote_diagnostic
+  "ftimer_openmp write_mpi_openmp_summary_csv append validation failed: "
+  "existing MPI+OpenMP summary CSV records contain malformed quoted fields"
+)
+string(CONCAT expected_append_bare_cr_diagnostic
+  "ftimer_openmp write_mpi_openmp_summary_csv append validation failed: "
+  "existing MPI+OpenMP summary CSV records contain a bare carriage return"
 )
 string(CONCAT expected_descriptor_diagnostic
   "ftimer_openmp mpi_openmp_summary detected inconsistent strict hybrid descriptors "
@@ -138,7 +175,10 @@ set(expected_diagnostics
   "ftimer_openmp mpi_openmp_summary MPI reduction failed"
   "${expected_append_record_diagnostic}"
   "${expected_append_record_diagnostic}"
-  "${expected_append_record_diagnostic}"
+  "${expected_append_newline_diagnostic}"
+  "${expected_append_unterminated_quote_diagnostic}"
+  "${expected_append_malformed_quote_diagnostic}"
+  "${expected_append_bare_cr_diagnostic}"
   "${expected_append_header_diagnostic}"
 )
 list(LENGTH expected_diagnostics expected_diagnostic_count)

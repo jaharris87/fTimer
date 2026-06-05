@@ -93,9 +93,10 @@ team or task model must add an explicit participant descriptor rather than
 reinterpreting the level-1 lane id.
 
 For hybrid summaries, the participant key is
-`(communicator-local rank, lane_id)` with the communicator captured at
-`timer%init(config=config, comm=comm, ierr=ierr)`. The first hybrid result
-should also preserve rank-level participation counts separately from lane-level
+`(communicator-local rank, lane_id)` with the communicator captured by
+`timer%init`. MPI+OpenMP builds capture `MPI_COMM_WORLD` by default, or the
+caller-owned communicator supplied with `comm=`. The first hybrid result should
+also preserve rank-level participation counts separately from lane-level
 participation counts so "rank absent" and "lane absent on a participating rank"
 remain distinguishable.
 

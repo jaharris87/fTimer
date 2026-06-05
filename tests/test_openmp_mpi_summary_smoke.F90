@@ -32,6 +32,7 @@ program ftimer_openmp_mpi_summary_smoke
    call check_strict_hybrid_active_lane_failure(rank)
    call check_strict_hybrid_serial_lane_active_failure(rank)
    call check_strict_hybrid_open_region_failure(rank)
+   call check_strict_hybrid_asymmetric_parallel_entry(rank)
    call check_strict_hybrid_descriptor_mismatch(rank)
    call check_strict_hybrid_same_name_contexts(rank)
    call check_strict_hybrid_context_path_mismatch(rank)
@@ -142,6 +143,17 @@ contains
       call expect_time(summary%min_rank_sum_lane_root_inclusive_time, 22.0_wp, 35)
       call expect_time(summary%avg_rank_sum_lane_root_inclusive_time, 32.0_wp, 36)
       call expect_time(summary%max_rank_sum_lane_root_inclusive_time, 42.0_wp, 37)
+      call expect_time(summary%min_rank_sum_lane_self_time, 22.0_wp, 1000)
+      call expect_time(summary%avg_rank_sum_lane_self_time, 32.0_wp, 1001)
+      call expect_time(summary%max_rank_sum_lane_self_time, 42.0_wp, 1002)
+      call expect_int(summary%min_rank_summary_window_time_rank, 0, 1003)
+      call expect_int(summary%max_rank_summary_window_time_rank, 1, 1004)
+      call expect_int(summary%min_rank_timed_region_envelope_time_rank, 0, 1005)
+      call expect_int(summary%max_rank_timed_region_envelope_time_rank, 1, 1006)
+      call expect_int(summary%min_rank_sum_lane_root_inclusive_time_rank, 0, 1007)
+      call expect_int(summary%max_rank_sum_lane_root_inclusive_time_rank, 1, 1008)
+      call expect_int(summary%min_rank_sum_lane_self_time_rank, 0, 1009)
+      call expect_int(summary%max_rank_sum_lane_self_time_rank, 1, 1010)
       call expect_int(size(summary%ranks), 2, 38)
       call expect_int(summary%ranks(1)%rank, 0, 39)
       call expect_time(summary%ranks(1)%sum_lane_root_inclusive_time, 22.0_wp, 40)
@@ -492,6 +504,40 @@ contains
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 116)
    end subroutine check_strict_hybrid_open_region_failure
+
+   subroutine check_strict_hybrid_asymmetric_parallel_entry(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+      integer :: worker_ierr
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 117)
+      fake_lane_time(0) = 275.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 118)
+
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 119
+
+      if (rank == 0) then
+         call timer%mpi_openmp_summary(summary, ierr=ierr)
+      else
+         worker_ierr = -999
+!$omp parallel num_threads(2) default(shared)
+         if (omp_get_thread_num() == 0) call timer%mpi_openmp_summary(summary, ierr=worker_ierr)
+!$omp end parallel
+         ierr = worker_ierr
+      end if
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 120)
+      call expect_int(summary%num_entries, 0, 121)
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 122)
+   end subroutine check_strict_hybrid_asymmetric_parallel_entry
 
    subroutine check_strict_hybrid_descriptor_mismatch(rank)
       integer, intent(in) :: rank
@@ -1039,6 +1085,12 @@ contains
                                                  12.5_wp, 3.125_wp, 6.0_wp, 2.5_wp, 718)
          call expect_report_entry_line_by_values(report_text, 'worker_shared_ctx', 1, &
                                                  20.0_wp, 5.0_wp, 9.0_wp, 3.5_wp, 719)
+         call expect_report_child_under_parent_by_values(report_text, 'worker_parent_a_ctx', &
+                                                         'worker_shared_ctx', 12.5_wp, 3.125_wp, &
+                                                         6.0_wp, 2.5_wp, 732)
+         call expect_report_child_under_parent_by_values(report_text, 'worker_parent_b_ctx', &
+                                                         'worker_shared_ctx', 20.0_wp, 5.0_wp, &
+                                                         9.0_wp, 3.5_wp, 733)
 
          csv_text = read_file_text(csv_path)
          call expect_csv_record_count(csv_text, 'entry', 4, 720)
@@ -1165,8 +1217,11 @@ contains
    subroutine check_strict_hybrid_csv_append_validation(rank)
       integer, intent(in) :: rank
       character(len=*), parameter :: bad_record_path = 'mpi_openmp_summary_bad_record_append.csv'
+      character(len=*), parameter :: bare_cr_path = 'mpi_openmp_summary_bare_cr_append.csv'
       character(len=*), parameter :: csv_path = 'mpi_openmp_summary_append.csv'
-      character(len=*), parameter :: truncated_path = 'mpi_openmp_summary_truncated_append.csv'
+      character(len=*), parameter :: malformed_quote_path = 'mpi_openmp_summary_malformed_quote_append.csv'
+      character(len=*), parameter :: no_newline_path = 'mpi_openmp_summary_no_newline_append.csv'
+      character(len=*), parameter :: unterminated_quote_path = 'mpi_openmp_summary_unterminated_quote_append.csv'
       character(len=*), parameter :: unknown_record_path = 'mpi_openmp_summary_unknown_record_append.csv'
       character(len=*), parameter :: wrong_header_path = 'mpi_openmp_summary_wrong_header_append.csv'
       type(ftimer_openmp_config_t) :: config
@@ -1181,7 +1236,10 @@ contains
       if (rank == 0) then
          call delete_if_exists(csv_path)
          call delete_if_exists(bad_record_path)
-         call delete_if_exists(truncated_path)
+         call delete_if_exists(bare_cr_path)
+         call delete_if_exists(malformed_quote_path)
+         call delete_if_exists(no_newline_path)
+         call delete_if_exists(unterminated_quote_path)
          call delete_if_exists(unknown_record_path)
          call delete_if_exists(wrong_header_path)
       end if
@@ -1211,29 +1269,44 @@ contains
          call expect_int(count_occurrences(csv_text, header), 1, 189)
 
          bad_text = header//new_line('a')//'"1","mpi_openmp","summary"'//new_line('a')
-         call write_text_file(bad_record_path, bad_text)
+         call write_raw_text_file(bad_record_path, bad_text)
          bad_text = header//new_line('a')//'"1","mpi_openmp","summary",'
-         call write_text_file(truncated_path, bad_text)
+         call write_raw_text_file(no_newline_path, bad_text)
          bad_text = header//new_line('a')// &
                     replace_first(csv_line_at(csv_text, 2), '"summary"', '"invalid"')//new_line('a')
-         call write_text_file(unknown_record_path, bad_text)
+         call write_raw_text_file(unknown_record_path, bad_text)
+         bad_text = header//new_line('a')//'"1","mpi_openmp","summary'//new_line('a')
+         call write_raw_text_file(unterminated_quote_path, bad_text)
+         bad_text = header//new_line('a')//'1"bad'//new_line('a')
+         call write_raw_text_file(malformed_quote_path, bad_text)
+         bad_text = header//new_line('a')//'"1","mpi_openmp","summary"'//achar(13)//'x'//new_line('a')
+         call write_raw_text_file(bare_cr_path, bad_text)
          bad_text = 'format_version,summary_kind,record_type'//new_line('a')
-         call write_text_file(wrong_header_path, bad_text)
+         call write_raw_text_file(wrong_header_path, bad_text)
       end if
       call MPI_Barrier(MPI_COMM_WORLD, ierr)
       if (ierr /= MPI_SUCCESS) error stop 190
 
       call timer%write_mpi_openmp_summary_csv(bad_record_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 191)
-      call timer%write_mpi_openmp_summary_csv(truncated_path, append=.true., ierr=ierr)
-      call expect_status(ierr, FTIMER_ERR_IO, 192)
       call timer%write_mpi_openmp_summary_csv(unknown_record_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 192)
+      call timer%write_mpi_openmp_summary_csv(no_newline_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 193)
-      call timer%write_mpi_openmp_summary_csv(wrong_header_path, append=.true., ierr=ierr)
+      call timer%write_mpi_openmp_summary_csv(unterminated_quote_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 194)
+      call timer%write_mpi_openmp_summary_csv(malformed_quote_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 196)
+      call timer%write_mpi_openmp_summary_csv(bare_cr_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 197)
+      call timer%write_mpi_openmp_summary_csv(wrong_header_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 198)
       call timer%write_mpi_openmp_summary_csv(bad_record_path, append=.true.)
-      call timer%write_mpi_openmp_summary_csv(truncated_path, append=.true.)
       call timer%write_mpi_openmp_summary_csv(unknown_record_path, append=.true.)
+      call timer%write_mpi_openmp_summary_csv(no_newline_path, append=.true.)
+      call timer%write_mpi_openmp_summary_csv(unterminated_quote_path, append=.true.)
+      call timer%write_mpi_openmp_summary_csv(malformed_quote_path, append=.true.)
+      call timer%write_mpi_openmp_summary_csv(bare_cr_path, append=.true.)
       call timer%write_mpi_openmp_summary_csv(wrong_header_path, append=.true.)
 
       call timer%finalize(ierr=ierr)
@@ -1241,7 +1314,10 @@ contains
       if (rank == 0) then
          call delete_if_exists(csv_path)
          call delete_if_exists(bad_record_path)
-         call delete_if_exists(truncated_path)
+         call delete_if_exists(bare_cr_path)
+         call delete_if_exists(malformed_quote_path)
+         call delete_if_exists(no_newline_path)
+         call delete_if_exists(unterminated_quote_path)
          call delete_if_exists(unknown_record_path)
          call delete_if_exists(wrong_header_path)
       end if
@@ -1509,6 +1585,70 @@ contains
       end do
       call expect_int(found, 1, stop_code)
    end subroutine expect_report_entry_line_by_values
+
+   subroutine expect_report_child_under_parent_by_values(report_text, parent_name, child_name, &
+                                                         sum_inclusive, avg_inclusive, &
+                                                         max_inclusive, avg_calls, stop_code)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: parent_name
+      character(len=*), intent(in) :: child_name
+      real(wp), intent(in) :: sum_inclusive
+      real(wp), intent(in) :: avg_inclusive
+      real(wp), intent(in) :: max_inclusive
+      real(wp), intent(in) :: avg_calls
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: candidate
+      character(len=64) :: actual_domain
+      character(len=64) :: actual_name
+      integer :: actual_indent
+      integer :: actual_missing
+      integer :: actual_ranks
+      integer :: actual_samples
+      integer :: first_nonblank
+      integer :: found
+      integer :: in_parent
+      integer :: io
+      integer :: line_no
+      integer :: max_line
+      real(wp) :: actual_avg_calls
+      real(wp) :: actual_avg_inclusive
+      real(wp) :: actual_max_inclusive
+      real(wp) :: actual_min_inclusive
+      real(wp) :: actual_sum_inclusive
+      real(wp) :: actual_sum_self
+
+      found = 0
+      in_parent = 0
+      max_line = count_occurrences(report_text, new_line('a')) + 1
+      do line_no = 1, max_line
+         candidate = csv_line_at(report_text, line_no)
+         first_nonblank = verify(candidate, ' ')
+         if (first_nonblank <= 0) cycle
+         actual_indent = first_nonblank - 1
+         actual_name = ''
+         read (candidate, *, iostat=io) actual_name, actual_domain, actual_ranks, actual_samples, &
+            actual_missing, actual_sum_inclusive, actual_sum_self, actual_min_inclusive, &
+            actual_avg_inclusive, actual_max_inclusive, actual_avg_calls
+         if (io /= 0) cycle
+         if (actual_indent == 0) then
+            in_parent = 0
+            if (trim(actual_name) == parent_name) in_parent = 1
+            cycle
+         end if
+         if (in_parent == 0) cycle
+         if (actual_indent /= 2) cycle
+         if (trim(actual_name) /= child_name) cycle
+         if (trim(actual_domain) /= 'openmp_level1_team') cycle
+         if (actual_ranks /= 2 .or. actual_samples /= 4 .or. actual_missing /= 0) cycle
+         if (abs(actual_sum_inclusive - sum_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_sum_self - sum_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_inclusive - avg_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_max_inclusive - max_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_calls - avg_calls) > 1.0e-9_wp) cycle
+         found = found + 1
+      end do
+      call expect_int(found, 1, stop_code)
+   end subroutine expect_report_child_under_parent_by_values
 
    subroutine expect_contains(text, needle, stop_code)
       character(len=*), intent(in) :: text
@@ -1948,6 +2088,21 @@ contains
       close (unit, iostat=io)
       if (io /= 0) error stop 204
    end subroutine write_text_file
+
+   subroutine write_raw_text_file(path, text)
+      character(len=*), intent(in) :: path
+      character(len=*), intent(in) :: text
+      integer :: io
+      integer :: unit
+
+      open (newunit=unit, file=path, status='replace', access='stream', form='unformatted', &
+            action='write', iostat=io)
+      if (io /= 0) error stop 205
+      write (unit, iostat=io) text
+      if (io /= 0) error stop 206
+      close (unit, iostat=io)
+      if (io /= 0) error stop 207
+   end subroutine write_raw_text_file
 
    subroutine delete_if_exists(path)
       character(len=*), intent(in) :: path

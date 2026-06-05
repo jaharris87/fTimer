@@ -352,8 +352,9 @@ enforcement should pass `ierr` and check it.
   `ftimer_openmp_t%init(config=...)`, `finalize`, `reset`,
   `register_timer`, `lookup_timer`, `begin_parallel_region`,
   `end_parallel_region`, `start_id`, and `stop_id` entry points are available
-  now, including keyword-only `init(config=..., comm=...)` in MPI-enabled
-  builds. Registered timer ids remain valid across `reset()` and are
+  now, including optional keyword-only `comm=` capture in MPI-enabled builds.
+  Without `comm=`, MPI-enabled builds capture `MPI_COMM_WORLD`. Registered
+  timer ids remain valid across `reset()` and are
   invalidated across `finalize()`/reinit without being recycled in the same
   object. The MPI communicator handle is used by strict hybrid MPI+OpenMP
   summary/report calls; local OpenMP summary/report behavior does not consume
@@ -423,7 +424,9 @@ enforcement should pass `ierr` and check it.
   `print_mpi_openmp_summary`, `write_mpi_openmp_summary`, and
   `write_mpi_openmp_summary_csv` are the strict hybrid MPI+OpenMP
   summary/report family. They are collective over the communicator captured by
-  `ftimer_openmp_t%init(config=..., comm=...)` and return/format
+  `ftimer_openmp_t%init`. In MPI+OpenMP builds, `init(config=...)` captures
+  `MPI_COMM_WORLD` by default; pass `comm=` to capture a caller-owned
+  communicator explicitly. These entry points return/format
   `ftimer_mpi_openmp_summary_t`, not `ftimer_mpi_summary_t` or
   `ftimer_mpi_union_summary_t`.
 - Strict hybrid summaries are stopped-run-only. Before descriptor or timing

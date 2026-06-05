@@ -140,9 +140,11 @@ where `lane_id` is the #239 OpenMP lane id:
 - `1 + omp_get_thread_num()` inside a timed level-1 OpenMP team.
 
 Rank identity is communicator-local and only meaningful inside the communicator
-captured by `timer%init(config=config, comm=comm, ierr=ierr)`. Lane identity is
-runtime-local and stable only inside one initialized `ftimer_openmp_t` object.
-It is not an OS-thread identity and is not stable across runs.
+captured by `timer%init`. In MPI+OpenMP builds, `init(config=config,
+ierr=ierr)` captures `MPI_COMM_WORLD` by default; `comm=` captures an explicit
+caller-owned communicator. Lane identity is runtime-local and stable only
+inside one initialized `ftimer_openmp_t` object. It is not an OS-thread
+identity and is not stable across runs.
 
 The first hybrid model does not include nested-team paths, OpenMP task ids,
 device ids, accelerator queues, or hardware counter streams. A later nested
