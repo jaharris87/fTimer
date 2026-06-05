@@ -613,15 +613,20 @@ contains
          call expect_csv_record_count(csv_text, 'entry', 7, 2193)
          call expect_csv_record_field(csv_text, 'metadata', 'Case', 'value', 'sparse hybrid', 2194)
          call expect_csv_record_field(csv_text, 'summary', '', 'participation_policy', 'sparse_union', 2252)
+         call expect_csv_record_field(csv_text, 'metadata', 'Case', 'participation_policy', 'sparse_union', &
+                                      2540)
          call expect_csv_real_record_field(csv_text, 'summary', '', 'rank_summary_window_imbalance', &
                                            45.0_wp/40.0_wp, 2253)
          call expect_csv_record_field(csv_text, 'rank', '0', 'observed_participating_lane_count', '2', 2254)
+         call expect_csv_record_field(csv_text, 'rank', '0', 'participation_policy', 'sparse_union', 2541)
          call expect_csv_real_record_field(csv_text, 'rank', '1', 'sum_lane_self_time', 47.0_wp, 2255)
          call expect_text_before(csv_text, 'all_worker_sparse', 'lane0_only_sparse', 2295)
          call expect_text_before(csv_text, 'lane0_only_sparse', 'rank0_only_sparse', 2296)
          call expect_text_before(csv_text, 'rank0_only_sparse', 'rank0_sparse_parent', 2297)
          call expect_text_before(csv_text, 'rank0_sparse_parent', 'rank1_sparse_parent', 2298)
          call expect_csv_record_field(csv_text, 'entry', 'rank0_only_sparse', 'participating_rank_count', '1', 2195)
+         call expect_csv_record_field(csv_text, 'entry', 'rank0_only_sparse', 'participation_policy', &
+                                      'sparse_union', 2542)
          call expect_csv_record_field(csv_text, 'entry', 'rank0_only_sparse', 'missing_rank_count', '1', 2196)
          call expect_csv_record_field(csv_text, 'entry', 'rank0_only_sparse', 'execution_domain', &
                                       'openmp_level1_team', 2256)

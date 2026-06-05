@@ -376,10 +376,13 @@ Recommended default record types:
 An explicit detail CSV mode may add `record_type=rank_lane_entry` rows. The
 default CSV should not require rank/lane detail rows.
 
-CSV rows should use `summary_kind=mpi_openmp` and a hybrid-specific format
-version. Appending to an existing CSV should require the exact hybrid header
-for the chosen schema and should reject local, strict MPI, sparse MPI, and
-older hybrid headers instead of mixing schemas silently.
+Strict hybrid CSV rows should use `summary_kind=mpi_openmp` and a
+hybrid-specific format version. Sparse union hybrid CSV rows should use the
+separate `summary_kind=mpi_openmp_union` schema and
+`participation_policy=sparse_union`. Appending to an existing CSV should require
+the exact hybrid header and compatible `summary_kind` for the chosen schema and
+should reject local, strict MPI, sparse MPI, older hybrid, and mismatched
+strict/sparse hybrid headers instead of mixing schemas silently.
 
 Column names should make semantics visible:
 

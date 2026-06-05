@@ -361,10 +361,14 @@ Recommended hybrid CSV record types:
 - `record_type=entry` for descriptor aggregate rows;
 - `record_type=rank_lane_entry` for participant detail rows when exported.
 
-CSV columns should include `summary_kind=openmp` or
-`summary_kind=mpi_openmp` and an independent format version. Appending to an
-existing CSV should require the exact header for the chosen OpenMP or hybrid
-schema, following the current CSV append-safety principle.
+CSV columns should include `summary_kind=openmp` for local OpenMP exports,
+`summary_kind=mpi_openmp` for strict hybrid exports, or
+`summary_kind=mpi_openmp_union` plus `participation_policy=sparse_union` for
+sparse union hybrid exports. Each schema has an independent format version.
+Appending to an existing CSV should require the exact header and compatible
+`summary_kind` for the chosen OpenMP or hybrid schema. Strict hybrid and sparse
+union hybrid append targets are intentionally not interchangeable, following the
+current CSV append-safety principle.
 
 OpenMP CSV field names should make semantics visible:
 
