@@ -6,11 +6,11 @@ module ftimer_openmp
                            FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
                            ftimer_call_stack_t, ftimer_clock_func, ftimer_metadata_t, ftimer_segment_t, wp
 #ifdef FTIMER_USE_MPI
-   use mpi_f08, only: MPI_Allgather, MPI_Allreduce, MPI_Bcast, MPI_Comm, MPI_COMM_SELF, MPI_COMM_WORLD, &
-                      MPI_Datatype, MPI_DATATYPE_NULL, MPI_Errhandler, MPI_Errhandler_free, MPI_ERRORS_RETURN, &
-                      MPI_Comm_get_errhandler, MPI_Comm_rank, MPI_Comm_set_errhandler, MPI_Comm_size, &
-                      MPI_CHARACTER, MPI_INTEGER, MPI_MAX, MPI_MIN, MPI_SUCCESS, MPI_SUM, MPI_TYPECLASS_INTEGER, &
-                      MPI_TYPECLASS_REAL, MPI_Type_match_size, MPI_Type_size
+   use mpi_f08, only: MPI_Allgather, MPI_Allreduce, MPI_Bcast, MPI_Comm, MPI_COMM_NULL, MPI_COMM_SELF, &
+                      MPI_COMM_WORLD, MPI_Datatype, MPI_DATATYPE_NULL, MPI_Errhandler, MPI_Errhandler_free, &
+                      MPI_ERRORS_RETURN, MPI_Comm_get_errhandler, MPI_Comm_rank, MPI_Comm_set_errhandler, &
+                      MPI_Comm_size, MPI_CHARACTER, MPI_INTEGER, MPI_MAX, MPI_MIN, MPI_SUCCESS, MPI_SUM, &
+                      MPI_TYPECLASS_INTEGER, MPI_TYPECLASS_REAL, MPI_Type_match_size, MPI_Type_size
 #endif
 #ifdef FTIMER_USE_OPENMP
    use omp_lib, only: omp_get_level, omp_get_max_threads, omp_get_num_threads, omp_get_thread_num, omp_in_parallel
@@ -1180,6 +1180,13 @@ contains
       integer :: mpierr
 
       active_comm = comm
+      if (active_comm%MPI_VAL == MPI_COMM_NULL%MPI_VAL) then
+         status = FTIMER_ERR_UNKNOWN
+         rank = -1
+         nprocs = 0
+         return
+      end if
+
       call MPI_Comm_rank(active_comm, rank, mpierr)
       if (mpierr /= MPI_SUCCESS) then
          status = FTIMER_ERR_UNKNOWN
@@ -1296,6 +1303,11 @@ contains
 #endif
 
 #ifdef FTIMER_USE_MPI
+      if (is_inside_parallel_region()) then
+         status = FTIMER_ERR_ACTIVE
+         return
+      end if
+
       call get_mpi_openmp_comm_info(self%mpi_comm, active_comm, rank, nprocs, status)
       if (status /= FTIMER_SUCCESS) return
 
@@ -1313,7 +1325,6 @@ contains
       end if
 
       local_active = 0
-      if (is_inside_parallel_region()) local_active = 1
       if (self%region_open .or. has_active_lanes(self)) local_active = 1
       call MPI_Allreduce(local_active, any_active, 1, MPI_INTEGER, MPI_MAX, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) then

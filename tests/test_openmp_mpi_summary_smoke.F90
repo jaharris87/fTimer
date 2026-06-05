@@ -5,8 +5,8 @@ program ftimer_openmp_mpi_summary_smoke
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MPI_INCON, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
                            ftimer_metadata_t, wp
-   use mpi_f08, only: MPI_Barrier, MPI_COMM_WORLD, MPI_Comm_rank, MPI_Comm_size, &
-                      MPI_Finalize, MPI_Init, MPI_SUCCESS
+   use mpi_f08, only: MPI_Barrier, MPI_COMM_NULL, MPI_COMM_WORLD, MPI_Comm_rank, &
+                      MPI_Comm_size, MPI_Finalize, MPI_Init, MPI_SUCCESS
    use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, omp_set_num_threads
    implicit none
 
@@ -30,11 +30,12 @@ program ftimer_openmp_mpi_summary_smoke
    call check_strict_hybrid_identical_participation(rank)
    call check_strict_hybrid_serial_lane_success(rank)
    call check_strict_hybrid_registration_order_independent(rank)
+   call check_strict_hybrid_null_comm_failure(rank)
    call check_strict_hybrid_uninitialized_rank_failure(rank)
    call check_strict_hybrid_active_lane_failure(rank)
    call check_strict_hybrid_serial_lane_active_failure(rank)
    call check_strict_hybrid_open_region_failure(rank)
-   call check_strict_hybrid_asymmetric_parallel_entry(rank)
+   call check_strict_hybrid_parallel_entry_local_failure(rank)
    call check_strict_hybrid_descriptor_mismatch(rank)
    call check_strict_hybrid_same_name_contexts(rank)
    call check_strict_hybrid_context_path_mismatch(rank)
@@ -432,6 +433,23 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 247)
    end subroutine check_strict_hybrid_serial_lane_active_failure
 
+   subroutine check_strict_hybrid_null_comm_failure(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_NULL, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1230)
+      call timer%mpi_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_UNKNOWN, 1231)
+      call expect_int(summary%num_entries, 0, 1232)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1233)
+   end subroutine check_strict_hybrid_null_comm_failure
+
    subroutine check_strict_hybrid_uninitialized_rank_failure(rank)
       integer, intent(in) :: rank
       type(ftimer_mpi_openmp_summary_t) :: summary
@@ -536,7 +554,7 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 116)
    end subroutine check_strict_hybrid_open_region_failure
 
-   subroutine check_strict_hybrid_asymmetric_parallel_entry(rank)
+   subroutine check_strict_hybrid_parallel_entry_local_failure(rank)
       integer, intent(in) :: rank
       type(ftimer_mpi_openmp_summary_t) :: summary
       type(ftimer_openmp_config_t) :: config
@@ -551,24 +569,17 @@ contains
       call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 118)
 
-      call MPI_Barrier(MPI_COMM_WORLD, ierr)
-      if (ierr /= MPI_SUCCESS) error stop 119
-
-      if (rank == 0) then
-         call timer%mpi_openmp_summary(summary, ierr=ierr)
-      else
-         worker_ierr = -999
+      worker_ierr = -999
 !$omp parallel num_threads(2) default(shared)
-         if (omp_get_thread_num() == 0) call timer%mpi_openmp_summary(summary, ierr=worker_ierr)
+      if (omp_get_thread_num() == 0) call timer%mpi_openmp_summary(summary, ierr=worker_ierr)
 !$omp end parallel
-         ierr = worker_ierr
-      end if
+      ierr = worker_ierr
       call expect_status(ierr, FTIMER_ERR_ACTIVE, 120)
       call expect_int(summary%num_entries, 0, 121)
 
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 122)
-   end subroutine check_strict_hybrid_asymmetric_parallel_entry
+   end subroutine check_strict_hybrid_parallel_entry_local_failure
 
    subroutine check_strict_hybrid_descriptor_mismatch(rank)
       integer, intent(in) :: rank

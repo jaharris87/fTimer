@@ -1,5 +1,8 @@
 set(CMAKE_Fortran_MODULE_DIRECTORY "${FTIMER_TEST_MODULE_DIR}")
 
+set(FTIMER_OPENMP_MPI_SUMMARY_SMOKE_TIMEOUT 60 CACHE STRING
+  "Timeout in seconds for MPI+OpenMP summary smoke tests")
+
 if(FTIMER_BUILD_SMOKE_TESTS)
   add_executable(ftimer_phase0_smoke test_phase0_smoke.F90)
   target_link_libraries(ftimer_phase0_smoke PRIVATE ftimer)
@@ -68,10 +71,11 @@ if(FTIMER_BUILD_SMOKE_TESTS)
     add_test(NAME ftimer_openmp_mpi_summary_smoke
       COMMAND ${CMAKE_COMMAND}
         "-DTEST_COMMAND=${ftimer_openmp_mpi_summary_command}"
-        -DSMOKE_TIMEOUT_SECONDS=60
+        -DSMOKE_TIMEOUT_SECONDS=${FTIMER_OPENMP_MPI_SUMMARY_SMOKE_TIMEOUT}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_mpi_summary_smoke.cmake
     )
-    set_tests_properties(ftimer_openmp_mpi_summary_smoke PROPERTIES LABELS "mpi;openmp")
+    set_tests_properties(ftimer_openmp_mpi_summary_smoke
+      PROPERTIES LABELS "mpi;openmp" TIMEOUT ${FTIMER_OPENMP_MPI_SUMMARY_SMOKE_TIMEOUT})
 
     set(ftimer_openmp_mpi_summary_3rank_command "${MPIEXEC_EXECUTABLE}")
     if(DEFINED MPIEXEC_NUMPROC_FLAG AND NOT MPIEXEC_NUMPROC_FLAG STREQUAL "")
@@ -92,7 +96,7 @@ if(FTIMER_BUILD_SMOKE_TESTS)
       COMMAND ${ftimer_openmp_mpi_summary_3rank_command}
     )
     set_tests_properties(ftimer_openmp_mpi_summary_3rank_smoke
-      PROPERTIES LABELS "mpi;openmp" TIMEOUT 60)
+      PROPERTIES LABELS "mpi;openmp" TIMEOUT ${FTIMER_OPENMP_MPI_SUMMARY_SMOKE_TIMEOUT})
   endif()
 
   if(NOT FTIMER_USE_MPI)

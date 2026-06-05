@@ -106,6 +106,12 @@ hang like any divergent MPI collective. Implementations should reject a local
 worker-thread call without entering MPI, but cannot make inconsistent
 caller-side collective entry safe.
 
+An uninitialized object has no captured caller-owned subcommunicator, so an
+implementation can only diagnose mixed initialized/uninitialized entry
+collectively when all callers are using the default `MPI_COMM_WORLD` rendezvous.
+For explicit `comm=` usage, all ranks in that communicator must initialize the
+same `ftimer_openmp_t` object before entering the strict hybrid summary family.
+
 After those caller-side preconditions hold, every participant must complete a
 pre-collective status phase before any descriptor hash, descriptor union, or
 timing-data reduction:
