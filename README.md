@@ -46,6 +46,14 @@ fTimer currently supports these usage paths:
 - Downstream consumption through `find_package(fTimer CONFIG REQUIRED)`
 - Application-owned instrumentation facades that can select either the real fTimer implementation or a dependency-free no-op implementation at build time
 
+Choose the smallest mode that matches the measurement you need. Use serial
+timing for one process, pure MPI for rank-local intervals reduced across a
+communicator, OpenMP compatibility mode when one wall-clock timer should bracket
+an entire parallel region, true OpenMP worker timing when per-lane participation
+matters inside one level-1 team, strict MPI+OpenMP when all ranks and lanes must
+share the same descriptor tree, and sparse union MPI+OpenMP when rank- or
+lane-conditional work should be represented with explicit participation metadata.
+
 Important limitations are documented later in this README. The short version is that serial and pure-MPI are the core supported stories on current `main`; OpenMP has a legacy master-thread-only compatibility path plus the explicit `ftimer_openmp_t` worker-timing object, local stopped-run summaries, strict MPI+OpenMP rank/lane reductions, and separate sparse union MPI+OpenMP rank/lane reductions.
 
 ## Quick Start
@@ -287,7 +295,11 @@ Operational notes:
 - `examples/nested_timers.F90`: nested timers and metadata headers
 - `examples/instrumentation_facade_*.F90`: enabled and disabled application-owned timing facade implementations that demonstrate the supported compile-out/no-op pattern
 - `examples/mpi_example.F90`: pure-MPI timing with a global MPI summary object and first-class MPI report output
-- `examples/openmp_example.F90`: the OpenMP compatibility carve-out, where existing API timers bracket the parallel region instead of running inside worker threads. See [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md) for the current OpenMP/MPI+OpenMP migration guide and the explicit `ftimer_openmp_t` worker-timing path.
+- `examples/openmp_example.F90`: the OpenMP compatibility carve-out, where existing API timers bracket the parallel region instead of running inside worker threads
+- `examples/openmp_worker_example.F90`: true OpenMP worker timing with `ftimer_openmp_t`, pre-registered ids, an explicit timed region, local OpenMP summary output, and local OpenMP CSV output
+- `examples/mpi_openmp_example.F90`: strict MPI+OpenMP worker timing followed by sparse union MPI+OpenMP participation reporting through `ftimer_openmp_t`
+
+See [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md) for the current OpenMP/MPI+OpenMP migration guide. Existing serial, pure-MPI, and OpenMP compatibility users do not need source changes to keep their current behavior; the true OpenMP and hybrid examples are additive opt-in paths.
 
 ## CSV Export
 
@@ -365,7 +377,7 @@ FC=/path/to/mpi-mpifort cmake -B build-mpi -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TE
 cmake --build build-mpi
 cmake -E chdir build-mpi ctest --output-on-failure -L mpi
 
-# MPI+OpenMP smoke build for compatibility plus strict and sparse union hybrid summaries
+# MPI+OpenMP smoke build for compatibility plus strict and sparse union hybrid examples/summaries
 FC=mpifort cmake -B build-mpi-openmp -DFTIMER_USE_MPI=ON -DFTIMER_USE_OPENMP=ON
 cmake --build build-mpi-openmp
 cmake -E chdir build-mpi-openmp ctest --output-on-failure
@@ -378,7 +390,8 @@ cmake -E chdir build-openmp ctest --output-on-failure
 # OpenMP smoke build (LLVM Flang)
 FC=flang-19 cmake -B build-openmp-flang -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_TESTS=OFF
 cmake --build build-openmp-flang
-./build-openmp-flang/examples/openmp_example
+cmake -E chdir build-openmp-flang ctest --output-on-failure \
+  -R '^(ftimer_openmp_example_smoke|ftimer_openmp_worker_example_smoke)$'
 
 # Convenience Makefile wrapper
 make
@@ -401,8 +414,8 @@ Supported toolchain matrix:
 - Serial smoke/library build: GNU Fortran and LLVM Flang are validated in automation
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
 - MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH; smoke/install-consumer coverage runs for both, and MPI pFUnit coverage runs for OpenMPI plus MPICH on hosted Ubuntu 22.04 with a matching MPICH-built pFUnit
-- OpenMP: GNU Fortran with pFUnit guard coverage, plus LLVM Flang smoke/example coverage for the documented master-thread-only carve-out
-- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested for current compatibility mode, the opt-in `ftimer_openmp` worker API, strict and sparse union MPI+OpenMP hybrid summary/report/CSV output, and MPI-initialized OpenMP installed consumers
+- OpenMP: GNU Fortran with pFUnit guard coverage, plus LLVM Flang smoke/example coverage for the documented master-thread-only carve-out and the opt-in `examples/openmp_worker_example.F90` path
+- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested for current compatibility mode, `examples/mpi_openmp_example.F90`, the opt-in `ftimer_openmp` worker API, strict and sparse union MPI+OpenMP hybrid summary/report/CSV output, and MPI-initialized OpenMP installed consumers
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 

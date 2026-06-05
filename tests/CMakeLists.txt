@@ -58,7 +58,7 @@ if(FTIMER_BUILD_SMOKE_TESTS)
       test_openmp_mpi_summary_3rank_smoke.F90)
     target_link_libraries(ftimer_openmp_mpi_summary_3rank_smoke PRIVATE ftimer_smoke_test)
 
-    set(ftimer_mpiexec_oversubscribe_flag "")
+    set(ftimer_mpiexec_oversubscribe_flags)
     if(DEFINED MPIEXEC_EXECUTABLE AND NOT MPIEXEC_EXECUTABLE STREQUAL "")
       execute_process(
         COMMAND "${MPIEXEC_EXECUTABLE}" --version
@@ -72,7 +72,7 @@ if(FTIMER_BUILD_SMOKE_TESTS)
         set(ftimer_mpiexec_version_text
           "${ftimer_mpiexec_version_stdout}\n${ftimer_mpiexec_version_stderr}")
         if(ftimer_mpiexec_version_text MATCHES "Open MPI|OpenRTE|PRTE|PRRTE")
-          set(ftimer_mpiexec_oversubscribe_flag "--oversubscribe")
+          set(ftimer_mpiexec_oversubscribe_flags --map-by slot:OVERSUBSCRIBE)
         endif()
       endif()
     endif()
@@ -85,6 +85,9 @@ if(FTIMER_BUILD_SMOKE_TESTS)
     endif()
     if(DEFINED MPIEXEC_PREFLAGS AND NOT MPIEXEC_PREFLAGS STREQUAL "")
       list(APPEND ftimer_openmp_mpi_summary_command ${MPIEXEC_PREFLAGS})
+    endif()
+    if(ftimer_mpiexec_oversubscribe_flags)
+      list(APPEND ftimer_openmp_mpi_summary_command ${ftimer_mpiexec_oversubscribe_flags})
     endif()
     list(APPEND ftimer_openmp_mpi_summary_command "$<TARGET_FILE:ftimer_openmp_mpi_summary_smoke>")
     if(DEFINED MPIEXEC_POSTFLAGS AND NOT MPIEXEC_POSTFLAGS STREQUAL "")
@@ -109,9 +112,9 @@ if(FTIMER_BUILD_SMOKE_TESTS)
     if(DEFINED MPIEXEC_PREFLAGS AND NOT MPIEXEC_PREFLAGS STREQUAL "")
       list(APPEND ftimer_openmp_mpi_summary_3rank_command ${MPIEXEC_PREFLAGS})
     endif()
-    if(NOT ftimer_mpiexec_oversubscribe_flag STREQUAL "")
+    if(ftimer_mpiexec_oversubscribe_flags)
       list(APPEND ftimer_openmp_mpi_summary_3rank_command
-        ${ftimer_mpiexec_oversubscribe_flag})
+        ${ftimer_mpiexec_oversubscribe_flags})
     endif()
     list(APPEND ftimer_openmp_mpi_summary_3rank_command
       "$<TARGET_FILE:ftimer_openmp_mpi_summary_3rank_smoke>")
@@ -218,6 +221,14 @@ add_test(NAME ftimer_installed_openmp_hybrid_api_surface
     -P ${CMAKE_CURRENT_SOURCE_DIR}/check_installed_openmp_hybrid_api_surface.cmake
 )
 set_tests_properties(ftimer_installed_openmp_hybrid_api_surface
+  PROPERTIES LABELS "mpi;openmp")
+
+add_test(NAME ftimer_openmp_hybrid_examples_contract
+  COMMAND ${CMAKE_COMMAND}
+    -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_hybrid_examples_contract.cmake
+)
+set_tests_properties(ftimer_openmp_hybrid_examples_contract
   PROPERTIES LABELS "mpi;openmp")
 
 if(FTIMER_BUILD_SMOKE_TESTS)

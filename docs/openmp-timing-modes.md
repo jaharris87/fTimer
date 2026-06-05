@@ -82,6 +82,21 @@ barriers around the measured region.
 intentionally exercises a worker-thread no-op call and verifies that only the
 outer `parallel_region` timer appears in the summary.
 
+`examples/openmp_worker_example.F90` is the reference true OpenMP worker-timing
+example. It imports `ftimer_openmp`, constructs `type(ftimer_openmp_t)`,
+registers timer ids in serial context, opens one timed level-1 OpenMP region,
+uses id-first `start_id`/`stop_id` calls on worker lanes, and then consumes the
+stopped-run local OpenMP summary/report/CSV family.
+
+`examples/mpi_openmp_example.F90` is the reference MPI+OpenMP example. It keeps
+MPI initialization and finalization outside the fTimer object lifetime, captures
+`MPI_COMM_WORLD` through `init(config=..., comm=...)`, uses the same id-first
+worker timing pattern, prints a strict `mpi_openmp_summary`, then records a
+rank/lane-conditional timer and prints the separate sparse union
+`mpi_openmp_union_summary`. fTimer does not add barriers around either timed
+region; applications should add synchronization only when it is part of their
+intended measurement.
+
 ## Patterns To Avoid On Current Main
 
 Do not place current `ftimer_start`/`ftimer_stop` calls inside an OpenMP
@@ -151,26 +166,26 @@ The lifecycle/configuration, timer catalog, timed-region, and worker
 OpenMP summaries, strict MPI+OpenMP summaries, sparse union MPI+OpenMP
 summaries, and report/CSV output.
 
-## Future Example Policy
+## Example Policy
 
 Keep current and future examples separate.
 
 - `examples/openmp_example.F90` remains the compatibility example for
   `FTIMER_USE_OPENMP=ON`.
-- Future true OpenMP worker examples should use `ftimer_openmp_t` and should be
-  added only when the example can present a complete stopped-run reporting story
-  without implying trace/profiler behavior.
-- MPI+OpenMP examples should use the strict or sparse union `ftimer_openmp_t`
-  hybrid summary paths, not the procedural default instance.
-- Future examples should show the id-first worker hot path, explicit timed
-  region begin/end, stopped-run summaries, and participation-aware terminology.
+- `examples/openmp_worker_example.F90` uses `ftimer_openmp_t` and presents a
+  complete stopped-run local OpenMP summary/CSV story without implying
+  trace/profiler behavior.
+- `examples/mpi_openmp_example.F90` uses the strict and sparse union
+  `ftimer_openmp_t` hybrid summary paths, not the procedural default instance.
+- True OpenMP and hybrid examples show the id-first worker hot path, explicit
+  timed-region begin/end, stopped-run summaries, and participation-aware
+  terminology.
 - Examples must not imply support for nested OpenMP teams, OpenMP task
   migration, accelerator/device timing, hardware counters, automatic MPI
   barriers, callback event streams from workers, or full profiler behavior.
 
-When future APIs become available, release notes should say which mode was
-added, which examples compile on that release, which toolchain matrix validates
-the examples, and which non-goals still apply.
+Release notes name the supported examples, the toolchain matrix that validates
+them, and the remaining non-goals for the first release containing these APIs.
 
 ## Design References
 

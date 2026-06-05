@@ -188,8 +188,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
 
-      # Hybrid smoke validates MPI/OpenMP coexistence plus the installed
-      # ftimer_openmp worker API. It does not claim hybrid rank/lane reductions.
+      # Hybrid smoke validates MPI/OpenMP coexistence, the installed
+      # ftimer_openmp worker API, and strict/sparse hybrid rank/lane reductions.
       - name: Configure (MPI+OpenMP)
         run: FC=mpifort cmake -B build -DFTIMER_USE_MPI=ON -DFTIMER_USE_OPENMP=ON
 
@@ -521,7 +521,7 @@ jobs:
         run: cmake --build build -j$(nproc)
 
       - name: OpenMP example smoke test
-        run: ctest --test-dir build --output-on-failure --no-tests=error -R '^(ftimer_openmp_example_smoke|ftimer_installed_package_consumer_openmp_flang)$'
+        run: ctest --test-dir build --output-on-failure --no-tests=error -R '^(ftimer_openmp_example_smoke|ftimer_openmp_worker_example_smoke|ftimer_installed_package_consumer_openmp_flang)$'
 
   build-contract-regressions:
     runs-on: ubuntu-latest
