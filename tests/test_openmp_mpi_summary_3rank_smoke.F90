@@ -3,9 +3,9 @@ program ftimer_openmp_mpi_summary_3rank_smoke
    use ftimer_openmp, only: ftimer_mpi_openmp_summary_t, ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
    use ftimer_types, only: FTIMER_SUCCESS, wp
-   use mpi_f08, only: MPI_COMM_WORLD, MPI_UNDEFINED, MPI_Comm, MPI_Comm_free, &
-                      MPI_Comm_rank, MPI_Comm_size, MPI_Comm_split, MPI_Finalize, &
-                      MPI_Init, MPI_SUCCESS
+   use mpi_f08, only: MPI_Barrier, MPI_COMM_WORLD, MPI_UNDEFINED, MPI_Comm, &
+                      MPI_Comm_free, MPI_Comm_rank, MPI_Comm_size, MPI_Comm_split, &
+                      MPI_Finalize, MPI_Init, MPI_SUCCESS
    use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, &
                       omp_set_num_threads
    implicit none
