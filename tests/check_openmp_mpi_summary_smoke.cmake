@@ -120,6 +120,15 @@ string(REGEX MATCHALL
   worker_collective_diagnostics
   "${summary_stderr_normalized}"
 )
+string(FIND "${summary_stderr_normalized}"
+  "ftimer_openmp mpi_openmp_union_summary MPI reduction failed"
+  union_collective_diagnostic_pos
+)
+string(REGEX MATCHALL
+  "ftimer_openmp mpi_openmp_union_summary MPI reduction failed"
+  union_collective_diagnostics
+  "${summary_stderr_normalized}"
+)
 string(REGEX MATCHALL
   "ftimer_openmp recorded 1 worker diagnostics"
   worker_diagnostics
@@ -142,7 +151,8 @@ if(append_diagnostic_pos EQUAL -1 OR
    active_diagnostic_pos EQUAL -1 OR
    descriptor_diagnostic_pos EQUAL -1 OR
    participation_diagnostic_pos EQUAL -1 OR
-   worker_collective_diagnostic_pos EQUAL -1)
+   worker_collective_diagnostic_pos EQUAL -1 OR
+   union_collective_diagnostic_pos EQUAL -1)
   message(FATAL_ERROR
     "Expected MPI+OpenMP summary omitted-ierr diagnostics were not written to stderr.\n"
     "stderr:\n${summary_stderr_normalized}"
@@ -155,6 +165,7 @@ list(LENGTH active_diagnostics active_diagnostic_count)
 list(LENGTH descriptor_diagnostics descriptor_diagnostic_count)
 list(LENGTH participation_diagnostics participation_diagnostic_count)
 list(LENGTH worker_collective_diagnostics worker_collective_diagnostic_count)
+list(LENGTH union_collective_diagnostics union_collective_diagnostic_count)
 list(LENGTH worker_diagnostics worker_diagnostic_count)
 if(NOT append_diagnostic_count EQUAL 7 OR
    NOT union_append_diagnostic_count EQUAL 8 OR
@@ -162,20 +173,22 @@ if(NOT append_diagnostic_count EQUAL 7 OR
    NOT descriptor_diagnostic_count EQUAL 1 OR
    NOT participation_diagnostic_count EQUAL 1 OR
    NOT worker_collective_diagnostic_count EQUAL 2 OR
+   NOT union_collective_diagnostic_count EQUAL 1 OR
    NOT worker_diagnostic_count EQUAL 0)
   message(FATAL_ERROR
     "Unexpected MPI+OpenMP summary omitted-ierr diagnostic counts.\n"
     "append=${append_diagnostic_count}, union_append=${union_append_diagnostic_count}, "
     "active=${active_diagnostic_count}, "
     "descriptor=${descriptor_diagnostic_count}, participation=${participation_diagnostic_count}, "
-    "worker_collective=${worker_collective_diagnostic_count}, worker=${worker_diagnostic_count}\n"
+    "worker_collective=${worker_collective_diagnostic_count}, "
+    "union_collective=${union_collective_diagnostic_count}, worker=${worker_diagnostic_count}\n"
     "stderr:\n${summary_stderr_normalized}"
   )
 endif()
 
 string(REGEX MATCHALL "ftimer_[^\n]*" ftimer_diagnostic_lines "${summary_stderr_line_scan}")
 list(LENGTH ftimer_diagnostic_lines ftimer_diagnostic_count)
-if(NOT ftimer_diagnostic_count EQUAL 22)
+if(NOT ftimer_diagnostic_count EQUAL 23)
   message(FATAL_ERROR
     "Unexpected number of fTimer diagnostics in stderr: ${ftimer_diagnostic_count}.\n"
     "stderr:\n${summary_stderr_normalized}"
@@ -238,6 +251,7 @@ string(CONCAT expected_participation_diagnostic
   "(incomplete lane participation)<semicolon> disagreeing ranks 1"
 )
 set(expected_diagnostics
+  "ftimer_openmp mpi_openmp_union_summary MPI reduction failed"
   "ftimer_openmp mpi_openmp_summary MPI reduction failed"
   "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"
   "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"

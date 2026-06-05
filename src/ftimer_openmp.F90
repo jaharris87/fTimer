@@ -319,6 +319,10 @@ module ftimer_openmp
       type(MPI_Comm) :: mpi_comm = MPI_COMM_WORLD
       logical :: mpi_comm_was_present = .false.
 #endif
+#ifdef FTIMER_BUILD_SMOKE_TESTS
+      logical :: test_force_union_descriptor_pack_failure = .false.
+      logical :: test_force_union_descriptor_mapping_failure = .false.
+#endif
    contains
       procedure, private :: init_without_comm
 #ifdef FTIMER_USE_MPI
@@ -356,6 +360,7 @@ module ftimer_openmp
       procedure :: test_lane_stack_total_time
       procedure :: test_lane_is_running
       procedure :: test_set_clock
+      procedure :: test_set_mpi_openmp_union_descriptor_faults
 #endif
    end type ftimer_openmp_t
 
@@ -536,6 +541,10 @@ contains
 #ifdef FTIMER_USE_MPI
       self%mpi_comm = saved_mpi_comm
       self%mpi_comm_was_present = saved_mpi_comm_was_present
+#endif
+#ifdef FTIMER_BUILD_SMOKE_TESTS
+      self%test_force_union_descriptor_pack_failure = .false.
+      self%test_force_union_descriptor_mapping_failure = .false.
 #endif
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine reset
@@ -2270,8 +2279,15 @@ contains
       call build_mpi_openmp_accumulators(self, accumulators, entry_count)
       call finalize_mpi_openmp_union_accumulators(accumulators, entry_count)
       call build_mpi_openmp_descriptor_order(accumulators, entry_count, descriptors, order)
+#ifdef FTIMER_BUILD_SMOKE_TESTS
       call build_mpi_openmp_union_descriptor_list(descriptors, order, nprocs, active_comm, union_descriptors, &
-                                                  union_count, local_to_union, mpierr)
+                                                  union_count, local_to_union, &
+                                                  self%test_force_union_descriptor_pack_failure, &
+                                                  self%test_force_union_descriptor_mapping_failure, mpierr)
+#else
+      call build_mpi_openmp_union_descriptor_list(descriptors, order, nprocs, active_comm, union_descriptors, &
+                                                  union_count, local_to_union, .false., .false., mpierr)
+#endif
       if (mpierr /= MPI_SUCCESS) then
          call reset_mpi_openmp_union_summary(summary)
          status = FTIMER_ERR_UNKNOWN
@@ -2901,7 +2917,8 @@ contains
 
 #ifdef FTIMER_USE_MPI
    subroutine build_mpi_openmp_union_descriptor_list(descriptors, order, nprocs, active_comm, union_descriptors, &
-                                                     union_count, local_to_union, mpierr)
+                                                     union_count, local_to_union, force_pack_failure, &
+                                                     force_mapping_failure, mpierr)
       character(len=*), intent(in) :: descriptors(:)
       integer, intent(in) :: order(:)
       integer, intent(in) :: nprocs
@@ -2909,6 +2926,8 @@ contains
       type(mpi_openmp_descriptor_string_t), allocatable, intent(out) :: union_descriptors(:)
       integer, intent(out) :: union_count
       integer, allocatable, intent(out) :: local_to_union(:)
+      logical, intent(in) :: force_pack_failure
+      logical, intent(in) :: force_mapping_failure
       integer, intent(out) :: mpierr
       character(len=1), allocatable :: all_descriptor_chars(:)
       character(len=1), allocatable :: local_descriptor_chars(:)
@@ -2979,6 +2998,7 @@ contains
             end if
          end if
       end do
+      if (force_pack_failure) local_pack_ready = 0
 
       call MPI_Allreduce(local_pack_ready, all_pack_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) return
@@ -3055,6 +3075,7 @@ contains
                                                               descriptors(local_idx))
          if (local_to_union(i) <= 0) local_mapping_ready = 0
       end do
+      if (force_mapping_failure) local_mapping_ready = 0
 
       call MPI_Allreduce(local_mapping_ready, all_mapping_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) return
@@ -3530,6 +3551,7 @@ contains
       type(openmp_report_buffer_t) :: buffer
       character(len=:), allocatable :: display
       character(len=:), allocatable :: line
+      character(len=:), allocatable :: missing_samples_text
       integer :: i
       integer :: key_width
       integer :: line_width
@@ -4076,6 +4098,7 @@ contains
       type(openmp_report_buffer_t) :: buffer
       character(len=:), allocatable :: display
       character(len=:), allocatable :: line
+      character(len=:), allocatable :: missing_samples_text
       integer :: i
       integer :: key_width
       integer :: line_width
@@ -4147,11 +4170,12 @@ contains
 
       do i = 1, summary%num_entries
          display = repeat(' ', 2*summary%entries(i)%depth)//mpi_openmp_union_entry_name(summary%entries(i))
-         write (line, '(a,2x,a,2x,i5,2x,i13,2x,i17,2x,i15,2x,f12.6,2x,f12.6,2x,f12.6,2x,f12.6,2x,f12.6,2x,f9.3)') &
+         missing_samples_text = mpi_openmp_union_missing_sample_text(summary%entries(i))
+         write (line, '(a,2x,a,2x,i5,2x,i13,2x,i17,2x,a,2x,f12.6,2x,f12.6,2x,f12.6,2x,f12.6,2x,f12.6,2x,f9.3)') &
             padded_openmp_text(display, name_width), mpi_openmp_union_entry_domain(summary%entries(i)), &
             summary%entries(i)%participating_rank_count, summary%entries(i)%missing_rank_count, &
             summary%entries(i)%participating_rank_lane_sample_count, &
-            summary%entries(i)%missing_rank_lane_sample_count, &
+            padded_openmp_text(missing_samples_text, len('Missing samples')), &
             summary%entries(i)%sum_participating_lane_inclusive_time, &
             summary%entries(i)%sum_participating_lane_self_time, &
             summary%entries(i)%min_participating_lane_inclusive_time, &
@@ -4163,6 +4187,20 @@ contains
 
       call finish_openmp_report_buffer(buffer, text)
    end subroutine format_mpi_openmp_union_summary
+
+   function mpi_openmp_union_missing_sample_text(entry) result(text)
+      type(ftimer_mpi_openmp_union_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: text
+      character(len=32) :: value
+
+      if (.not. entry%missing_rank_lane_sample_count_known) then
+         text = 'unknown'
+         return
+      end if
+
+      write (value, '(i0)') entry%missing_rank_lane_sample_count
+      text = trim(value)
+   end function mpi_openmp_union_missing_sample_text
 
    integer function mpi_openmp_union_summary_name_width(summary) result(width)
       type(ftimer_mpi_openmp_union_summary_t), intent(in) :: summary
@@ -5884,6 +5922,10 @@ contains
       self%mpi_comm = MPI_COMM_WORLD
       self%mpi_comm_was_present = .false.
 #endif
+#ifdef FTIMER_BUILD_SMOKE_TESTS
+      self%test_force_union_descriptor_pack_failure = .false.
+      self%test_force_union_descriptor_mapping_failure = .false.
+#endif
    end subroutine clear_state
 
    subroutine clear_region(region)
@@ -6458,6 +6500,23 @@ contains
       end if
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine test_set_clock
+
+   subroutine test_set_mpi_openmp_union_descriptor_faults(self, pack_failure, mapping_failure, ierr)
+      class(ftimer_openmp_t), intent(inout) :: self
+      logical, intent(in) :: pack_failure
+      logical, intent(in) :: mapping_failure
+      integer, intent(out), optional :: ierr
+
+      if (self%region_open .or. has_active_lanes(self)) then
+         call report_timer_status(self, ierr, FTIMER_ERR_ACTIVE, &
+                                  "ftimer_openmp test descriptor fault injection with active timing")
+         return
+      end if
+
+      self%test_force_union_descriptor_pack_failure = pack_failure
+      self%test_force_union_descriptor_mapping_failure = mapping_failure
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine test_set_mpi_openmp_union_descriptor_faults
 
    subroutine test_lane_total_call_count(self, lane_id, id, call_count, ierr)
       class(ftimer_openmp_t), intent(inout) :: self
