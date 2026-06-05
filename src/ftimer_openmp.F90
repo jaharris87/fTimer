@@ -2853,6 +2853,7 @@ contains
       should_emit = .true.
 #ifdef FTIMER_USE_MPI
       if (.not. self%initialized) return
+      if (self%mpi_comm%MPI_VAL == MPI_COMM_NULL%MPI_VAL) return
       call MPI_Comm_rank(self%mpi_comm, rank, mpierr)
       if (mpierr == MPI_SUCCESS) should_emit = (rank == 0)
 #endif
@@ -4050,6 +4051,7 @@ contains
       nullify (self%clock)
       call clear_worker_diagnostics(self)
 #ifdef FTIMER_USE_MPI
+      self%mpi_comm = MPI_COMM_WORLD
       self%mpi_comm_was_present = .false.
 #endif
    end subroutine clear_state

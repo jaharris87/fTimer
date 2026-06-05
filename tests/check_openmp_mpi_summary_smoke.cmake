@@ -119,7 +119,7 @@ if(NOT append_diagnostic_count EQUAL 7 OR
    NOT active_diagnostic_count EQUAL 3 OR
    NOT descriptor_diagnostic_count EQUAL 1 OR
    NOT participation_diagnostic_count EQUAL 1 OR
-   NOT worker_collective_diagnostic_count EQUAL 1 OR
+   NOT worker_collective_diagnostic_count EQUAL 2 OR
    NOT worker_diagnostic_count EQUAL 0)
   message(FATAL_ERROR
     "Unexpected MPI+OpenMP summary omitted-ierr diagnostic counts.\n"
@@ -132,7 +132,7 @@ endif()
 
 string(REGEX MATCHALL "ftimer_[^\n]*" ftimer_diagnostic_lines "${summary_stderr_line_scan}")
 list(LENGTH ftimer_diagnostic_lines ftimer_diagnostic_count)
-if(NOT ftimer_diagnostic_count EQUAL 13)
+if(NOT ftimer_diagnostic_count EQUAL 14)
   message(FATAL_ERROR
     "Unexpected number of fTimer diagnostics in stderr: ${ftimer_diagnostic_count}.\n"
     "stderr:\n${summary_stderr_normalized}"
@@ -171,6 +171,7 @@ string(CONCAT expected_participation_diagnostic
   "(incomplete lane participation)<semicolon> disagreeing ranks 1"
 )
 set(expected_diagnostics
+  "ftimer_openmp mpi_openmp_summary MPI reduction failed"
   "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"
   "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"
   "ftimer_openmp mpi_openmp_summary requires stopped OpenMP lanes on all ranks"

@@ -3,7 +3,8 @@ program ftimer_openmp_mpi_summary_3rank_smoke
    use ftimer_openmp, only: ftimer_mpi_openmp_summary_t, ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
    use ftimer_types, only: FTIMER_SUCCESS, wp
-   use mpi_f08, only: MPI_COMM_WORLD, MPI_Comm_rank, MPI_Comm_size, MPI_Finalize, &
+   use mpi_f08, only: MPI_COMM_WORLD, MPI_UNDEFINED, MPI_Comm, MPI_Comm_free, &
+                      MPI_Comm_rank, MPI_Comm_size, MPI_Comm_split, MPI_Finalize, &
                       MPI_Init, MPI_SUCCESS
    use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, &
                       omp_set_num_threads
@@ -27,6 +28,7 @@ program ftimer_openmp_mpi_summary_3rank_smoke
    call omp_set_num_threads(2)
 
    call check_three_rank_hybrid_rank_metrics(rank)
+   call check_three_rank_explicit_subcomm(rank)
 
    call MPI_Finalize(ierr)
    if (ierr /= MPI_SUCCESS) error stop 5
@@ -149,6 +151,79 @@ contains
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 78)
    end subroutine check_three_rank_hybrid_rank_metrics
+
+   subroutine check_three_rank_explicit_subcomm(world_rank)
+      integer, intent(in) :: world_rank
+      type(MPI_Comm) :: subcomm
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      integer :: color
+      integer :: ierr
+      integer :: local_rank
+      integer :: root_id
+      integer :: root_idx
+
+      color = merge(0, MPI_UNDEFINED, world_rank > 0)
+      call MPI_Comm_split(MPI_COMM_WORLD, color, world_rank, subcomm, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 80
+
+      if (world_rank > 0) then
+         call MPI_Comm_rank(subcomm, local_rank, ierr)
+         if (ierr /= MPI_SUCCESS) error stop 81
+         config%max_lanes = 3
+         call timer%init(config=config, comm=subcomm, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 82)
+
+         fake_lane_time(0) = 0.0_wp
+         call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 83)
+         call timer%register_timer('subcomm_serial_root', root_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 84)
+
+         fake_lane_time(0) = 1.0_wp
+         call timer%start_id(root_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 85)
+         fake_lane_time(0) = merge(3.0_wp, 5.0_wp, local_rank == 0)
+         call timer%stop_id(root_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 86)
+         fake_lane_time(0) = merge(5.0_wp, 9.0_wp, local_rank == 0)
+         call timer%mpi_openmp_summary(summary, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 87)
+
+         call expect_int(summary%num_ranks, 2, 88)
+         call expect_int(summary%ranks(1)%rank, 0, 89)
+         call expect_int(summary%ranks(2)%rank, 1, 90)
+         call expect_int(summary%min_rank_summary_window_time_rank, 0, 91)
+         call expect_int(summary%max_rank_summary_window_time_rank, 1, 92)
+         call expect_time(summary%min_rank_summary_window_time, 5.0_wp, 93)
+         call expect_time(summary%avg_rank_summary_window_time, 7.0_wp, 94)
+         call expect_time(summary%max_rank_summary_window_time, 9.0_wp, 95)
+         call expect_time(summary%min_rank_sum_lane_root_inclusive_time, 2.0_wp, 96)
+         call expect_time(summary%avg_rank_sum_lane_root_inclusive_time, 3.0_wp, 97)
+         call expect_time(summary%max_rank_sum_lane_root_inclusive_time, 4.0_wp, 98)
+
+         root_idx = find_entry(summary, 'subcomm_serial_root', 0)
+         if (root_idx <= 0) error stop 99
+         if (trim(summary%entries(root_idx)%execution_domain) /= 'serial_lane') &
+            error stop 100
+         call expect_int(summary%entries(root_idx)%participating_rank_count, 2, 101)
+         call expect_int(summary%entries(root_idx)%eligible_rank_lane_sample_count, 2, 102)
+         call expect_int(summary%entries(root_idx)%participating_rank_lane_sample_count, 2, 103)
+         call expect_time(summary%entries(root_idx)%sum_participating_lane_inclusive_time, &
+                          6.0_wp, 104)
+         call expect_time(summary%entries(root_idx)%avg_participating_lane_inclusive_time, &
+                          3.0_wp, 105)
+
+         call timer%finalize(ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 106)
+         call MPI_Comm_free(subcomm, ierr)
+         if (ierr /= MPI_SUCCESS) error stop 107
+      end if
+
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 108
+   end subroutine check_three_rank_explicit_subcomm
 
    real(wp) function worker_stop_time(rank, thread_num) result(t)
       integer, intent(in) :: rank

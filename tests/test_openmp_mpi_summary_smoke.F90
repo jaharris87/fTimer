@@ -5,8 +5,9 @@ program ftimer_openmp_mpi_summary_smoke
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_ERR_MPI_INCON, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
                            ftimer_metadata_t, wp
-   use mpi_f08, only: MPI_Barrier, MPI_COMM_NULL, MPI_COMM_WORLD, MPI_Comm_rank, &
-                      MPI_Comm_size, MPI_Finalize, MPI_Init, MPI_SUCCESS
+   use mpi_f08, only: MPI_Barrier, MPI_COMM_NULL, MPI_COMM_WORLD, MPI_Comm, &
+                      MPI_Comm_free, MPI_Comm_rank, MPI_Comm_size, MPI_Comm_split, &
+                      MPI_Finalize, MPI_Init, MPI_SUCCESS
    use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, omp_set_num_threads
    implicit none
 
@@ -31,6 +32,7 @@ program ftimer_openmp_mpi_summary_smoke
    call check_strict_hybrid_serial_lane_success(rank)
    call check_strict_hybrid_registration_order_independent(rank)
    call check_strict_hybrid_null_comm_failure(rank)
+   call check_strict_hybrid_post_finalize_subcomm_failure(rank)
    call check_strict_hybrid_uninitialized_rank_failure(rank)
    call check_strict_hybrid_active_lane_failure(rank)
    call check_strict_hybrid_serial_lane_active_failure(rank)
@@ -446,9 +448,33 @@ contains
       call timer%mpi_openmp_summary(summary, ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_UNKNOWN, 1231)
       call expect_int(summary%num_entries, 0, 1232)
+      if (rank == 0) call timer%mpi_openmp_summary(summary)
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 1233)
    end subroutine check_strict_hybrid_null_comm_failure
+
+   subroutine check_strict_hybrid_post_finalize_subcomm_failure(rank)
+      integer, intent(in) :: rank
+      type(MPI_Comm) :: subcomm
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      integer :: ierr
+
+      config%max_lanes = 3
+      call MPI_Comm_split(MPI_COMM_WORLD, 0, rank, subcomm, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 1234
+      call timer%init(config=config, comm=subcomm, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1235)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1236)
+      call MPI_Comm_free(subcomm, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 1237
+
+      call timer%mpi_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_NOT_INIT, 1238)
+      call expect_int(summary%num_entries, 0, 1239)
+   end subroutine check_strict_hybrid_post_finalize_subcomm_failure
 
    subroutine check_strict_hybrid_uninitialized_rank_failure(rank)
       integer, intent(in) :: rank

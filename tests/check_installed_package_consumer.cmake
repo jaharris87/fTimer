@@ -22,6 +22,10 @@ endif()
 set(installed_api_note_path "${effective_install_prefix}/share/doc/fTimer/installed-api.md")
 set(installed_license_path "${effective_install_prefix}/share/doc/fTimer/LICENSE")
 
+if(NOT DEFINED TEST_EXECUTE_TIMEOUT_SECONDS OR TEST_EXECUTE_TIMEOUT_SECONDS STREQUAL "")
+  set(TEST_EXECUTE_TIMEOUT_SECONDS 120)
+endif()
+
 set(misinstalled_module_dirs)
 if(IS_ABSOLUTE "${test_install_includedir}")
   if(TEST_USE_DESTDIR)
@@ -959,6 +963,7 @@ if(TEST_ENABLE_MPI)
     execute_process(
       COMMAND ${ftimer_mpi_openmp_launch_command}
       WORKING_DIRECTORY "${consumer_build_dir}"
+      TIMEOUT ${TEST_EXECUTE_TIMEOUT_SECONDS}
       RESULT_VARIABLE mpi_openmp_consumer_run_result
     )
     if(NOT mpi_openmp_consumer_run_result EQUAL 0)
@@ -978,6 +983,7 @@ if(TEST_ENABLE_MPI)
     execute_process(
       COMMAND ${ftimer_openmp_api_mpi_openmp_launch_command}
       WORKING_DIRECTORY "${consumer_build_dir}"
+      TIMEOUT ${TEST_EXECUTE_TIMEOUT_SECONDS}
       RESULT_VARIABLE openmp_api_mpi_openmp_consumer_run_result
       ERROR_VARIABLE openmp_api_mpi_openmp_consumer_stderr
     )
