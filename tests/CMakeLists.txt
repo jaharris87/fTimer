@@ -58,6 +58,25 @@ if(FTIMER_BUILD_SMOKE_TESTS)
       test_openmp_mpi_summary_3rank_smoke.F90)
     target_link_libraries(ftimer_openmp_mpi_summary_3rank_smoke PRIVATE ftimer_smoke_test)
 
+    set(ftimer_mpiexec_oversubscribe_flag "")
+    if(DEFINED MPIEXEC_EXECUTABLE AND NOT MPIEXEC_EXECUTABLE STREQUAL "")
+      execute_process(
+        COMMAND "${MPIEXEC_EXECUTABLE}" --version
+        OUTPUT_VARIABLE ftimer_mpiexec_version_stdout
+        ERROR_VARIABLE ftimer_mpiexec_version_stderr
+        RESULT_VARIABLE ftimer_mpiexec_version_result
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_STRIP_TRAILING_WHITESPACE
+      )
+      if(ftimer_mpiexec_version_result EQUAL 0)
+        set(ftimer_mpiexec_version_text
+          "${ftimer_mpiexec_version_stdout}\n${ftimer_mpiexec_version_stderr}")
+        if(ftimer_mpiexec_version_text MATCHES "Open MPI")
+          set(ftimer_mpiexec_oversubscribe_flag "--oversubscribe")
+        endif()
+      endif()
+    endif()
+
     set(ftimer_openmp_mpi_summary_command "${MPIEXEC_EXECUTABLE}")
     if(DEFINED MPIEXEC_NUMPROC_FLAG AND NOT MPIEXEC_NUMPROC_FLAG STREQUAL "")
       list(APPEND ftimer_openmp_mpi_summary_command "${MPIEXEC_NUMPROC_FLAG}" 2)
@@ -89,6 +108,10 @@ if(FTIMER_BUILD_SMOKE_TESTS)
     endif()
     if(DEFINED MPIEXEC_PREFLAGS AND NOT MPIEXEC_PREFLAGS STREQUAL "")
       list(APPEND ftimer_openmp_mpi_summary_3rank_command ${MPIEXEC_PREFLAGS})
+    endif()
+    if(NOT ftimer_mpiexec_oversubscribe_flag STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_3rank_command
+        ${ftimer_mpiexec_oversubscribe_flag})
     endif()
     list(APPEND ftimer_openmp_mpi_summary_3rank_command
       "$<TARGET_FILE:ftimer_openmp_mpi_summary_3rank_smoke>")
