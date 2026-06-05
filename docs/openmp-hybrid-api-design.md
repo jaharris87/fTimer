@@ -10,7 +10,8 @@ the public lifecycle/configuration and timer-catalog surface described here.
 Issue #269 adds the first per-thread lane runtime for timed-region
 `start_id`/`stop_id`, and #270 adds stopped-run local OpenMP summaries,
 reports, and CSV output. Issue #271 adds strict MPI+OpenMP hybrid summaries,
-reports, and CSV output; sparse/union hybrid participation remains deferred.
+reports, and CSV output; #272 adds the separate sparse union MPI+OpenMP
+hybrid participation summary/report/CSV surface.
 
 ## Decision
 
@@ -21,8 +22,9 @@ True OpenMP worker-thread timing should use a separate, explicit API surface:
 - a `type(ftimer_openmp_config_t)` configuration object;
 - explicit named mode constants in that new module, with the first true timing
   mode defined around OpenMP thread lanes;
-- strict hybrid summary/result entry points that are separate from today's
-  `get_summary()`, `mpi_summary()`, and `mpi_union_summary()` contracts.
+- strict and sparse union hybrid summary/result entry points that are separate
+  from today's `get_summary()`, `mpi_summary()`, and `mpi_union_summary()`
+  contracts.
 
 The current `ftimer` procedural API, `type(ftimer_t)`, and pure-MPI APIs remain
 unchanged. `FTIMER_USE_OPENMP=ON` continues to mean the existing
@@ -34,8 +36,8 @@ turn existing `start`/`stop` calls into true worker-thread timing.
 
 Current `main` remains the source of truth. The `ftimer_openmp` surface is
 available for compile-time adoption and implements the first thread-lane timing
-runtime plus stopped-run local OpenMP and strict MPI+OpenMP hybrid
-summary/report/CSV behavior.
+runtime plus stopped-run local OpenMP, strict MPI+OpenMP hybrid, and sparse
+union MPI+OpenMP hybrid summary/report/CSV behavior.
 
 - Serial users keep the current `use ftimer` and `type(ftimer_t)` behavior.
 - Pure-MPI users keep the current `mpi_f08` `comm=` capture, strict

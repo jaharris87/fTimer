@@ -29,7 +29,7 @@ Implemented capabilities include:
   output through `ftimer_openmp_t`
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
-fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, sparse/union MPI+OpenMP hybrid participation reductions, or general thread-safe access to the existing `ftimer`/`ftimer_core` APIs from OpenMP worker threads.
+fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, or general thread-safe access to the existing `ftimer`/`ftimer_core` APIs from OpenMP worker threads.
 It also does not provide accelerator/device synchronization hooks or implicit MPI
 barriers; callers own those synchronization decisions when interpreting
 wall-clock intervals.
