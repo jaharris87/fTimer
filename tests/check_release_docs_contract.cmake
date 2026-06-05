@@ -5,8 +5,10 @@ set(required_paths
   CLAUDE.md
   README.md
   docs/design.md
+  docs/installed-api.md
   docs/implementation-history.md
   docs/maintainer.md
+  docs/openmp-timing-modes.md
   docs/release.md
   docs/semantics.md
   CONTRIBUTING.md
@@ -195,8 +197,7 @@ set(current_contract_docs
   README.md
   docs/design.md
   docs/maintainer.md
-  docs/openmp-hybrid-strategy-decision.md
-  docs/openmp-thread-lane-runtime-design.md
+  docs/openmp-timing-modes.md
   docs/semantics.md
 )
 
@@ -224,6 +225,47 @@ foreach(current_contract_doc IN LISTS current_contract_docs)
     if(NOT forbidden_index EQUAL -1)
       message(FATAL_ERROR
         "${current_contract_doc} contains stale current-state wording: ${forbidden_phrase}"
+      )
+    endif()
+  endforeach()
+endforeach()
+
+set(retired_planning_docs
+  docs/openmp-hybrid-api-design.md
+  docs/openmp-hybrid-mpi-reduction-design.md
+  docs/openmp-hybrid-strategy-decision.md
+  docs/openmp-hybrid-summary-design.md
+  docs/openmp-hybrid-validation-plan.md
+  docs/openmp-thread-lane-runtime-design.md
+  docs/mpi-descriptor-preflight-decision.md
+  docs/mpi-sparse-summary-decision.md
+)
+
+foreach(retired_planning_doc IN LISTS retired_planning_docs)
+  if(EXISTS "${REPO_ROOT}/${retired_planning_doc}")
+    message(FATAL_ERROR
+      "${retired_planning_doc} is a historical planning artifact and must not remain in the top-level docs surface."
+    )
+  endif()
+endforeach()
+
+set(release_navigation_docs
+  README.md
+  docs/semantics.md
+  docs/design.md
+  docs/installed-api.md
+  docs/release.md
+  docs/openmp-timing-modes.md
+)
+
+foreach(release_navigation_doc IN LISTS release_navigation_docs)
+  file(READ "${REPO_ROOT}/${release_navigation_doc}" release_navigation_doc_text)
+  foreach(retired_planning_doc IN LISTS retired_planning_docs)
+    get_filename_component(retired_planning_name "${retired_planning_doc}" NAME)
+    string(FIND "${release_navigation_doc_text}" "${retired_planning_name}" retired_link_index)
+    if(NOT retired_link_index EQUAL -1)
+      message(FATAL_ERROR
+        "${release_navigation_doc} must not send users to historical planning artifact ${retired_planning_name}; move durable current-state details into live docs instead."
       )
     endif()
   endforeach()

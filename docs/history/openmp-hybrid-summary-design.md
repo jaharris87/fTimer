@@ -448,7 +448,7 @@ overhead, following the validation plan introduced by #243.
   implementation issues add deterministic validation, active-lane tests,
   report/CSV golden output, and overhead measurements.
 - #242 records the user-facing timing modes and migration guide in
-  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Current local
+  [`docs/openmp-timing-modes.md`](../openmp-timing-modes.md). Current local
   OpenMP summary/report/CSV behavior should stay compile-checked after the
   runtime and summary APIs exist.
 

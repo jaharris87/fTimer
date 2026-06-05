@@ -501,7 +501,7 @@ overhead separately, following the validation plan introduced by #243.
   matrices for the initial public API; overhead measurements can expand as the
   API grows.
 - #242 records the user-facing timing modes and migration guide in
-  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Hybrid examples
+  [`docs/openmp-timing-modes.md`](../openmp-timing-modes.md). Hybrid examples
   should stay compile-checked against the runtime, summary, and reduction APIs
   that exist on current `main`.
 

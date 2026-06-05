@@ -404,7 +404,7 @@ id path so future runtime changes have a baseline.
   worker tests, nested/task rejection tests, active-lane lifecycle and
   region-epoch tests, and overhead measurements.
 - #242 records the user-facing timing modes and migration guide in
-  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Later
+  [`docs/openmp-timing-modes.md`](../openmp-timing-modes.md). Later
   implementation issues should add compile-checked worker-timing examples after
   this runtime model and the summary surface become real public APIs.
 

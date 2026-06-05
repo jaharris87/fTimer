@@ -433,7 +433,7 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - MPI summary reductions select MPI datatypes with `MPI_Type_match_size` for fTimer's actual `real(wp)` and `integer(int64)` storage sizes instead of assuming fixed `MPI_DOUBLE_PRECISION`, `MPI_2DOUBLE_PRECISION`, or `MPI_INTEGER8` mappings. The compile-time MPI probe validates that this API is available through the `mpi_f08` path; if the API exists but no matching runtime datatype can be returned, `mpi_summary()` temporarily requests MPI error returns for the datatype lookup, fails with `FTIMER_ERR_UNKNOWN`, and leaves the MPI result empty.
 - `mpi_summary()` now returns a distinct `ftimer_mpi_summary_t`; it does not fall back to a local `ftimer_summary_t` on MPI-disabled or MPI-error paths. Call `get_summary()` separately if you need local data in those cases.
 - Descriptor-preflight failures inside one communicator now report the disagreeing communicator-local ranks in the omitted-`ierr` diagnostic path when possible.
-- Rank-conditional timer reductions are not supported by the strict `mpi_summary()` API. Use the separate opt-in `mpi_union_summary()` / `ftimer_mpi_union_summary()` API with `ftimer_mpi_union_summary_t` for sparse descriptor-union reductions. See [`docs/mpi-sparse-summary-decision.md`](docs/mpi-sparse-summary-decision.md).
+- Rank-conditional timer reductions are not supported by the strict `mpi_summary()` API. Use the separate opt-in `mpi_union_summary()` / `ftimer_mpi_union_summary()` API with `ftimer_mpi_union_summary_t` for sparse descriptor-union reductions. Sparse entries report explicit participation metadata and participating-rank statistics instead of zero-filling absent ranks.
 - Local summary `node_id` values are not a cross-run identity contract. Treat them as explicit links inside one produced summary object, not as durable ids across separate runs or independently produced summaries.
 - All ranks that participate in `mpi_summary()` must agree on the communicator captured by `init`. If would-be participants diverge onto different communicators, the library cannot safely discover that mistake after the split; the practical failure mode is a hang, not a clean local fallback.
 - `FTIMER_USE_OPENMP=ON` enables limited master-thread-only guards for the current `ftimer` and `ftimer_core` APIs. Worker-thread timer calls through those APIs inside an OpenMP parallel region are silent no-ops. To time a parallel region as a whole through existing APIs, place `start`/`stop` outside the `!$omp parallel` block. To time level-1 worker lanes, use the explicit `ftimer_openmp_t` object with pre-registered ids and an opened timed region.
@@ -446,19 +446,11 @@ Use a separate build directory for each compiler or mode. Reconfiguring the same
 - OpenMP mode selection, accepted instrumentation patterns, and migration
   guidance are collected in
   [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md). Strict and
-  sparse union MPI+OpenMP hybrid timing are separate from the compatibility
-  mode; see
-  [`docs/openmp-hybrid-strategy-decision.md`](docs/openmp-hybrid-strategy-decision.md),
-  the opt-in API direction in
-  [`docs/openmp-hybrid-api-design.md`](docs/openmp-hybrid-api-design.md),
-  the thread-lane runtime model in
-  [`docs/openmp-thread-lane-runtime-design.md`](docs/openmp-thread-lane-runtime-design.md),
-  the summary/self-time model in
-  [`docs/openmp-hybrid-summary-design.md`](docs/openmp-hybrid-summary-design.md),
-  the MPI+OpenMP reduction model in
-  [`docs/openmp-hybrid-mpi-reduction-design.md`](docs/openmp-hybrid-mpi-reduction-design.md),
-  and the validation plan in
-  [`docs/openmp-hybrid-validation-plan.md`](docs/openmp-hybrid-validation-plan.md).
+  sparse union MPI+OpenMP hybrid timing are separate `ftimer_openmp_t` report
+  families, not extensions of the master-thread-only compatibility mode.
+  Summary, report, and CSV contracts for those APIs are described in this
+  README, [`docs/semantics.md`](docs/semantics.md), and
+  [`docs/installed-api.md`](docs/installed-api.md).
 - `on_event` remains a lightweight intra-run hook, not a serious profiler-backend integration contract with stable semantic timer identity.
 - If `FTIMER_USE_MPI=OFF`, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` and leave their MPI result objects empty. MPI report APIs, including the sparse union report and CSV APIs, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output or creating/replacing report files. Initialized `ftimer_openmp_t` objects return the same status from both strict and sparse union MPI+OpenMP report families in non-MPI packages.
 - Formatted local, MPI, and MPI+OpenMP report output are separate paths: `print_summary()`/`write_summary()` are local, `print_mpi_summary()`/`write_mpi_summary()` are strict MPI reports, `print_mpi_union_summary()`/`write_mpi_union_summary()` are opt-in sparse MPI union reports, `print_mpi_openmp_summary()`/`write_mpi_openmp_summary()` are strict hybrid reports on `ftimer_openmp_t`, and `print_mpi_openmp_union_summary()`/`write_mpi_openmp_union_summary()` are sparse union hybrid reports on `ftimer_openmp_t`. MPI reports are deliberately abbreviated; `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, `ftimer_mpi_openmp_summary_t`, and `ftimer_mpi_openmp_union_summary_t` remain the complete structured data models.

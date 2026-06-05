@@ -292,7 +292,7 @@ behavior for that example to compile.
   hybrid tests are deterministic and keep compatibility tests that prove current
   worker no-op behavior still holds for existing APIs.
 - #242 records the user-facing timing modes and migration guide in
-  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Later
+  [`docs/openmp-timing-modes.md`](../openmp-timing-modes.md). Later
   implementation issues must add compile-checked true OpenMP and hybrid
   examples only after the corresponding public APIs exist.
 
