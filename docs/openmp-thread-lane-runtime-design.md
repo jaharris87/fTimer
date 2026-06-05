@@ -234,7 +234,7 @@ active-timer state according to the future summary contract.
 ## Merge Points
 
 Timed-region close, summary construction, reset, finalize, current strict
-hybrid MPI summary/reduction entry points, and future sparse/union hybrid
+hybrid MPI summary/reduction entry points, and current sparse union hybrid
 entry points are merge points. They should run only outside OpenMP parallel
 regions.
 

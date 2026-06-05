@@ -51,7 +51,7 @@ then require GitHub CI to pass before tagging.
 | Smoke/install path | Yes |
 | Serial pFUnit path | Yes when pFUnit is available |
 | MPI path | Yes when MPI and matching pFUnit are available |
-| MPI+OpenMP compatibility and strict hybrid path | Yes when validating the hybrid compatibility matrix; this proves current feature-flag coexistence, the installed `ftimer_openmp` worker API, and strict hybrid rank/lane summaries/reports/CSV |
+| MPI+OpenMP compatibility and hybrid paths | Yes when validating the hybrid compatibility matrix; this proves current feature-flag coexistence, the installed `ftimer_openmp` worker API, and strict plus sparse union hybrid rank/lane summaries/reports/CSV |
 | OpenMP carve-out | Yes: GNU pFUnit guard coverage when OpenMP and matching pFUnit are available; LLVM Flang smoke/example coverage when validating the OpenMP compiler matrix |
 | Bench harness | Yes for hot-path or summary-performance changes |
 | Formatting | Yes for source/test/example changes |

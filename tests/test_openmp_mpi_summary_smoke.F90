@@ -546,6 +546,34 @@ contains
          call expect_contains(report_text, 'rank0_only_sparse', 2183)
          call expect_contains(report_text, 'lane0_only_sparse', 2184)
          call expect_contains(report_text, 'sparse hybrid', 2185)
+         call expect_sparse_union_report_entry_line(report_text, 'rank0_only_sparse', &
+                                                    depth=0, ranks=1, missing_ranks=1, &
+                                                    samples=2, missing_samples=0, &
+                                                    sum_inclusive=5.0_wp, sum_self=5.0_wp, &
+                                                    min_inclusive=2.0_wp, avg_inclusive=2.5_wp, &
+                                                    max_inclusive=3.0_wp, avg_calls=1.0_wp, &
+                                                    stop_code=2259)
+         call expect_sparse_union_report_entry_line(report_text, 'lane0_only_sparse', &
+                                                    depth=0, ranks=2, missing_ranks=0, &
+                                                    samples=2, missing_samples=2, &
+                                                    sum_inclusive=9.0_wp, sum_self=9.0_wp, &
+                                                    min_inclusive=4.0_wp, avg_inclusive=4.5_wp, &
+                                                    max_inclusive=5.0_wp, avg_calls=1.0_wp, &
+                                                    stop_code=2260)
+         call expect_sparse_union_report_child_entry(report_text, 'rank0_sparse_parent', &
+                                                     'shared_sparse_child', ranks=1, missing_ranks=1, &
+                                                     samples=2, missing_samples=0, &
+                                                     sum_inclusive=7.0_wp, sum_self=7.0_wp, &
+                                                     min_inclusive=3.0_wp, avg_inclusive=3.5_wp, &
+                                                     max_inclusive=4.0_wp, avg_calls=1.0_wp, &
+                                                     stop_code=2261)
+         call expect_sparse_union_report_child_entry(report_text, 'rank1_sparse_parent', &
+                                                     'shared_sparse_child', ranks=1, missing_ranks=1, &
+                                                     samples=2, missing_samples=0, &
+                                                     sum_inclusive=11.0_wp, sum_self=11.0_wp, &
+                                                     min_inclusive=5.0_wp, avg_inclusive=5.5_wp, &
+                                                     max_inclusive=6.0_wp, avg_calls=1.0_wp, &
+                                                     stop_code=2262)
 
          csv_text = read_file_text(csv_path)
          call expect_contains(csv_text, 'mpi_openmp_union', 2186)
@@ -2336,6 +2364,153 @@ contains
       end do
       call expect_int(found, 1, stop_code)
    end subroutine expect_report_child_under_parent_by_values
+
+   subroutine expect_sparse_union_report_entry_line(report_text, name, depth, ranks, missing_ranks, &
+                                                    samples, missing_samples, sum_inclusive, sum_self, &
+                                                    min_inclusive, avg_inclusive, max_inclusive, &
+                                                    avg_calls, stop_code)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: depth
+      integer, intent(in) :: ranks
+      integer, intent(in) :: missing_ranks
+      integer, intent(in) :: samples
+      integer, intent(in) :: missing_samples
+      real(wp), intent(in) :: sum_inclusive
+      real(wp), intent(in) :: sum_self
+      real(wp), intent(in) :: min_inclusive
+      real(wp), intent(in) :: avg_inclusive
+      real(wp), intent(in) :: max_inclusive
+      real(wp), intent(in) :: avg_calls
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: candidate
+      character(len=64) :: actual_domain
+      character(len=64) :: actual_name
+      integer :: actual_indent
+      integer :: actual_missing_ranks
+      integer :: actual_missing_samples
+      integer :: actual_ranks
+      integer :: actual_samples
+      integer :: first_nonblank
+      integer :: found
+      integer :: io
+      integer :: line_no
+      integer :: max_line
+      real(wp) :: actual_avg_calls
+      real(wp) :: actual_avg_inclusive
+      real(wp) :: actual_max_inclusive
+      real(wp) :: actual_min_inclusive
+      real(wp) :: actual_sum_inclusive
+      real(wp) :: actual_sum_self
+
+      found = 0
+      max_line = count_occurrences(report_text, new_line('a')) + 1
+      do line_no = 1, max_line
+         candidate = csv_line_at(report_text, line_no)
+         first_nonblank = verify(candidate, ' ')
+         if (first_nonblank <= 0) cycle
+         actual_indent = first_nonblank - 1
+         actual_name = ''
+         read (candidate, *, iostat=io) actual_name, actual_domain, actual_ranks, &
+            actual_missing_ranks, actual_samples, actual_missing_samples, actual_sum_inclusive, &
+            actual_sum_self, actual_min_inclusive, actual_avg_inclusive, actual_max_inclusive, &
+            actual_avg_calls
+         if (io /= 0) cycle
+         if (trim(actual_name) /= name) cycle
+         if (trim(actual_domain) /= 'openmp_level1_team') cycle
+         if (actual_indent /= 2*depth) cycle
+         if (actual_ranks /= ranks) cycle
+         if (actual_missing_ranks /= missing_ranks) cycle
+         if (actual_samples /= samples) cycle
+         if (actual_missing_samples /= missing_samples) cycle
+         if (abs(actual_sum_inclusive - sum_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_sum_self - sum_self) > 1.0e-9_wp) cycle
+         if (abs(actual_min_inclusive - min_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_inclusive - avg_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_max_inclusive - max_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_calls - avg_calls) > 1.0e-9_wp) cycle
+         found = found + 1
+      end do
+      call expect_int(found, 1, stop_code)
+   end subroutine expect_sparse_union_report_entry_line
+
+   subroutine expect_sparse_union_report_child_entry(report_text, parent_name, child_name, ranks, &
+                                                     missing_ranks, samples, missing_samples, &
+                                                     sum_inclusive, sum_self, min_inclusive, &
+                                                     avg_inclusive, max_inclusive, avg_calls, &
+                                                     stop_code)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: parent_name
+      character(len=*), intent(in) :: child_name
+      integer, intent(in) :: ranks
+      integer, intent(in) :: missing_ranks
+      integer, intent(in) :: samples
+      integer, intent(in) :: missing_samples
+      real(wp), intent(in) :: sum_inclusive
+      real(wp), intent(in) :: sum_self
+      real(wp), intent(in) :: min_inclusive
+      real(wp), intent(in) :: avg_inclusive
+      real(wp), intent(in) :: max_inclusive
+      real(wp), intent(in) :: avg_calls
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: candidate
+      character(len=64) :: actual_domain
+      character(len=64) :: actual_name
+      integer :: actual_indent
+      integer :: actual_missing_ranks
+      integer :: actual_missing_samples
+      integer :: actual_ranks
+      integer :: actual_samples
+      integer :: first_nonblank
+      integer :: found
+      integer :: in_parent
+      integer :: io
+      integer :: line_no
+      integer :: max_line
+      real(wp) :: actual_avg_calls
+      real(wp) :: actual_avg_inclusive
+      real(wp) :: actual_max_inclusive
+      real(wp) :: actual_min_inclusive
+      real(wp) :: actual_sum_inclusive
+      real(wp) :: actual_sum_self
+
+      found = 0
+      in_parent = 0
+      max_line = count_occurrences(report_text, new_line('a')) + 1
+      do line_no = 1, max_line
+         candidate = csv_line_at(report_text, line_no)
+         first_nonblank = verify(candidate, ' ')
+         if (first_nonblank <= 0) cycle
+         actual_indent = first_nonblank - 1
+         actual_name = ''
+         read (candidate, *, iostat=io) actual_name, actual_domain, actual_ranks, &
+            actual_missing_ranks, actual_samples, actual_missing_samples, actual_sum_inclusive, &
+            actual_sum_self, actual_min_inclusive, actual_avg_inclusive, actual_max_inclusive, &
+            actual_avg_calls
+         if (io /= 0) cycle
+         if (actual_indent == 0) then
+            in_parent = 0
+            if (trim(actual_name) == parent_name) in_parent = 1
+            cycle
+         end if
+         if (in_parent == 0) cycle
+         if (actual_indent /= 2) cycle
+         if (trim(actual_name) /= child_name) cycle
+         if (trim(actual_domain) /= 'openmp_level1_team') cycle
+         if (actual_ranks /= ranks) cycle
+         if (actual_missing_ranks /= missing_ranks) cycle
+         if (actual_samples /= samples) cycle
+         if (actual_missing_samples /= missing_samples) cycle
+         if (abs(actual_sum_inclusive - sum_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_sum_self - sum_self) > 1.0e-9_wp) cycle
+         if (abs(actual_min_inclusive - min_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_inclusive - avg_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_max_inclusive - max_inclusive) > 1.0e-9_wp) cycle
+         if (abs(actual_avg_calls - avg_calls) > 1.0e-9_wp) cycle
+         found = found + 1
+      end do
+      call expect_int(found, 1, stop_code)
+   end subroutine expect_sparse_union_report_child_entry
 
    subroutine expect_contains(text, needle, stop_code)
       character(len=*), intent(in) :: text
