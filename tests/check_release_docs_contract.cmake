@@ -195,6 +195,8 @@ set(current_contract_docs
   README.md
   docs/design.md
   docs/maintainer.md
+  docs/openmp-hybrid-strategy-decision.md
+  docs/openmp-thread-lane-runtime-design.md
   docs/semantics.md
 )
 
@@ -211,6 +213,8 @@ set(forbidden_current_contract_phrases
   "by phase"
   "Load only the phase you need"
   "this phase does not make"
+  "Sparse/union hybrid participation reductions"
+  "sparse/union hybrid participation reductions"
 )
 
 foreach(current_contract_doc IN LISTS current_contract_docs)
@@ -219,7 +223,7 @@ foreach(current_contract_doc IN LISTS current_contract_docs)
     string(FIND "${current_contract_doc_text}" "${forbidden_phrase}" forbidden_index)
     if(NOT forbidden_index EQUAL -1)
       message(FATAL_ERROR
-        "${current_contract_doc} contains stale phase-oriented current-state wording: ${forbidden_phrase}"
+        "${current_contract_doc} contains stale current-state wording: ${forbidden_phrase}"
       )
     endif()
   endforeach()

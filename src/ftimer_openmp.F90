@@ -2397,7 +2397,11 @@ contains
 
       do i = 1, entry_count
          union_idx = local_to_union(i)
-         if (union_idx <= 0) cycle
+         if (union_idx <= 0) then
+            call reset_mpi_openmp_union_summary(summary)
+            status = FTIMER_ERR_UNKNOWN
+            return
+         end if
          acc_idx = order(i)
          local_present(union_idx) = 1
          local_eligible_samples(union_idx) = accumulators(acc_idx)%eligible_lane_count
@@ -2516,7 +2520,11 @@ contains
       end if
       do i = 1, entry_count
          union_idx = local_to_union(i)
-         if (union_idx <= 0) cycle
+         if (union_idx <= 0) then
+            call reset_mpi_openmp_union_summary(summary)
+            status = FTIMER_ERR_UNKNOWN
+            return
+         end if
          acc_idx = order(i)
          do lane_idx = 1, size(accumulators(acc_idx)%lane_seen)
             if (.not. accumulators(acc_idx)%lane_seen(lane_idx)) cycle
@@ -2911,6 +2919,8 @@ contains
       integer, allocatable :: descriptor_counts(:)
       integer, allocatable :: descriptor_displacements(:)
       integer, allocatable :: local_descriptor_lengths(:)
+      integer :: all_mapping_ready
+      integer :: all_pack_ready
       integer :: descriptor_len
       integer :: descriptor_offset
       integer :: i
@@ -2918,6 +2928,8 @@ contains
       integer :: local_char_count
       integer :: local_descriptor_count
       integer :: local_idx
+      integer :: local_mapping_ready
+      integer :: local_pack_ready
       integer :: next_count
       integer :: offset
       integer :: rank_slot
@@ -2954,16 +2966,26 @@ contains
       allocate (all_descriptor_lengths(total_descriptor_count))
       local_descriptor_lengths = 0
       local_char_count = 0
+      local_pack_ready = 1
       do i = 1, local_descriptor_count
          local_idx = order(i)
          descriptor_len = len_trim(descriptors(local_idx))
          local_descriptor_lengths(i) = descriptor_len
-         if (.not. checked_mpi_openmp_int_add(local_char_count, descriptor_len, next_count)) then
-            mpierr = -1
-            return
+         if (local_pack_ready == 1) then
+            if (checked_mpi_openmp_int_add(local_char_count, descriptor_len, next_count)) then
+               local_char_count = next_count
+            else
+               local_pack_ready = 0
+            end if
          end if
-         local_char_count = next_count
       end do
+
+      call MPI_Allreduce(local_pack_ready, all_pack_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) return
+      if (all_pack_ready /= 1) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
 
       call MPI_Allgatherv(local_descriptor_lengths, local_descriptor_count, MPI_INTEGER, &
                           all_descriptor_lengths, descriptor_counts, descriptor_displacements, MPI_INTEGER, &
@@ -2976,18 +2998,18 @@ contains
          do slot = 1, descriptor_counts(rank_slot)
             descriptor_len = all_descriptor_lengths(descriptor_offset + slot)
             if (descriptor_len < 0) then
-               mpierr = -1
+               mpierr = FTIMER_ERR_UNKNOWN
                return
             end if
             if (.not. checked_mpi_openmp_int_add(char_counts(rank_slot), descriptor_len, next_count)) then
-               mpierr = -1
+               mpierr = FTIMER_ERR_UNKNOWN
                return
             end if
             char_counts(rank_slot) = next_count
          end do
       end do
       if (.not. build_mpi_openmp_displacements(char_counts, char_displacements, total_char_count)) then
-         mpierr = -1
+         mpierr = FTIMER_ERR_UNKNOWN
          return
       end if
 
@@ -3026,11 +3048,20 @@ contains
          end do
       end do
 
+      local_mapping_ready = 1
       do i = 1, local_descriptor_count
          local_idx = order(i)
          local_to_union(i) = find_mpi_openmp_union_descriptor(union_descriptors, union_count, &
                                                               descriptors(local_idx))
+         if (local_to_union(i) <= 0) local_mapping_ready = 0
       end do
+
+      call MPI_Allreduce(local_mapping_ready, all_mapping_ready, 1, MPI_INTEGER, MPI_MIN, active_comm, mpierr)
+      if (mpierr /= MPI_SUCCESS) return
+      if (all_mapping_ready /= 1) then
+         mpierr = FTIMER_ERR_UNKNOWN
+         return
+      end if
    end subroutine build_mpi_openmp_union_descriptor_list
 #endif
 

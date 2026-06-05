@@ -34,7 +34,7 @@ summary methods on `ftimer_openmp_t`:
 - `timer%mpi_openmp_union_summary(summary, ierr=ierr)` and
   `ftimer_mpi_openmp_union_summary_t` as the sparse union result family;
 - explicit hybrid text and CSV writers over that result shape;
-- strict-identical participant semantics for the current implementation;
+- strict-identical participant semantics for the strict path;
 - sparse/union hybrid participation as a separate additive policy and API, not
   a relaxation of the strict path.
 
@@ -45,7 +45,8 @@ additive and opt-in.
 
 ## Current Compatibility Contract
 
-Current `main` remains the source of truth for the implemented strict API.
+Current `main` remains the source of truth for the implemented strict and
+sparse union hybrid APIs.
 
 - Serial timing through `use ftimer`, `type(ftimer_t)`, and `get_summary()`
   keeps its current local summary contract.
