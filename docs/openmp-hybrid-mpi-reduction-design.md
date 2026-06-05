@@ -7,7 +7,7 @@
 Issue #241 defines the MPI reduction contract that should sit on top of the
 opt-in API direction from #238, the thread-lane runtime model from #239, and
 the OpenMP summary model from #240. It remains the design reference for current
-strict hybrid reductions and future sparse/union hybrid work.
+strict and sparse union hybrid reductions.
 
 Implementation status: #271 implements the strict MPI+OpenMP hybrid reduction
 slice on `ftimer_openmp_t`. The shipped strict surface is
@@ -17,7 +17,10 @@ slice on `ftimer_openmp_t`. The shipped strict surface is
 `ftimer_openmp`. The strict path requires identical descriptor and eligible-lane
 participation across ranks and fails with `FTIMER_ERR_MPI_INCON` rather than
 relaxing to sparse/union behavior. Sparse/union hybrid participation reductions
-remain deferred to #272.
+land in #272 as separate `mpi_openmp_union_summary`,
+`print_mpi_openmp_union_summary`, `write_mpi_openmp_union_summary`, and
+`write_mpi_openmp_union_summary_csv` entry points with
+`ftimer_mpi_openmp_union_summary_t` and related rank/entry types.
 
 ## Decision
 
@@ -28,10 +31,12 @@ summary methods on `ftimer_openmp_t`:
   summary entry point;
 - `ftimer_mpi_openmp_summary_t` and related rank/entry types as the strict
   result family;
+- `timer%mpi_openmp_union_summary(summary, ierr=ierr)` and
+  `ftimer_mpi_openmp_union_summary_t` as the sparse union result family;
 - explicit hybrid text and CSV writers over that result shape;
 - strict-identical participant semantics for the current implementation;
-- future sparse/union hybrid participation as a separate additive policy and
-  API, not a relaxation of the strict path.
+- sparse/union hybrid participation as a separate additive policy and API, not
+  a relaxation of the strict path.
 
 The existing `mpi_summary()`, `mpi_union_summary()`, `ftimer_mpi_summary_t`,
 `ftimer_mpi_union_summary_t`, strict MPI reports, sparse MPI reports, and
@@ -63,12 +68,14 @@ owns lane state:
 ```fortran
 use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, &
                          ftimer_mpi_openmp_summary_t, &
+                         ftimer_mpi_openmp_union_summary_t, &
                          ftimer_openmp_config_t, ftimer_openmp_t
 use mpi_f08, only: MPI_Comm
 
 type(ftimer_openmp_config_t) :: config
 type(ftimer_openmp_t) :: timer
 type(ftimer_mpi_openmp_summary_t) :: summary
+type(ftimer_mpi_openmp_union_summary_t) :: union_summary
 type(MPI_Comm) :: comm
 integer :: ierr
 
@@ -78,13 +85,13 @@ call timer%init(config=config, comm=comm, ierr=ierr)
 ! Worker timing runs through explicit timed OpenMP region epochs.
 
 call timer%mpi_openmp_summary(summary, ierr=ierr)
+call timer%mpi_openmp_union_summary(union_summary, ierr=ierr)
 call timer%finalize(ierr=ierr)
 ```
 
-The first implementation exposes the strict path only. Any later
-participation-aware or sparse/union policy must remain additive and must not
-add positional mode arguments to current `ftimer_t%init`, `ftimer_init`,
-`mpi_summary()`, `mpi_union_summary()`, or the strict hybrid API signatures.
+Sparse/union participation is additive and must not add positional mode
+arguments to current `ftimer_t%init`, `ftimer_init`, `mpi_summary()`,
+`mpi_union_summary()`, or the strict hybrid API signatures.
 
 No `ftimer_mpi_openmp_summary()` procedural wrapper should be added to the
 current `ftimer` default instance. If later ergonomics need procedural helpers,
@@ -197,9 +204,9 @@ schema before any reduction attempts to merge nested-team data.
 
 ## Participation Modes
 
-The implemented #271 surface is strict-identical. It is deliberately separate
-from current pure-MPI `mpi_summary()` / `mpi_union_summary()` behavior and from
-future sparse/union hybrid participation work.
+The #271 surface is strict-identical. It is deliberately separate from current
+pure-MPI `mpi_summary()` / `mpi_union_summary()` behavior and from the sparse
+union hybrid participation surface added by #272.
 
 ### Strict Validation Semantics
 
@@ -220,8 +227,8 @@ practical.
 
 ### Participation-Aware Union Policy
 
-Participation-aware union is future #272 work, not behavior in the strict
-hybrid API.
+Participation-aware union is #272 behavior, not behavior in the strict hybrid
+API.
 
 It behaves like a rank/lane generalization of the current sparse MPI union
 contract:
@@ -254,7 +261,7 @@ counts become visible through eligible-lane and participating-lane counts, and
 through missing-lane counts where the eligible-lane universe is unambiguous,
 instead of causing a reduction failure.
 
-This future policy can represent rank-conditional work, uneven OpenMP
+This policy can represent rank-conditional work, uneven OpenMP
 participation, and different per-rank thread counts. It must be exposed through
 a separate additive API or policy and must not make `mpi_openmp_summary()`
 silently relax strictness.
@@ -436,8 +443,8 @@ The strict #271 implementation adds tests for:
   and `FTIMER_USE_OPENMP=ON` master-thread-only behavior are unchanged.
 
 Tests should use the injectable clock or an OpenMP-aware deterministic clock
-model wherever possible. The later sparse/union hybrid participation issue
-should add tests for rank-conditional descriptors where some ranks are missing,
+model wherever possible. Sparse/union hybrid participation coverage should
+exercise rank-conditional descriptors where some ranks are missing,
 lane-conditional descriptors where some eligible lanes are missing within a
 participating rank, different OpenMP team sizes across ranks under the
 participation-aware policy, descriptor-union cost, rank-level materialization
@@ -486,13 +493,13 @@ overhead separately, following the validation plan introduced by #243.
   and starts current installed-consumer checks for `mpi_f08` plus OpenMP.
   Issue #271 adds deterministic strict MPI+OpenMP validation, strict-semantics
   descriptor and participation tests, report/CSV output checks, and installed
-  consumer coverage. Later implementation issues must add sparse/union
-  participation-aware test matrices and overhead measurements as those APIs
-  exist.
+  consumer coverage. Issue #272 adds sparse/union participation-aware test
+  matrices for the initial public API; overhead measurements can expand as the
+  API grows.
 - #242 records the user-facing timing modes and migration guide in
-  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Later
-  implementation issues should add compile-checked hybrid examples after the
-  runtime, summary, and reduction APIs exist.
+  [`docs/openmp-timing-modes.md`](openmp-timing-modes.md). Hybrid examples
+  should stay compile-checked against the runtime, summary, and reduction APIs
+  that exist on current `main`.
 
 ## Non-Goals
 
@@ -512,5 +519,6 @@ This document originally recorded the reduction contract before runtime changes.
 The strict #271 implementation now validates the public hybrid API with
 two-rank/two-lane MPI+OpenMP smoke coverage, active-lane and active-region
 preflight failures, descriptor mismatch failures, rank/lane imbalance fields,
-and strict hybrid report/CSV output. Sparse/union hybrid participation
-reductions remain deferred to later implementation issues.
+and strict hybrid report/CSV output. The sparse union #272 implementation adds
+rank/lane-conditional descriptor coverage, active-lane preflight coverage, and
+separate sparse hybrid report/CSV output.

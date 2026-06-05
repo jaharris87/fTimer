@@ -9,8 +9,8 @@ Issue #268 adds the initial `ftimer_openmp` public API surface and lifecycle
 coverage, #269 adds the first true OpenMP thread-lane runtime, and #270 adds
 stopped-run local OpenMP summary, report, and CSV coverage. Issue #271 adds
 strict MPI+OpenMP rank/lane summary, report, and CSV coverage through
-`ftimer_openmp_t`. Sparse/union hybrid participation reductions remain
-deferred to later #267 child issues.
+`ftimer_openmp_t`. Issue #272 adds sparse union MPI+OpenMP rank/lane
+participation reductions, reports, and CSV coverage through `ftimer_openmp_t`.
 
 ## Decision
 
@@ -30,11 +30,10 @@ The initial #243 change adds current build-only hybrid coverage:
   preserves current worker no-op behavior.
 
 That initial coverage proved the MPI and OpenMP compatibility options could
-coexist before true worker timing and strict hybrid reductions landed. Current
-strict hybrid smoke coverage now exercises `ftimer_openmp_t` rank/lane
-reductions. None of this should be read as evidence that the current `ftimer`/
-`ftimer_core` APIs perform true worker-thread timing or that sparse/union
-hybrid participation reductions are implemented.
+coexist before true worker timing and hybrid reductions landed. Current strict
+and sparse union hybrid smoke coverage now exercises `ftimer_openmp_t`
+rank/lane reductions. None of this should be read as evidence that the current
+`ftimer`/`ftimer_core` APIs perform true worker-thread timing.
 
 ## Current Compatibility Coverage
 
@@ -49,8 +48,8 @@ Current `main` should keep these validation gates:
 - option-off/global-OpenMP regression coverage for #199;
 - build-contract regression coverage for configure gates and Makefile wrapper
   behavior;
-- MPI+OpenMP smoke coverage for the current compatibility mode and strict
-  `ftimer_openmp_t` rank/lane reductions; and
+- MPI+OpenMP smoke coverage for the current compatibility mode plus strict and
+  sparse union `ftimer_openmp_t` rank/lane reductions; and
 - `ftimer_openmp` API/lifecycle, timed-region, thread-lane runtime,
   diagnostics, public-symbol, and installed-package consumer coverage for the
   current opt-in worker timing boundary.
@@ -131,7 +130,7 @@ lanes per rank for:
 - hybrid report and CSV output, including append rejection against malformed or
   incompatible hybrid schemas.
 
-Future sparse/union MPI+OpenMP participation tests should cover:
+Sparse/union MPI+OpenMP participation tests should cover:
 
 - rank-conditional descriptors;
 - lane-conditional descriptors inside participating ranks;
@@ -160,12 +159,12 @@ Installed-package checks should verify the public package story at each stage:
   `start_id`/`stop_id`, preserves bounded worker diagnostics, exercises
   stopped-run local OpenMP summary/report/CSV entry points, and compile-calls
   the strict hybrid summary API from installed MPI+OpenMP consumers; and
-- strict hybrid summary/report/CSV smoke coverage when `FTIMER_USE_MPI=ON` and
-  `FTIMER_USE_OPENMP=ON` are enabled.
+- strict and sparse union hybrid summary/report/CSV smoke coverage when
+  `FTIMER_USE_MPI=ON` and `FTIMER_USE_OPENMP=ON` are enabled.
 
-Future sparse/union hybrid installed consumers should compile their documented
-source shapes, run the supported examples, and assert the exported CMake
-package resolves only the dependencies required by the selected feature mode.
+Sparse/union hybrid installed consumers should compile their documented source
+shapes, run the supported examples, and assert the exported CMake package
+resolves only the dependencies required by the selected feature mode.
 
 ## Toolchain And Skip Policy
 
@@ -208,10 +207,8 @@ comparisons are meaningful.
 ## Non-Goals
 
 - Claiming true OpenMP worker timing from the initial #243 build-only coverage.
-- Adding pFUnit tests for future sparse/union summary/reduction APIs that do
-  not exist yet.
-- Treating MPI+OpenMP build success as proof of sparse/union hybrid rank/lane
-  reductions.
+- Treating MPI+OpenMP build success alone as proof of sparse/union hybrid
+  rank/lane reductions.
 - Requiring every CI runner to support every MPI/OpenMP/compiler combination.
 - Weakening current worker no-op compatibility tests.
 - Adding automatic MPI barriers, OpenMP task timing, accelerator/device timing,
@@ -224,11 +221,11 @@ comparisons are meaningful.
 - #240 provides local OpenMP summary/report/CSV behavior for summary golden
   tests.
 - #241 provides the hybrid reduction contract that MPI+OpenMP pFUnit and CSV
-  tests must enforce.
+  tests must enforce, and #272 implements the sparse union slice.
 - #242 records user-facing timing modes and migration guidance. Current local
-  OpenMP examples and installed consumers should stay compile-checked; later
-  implementation issues add sparse/union hybrid examples and installed
-  consumers once that API exists.
+  OpenMP examples and installed consumers should stay compile-checked; sparse
+  union hybrid examples and installed consumers should remain separate from the
+  strict hybrid path.
 
 ## Validation For This Plan
 

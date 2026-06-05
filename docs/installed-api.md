@@ -12,7 +12,8 @@ The supported source-level import surface is intentionally narrow:
 - `use ftimer_openmp` for the explicit opt-in OpenMP timing API surface. In
   this release line, its lifecycle/configuration, timer catalog,
   timed-region, id-first thread-lane timing, stopped-run local summary, strict
-  MPI+OpenMP summary, text report, and CSV entry points are real.
+  MPI+OpenMP summary, sparse MPI+OpenMP union summary, text report, and CSV
+  entry points are real.
   `ftimer_openmp_t%init` requires `config=` and accepts `comm=` only by keyword
   in MPI builds. When `comm=` is omitted, MPI+OpenMP builds capture
   `MPI_COMM_WORLD`; pass `comm=` to use a caller-owned communicator explicitly.
@@ -28,8 +29,10 @@ The supported source-level import surface is intentionally narrow:
   returns `ftimer_mpi_openmp_summary_t`, and uses separate
   `summary_kind=mpi_openmp` CSV output rather than the existing rank-only MPI
   schemas. It requires identical timer descriptors and eligible lane
-  participation on every rank; sparse/union hybrid participation is not part of
-  this surface.
+  participation on every rank. The sparse union hybrid family is a separate
+  collective surface returning `ftimer_mpi_openmp_union_summary_t` and writing
+  `summary_kind=mpi_openmp_union` CSV rows with explicit rank/lane
+  participation metadata; it does not change the strict hybrid API.
   `config%max_lanes` counts the serial lane plus worker lanes. Serial timing
   uses lane 0. In `FTIMER_USE_OPENMP=ON` packages, worker timing inside an
   explicitly opened level-1 timed OpenMP region uses one lane per OpenMP
@@ -122,6 +125,9 @@ Stable public symbols in `ftimer_openmp`:
 - `ftimer_mpi_openmp_rank_t`
 - `ftimer_mpi_openmp_summary_entry_t`
 - `ftimer_mpi_openmp_summary_t`
+- `ftimer_mpi_openmp_union_rank_t`
+- `ftimer_mpi_openmp_union_summary_entry_t`
+- `ftimer_mpi_openmp_union_summary_t`
 - `ftimer_openmp_config_t`
 - `ftimer_openmp_parallel_region_t`
 - `ftimer_openmp_summary_entry_t`

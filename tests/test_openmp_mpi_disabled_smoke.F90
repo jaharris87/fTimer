@@ -1,11 +1,13 @@
 program ftimer_openmp_mpi_disabled_smoke
-   use ftimer_openmp, only: ftimer_mpi_openmp_summary_t, ftimer_openmp_config_t, ftimer_openmp_t
+   use ftimer_openmp, only: ftimer_mpi_openmp_summary_t, ftimer_mpi_openmp_union_summary_t, &
+                            ftimer_openmp_config_t, ftimer_openmp_t
    use ftimer_types, only: FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_SUCCESS
    implicit none
 
    character(len=*), parameter :: csv_path = 'openmp_mpi_disabled_summary.csv'
    character(len=*), parameter :: report_path = 'openmp_mpi_disabled_summary.txt'
    type(ftimer_mpi_openmp_summary_t) :: summary
+   type(ftimer_mpi_openmp_union_summary_t) :: union_summary
    type(ftimer_openmp_config_t) :: config
    type(ftimer_openmp_t) :: timer
    integer :: ierr
@@ -33,8 +35,24 @@ program ftimer_openmp_mpi_disabled_smoke
    call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 8)
    call expect_file_absent(csv_path, 9)
 
+   call timer%mpi_openmp_union_summary(union_summary, ierr=ierr)
+   call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 10)
+   call expect_int(union_summary%num_ranks, 0, 11)
+   call expect_int(union_summary%num_entries, 0, 12)
+
+   call timer%print_mpi_openmp_union_summary(ierr=ierr)
+   call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 13)
+
+   call timer%write_mpi_openmp_union_summary(report_path, ierr=ierr)
+   call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 14)
+   call expect_file_absent(report_path, 15)
+
+   call timer%write_mpi_openmp_union_summary_csv(csv_path, ierr=ierr)
+   call expect_status(ierr, FTIMER_ERR_NOT_IMPLEMENTED, 16)
+   call expect_file_absent(csv_path, 17)
+
    call timer%finalize(ierr=ierr)
-   call expect_status(ierr, FTIMER_SUCCESS, 10)
+   call expect_status(ierr, FTIMER_SUCCESS, 18)
 
 contains
 
