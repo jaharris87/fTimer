@@ -994,6 +994,56 @@ if(TEST_ENABLE_MPI)
       )
     endif()
 
+    if(NOT EXISTS "${consumer_build_dir}/consumer_mpi_openmp_summary.txt")
+      message(FATAL_ERROR
+        "Installed-package OpenMP API MPI+OpenMP consumer did not write consumer_mpi_openmp_summary.txt."
+      )
+    endif()
+    if(NOT EXISTS "${consumer_build_dir}/consumer_mpi_openmp_summary.csv")
+      message(FATAL_ERROR
+        "Installed-package OpenMP API MPI+OpenMP consumer did not write consumer_mpi_openmp_summary.csv."
+      )
+    endif()
+    if(NOT EXISTS "${consumer_build_dir}/consumer_mpi_openmp_union_summary.txt")
+      message(FATAL_ERROR
+        "Installed-package OpenMP API MPI+OpenMP consumer did not write consumer_mpi_openmp_union_summary.txt."
+      )
+    endif()
+    if(NOT EXISTS "${consumer_build_dir}/consumer_mpi_openmp_union_summary.csv")
+      message(FATAL_ERROR
+        "Installed-package OpenMP API MPI+OpenMP consumer did not write consumer_mpi_openmp_union_summary.csv."
+      )
+    endif()
+    file(READ "${consumer_build_dir}/consumer_mpi_openmp_summary.csv"
+      ftimer_consumer_mpi_openmp_csv_text)
+    if(NOT ftimer_consumer_mpi_openmp_csv_text MATCHES "mpi_openmp")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP strict CSV does not contain the mpi_openmp summary kind."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_csv_text MATCHES "consumer_hybrid_api")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP strict CSV does not contain the expected consumer_hybrid_api entry."
+      )
+    endif()
+    file(READ "${consumer_build_dir}/consumer_mpi_openmp_union_summary.csv"
+      ftimer_consumer_mpi_openmp_union_csv_text)
+    if(NOT ftimer_consumer_mpi_openmp_union_csv_text MATCHES "mpi_openmp_union")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union CSV does not contain the mpi_openmp_union summary kind."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_union_csv_text MATCHES "consumer_sparse_hybrid_api")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union CSV does not contain the expected sparse hybrid entry."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_union_csv_text MATCHES "missing_rank_count")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union CSV does not contain the sparse participation schema."
+      )
+    endif()
+
     string(REPLACE "\r\n" "\n" openmp_api_mpi_openmp_consumer_stderr_normalized
       "${openmp_api_mpi_openmp_consumer_stderr}"
     )
