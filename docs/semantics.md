@@ -411,9 +411,9 @@ enforcement should pass `ierr` and check it.
   Without `comm=`, MPI-enabled builds capture `MPI_COMM_WORLD`. Registered
   timer ids remain valid across `reset()` and are
   invalidated across `finalize()`/reinit without being recycled in the same
-  object. The MPI communicator handle is used by strict hybrid MPI+OpenMP
-  summary/report calls; local OpenMP summary/report behavior does not consume
-  it.
+  object. The MPI communicator handle is used by strict and sparse union
+  MPI+OpenMP summary/report calls; local OpenMP summary/report behavior does
+  not consume it.
   `config%max_lanes` counts the serial lane plus worker lanes.
   Serial-context `start_id`/`stop_id` use lane 0. Inside an explicitly opened
   timed level-1 OpenMP region, `start_id`/`stop_id` use one lane per OpenMP

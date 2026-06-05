@@ -1850,6 +1850,9 @@ contains
          csv_text = read_file_text(csv_path)
          header = first_line(csv_text)
          call expect_int(count_occurrences(csv_text, header), 1, 2270)
+         call expect_csv_record_count(csv_text, 'summary', 2, 2281)
+         call expect_csv_record_count(csv_text, 'rank', 4, 2282)
+         call expect_csv_record_count(csv_text, 'entry', 2, 2283)
 
          bad_text = header//new_line('a')//'"1","mpi_openmp_union","summary"'//new_line('a')
          call write_raw_text_file(bad_record_path, bad_text)

@@ -19,13 +19,13 @@ Before starting a release candidate:
   pure-MPI timing, the narrow master-thread-only OpenMP carve-out, the
   `ftimer_openmp` lifecycle/configuration/timer-catalog and id-first
   serial-lane/level-1 worker timing surface with local OpenMP summaries,
-  reports, CSV, and strict MPI+OpenMP hybrid summaries/reports/CSV, and the
-  CMake package path.
+  reports, CSV, strict MPI+OpenMP hybrid summaries/reports/CSV, sparse union
+  MPI+OpenMP hybrid participation summaries/reports/CSV, and the CMake package
+  path.
 - Do not promote deferred non-goals into the release unless a linked issue has
-  changed scope. Current non-goals include sparse/union MPI+OpenMP hybrid
-  participation reductions, full profiler integration, FPM packaging, hardware
-  counters, traces, accelerator timelines, automatic MPI barriers, and stable
-  callback semantic identity.
+  changed scope. Current non-goals include full profiler integration, FPM
+  packaging, hardware counters, traces, accelerator timelines, automatic MPI
+  barriers, and stable callback semantic identity.
 
 ## Version And Compatibility
 
