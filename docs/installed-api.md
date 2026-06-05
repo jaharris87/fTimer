@@ -51,6 +51,14 @@ The supported source-level import surface is intentionally narrow:
   fields.
 - `use ftimer_types` for shared constants, status codes, callback interfaces, and summary types
 
+The source examples that exercise the installed import paths are
+`examples/openmp_example.F90` for the compatibility carve-out,
+`examples/openmp_worker_example.F90` for true OpenMP worker timing through
+`use ftimer_openmp`, and `examples/mpi_openmp_example.F90` for strict plus
+sparse union MPI+OpenMP hybrid timing through the same object API. Existing
+serial, pure-MPI, and compatibility users do not need source changes to keep
+their current behavior.
+
 ## MPI lifecycle and communicator ownership
 
 MPI-enabled fTimer must be used after `MPI_Init` and before `MPI_Finalize`.

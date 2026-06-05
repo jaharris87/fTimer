@@ -513,6 +513,10 @@ enforcement should pass `ierr` and check it.
 - For user-facing mode selection, accepted instrumentation patterns, and
   migration guidance, see
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
+  The compiling examples are `examples/openmp_example.F90` for compatibility
+  timing, `examples/openmp_worker_example.F90` for true OpenMP worker timing,
+  and `examples/mpi_openmp_example.F90` for strict plus sparse union hybrid
+  timing.
 - Sparse union hybrid MPI+OpenMP participation is implemented as a separate
   `ftimer_openmp_t` family; see
   [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md)

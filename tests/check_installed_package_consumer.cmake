@@ -877,6 +877,21 @@ if(TEST_ENABLE_MPI)
   if(DEFINED TEST_MPIEXEC_PREFLAGS AND NOT TEST_MPIEXEC_PREFLAGS STREQUAL "")
     list(APPEND ftimer_mpi_launch_prefix ${TEST_MPIEXEC_PREFLAGS})
   endif()
+  execute_process(
+    COMMAND "${ftimer_mpiexec}" --version
+    OUTPUT_VARIABLE ftimer_mpiexec_version_stdout
+    ERROR_VARIABLE ftimer_mpiexec_version_stderr
+    RESULT_VARIABLE ftimer_mpiexec_version_result
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_STRIP_TRAILING_WHITESPACE
+  )
+  if(ftimer_mpiexec_version_result EQUAL 0)
+    set(ftimer_mpiexec_version_text
+      "${ftimer_mpiexec_version_stdout}\n${ftimer_mpiexec_version_stderr}")
+    if(ftimer_mpiexec_version_text MATCHES "Open MPI|OpenRTE|PRTE|PRRTE")
+      list(APPEND ftimer_mpi_launch_prefix --map-by slot:OVERSUBSCRIBE)
+    endif()
+  endif()
 
   set(ftimer_mpi_launch_command "${ftimer_mpi_launch_prefix}")
   list(APPEND ftimer_mpi_launch_command "${mpi_consumer_executable}")

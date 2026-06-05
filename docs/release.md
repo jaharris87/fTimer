@@ -37,9 +37,11 @@ Before starting a release candidate:
   smoke/contract checks in the same release-prep PR.
 - Treat release notes as part of the compatibility contract: describe
   user-visible behavior changes, limitations, and migration notes directly.
-- If future OpenMP or MPI+OpenMP APIs become available, update
-  `docs/openmp-timing-modes.md` and name the supported examples, validation
-  matrix, and remaining non-goals in the release notes.
+- For the first release containing the true OpenMP and hybrid APIs, name
+  `examples/openmp_example.F90`, `examples/openmp_worker_example.F90`, and
+  `examples/mpi_openmp_example.F90`; state that serial, pure-MPI, and
+  compatibility users need no source changes; include the validation matrix;
+  and keep the remaining non-goals explicit.
 
 ## Validation Matrix
 
@@ -51,8 +53,8 @@ then require GitHub CI to pass before tagging.
 | Smoke/install path | Yes |
 | Serial pFUnit path | Yes when pFUnit is available |
 | MPI path | Yes when MPI and matching pFUnit are available |
-| MPI+OpenMP compatibility and hybrid paths | Yes when validating the hybrid compatibility matrix; this proves current feature-flag coexistence, the installed `ftimer_openmp` worker API, and strict plus sparse union hybrid rank/lane summaries/reports/CSV |
-| OpenMP carve-out | Yes: GNU pFUnit guard coverage when OpenMP and matching pFUnit are available; LLVM Flang smoke/example coverage when validating the OpenMP compiler matrix |
+| MPI+OpenMP compatibility and hybrid paths | Yes when validating the hybrid compatibility matrix; this proves current feature-flag coexistence, `examples/mpi_openmp_example.F90`, the installed `ftimer_openmp` worker API, and strict plus sparse union hybrid rank/lane summaries/reports/CSV |
+| OpenMP carve-out and true worker example | Yes: GNU pFUnit guard coverage when OpenMP and matching pFUnit are available; LLVM Flang smoke/example coverage for `examples/openmp_example.F90` and `examples/openmp_worker_example.F90` when validating the OpenMP compiler matrix |
 | Bench harness | Yes for hot-path or summary-performance changes |
 | Formatting | Yes for source/test/example changes |
 | Diff hygiene | Yes |
@@ -91,7 +93,7 @@ FC=mpifort cmake -B build-mpi-openmp \
 cmake --build build-mpi-openmp
 cmake -E chdir build-mpi-openmp ctest --output-on-failure
 cmake -E chdir build-mpi-openmp ctest --output-on-failure \
-  --no-tests=error -R '^ftimer_installed_package_consumer_mpi_openmp$'
+  --no-tests=error -R '^(ftimer_mpi_openmp_example_smoke|ftimer_installed_package_consumer_mpi_openmp)$'
 
 FC=gfortran cmake -B build-openmp \
   -DFTIMER_USE_OPENMP=ON \
@@ -105,7 +107,7 @@ FC=flang-19 cmake -B build-openmp-flang \
   -DFTIMER_BUILD_TESTS=OFF
 cmake --build build-openmp-flang
 cmake -E chdir build-openmp-flang ctest --output-on-failure \
-  -R '^(ftimer_openmp_example_smoke|ftimer_installed_package_consumer_openmp_flang)$'
+  -R '^(ftimer_openmp_example_smoke|ftimer_openmp_worker_example_smoke|ftimer_installed_package_consumer_openmp_flang)$'
 
 Add `-DOpenMP_ROOT=/path/to/libomp` on LLVM Flang platforms where CMake does
 not discover the OpenMP runtime automatically.
@@ -164,6 +166,8 @@ Release notes should be short and evidence-backed. Include:
 
 - the version and tag,
 - the intended audience and supported workflows,
+- supported examples: serial basics, pure MPI, OpenMP compatibility,
+  true OpenMP worker timing, and strict/sparse MPI+OpenMP hybrid timing,
 - user-visible API, packaging, CSV, MPI, OpenMP, or behavior changes,
 - compatibility and migration notes,
 - known limitations and deferred work,

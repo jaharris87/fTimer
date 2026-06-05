@@ -62,7 +62,9 @@ fTimer/
 │   ├── basic_usage.F90
 │   ├── nested_timers.F90
 │   ├── mpi_example.F90
-│   └── openmp_example.F90
+│   ├── openmp_example.F90
+│   ├── openmp_worker_example.F90
+│   └── mpi_openmp_example.F90
 ├── bench/
 │   └── ftimer_bench.F90
 ├── docs/
@@ -271,11 +273,11 @@ The MPI and OpenMP enablement paths are guarded at configure time:
 
 The current test inventory is:
 
-- smoke tests in `tests/test_phase0_smoke.F90` and `tests/test_openmp_api_smoke.F90`, OpenMP diagnostic stderr capture through `tests/test_openmp_api_diagnostics.F90` when `FTIMER_USE_OPENMP=ON`, runtime execution of `basic_usage`, OpenMP example execution when `FTIMER_USE_OPENMP=ON`, MPI example execution when `FTIMER_USE_MPI=ON`, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
+- smoke tests in `tests/test_phase0_smoke.F90` and `tests/test_openmp_api_smoke.F90`, OpenMP diagnostic stderr capture through `tests/test_openmp_api_diagnostics.F90` when `FTIMER_USE_OPENMP=ON`, runtime execution of `basic_usage`, OpenMP compatibility and worker example execution when `FTIMER_USE_OPENMP=ON`, MPI example execution when `FTIMER_USE_MPI=ON`, MPI+OpenMP example execution when both feature flags are enabled, installed-package consumer build-and-run checks, and build-contract regression checks under `tests/check_*_contracts.cmake`
 - serial pFUnit tests for core behavior, summaries, callbacks, reset behavior, call-stack behavior, and procedural parity
 - MPI pFUnit tests under `tests/mpi/`, validated in CI with GNU Fortran against OpenMPI and MPICH
 - OpenMP guard tests enabled when `FTIMER_USE_OPENMP=ON`, covering the master-thread-only carve-out plus `ftimer_openmp_t` thread-lane timing smoke coverage
-- MPI+OpenMP installed-consumer smoke coverage for the current exported-package dependency story, including an MPI-initialized OpenMP region, explicit `ftimer_openmp_t` worker calls, and a strict hybrid summary call from an installed consumer
+- MPI+OpenMP example and installed-consumer smoke coverage for the current exported-package dependency story, including an MPI-initialized OpenMP region, explicit `ftimer_openmp_t` worker calls, strict hybrid summaries, and sparse union hybrid summaries
 
 The default repository baseline is still the smoke/build-contract path. The full behavioral suite is enabled explicitly with `FTIMER_BUILD_TESTS=ON`.
 
