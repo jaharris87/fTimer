@@ -11,16 +11,25 @@ The supported source-level import surface is intentionally narrow:
   pointer-based `ftimer_oop_scope` scoped guard helper
 - `use ftimer_openmp` for the explicit opt-in OpenMP timing API surface. In
   this release line, its lifecycle/configuration, timer catalog,
-  timed-region, id-first thread-lane timing, stopped-run local summary, text
-  report, and CSV entry points are real.
+  timed-region, id-first thread-lane timing, stopped-run local summary, strict
+  MPI+OpenMP summary, text report, and CSV entry points are real.
   `ftimer_openmp_t%init` requires `config=` and accepts `comm=` only by keyword
-  in MPI builds. The MPI communicator handle is stored for future hybrid
-  reductions; local OpenMP summary/report behavior does not consume it.
+  in MPI builds. When `comm=` is omitted, MPI+OpenMP builds capture
+  `MPI_COMM_WORLD`; pass `comm=` to use a caller-owned communicator explicitly.
+  The MPI communicator handle is used by the strict hybrid MPI+OpenMP
+  summary/report family; local OpenMP summary/report behavior does not consume
+  it.
   Registered timer ids remain valid across `reset()` and are invalidated
   across `finalize()`/reinit without being recycled in the same object.
   Current `ftimer_openmp_t` timing uses the non-MPI wall clock even in
   MPI-enabled packages, so worker timing does not call `MPI_Wtime()` from
-  OpenMP threads or require an `MPI_Init_thread` support level.
+  OpenMP threads or require an `MPI_Init_thread` support level. The strict
+  hybrid summary family is collective over the init-captured communicator,
+  returns `ftimer_mpi_openmp_summary_t`, and uses separate
+  `summary_kind=mpi_openmp` CSV output rather than the existing rank-only MPI
+  schemas. It requires identical timer descriptors and eligible lane
+  participation on every rank; sparse/union hybrid participation is not part of
+  this surface.
   `config%max_lanes` counts the serial lane plus worker lanes. Serial timing
   uses lane 0. In `FTIMER_USE_OPENMP=ON` packages, worker timing inside an
   explicitly opened level-1 timed OpenMP region uses one lane per OpenMP
@@ -46,9 +55,11 @@ The installed MPI-enabled package uses `MPI_Wtime()` as its build-default clock
 and its MPI summary/report entry points use MPI collectives, so pre-init or
 post-finalize use is outside the supported runtime contract.
 The explicit `ftimer_openmp_t` worker runtime is the exception to the clock
-rule above: it currently uses the non-MPI wall clock because the stored
-communicator is reserved for future hybrid reductions.
+rule above: worker timing currently uses the non-MPI wall clock. The stored
+communicator is used later at strict hybrid summary/report calls, not during
+timed OpenMP regions.
 
+`init(config=...)` in an MPI build captures `MPI_COMM_WORLD` by default.
 `init(comm=...)` stores the selected communicator as a non-owning handle. The
 selected communicator is an `mpi_f08` `type(MPI_Comm)` value; legacy integer
 communicator handles are not part of the installed MPI API. fTimer does not
@@ -108,6 +119,9 @@ Stable public symbols in `ftimer_core`:
 Stable public symbols in `ftimer_openmp`:
 
 - `FTIMER_OPENMP_MODE_THREAD_LANES`
+- `ftimer_mpi_openmp_rank_t`
+- `ftimer_mpi_openmp_summary_entry_t`
+- `ftimer_mpi_openmp_summary_t`
 - `ftimer_openmp_config_t`
 - `ftimer_openmp_parallel_region_t`
 - `ftimer_openmp_summary_entry_t`

@@ -4,9 +4,9 @@
 
 This document describes the current runtime contract on `main`.
 
-Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`, and the explicit `ftimer_openmp` thread-lane runtime with stopped-run local OpenMP summary, text report, and CSV output for opt-in serial-lane and level-1 OpenMP worker timing. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output.
+Current `main` implements stack-based start/stop timing, context-sensitive accounting, strict/warn/repair mismatch handling, `lookup`, `reset`, procedural `ftimer_scope` and OOP `ftimer_oop_scope` scoped guards, the `ierr` vs stderr error contract, `get_summary()`, `print_summary()`, `write_summary()`, `write_summary_csv()`, `mpi_summary()`, `mpi_union_summary()` sparse descriptor-union summaries, `print_mpi_summary()`, `write_mpi_summary()`, `write_mpi_summary_csv()`, `print_mpi_union_summary()`, `write_mpi_union_summary()`, `write_mpi_union_summary_csv()`, self-time computation, callback suppression during repair, descriptor-hash MPI preflight, globally meaningful MPI min/avg/max summary fields on every participating rank, limited master-thread-only OpenMP guards in `ftimer_core` when built with `FTIMER_USE_OPENMP=ON`, and the explicit `ftimer_openmp` thread-lane runtime with stopped-run local OpenMP summary, text report, CSV output, and strict MPI+OpenMP hybrid summary/report/CSV output for opt-in serial-lane and level-1 OpenMP worker timing. In non-MPI builds, `mpi_summary()` and `mpi_union_summary()` return `FTIMER_ERR_NOT_IMPLEMENTED` with empty MPI summary results; MPI report APIs, including sparse union reports and CSV export, return `FTIMER_ERR_NOT_IMPLEMENTED` without emitting report output. The `ftimer_openmp_t` strict MPI+OpenMP report family returns `FTIMER_ERR_NOT_IMPLEMENTED` for initialized objects in non-MPI builds, after the usual lifecycle checks such as `FTIMER_ERR_NOT_INIT` for uninitialized objects.
 
-This contract is strongest for disciplined serial and pure-MPI wall-clock timing. OpenMP support has two current paths: existing `ftimer`/`ftimer_core` calls keep the master-thread-only carve-out for bracketing a parallel region as a whole, while `ftimer_openmp_t` provides explicit opt-in serial-lane and level-1 worker timing with local OpenMP summaries but without hybrid rank/lane reductions. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
+This contract is strongest for disciplined serial and pure-MPI wall-clock timing. OpenMP support has two current paths: existing `ftimer`/`ftimer_core` calls keep the master-thread-only carve-out for bracketing a parallel region as a whole, while `ftimer_openmp_t` provides explicit opt-in serial-lane and level-1 worker timing with local OpenMP summaries and strict MPI+OpenMP rank/lane reductions. Sparse/union hybrid participation reductions remain deferred. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
 Current architecture, validation, and workflow notes belong in `docs/design.md`. Historical phase-roadmap notes belong in `docs/implementation-history.md`. When current-state sources disagree, use this repository-wide precedence order: current code under `src/`, then current behavioral tests, then `docs/semantics.md`, then `README.md`, then `docs/design.md`.
 
@@ -206,7 +206,7 @@ This disabled-facade behavior is an application integration contract, not an alt
 - Current `main` does not promise that local summary node ids remain stable across separate runs or across independently produced summary objects
 - `print_summary()` and `write_summary()` format the same local snapshot data. When any returned entry is active, formatted reports add active-state information and reserve the `Active timers` metadata key for the built-in snapshot status line. A formatted local report whose `Active timers` field is `yes` is an interim snapshot, not a final stopped-run report.
 - `write_summary_csv()` exports the same local snapshot data in CSV format version `2`. It writes one header row, a `record_type=summary` row, zero or more `record_type=metadata` rows, and one `record_type=entry` row per summary entry. Entry rows include `node_id`, `parent_id`, `depth`, `name`, `inclusive_time`, `self_time`, `call_count`, `avg_time`, `pct_time`, and `is_active`. The local integer `call_count` field is emitted as decimal text without narrowing to default integer, and version `2` is the schema signal that local `call_count` can require signed 64-bit parsing.
-- Local and strict MPI CSV `append=.true.` appends records to the target file and omits the header when the existing file is non-empty. Non-empty append targets must begin with the fTimer CSV format-version-2 header, existing data rows must be well-formed CSV logical records with the exact v2 header field count and recognized `summary_kind`/`record_type` combinations, and the target must end with a newline; mismatched headers, older-format records, malformed v2 record shape or quote placement, or unterminated final records are rejected with `FTIMER_ERR_IO` instead of silently mixing schemas. Sparse union CSV append uses its own exact header and `summary_kind=mpi_union` validation. Append validation is a schema-shape and CSV-syntax guard for existing files, not a semantic reparse of every numeric, logical, or timing payload field already present.
+- Local and strict MPI CSV `append=.true.` appends records to the target file and omits the header when the existing file is non-empty. Non-empty append targets must begin with the fTimer CSV format-version-2 header, existing data rows must be well-formed CSV logical records with the exact v2 header field count and recognized `summary_kind`/`record_type` combinations, and the target must end with a newline; mismatched headers, older-format records, malformed v2 record shape or quote placement, or unterminated final records are rejected with `FTIMER_ERR_IO` instead of silently mixing schemas. Sparse union, local OpenMP, and strict MPI+OpenMP CSV append use their own exact headers and `summary_kind` validation. Append validation is a schema-shape and CSV-syntax guard for existing files, not a semantic reparse of every numeric, logical, or timing payload field already present.
 - CSV text fields emit trimmed raw timer names and metadata key/value text with standard CSV quoting. Unlike human-readable text reports, CSV exports do not apply the visible `\t`/`\n`/`\xNN` display escaping. They are not spreadsheet-formula-sanitized.
 - A caller that requires a final local report should stop all timers first and verify `summary%has_active_timers == .false.`
 
@@ -352,11 +352,13 @@ enforcement should pass `ierr` and check it.
   `ftimer_openmp_t%init(config=...)`, `finalize`, `reset`,
   `register_timer`, `lookup_timer`, `begin_parallel_region`,
   `end_parallel_region`, `start_id`, and `stop_id` entry points are available
-  now, including keyword-only `init(config=..., comm=...)` in MPI-enabled
-  builds. Registered timer ids remain valid across `reset()` and are
+  now, including optional keyword-only `comm=` capture in MPI-enabled builds.
+  Without `comm=`, MPI-enabled builds capture `MPI_COMM_WORLD`. Registered
+  timer ids remain valid across `reset()` and are
   invalidated across `finalize()`/reinit without being recycled in the same
-  object. The MPI communicator handle is stored for future hybrid-reduction
-  work; local OpenMP summary/report behavior does not consume it.
+  object. The MPI communicator handle is used by strict hybrid MPI+OpenMP
+  summary/report calls; local OpenMP summary/report behavior does not consume
+  it.
   `config%max_lanes` counts the serial lane plus worker lanes.
   Serial-context `start_id`/`stop_id` use lane 0. Inside an explicitly opened
   timed level-1 OpenMP region, `start_id`/`stop_id` use one lane per OpenMP
@@ -416,13 +418,48 @@ enforcement should pass `ierr` and check it.
   `metadata`, and aggregate `entry` rows. It is not append-compatible with the
   local/strict MPI version-2 CSV header or the sparse MPI union CSV header.
 - Local OpenMP summaries are summary tables, not traces. They do not expose
-  interval timelines, profiler event streams, per-entry wall-clock interval
-  unions, or MPI+OpenMP reductions.
+  interval timelines, profiler event streams, or per-entry wall-clock interval
+  unions.
+- `ftimer_openmp_t%mpi_openmp_summary(summary, ierr=...)`,
+  `print_mpi_openmp_summary`, `write_mpi_openmp_summary`, and
+  `write_mpi_openmp_summary_csv` are the strict hybrid MPI+OpenMP
+  summary/report family. They are collective over the communicator captured by
+  `ftimer_openmp_t%init`. In MPI+OpenMP builds, `init(config=...)` captures
+  `MPI_COMM_WORLD` by default; pass `comm=` to capture a caller-owned
+  communicator explicitly. These entry points return/format
+  `ftimer_mpi_openmp_summary_t`, not `ftimer_mpi_summary_t` or
+  `ftimer_mpi_union_summary_t`.
+- Strict hybrid summaries are stopped-run-only. Before descriptor or timing
+  reductions, every rank exchanges active-lane status; if any rank has an open
+  timed region or active lane stack, every participant returns
+  `FTIMER_ERR_ACTIVE` and the result remains empty.
+- Strict hybrid descriptor identity includes the logical timer/context path,
+  execution domain (`serial_lane` versus `openmp_level1_team`), and eligible
+  lane structure. Ranks must agree on the required descriptor set and every
+  eligible lane must participate. Missing ranks, missing lanes, different
+  timer paths, or different eligible lane structures fail as
+  `FTIMER_ERR_MPI_INCON` before numeric timing reductions. Missing rank/lane
+  data is not silently filled with zero.
+- `ftimer_mpi_openmp_summary_t` stores communicator-level rank extrema and
+  averages for summary-window time, timed-region envelope time, summed lane
+  root work, and summed lane self work; rank rows for each communicator-local
+  rank; and descriptor rows with rank/lane participation counts plus
+  participating-lane inclusive time, self time, call-count, percent, and
+  imbalance fields.
+- Strict hybrid text and CSV reports are communicator-root artifacts. The CSV
+  export uses a dedicated `format_version=1`, `summary_kind=mpi_openmp` schema
+  with `summary`, `metadata`, `rank`, and aggregate `entry` rows. It is not
+  append-compatible with local OpenMP, local serial, strict MPI, or sparse MPI
+  union CSV headers.
+- Sparse or union MPI+OpenMP hybrid participation reductions are not part of
+  this strict surface. Rank- or lane-conditional hybrid work must use a later
+  sparse/union hybrid API rather than relying on `mpi_openmp_summary()` to
+  relax strictness.
 - For user-facing mode selection, accepted instrumentation patterns, and
   migration guidance, see
   [`docs/openmp-timing-modes.md`](openmp-timing-modes.md).
-- Future real hybrid MPI+OpenMP timing is tracked separately from this current
-  compatibility mode; see [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md)
+- Sparse/union hybrid MPI+OpenMP participation remains future work; see
+  [`docs/openmp-hybrid-strategy-decision.md`](openmp-hybrid-strategy-decision.md)
   and the opt-in API direction in
   [`docs/openmp-hybrid-api-design.md`](openmp-hybrid-api-design.md), plus the
   OpenMP/hybrid summary model in

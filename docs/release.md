@@ -19,11 +19,13 @@ Before starting a release candidate:
   pure-MPI timing, the narrow master-thread-only OpenMP carve-out, the
   `ftimer_openmp` lifecycle/configuration/timer-catalog and id-first
   serial-lane/level-1 worker timing surface with local OpenMP summaries,
-  reports, and CSV, and the CMake package path.
+  reports, CSV, and strict MPI+OpenMP hybrid summaries/reports/CSV, and the
+  CMake package path.
 - Do not promote deferred non-goals into the release unless a linked issue has
-  changed scope. Current non-goals include MPI+OpenMP hybrid reductions, full
-  profiler integration, FPM packaging, hardware counters, traces, accelerator
-  timelines, automatic MPI barriers, and stable callback semantic identity.
+  changed scope. Current non-goals include sparse/union MPI+OpenMP hybrid
+  participation reductions, full profiler integration, FPM packaging, hardware
+  counters, traces, accelerator timelines, automatic MPI barriers, and stable
+  callback semantic identity.
 
 ## Version And Compatibility
 
@@ -49,7 +51,7 @@ then require GitHub CI to pass before tagging.
 | Smoke/install path | Yes |
 | Serial pFUnit path | Yes when pFUnit is available |
 | MPI path | Yes when MPI and matching pFUnit are available |
-| MPI+OpenMP compatibility path | Yes when validating the hybrid compatibility matrix; this proves current feature-flag coexistence plus the installed `ftimer_openmp` worker API, not hybrid rank/lane reductions |
+| MPI+OpenMP compatibility and strict hybrid path | Yes when validating the hybrid compatibility matrix; this proves current feature-flag coexistence, the installed `ftimer_openmp` worker API, and strict hybrid rank/lane summaries/reports/CSV |
 | OpenMP carve-out | Yes: GNU pFUnit guard coverage when OpenMP and matching pFUnit are available; LLVM Flang smoke/example coverage when validating the OpenMP compiler matrix |
 | Bench harness | Yes for hot-path or summary-performance changes |
 | Formatting | Yes for source/test/example changes |

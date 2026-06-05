@@ -7,9 +7,10 @@ Issue #243 defines the validation strategy for the OpenMP/hybrid direction
 recorded in #238, #239, #240, and #241. This document is a validation contract.
 Issue #268 adds the initial `ftimer_openmp` public API surface and lifecycle
 coverage, #269 adds the first true OpenMP thread-lane runtime, and #270 adds
-stopped-run local OpenMP summary, report, and CSV coverage. Hybrid reductions
-and changes to the current `FTIMER_USE_OPENMP=ON` master-thread-only
-compatibility mode remain deferred to later #267 child issues.
+stopped-run local OpenMP summary, report, and CSV coverage. Issue #271 adds
+strict MPI+OpenMP rank/lane summary, report, and CSV coverage through
+`ftimer_openmp_t`. Sparse/union hybrid participation reductions remain
+deferred to later #267 child issues.
 
 ## Decision
 
@@ -28,10 +29,12 @@ The initial #243 change adds current build-only hybrid coverage:
   installed-consumer path, including an MPI-initialized OpenMP region that
   preserves current worker no-op behavior.
 
-That initial coverage proves the current MPI and OpenMP compatibility options
-can coexist. It must not be read as evidence that the current `ftimer`/
-`ftimer_core` APIs perform true worker-thread timing or that hybrid rank/lane
-reductions are implemented.
+That initial coverage proved the MPI and OpenMP compatibility options could
+coexist before true worker timing and strict hybrid reductions landed. Current
+strict hybrid smoke coverage now exercises `ftimer_openmp_t` rank/lane
+reductions. None of this should be read as evidence that the current `ftimer`/
+`ftimer_core` APIs perform true worker-thread timing or that sparse/union
+hybrid participation reductions are implemented.
 
 ## Current Compatibility Coverage
 
@@ -46,7 +49,8 @@ Current `main` should keep these validation gates:
 - option-off/global-OpenMP regression coverage for #199;
 - build-contract regression coverage for configure gates and Makefile wrapper
   behavior;
-- MPI+OpenMP build-only smoke coverage for the current compatibility mode; and
+- MPI+OpenMP smoke coverage for the current compatibility mode and strict
+  `ftimer_openmp_t` rank/lane reductions; and
 - `ftimer_openmp` API/lifecycle, timed-region, thread-lane runtime,
   diagnostics, public-symbol, and installed-package consumer coverage for the
   current opt-in worker timing boundary.
@@ -111,26 +115,31 @@ Opt-in lane-detail exports are not part of the current local OpenMP public
 surface. They should move into this matrix only after a dedicated detail result
 or diagnostic CSV mode exists.
 
-## Future MPI+OpenMP Reduction Matrix
+## MPI+OpenMP Reduction Matrix
 
-When #241's reduction contract is implemented, tests should cover at least two
-MPI ranks and at least two OpenMP lanes per rank for:
+Current strict hybrid tests cover at least two MPI ranks and multiple OpenMP
+lanes per rank for:
 
-- participation-aware hybrid summaries with all-rank/all-lane participation;
+- all-rank/all-eligible-lane participation;
+- rank-level imbalance fields;
+- strict descriptor mismatch failures, including descriptor names, execution
+  domain, and eligible lane structure;
+- missing eligible lane participation failures;
+- all-rank active-lane and open-region preflight returning
+  `FTIMER_ERR_ACTIVE` before descriptor or timing-data reductions;
+- all-rank structured result validity after successful hybrid reductions; and
+- hybrid report and CSV output, including append rejection against malformed or
+  incompatible hybrid schemas.
+
+Future sparse/union MPI+OpenMP participation tests should cover:
+
 - rank-conditional descriptors;
 - lane-conditional descriptors inside participating ranks;
 - different OpenMP team sizes across ranks under participation-aware policy;
-- strict-semantics validation failures for descriptor, eligible-lane, missing
-  rank, and missing-lane mismatches, even if strict remains internal or
-  adopter-driven rather than first public API;
-- all-rank active-lane preflight returning `FTIMER_ERR_ACTIVE` before descriptor
-  or timing-data reductions;
-- invalid worker-thread reduction calls failing locally without MPI calls;
-- all-rank structured result validity after successful hybrid reductions;
 - deterministic canonical descriptor ordering and `node_id`/`parent_id`
   assignment when local creation order differs across ranks; and
-- hybrid report and CSV golden output, including append rejection against local,
-  strict MPI, sparse MPI, and incompatible hybrid schemas.
+- participation-aware report and CSV output that is explicitly separate from
+  the strict hybrid schema.
 
 MPI+OpenMP validation must not add automatic barriers around timed user
 regions. Callers own synchronization when they want phase-aligned measurements.
@@ -148,14 +157,15 @@ Installed-package checks should verify the public package story at each stage:
 - current `ftimer_openmp` installed consumers for serial, MPI, OpenMP, and
   MPI+OpenMP package modes, proving that the lifecycle/catalog surface imports,
   links, validates keyword-only init shape, runs serial and timed worker
-  `start_id`/`stop_id`, preserves bounded worker diagnostics, and exercises
-  stopped-run local OpenMP summary/report/CSV entry points; and
-- future hybrid summary installed consumers only after the public hybrid
-  reduction result types exist.
+  `start_id`/`stop_id`, preserves bounded worker diagnostics, exercises
+  stopped-run local OpenMP summary/report/CSV entry points, and compile-calls
+  the strict hybrid summary API from installed MPI+OpenMP consumers; and
+- strict hybrid summary/report/CSV smoke coverage when `FTIMER_USE_MPI=ON` and
+  `FTIMER_USE_OPENMP=ON` are enabled.
 
-Future installed consumers should compile the documented source shapes, run the
-supported examples, and assert the exported CMake package resolves only the
-dependencies required by the selected feature mode.
+Future sparse/union hybrid installed consumers should compile their documented
+source shapes, run the supported examples, and assert the exported CMake
+package resolves only the dependencies required by the selected feature mode.
 
 ## Toolchain And Skip Policy
 
@@ -198,8 +208,10 @@ comparisons are meaningful.
 ## Non-Goals
 
 - Claiming true OpenMP worker timing from the initial #243 build-only coverage.
-- Adding pFUnit tests for future summary/reduction APIs that do not exist yet.
-- Treating MPI+OpenMP build success as proof of hybrid rank/lane reductions.
+- Adding pFUnit tests for future sparse/union summary/reduction APIs that do
+  not exist yet.
+- Treating MPI+OpenMP build success as proof of sparse/union hybrid rank/lane
+  reductions.
 - Requiring every CI runner to support every MPI/OpenMP/compiler combination.
 - Weakening current worker no-op compatibility tests.
 - Adding automatic MPI barriers, OpenMP task timing, accelerator/device timing,
@@ -215,8 +227,8 @@ comparisons are meaningful.
   tests must enforce.
 - #242 records user-facing timing modes and migration guidance. Current local
   OpenMP examples and installed consumers should stay compile-checked; later
-  implementation issues add future hybrid examples and installed consumers once
-  the future hybrid public API exists.
+  implementation issues add sparse/union hybrid examples and installed
+  consumers once that API exists.
 
 ## Validation For This Plan
 

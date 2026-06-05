@@ -1,5 +1,12 @@
 set(CMAKE_Fortran_MODULE_DIRECTORY "${FTIMER_TEST_MODULE_DIR}")
 
+set(FTIMER_OPENMP_MPI_SUMMARY_SMOKE_TIMEOUT 60 CACHE STRING
+  "Timeout in seconds for MPI+OpenMP summary smoke tests")
+set(FTIMER_INSTALLED_CONSUMER_RUN_TIMEOUT 120 CACHE STRING
+  "Timeout in seconds for installed-package consumer executable runs")
+math(EXPR FTIMER_OPENMP_MPI_SUMMARY_SMOKE_CTEST_TIMEOUT
+  "${FTIMER_OPENMP_MPI_SUMMARY_SMOKE_TIMEOUT} + 15")
+
 if(FTIMER_BUILD_SMOKE_TESTS)
   add_executable(ftimer_phase0_smoke test_phase0_smoke.F90)
   target_link_libraries(ftimer_phase0_smoke PRIVATE ftimer)
@@ -41,6 +48,89 @@ if(FTIMER_BUILD_SMOKE_TESTS)
         -DTEST_EXECUTABLE=$<TARGET_FILE:ftimer_openmp_summary_smoke>
         -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_summary_smoke.cmake
     )
+  endif()
+
+  if(FTIMER_USE_MPI AND FTIMER_USE_OPENMP)
+    add_executable(ftimer_openmp_mpi_summary_smoke test_openmp_mpi_summary_smoke.F90)
+    target_link_libraries(ftimer_openmp_mpi_summary_smoke PRIVATE ftimer_smoke_test)
+
+    add_executable(ftimer_openmp_mpi_summary_3rank_smoke
+      test_openmp_mpi_summary_3rank_smoke.F90)
+    target_link_libraries(ftimer_openmp_mpi_summary_3rank_smoke PRIVATE ftimer_smoke_test)
+
+    set(ftimer_mpiexec_oversubscribe_flag "")
+    if(DEFINED MPIEXEC_EXECUTABLE AND NOT MPIEXEC_EXECUTABLE STREQUAL "")
+      execute_process(
+        COMMAND "${MPIEXEC_EXECUTABLE}" --version
+        OUTPUT_VARIABLE ftimer_mpiexec_version_stdout
+        ERROR_VARIABLE ftimer_mpiexec_version_stderr
+        RESULT_VARIABLE ftimer_mpiexec_version_result
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_STRIP_TRAILING_WHITESPACE
+      )
+      if(ftimer_mpiexec_version_result EQUAL 0)
+        set(ftimer_mpiexec_version_text
+          "${ftimer_mpiexec_version_stdout}\n${ftimer_mpiexec_version_stderr}")
+        if(ftimer_mpiexec_version_text MATCHES "Open MPI|OpenRTE|PRTE|PRRTE")
+          set(ftimer_mpiexec_oversubscribe_flag "--oversubscribe")
+        endif()
+      endif()
+    endif()
+
+    set(ftimer_openmp_mpi_summary_command "${MPIEXEC_EXECUTABLE}")
+    if(DEFINED MPIEXEC_NUMPROC_FLAG AND NOT MPIEXEC_NUMPROC_FLAG STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_command "${MPIEXEC_NUMPROC_FLAG}" 2)
+    else()
+      list(APPEND ftimer_openmp_mpi_summary_command -n 2)
+    endif()
+    if(DEFINED MPIEXEC_PREFLAGS AND NOT MPIEXEC_PREFLAGS STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_command ${MPIEXEC_PREFLAGS})
+    endif()
+    list(APPEND ftimer_openmp_mpi_summary_command "$<TARGET_FILE:ftimer_openmp_mpi_summary_smoke>")
+    if(DEFINED MPIEXEC_POSTFLAGS AND NOT MPIEXEC_POSTFLAGS STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_command ${MPIEXEC_POSTFLAGS})
+    endif()
+
+    add_test(NAME ftimer_openmp_mpi_summary_smoke
+      COMMAND ${CMAKE_COMMAND}
+        "-DTEST_COMMAND=${ftimer_openmp_mpi_summary_command}"
+        -DSMOKE_TIMEOUT_SECONDS=${FTIMER_OPENMP_MPI_SUMMARY_SMOKE_TIMEOUT}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/check_openmp_mpi_summary_smoke.cmake
+    )
+    set_tests_properties(ftimer_openmp_mpi_summary_smoke
+      PROPERTIES LABELS "mpi;openmp" TIMEOUT ${FTIMER_OPENMP_MPI_SUMMARY_SMOKE_CTEST_TIMEOUT})
+
+    set(ftimer_openmp_mpi_summary_3rank_command "${MPIEXEC_EXECUTABLE}")
+    if(DEFINED MPIEXEC_NUMPROC_FLAG AND NOT MPIEXEC_NUMPROC_FLAG STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_3rank_command "${MPIEXEC_NUMPROC_FLAG}" 3)
+    else()
+      list(APPEND ftimer_openmp_mpi_summary_3rank_command -n 3)
+    endif()
+    if(DEFINED MPIEXEC_PREFLAGS AND NOT MPIEXEC_PREFLAGS STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_3rank_command ${MPIEXEC_PREFLAGS})
+    endif()
+    if(NOT ftimer_mpiexec_oversubscribe_flag STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_3rank_command
+        ${ftimer_mpiexec_oversubscribe_flag})
+    endif()
+    list(APPEND ftimer_openmp_mpi_summary_3rank_command
+      "$<TARGET_FILE:ftimer_openmp_mpi_summary_3rank_smoke>")
+    if(DEFINED MPIEXEC_POSTFLAGS AND NOT MPIEXEC_POSTFLAGS STREQUAL "")
+      list(APPEND ftimer_openmp_mpi_summary_3rank_command ${MPIEXEC_POSTFLAGS})
+    endif()
+
+    add_test(NAME ftimer_openmp_mpi_summary_3rank_smoke
+      COMMAND ${ftimer_openmp_mpi_summary_3rank_command}
+    )
+    set_tests_properties(ftimer_openmp_mpi_summary_3rank_smoke
+      PROPERTIES LABELS "mpi;openmp" TIMEOUT ${FTIMER_OPENMP_MPI_SUMMARY_SMOKE_CTEST_TIMEOUT})
+  endif()
+
+  if(NOT FTIMER_USE_MPI)
+    add_executable(ftimer_openmp_mpi_disabled_smoke test_openmp_mpi_disabled_smoke.F90)
+    target_link_libraries(ftimer_openmp_mpi_disabled_smoke PRIVATE ftimer)
+    add_test(NAME ftimer_openmp_mpi_disabled_smoke COMMAND ftimer_openmp_mpi_disabled_smoke)
+    set_tests_properties(ftimer_openmp_mpi_disabled_smoke PROPERTIES LABELS "openmp")
   endif()
 endif()
 
@@ -85,6 +175,7 @@ function(ftimer_add_installed_consumer_test test_name test_binary_dir)
       "-DTEST_MPIEXEC_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}"
       "-DTEST_MPIEXEC_PREFLAGS=${MPIEXEC_PREFLAGS}"
       "-DTEST_MPIEXEC_POSTFLAGS=${MPIEXEC_POSTFLAGS}"
+      -DTEST_EXECUTE_TIMEOUT_SECONDS=${FTIMER_INSTALLED_CONSUMER_RUN_TIMEOUT}
       -P ${CMAKE_CURRENT_SOURCE_DIR}/check_installed_package_consumer.cmake
   )
 endfunction()

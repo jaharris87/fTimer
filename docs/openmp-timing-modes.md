@@ -12,8 +12,10 @@ evolve without making today's master-thread-only behavior look accidental.
 Current `main` includes opt-in worker-thread timing through `ftimer_openmp`.
 Timed-region worker `start_id`/`stop_id` calls are available inside explicit
 level-1 OpenMP epochs, and stopped-run local OpenMP summaries, text reports,
-and CSV exports are available through the same object. Hybrid MPI+OpenMP
-reductions remain deferred to later implementation issues.
+and CSV exports are available through the same object. MPI+OpenMP builds also
+provide strict rank/lane hybrid summaries, text reports, and CSV exports
+through `ftimer_openmp_t`; sparse/union hybrid participation reductions remain
+deferred to later implementation issues.
 
 The `ftimer_openmp` module is installed in all package modes: serial, MPI,
 OpenMP, and MPI+OpenMP. Packages built without `FTIMER_USE_OPENMP=ON` support
@@ -31,9 +33,9 @@ retrofit OpenMP runtime introspection into a non-OpenMP fTimer package.
 | Pure-MPI timing | Yes | Use the current `mpi_f08` `comm=` contract after `MPI_Init` and before `MPI_Finalize`. |
 | `FTIMER_USE_OPENMP=OFF` with external OpenMP flags | Yes | fTimer keeps serial/pure-MPI semantics. Global OpenMP compiler flags do not activate the guard carve-out. |
 | `FTIMER_USE_OPENMP=ON` compatibility mode | Yes | Current APIs run guarded timer operations only on OpenMP thread 0. Worker-thread calls are silent no-ops. |
-| `FTIMER_USE_MPI=ON` plus `FTIMER_USE_OPENMP=ON` | Yes, as compatibility smoke coverage | MPI and OpenMP package dependencies can coexist. Procedural and `ftimer_core` timing still use the master-thread-only OpenMP behavior. |
+| `FTIMER_USE_MPI=ON` plus `FTIMER_USE_OPENMP=ON` | Yes, as compatibility and strict hybrid smoke coverage | MPI and OpenMP package dependencies can coexist. Procedural and `ftimer_core` timing still use the master-thread-only OpenMP behavior. |
 | True OpenMP worker timing | Yes, through `ftimer_openmp` | Use `ftimer_openmp_t`, pre-register timer ids, open a timed level-1 region from serial context, call `start_id`/`stop_id` on worker lanes, and consume the separate OpenMP summary/report family. |
-| True MPI+OpenMP rank/lane reductions | No | Future hybrid result family behind the OpenMP-specific object. |
+| Strict MPI+OpenMP rank/lane reductions | Yes, through `ftimer_openmp` | Initialize `ftimer_openmp_t` in an MPI+OpenMP build, using the default captured `MPI_COMM_WORLD` or an explicit `comm=`, stop all timed regions/lanes, then call the strict `mpi_openmp_summary` report family. Descriptor and eligible-lane mismatches fail; sparse/union hybrid participation remains deferred. |
 
 ## Current Accepted Patterns
 
@@ -103,7 +105,8 @@ Also avoid:
 - scoped guards with block-local finalization inside OpenMP parallel regions;
 - summary, report, reset, finalize, clock, or callback operations from inside
   a parallel region;
-- reading MPI+OpenMP smoke coverage as proof of hybrid rank/lane reductions;
+- reading MPI+OpenMP smoke coverage as proof of sparse/union hybrid rank/lane
+  reductions;
 - using global OpenMP compiler flags as a substitute for `FTIMER_USE_OPENMP=ON`.
 
 ## Migration Story
@@ -130,19 +133,22 @@ The additive migration surface starts with `ftimer_openmp`:
 - import the `ftimer_openmp` module explicitly;
 - construct a `type(ftimer_openmp_t)` object, not the procedural
   default instance;
-- initialize it with a keyword `config=` object and, for hybrid runs, a keyword
-  `comm=`;
+- initialize it with a keyword `config=` object; in MPI-enabled builds,
+  omitted `comm=` captures `MPI_COMM_WORLD`, while an explicit keyword `comm=`
+  captures a caller-owned communicator;
 - register timer names in serial context before hot worker use;
 - pass timer ids into an explicitly opened timed OpenMP region; and
 - run an untimed warm-up region for short hot loops when first-touch allocation
   would otherwise contaminate the measurement; and
-- consume `ftimer_openmp_summary_t` local summary/report output instead of
+- consume `ftimer_openmp_summary_t` local summary/report output or
+  `ftimer_mpi_openmp_summary_t` strict hybrid summary/report output instead of
   current `ftimer_summary_t`, `ftimer_mpi_summary_t`, or
   `ftimer_mpi_union_summary_t`.
 
 The lifecycle/configuration, timer catalog, timed-region, and worker
 `start_id`/`stop_id` pieces are functional today, along with stopped-run local
-OpenMP summaries and report/CSV output. Hybrid reduction examples should wait
+OpenMP summaries, strict MPI+OpenMP summaries, and report/CSV output. Sparse
+or union hybrid reduction examples should wait
 until the corresponding MPI+OpenMP result family lands.
 
 ## Future Example Policy
@@ -154,8 +160,9 @@ Keep current and future examples separate.
 - Future true OpenMP worker examples should use `ftimer_openmp_t` and should be
   added only when the example can present a complete stopped-run reporting story
   without implying trace/profiler behavior.
-- Future MPI+OpenMP examples should use the future `ftimer_openmp_t` hybrid
-  summary path, not the current procedural default instance.
+- MPI+OpenMP examples should use the strict `ftimer_openmp_t` hybrid summary
+  path, not the procedural default instance. Sparse/union hybrid examples
+  should wait for the later participation-aware API.
 - Future examples should show the id-first worker hot path, explicit timed
   region begin/end, stopped-run summaries, and participation-aware terminology.
 - Examples must not imply support for nested OpenMP teams, OpenMP task
