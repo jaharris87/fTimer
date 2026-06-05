@@ -35,10 +35,12 @@ program ftimer_openmp_mpi_summary_smoke
    call check_sparse_hybrid_active_lane_failure(rank)
    call check_sparse_hybrid_open_region_failure(rank)
    call check_sparse_hybrid_parallel_entry_local_failure(rank)
+   call check_sparse_hybrid_serial_active_failure(rank)
    call check_sparse_hybrid_descriptor_fault_injection(rank)
    call check_sparse_hybrid_null_comm_failure(rank)
    call check_sparse_hybrid_post_finalize_subcomm_failure(rank)
    call check_sparse_hybrid_uninitialized_rank_failure(rank)
+   call check_sparse_hybrid_unregistered_rank_missing(rank)
    call check_strict_hybrid_serial_lane_success(rank)
    call check_strict_hybrid_registration_order_independent(rank)
    call check_strict_hybrid_null_comm_failure(rank)
@@ -1035,6 +1037,60 @@ contains
       if (rank == 0) call delete_if_exists(csv_path)
    end subroutine check_sparse_hybrid_parallel_entry_local_failure
 
+   subroutine check_sparse_hybrid_serial_active_failure(rank)
+      integer, intent(in) :: rank
+      character(len=*), parameter :: csv_path = 'mpi_openmp_union_serial_active_failure.csv'
+      character(len=*), parameter :: report_path = 'mpi_openmp_union_serial_active_failure.txt'
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      integer :: active_id
+      integer :: ierr
+
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2482
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2483)
+      fake_lane_time(0) = 3180.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2484)
+      call timer%register_timer('serial_sparse_active', active_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2485)
+
+      fake_lane_time(0) = 3181.0_wp
+      call timer%start_id(active_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2486)
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2487)
+      call expect_int(summary%num_entries, 0, 2488)
+      call timer%write_mpi_openmp_union_summary(report_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2489)
+      call timer%write_mpi_openmp_union_summary_csv(csv_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_ACTIVE, 2490)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2491
+      if (rank == 0) then
+         call expect_file_absent(report_path, 2492)
+         call expect_file_absent(csv_path, 2493)
+      end if
+
+      fake_lane_time(0) = 3182.0_wp
+      call timer%stop_id(active_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2494)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2495)
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+   end subroutine check_sparse_hybrid_serial_active_failure
+
    subroutine check_sparse_hybrid_descriptor_fault_injection(rank)
       integer, intent(in) :: rank
       type(ftimer_mpi_openmp_union_summary_t) :: summary
@@ -1145,6 +1201,99 @@ contains
          call expect_status(ierr, FTIMER_SUCCESS, 2481)
       end if
    end subroutine check_sparse_hybrid_uninitialized_rank_failure
+
+   subroutine check_sparse_hybrid_unregistered_rank_missing(rank)
+      integer, intent(in) :: rank
+      character(len=*), parameter :: csv_path = 'mpi_openmp_union_unregistered_rank.csv'
+      character(len=*), parameter :: report_path = 'mpi_openmp_union_unregistered_rank.txt'
+      type(ftimer_mpi_openmp_summary_t) :: strict_summary
+      type(ftimer_mpi_openmp_union_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: report_text
+      integer :: ierr
+      integer :: timer_id
+      integer :: timer_idx
+
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2496
+
+      config%max_lanes = 3
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2497)
+      fake_lane_time(0) = 3200.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2498)
+
+      if (rank == 0) then
+         call timer%register_timer('rank0_unregistered_sparse', timer_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2499)
+         fake_lane_time(0) = 3201.0_wp
+         call timer%start_id(timer_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2500)
+         fake_lane_time(0) = 3205.0_wp
+         call timer%stop_id(timer_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 2501)
+      end if
+
+      fake_lane_time(0) = 3210.0_wp
+      call timer%mpi_openmp_summary(strict_summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_MPI_INCON, 2502)
+      call expect_int(strict_summary%num_entries, 0, 2503)
+
+      call timer%mpi_openmp_union_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2504)
+      call expect_int(summary%num_entries, 1, 2505)
+      timer_idx = find_union_entry_by_domain(summary, 'rank0_unregistered_sparse', 0, 'serial_lane')
+      if (timer_idx <= 0) error stop 2506
+      call expect_union_entry(summary, timer_idx, execution_domain='serial_lane', depth=0, &
+                              rank_count=1, missing_ranks=1, eligible_samples=1, &
+                              participating_samples=1, missing_samples=0, sum_inclusive=4.0_wp, &
+                              sum_self=4.0_wp, min_inclusive=4.0_wp, avg_inclusive=4.0_wp, &
+                              max_inclusive=4.0_wp, inclusive_imbalance=1.0_wp, &
+                              min_self=4.0_wp, avg_self=4.0_wp, max_self=4.0_wp, &
+                              self_imbalance=1.0_wp, min_calls=1_int64, avg_calls=1.0_wp, &
+                              max_calls=1_int64, min_pct=pct_time(4.0_wp, 10.0_wp), &
+                              avg_pct=pct_time(4.0_wp, 10.0_wp), max_pct=pct_time(4.0_wp, 10.0_wp), &
+                              pct_imbalance=1.0_wp, stop_code=2507)
+
+      call timer%write_mpi_openmp_union_summary(report_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2532)
+      call timer%write_mpi_openmp_union_summary_csv(csv_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2533)
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      if (ierr /= MPI_SUCCESS) error stop 2534
+
+      if (rank == 0) then
+         report_text = read_file_text(report_path)
+         call expect_sparse_union_report_entry_line_text_missing(report_text, 'rank0_unregistered_sparse', &
+                                                                 'serial_lane', depth=0, &
+                                                                 ranks=1, missing_ranks=1, samples=1, &
+                                                                 missing_samples_text='0', &
+                                                                 sum_inclusive=4.0_wp, sum_self=4.0_wp, &
+                                                                 min_inclusive=4.0_wp, avg_inclusive=4.0_wp, &
+                                                                 max_inclusive=4.0_wp, avg_calls=1.0_wp, &
+                                                                 stop_code=2535)
+         csv_text = read_file_text(csv_path)
+         call expect_csv_record_count(csv_text, 'entry', 1, 2536)
+         call expect_csv_entry_field_by_domain(csv_text, 'rank0_unregistered_sparse', '0', &
+                                               'serial_lane', 'participating_rank_count', '1', 2537)
+         call expect_csv_entry_field_by_domain(csv_text, 'rank0_unregistered_sparse', '0', &
+                                               'serial_lane', 'missing_rank_count', '1', 2538)
+      end if
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2539)
+      if (rank == 0) then
+         call delete_if_exists(report_path)
+         call delete_if_exists(csv_path)
+      end if
+   end subroutine check_sparse_hybrid_unregistered_rank_missing
 
    subroutine check_strict_hybrid_serial_lane_success(rank)
       integer, intent(in) :: rank

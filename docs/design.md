@@ -27,6 +27,8 @@ Implemented capabilities include:
   `ftimer_openmp_t`
 - strict stopped-run MPI+OpenMP rank/lane summaries, text reports, and CSV
   output through `ftimer_openmp_t`
+- sparse union MPI+OpenMP participation summaries, text reports, and CSV output
+  through `ftimer_openmp_t`
 - installable CMake package exports, smoke tests, pFUnit behavioral tests, and a benchmark harness
 
 fTimer does not currently provide built-in hardware counter backends, JSON export utilities, a serious profiler-backend callback contract, or general thread-safe access to the existing `ftimer`/`ftimer_core` APIs from OpenMP worker threads.
@@ -247,7 +249,7 @@ Supported local build paths today are:
 - serial pFUnit tests with `gfortran` plus a matching pFUnit install
 - MPI builds through GNU Fortran MPI wrapper compilers, with CI smoke/install-consumer coverage for OpenMPI and MPICH and MPI pFUnit coverage for OpenMPI plus MPICH on hosted Ubuntu 22.04
 - OpenMP builds with GNU Fortran and LLVM Flang for the master-thread-only carve-out plus the explicit `ftimer_openmp_t` worker timing runtime; pFUnit OpenMP guard coverage remains on `gfortran`
-- MPI+OpenMP smoke coverage for the current compatibility mode, installed opt-in `ftimer_openmp` worker API, and strict hybrid rank/lane summary/report/CSV path
+- MPI+OpenMP smoke coverage for the current compatibility mode, installed opt-in `ftimer_openmp` worker API, strict hybrid rank/lane summary/report/CSV path, and sparse union hybrid participation summary/report/CSV path
 - benchmark harness builds with `FTIMER_BUILD_BENCH=ON`
 
 The top-level CMake options that shape those paths are:
