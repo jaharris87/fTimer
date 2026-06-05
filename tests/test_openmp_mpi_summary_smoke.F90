@@ -2429,6 +2429,7 @@ contains
       character(len=*), parameter :: csv_path = 'mpi_openmp_union_summary_append.csv'
       character(len=*), parameter :: malformed_quote_path = 'mpi_openmp_union_summary_malformed_quote_append.csv'
       character(len=*), parameter :: no_newline_path = 'mpi_openmp_union_summary_no_newline_append.csv'
+      character(len=*), parameter :: report_path = 'mpi_openmp_union_summary_append.txt'
       character(len=*), parameter :: strict_target_path = 'mpi_openmp_union_summary_strict_target_append.csv'
       character(len=*), parameter :: unterminated_quote_path = &
                                      'mpi_openmp_union_summary_unterminated_quote_append.csv'
@@ -2440,6 +2441,7 @@ contains
       character(len=:), allocatable :: bad_text
       character(len=:), allocatable :: csv_text
       character(len=:), allocatable :: header
+      character(len=:), allocatable :: report_text
       integer :: ierr
       integer :: timer_id
 
@@ -2449,6 +2451,7 @@ contains
          call delete_if_exists(bare_cr_path)
          call delete_if_exists(malformed_quote_path)
          call delete_if_exists(no_newline_path)
+         call delete_if_exists(report_path)
          call delete_if_exists(strict_target_path)
          call delete_if_exists(unterminated_quote_path)
          call delete_if_exists(unknown_record_path)
@@ -2467,6 +2470,10 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 2263)
       call run_all_worker_lanes(timer, region, timer_id, 1.0_wp, 3.0_wp, 2264)
 
+      call timer%write_mpi_openmp_union_summary(report_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2284)
+      call timer%write_mpi_openmp_union_summary(report_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 2285)
       call timer%write_mpi_openmp_union_summary_csv(csv_path, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 2266)
       call timer%write_mpi_openmp_union_summary_csv(csv_path, append=.true., ierr=ierr)
@@ -2477,6 +2484,9 @@ contains
       if (ierr /= MPI_SUCCESS) error stop 2269
 
       if (rank == 0) then
+         report_text = read_file_text(report_path)
+         call expect_int(count_occurrences(report_text, 'Sparse MPI+OpenMP union summary'), 2, 2286)
+         call expect_int(count_occurrences(report_text, 'union_append'), 2, 2287)
          csv_text = read_file_text(csv_path)
          header = first_line(csv_text)
          call expect_int(count_occurrences(csv_text, header), 1, 2270)
@@ -2537,6 +2547,7 @@ contains
          call delete_if_exists(bare_cr_path)
          call delete_if_exists(malformed_quote_path)
          call delete_if_exists(no_newline_path)
+         call delete_if_exists(report_path)
          call delete_if_exists(strict_target_path)
          call delete_if_exists(unterminated_quote_path)
          call delete_if_exists(unknown_record_path)
