@@ -1,5 +1,6 @@
 program ftimer_installed_openmp_api_mpi_openmp_consumer
-   use ftimer_openmp, only: ftimer_mpi_openmp_summary_t, ftimer_openmp_config_t, &
+   use ftimer_openmp, only: ftimer_mpi_openmp_summary_t, ftimer_mpi_openmp_union_summary_t, &
+                            ftimer_openmp_config_t, &
                             ftimer_openmp_parallel_region_t, ftimer_openmp_t
    use ftimer_types, only: FTIMER_SUCCESS
    use mpi_f08, only: MPI_COMM_WORLD, MPI_Finalize, MPI_Init, MPI_Comm_rank, MPI_SUCCESS
@@ -7,8 +8,11 @@ program ftimer_installed_openmp_api_mpi_openmp_consumer
    implicit none
 
    integer :: ierr
+   integer :: entry_idx
    integer :: hybrid_id
    integer :: rank
+   integer :: sparse_id
+   integer :: sparse_idx
    integer :: timer_id
    integer :: worker_bad
    integer :: worker_seen
@@ -16,6 +20,7 @@ program ftimer_installed_openmp_api_mpi_openmp_consumer
    type(ftimer_openmp_config_t) :: config
    type(ftimer_openmp_parallel_region_t) :: region
    type(ftimer_mpi_openmp_summary_t) :: summary
+   type(ftimer_mpi_openmp_union_summary_t) :: union_summary
    type(ftimer_openmp_t) :: timer
 
    call MPI_Init(ierr)
@@ -56,12 +61,64 @@ program ftimer_installed_openmp_api_mpi_openmp_consumer
    if (summary%entries(1)%eligible_rank_lane_sample_count /= 4) error stop 15
    if (summary%entries(1)%participating_rank_lane_sample_count /= 4) error stop 16
 
-   write (timer_name, '("consumer_openmp_api_mpi_openmp_rank_",i0)') rank
-   call timer%register_timer(trim(timer_name), timer_id, ierr=ierr)
+   call timer%write_mpi_openmp_summary("consumer_mpi_openmp_summary.txt", ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop 17
+   call timer%write_mpi_openmp_summary_csv("consumer_mpi_openmp_summary.csv", ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 18
+
+   call timer%mpi_openmp_union_summary(union_summary, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 19
+   if (union_summary%num_ranks /= 2) error stop 20
+   if (union_summary%num_entries /= 1) error stop 21
+   if (trim(union_summary%entries(1)%name) /= "consumer_hybrid_api") error stop 22
+   if (trim(union_summary%entries(1)%execution_domain) /= "openmp_level1_team") &
+      error stop 23
+   if (union_summary%entries(1)%participating_rank_count /= 2) error stop 24
+   if (union_summary%entries(1)%participating_rank_lane_sample_count /= 4) &
+      error stop 25
+
+   call timer%register_timer("consumer_sparse_hybrid_api", sparse_id, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 26
 
    call timer%begin_parallel_region(region, ierr=ierr)
-   if (ierr /= FTIMER_SUCCESS) error stop 18
+   if (ierr /= FTIMER_SUCCESS) error stop 27
+!$omp parallel num_threads(2) default(shared) private(ierr)
+   if (rank == 0 .and. omp_get_thread_num() == 0) then
+      call timer%start_id(sparse_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 28
+      call timer%stop_id(sparse_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 29
+   end if
+!$omp end parallel
+   call timer%end_parallel_region(region, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 30
+
+   call timer%mpi_openmp_union_summary(union_summary, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 31
+   if (union_summary%num_ranks /= 2) error stop 32
+   if (union_summary%num_entries /= 2) error stop 33
+   sparse_idx = 0
+   do entry_idx = 1, union_summary%num_entries
+      if (trim(union_summary%entries(entry_idx)%name) == "consumer_sparse_hybrid_api") &
+         sparse_idx = entry_idx
+   end do
+   if (sparse_idx <= 0) error stop 34
+   if (union_summary%entries(sparse_idx)%participating_rank_count /= 1) error stop 35
+   if (union_summary%entries(sparse_idx)%participating_rank_lane_sample_count /= 1) &
+      error stop 36
+   if (union_summary%entries(sparse_idx)%missing_rank_count /= 1) error stop 37
+
+   call timer%write_mpi_openmp_union_summary("consumer_mpi_openmp_union_summary.txt", ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 38
+   call timer%write_mpi_openmp_union_summary_csv("consumer_mpi_openmp_union_summary.csv", ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 39
+
+   write (timer_name, '("consumer_openmp_api_mpi_openmp_rank_",i0)') rank
+   call timer%register_timer(trim(timer_name), timer_id, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 40
+
+   call timer%begin_parallel_region(region, ierr=ierr)
+   if (ierr /= FTIMER_SUCCESS) error stop 41
 
    worker_bad = 0
    worker_seen = 0

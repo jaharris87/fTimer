@@ -108,7 +108,7 @@ program ftimer_bench
                      ftimer_lookup, ftimer_start, ftimer_start_id, &
                      ftimer_stop, ftimer_stop_id
    use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_parallel_region_t, &
-                            ftimer_openmp_t
+                            ftimer_openmp_summary_t, ftimer_openmp_t
    use ftimer_summary, only: build_summary, format_mpi_union_summary, format_summary
    use ftimer_types, only: FTIMER_SUCCESS, ftimer_metadata_t, ftimer_mpi_union_summary_t, &
                            ftimer_segment_t, ftimer_summary_t, wp
@@ -239,6 +239,9 @@ program ftimer_bench
    call bench_summary(10, REPS_SUMMARY, count_rate)
    call bench_summary(50, REPS_SUMMARY, count_rate)
    call bench_summary(100, REPS_SUMMARY_LARGE, count_rate)
+#ifdef FTIMER_USE_OPENMP
+   call bench_openmp_summary_merge(REPORT_N_SMALL, REPS_REPORT, count_rate)
+#endif
 
    call write_bench_line('')
 
@@ -270,6 +273,10 @@ program ftimer_bench
                                     'format sparse union text N=1000')
 #ifdef FTIMER_USE_MPI
    call bench_write_strict_mpi_csv(REPORT_N_SMALL, REPS_MPI_REPORT, count_rate)
+#endif
+#if defined(FTIMER_USE_MPI) && defined(FTIMER_USE_OPENMP)
+   call bench_write_strict_mpi_openmp_csv(REPORT_N_SMALL, REPS_MPI_REPORT, count_rate)
+   call bench_write_sparse_mpi_openmp_union_csv(REPORT_N_SMALL, REPS_MPI_REPORT, count_rate)
 #endif
 
    call write_bench_line('')
@@ -997,6 +1004,34 @@ contains
       call print_result(trim(label), reps, t0, t1, count_rate)
    end subroutine bench_summary
 
+#ifdef FTIMER_USE_OPENMP
+   subroutine bench_openmp_summary_merge(num_timers, reps, count_rate)
+      integer, intent(in) :: num_timers
+      integer, intent(in) :: reps
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0
+      integer(int64) :: t1
+      integer :: ierr
+      integer :: i
+      type(ftimer_openmp_summary_t) :: summary
+      type(ftimer_openmp_t) :: timer
+
+      call prepare_openmp_timer_with_flat_entries(timer, num_timers, .false.)
+
+      call system_clock(t0)
+      do i = 1, reps
+         call timer%get_openmp_summary(summary, ierr=ierr)
+         call require_success(ierr, 'get_openmp_summary')
+         text_sink = text_sink + int(summary%num_entries, int64)
+      end do
+      call system_clock(t1)
+
+      call timer%finalize(ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp summary finalize')
+      call print_result('ftimer_openmp summary merge N=100 entries', reps, t0, t1, count_rate)
+   end subroutine bench_openmp_summary_merge
+#endif
+
    subroutine bench_build_summary_direct(num_timers, reps, count_rate)
       integer, intent(in) :: num_timers
       integer, intent(in) :: reps
@@ -1153,6 +1188,64 @@ contains
    end subroutine bench_write_strict_mpi_csv
 #endif
 
+#if defined(FTIMER_USE_MPI) && defined(FTIMER_USE_OPENMP)
+   subroutine bench_write_strict_mpi_openmp_csv(num_timers, reps, count_rate)
+      integer, intent(in) :: num_timers
+      integer, intent(in) :: reps
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0
+      integer(int64) :: t1
+      integer :: ierr
+      integer :: i
+      type(ftimer_openmp_t) :: timer
+
+      call prepare_openmp_timer_with_flat_entries(timer, num_timers, .false.)
+      if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
+      call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+
+      call system_clock(t0)
+      do i = 1, reps
+         call timer%write_mpi_openmp_summary_csv(MPI_CSV_REPORT_PATH, append=.false., ierr=ierr)
+         call require_success(ierr, 'write_mpi_openmp_summary_csv')
+      end do
+      call system_clock(t1)
+
+      call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+      call timer%finalize(ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp strict MPI+OpenMP finalize')
+      if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
+      call print_result('write strict MPI+OpenMP CSV N=100 entries', reps, t0, t1, count_rate)
+   end subroutine bench_write_strict_mpi_openmp_csv
+
+   subroutine bench_write_sparse_mpi_openmp_union_csv(num_timers, reps, count_rate)
+      integer, intent(in) :: num_timers
+      integer, intent(in) :: reps
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0
+      integer(int64) :: t1
+      integer :: ierr
+      integer :: i
+      type(ftimer_openmp_t) :: timer
+
+      call prepare_openmp_timer_with_flat_entries(timer, num_timers, .true.)
+      if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
+      call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+
+      call system_clock(t0)
+      do i = 1, reps
+         call timer%write_mpi_openmp_union_summary_csv(MPI_CSV_REPORT_PATH, append=.false., ierr=ierr)
+         call require_success(ierr, 'write_mpi_openmp_union_summary_csv')
+      end do
+      call system_clock(t1)
+
+      call MPI_Barrier(MPI_COMM_WORLD, mpierr)
+      call timer%finalize(ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp sparse MPI+OpenMP finalize')
+      if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
+      call print_result('write sparse MPI+OpenMP union CSV N=100 entries', reps, t0, t1, count_rate)
+   end subroutine bench_write_sparse_mpi_openmp_union_csv
+#endif
+
    subroutine bench_raw_date_string(reps, count_rate)
       integer, intent(in) :: reps
       integer(int64), intent(in) :: count_rate
@@ -1258,6 +1351,54 @@ contains
          call timer%stop(tname)
       end do
    end subroutine prepare_mpi_timer_with_flat_entries
+#endif
+
+#ifdef FTIMER_USE_OPENMP
+   subroutine prepare_openmp_timer_with_flat_entries(timer, num_timers, sparse)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: num_timers
+      logical, intent(in) :: sparse
+      integer, allocatable :: ids(:)
+      integer :: ierr
+      integer :: i
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+
+      call omp_set_dynamic(.false.)
+      config%max_lanes = 3
+#ifdef FTIMER_USE_MPI
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+#else
+      call timer%init(config=config, ierr=ierr)
+#endif
+      call require_success(ierr, 'ftimer_openmp fixture init')
+
+      allocate (ids(num_timers))
+      do i = 1, num_timers
+         call timer%register_timer(timer_name(i, 8), ids(i), ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp fixture register_timer')
+      end do
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp fixture begin_parallel_region')
+
+!$omp parallel num_threads(2) default(shared) private(ierr, i)
+      do i = 1, num_timers
+         if (sparse) then
+            if (modulo(i, 2) == 0 .and. bench_rank /= 0) cycle
+            if (modulo(i, 3) == 0 .and. omp_get_thread_num() /= 0) cycle
+         end if
+         call timer%start_id(ids(i), ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 'ftimer_bench: ftimer_openmp fixture start_id failed'
+         call timer%stop_id(ids(i), ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) error stop 'ftimer_bench: ftimer_openmp fixture stop_id failed'
+      end do
+!$omp end parallel
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp fixture end_parallel_region')
+      deallocate (ids)
+   end subroutine prepare_openmp_timer_with_flat_entries
 #endif
 
    subroutine build_mpi_union_summary_fixture(summary, num_timers, name_len)

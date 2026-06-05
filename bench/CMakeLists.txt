@@ -39,7 +39,9 @@ add_test(NAME bench_csv_smoke
     ${ftimer_bench_script_args}
     -DFTIMER_BENCH_CSV=${CMAKE_CURRENT_BINARY_DIR}/ftimer_bench_results.csv
     -DFTIMER_BENCH_MPI_NPROCS=2
+    -DFTIMER_BENCH_EXPECT_OPENMP_ROW=${FTIMER_USE_OPENMP}
     -DFTIMER_BENCH_EXPECT_MPI_STRICT_ROW=${FTIMER_USE_MPI}
+    -DFTIMER_BENCH_EXPECT_MPI_OPENMP_ROWS=$<AND:$<BOOL:${FTIMER_USE_MPI}>,$<BOOL:${FTIMER_USE_OPENMP}>>
     -P ${CMAKE_CURRENT_SOURCE_DIR}/check_bench_csv_output.cmake
 )
 set_tests_properties(bench_csv_smoke PROPERTIES

@@ -994,6 +994,116 @@ if(TEST_ENABLE_MPI)
       )
     endif()
 
+    if(NOT EXISTS "${consumer_build_dir}/consumer_mpi_openmp_summary.txt")
+      message(FATAL_ERROR
+        "Installed-package OpenMP API MPI+OpenMP consumer did not write consumer_mpi_openmp_summary.txt."
+      )
+    endif()
+    if(NOT EXISTS "${consumer_build_dir}/consumer_mpi_openmp_summary.csv")
+      message(FATAL_ERROR
+        "Installed-package OpenMP API MPI+OpenMP consumer did not write consumer_mpi_openmp_summary.csv."
+      )
+    endif()
+    if(NOT EXISTS "${consumer_build_dir}/consumer_mpi_openmp_union_summary.txt")
+      message(FATAL_ERROR
+        "Installed-package OpenMP API MPI+OpenMP consumer did not write consumer_mpi_openmp_union_summary.txt."
+      )
+    endif()
+    if(NOT EXISTS "${consumer_build_dir}/consumer_mpi_openmp_union_summary.csv")
+      message(FATAL_ERROR
+        "Installed-package OpenMP API MPI+OpenMP consumer did not write consumer_mpi_openmp_union_summary.csv."
+      )
+    endif()
+    file(READ "${consumer_build_dir}/consumer_mpi_openmp_summary.txt"
+      ftimer_consumer_mpi_openmp_report_text)
+    if(NOT ftimer_consumer_mpi_openmp_report_text MATCHES "MPI\\+OpenMP summary")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP strict report does not contain the strict hybrid heading."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_report_text MATCHES "Rank/lane samples")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP strict report does not contain rank/lane sample output."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_report_text MATCHES
+        "consumer_hybrid_api[^\n]*openmp_level1_team[^\n]*2[^\n]*4[^\n]*0")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP strict report does not contain the expected consumer_hybrid_api row."
+      )
+    endif()
+    file(READ "${consumer_build_dir}/consumer_mpi_openmp_summary.csv"
+      ftimer_consumer_mpi_openmp_csv_text)
+    if(NOT ftimer_consumer_mpi_openmp_csv_text MATCHES "mpi_openmp")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP strict CSV does not contain the mpi_openmp summary kind."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_csv_text MATCHES "consumer_hybrid_api")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP strict CSV does not contain the expected consumer_hybrid_api entry."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_csv_text MATCHES
+        "\"consumer_hybrid_api\",\"openmp_level1_team\",\"2\",\"0\",\"4\",\"4\",\"0\",\"true\"")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP strict CSV does not contain the expected strict participation values."
+      )
+    endif()
+    file(READ "${consumer_build_dir}/consumer_mpi_openmp_union_summary.txt"
+      ftimer_consumer_mpi_openmp_union_report_text)
+    if(NOT ftimer_consumer_mpi_openmp_union_report_text MATCHES
+        "Sparse MPI\\+OpenMP union summary")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union report does not contain the sparse union heading."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_union_report_text MATCHES "Missing ranks")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union report does not contain missing-rank output."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_union_report_text MATCHES
+        "consumer_sparse_hybrid_api[^\n]*openmp_level1_team[^\n]*1[^\n]*1[^\n]*1[^\n]*1")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union report does not contain the expected sparse hybrid row."
+      )
+    endif()
+    file(READ "${consumer_build_dir}/consumer_mpi_openmp_union_summary.csv"
+      ftimer_consumer_mpi_openmp_union_csv_text)
+    if(NOT ftimer_consumer_mpi_openmp_union_csv_text MATCHES "mpi_openmp_union")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union CSV does not contain the mpi_openmp_union summary kind."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_union_csv_text MATCHES "consumer_sparse_hybrid_api")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union CSV does not contain the expected sparse hybrid entry."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_union_csv_text MATCHES "missing_rank_count")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union CSV does not contain the sparse participation schema."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_union_csv_text MATCHES
+        "\"consumer_hybrid_api\",\"openmp_level1_team\",\"2\",\"0\",\"4\",\"4\",\"0\",\"true\"")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union CSV does not contain the expected all-lane participation values."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_union_csv_text MATCHES
+        "\"consumer_sparse_hybrid_api\",\"openmp_level1_team\",\"1\",\"1\",\"2\",\"1\",\"1\",\"true\"")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union CSV does not contain the expected sparse participation values."
+      )
+    endif()
+    if(NOT ftimer_consumer_mpi_openmp_union_csv_text MATCHES "sparse_union")
+      message(FATAL_ERROR
+        "Installed-package MPI+OpenMP union CSV does not identify the sparse_union participation policy."
+      )
+    endif()
+
     string(REPLACE "\r\n" "\n" openmp_api_mpi_openmp_consumer_stderr_normalized
       "${openmp_api_mpi_openmp_consumer_stderr}"
     )

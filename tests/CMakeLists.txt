@@ -212,6 +212,14 @@ add_test(NAME ftimer_release_docs_contract
     -P ${CMAKE_CURRENT_SOURCE_DIR}/check_release_docs_contract.cmake
 )
 
+add_test(NAME ftimer_installed_openmp_hybrid_api_surface
+  COMMAND ${CMAKE_COMMAND}
+    -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/check_installed_openmp_hybrid_api_surface.cmake
+)
+set_tests_properties(ftimer_installed_openmp_hybrid_api_surface
+  PROPERTIES LABELS "mpi;openmp")
+
 if(FTIMER_BUILD_SMOKE_TESTS)
   if(DEFINED ENV{TMPDIR} AND NOT "$ENV{TMPDIR}" STREQUAL "")
     set(ftimer_absolute_includedir_base "$ENV{TMPDIR}")
