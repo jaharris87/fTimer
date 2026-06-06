@@ -300,9 +300,9 @@ The default repository baseline is still the smoke/build-contract path. The full
 - `build-bench`
 - `lint`
 
-That means pFUnit-backed serial, OpenMPI MPI, MPICH MPI, GNU OpenMP
-guard, LLVM Flang OpenMP smoke, and build-only OpenMPI+OpenMP compatibility
-jobs are part of current CI now; they are not deferred future work.
+That means pFUnit-backed serial, OpenMPI MPI, MPICH MPI, GNU OpenMP guard,
+LLVM Flang OpenMP smoke, and OpenMPI+OpenMP smoke/install-consumer coverage
+are part of current CI now; they are not deferred future work.
 
 The issue #255 hosted-runner investigation found that Ubuntu 24.04's apt
 MPICH 4.2.0/Hydra launcher can start `/usr/bin/mpiexec.mpich -n 2`
@@ -319,8 +319,9 @@ same runner family after the launcher probe.
 
 The hybrid `build-mpi-openmp` job configures both `FTIMER_USE_MPI=ON` and
 `FTIMER_USE_OPENMP=ON`, builds, and runs smoke/install-consumer checks for
-today's compatibility mode plus the installed opt-in `ftimer_openmp` worker
-API and strict plus sparse union MPI+OpenMP rank/lane summary/report/CSV paths.
+today's compatibility mode, the installed opt-in `ftimer_openmp` worker API,
+the MPI+OpenMP example, strict MPI+OpenMP rank/lane summary/report/CSV paths,
+and sparse union MPI+OpenMP participation summary/report/CSV paths.
 Local Homebrew MPICH 5.0.1 was not a valid reproduction path because it does
 not install `mpi_f08.mod`, so it fails fTimer's configure-time MPI contract
 probe. A GitHub-hosted NVHPC 26.3 serial smoke/install-consumer trial installed
@@ -329,9 +330,8 @@ and built successfully, but the generated executables aborted at runtime with
 deferred rather than claimed. The contract-regression job also verifies the
 configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
 Dedicated OpenMP and MPI+OpenMP benchmark CI smoke coverage remains follow-up
-work under issue #285; the validation-plan refresh for the landed
-`ftimer_openmp_t` APIs remains follow-up work under issue #286, and the
-remaining CI-reality cleanup is tracked under issue #287.
+work under issue #285, and the validation-plan refresh for the landed
+`ftimer_openmp_t` APIs remains follow-up work under issue #286.
 
 ## Maintainer Workflow
 
