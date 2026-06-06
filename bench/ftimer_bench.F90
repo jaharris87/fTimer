@@ -1228,7 +1228,7 @@ contains
       character(len=64) :: label
       type(ftimer_openmp_t) :: timer
 
-      call prepare_openmp_timer_with_flat_entries(timer, num_timers, sparse=.true.)
+      call prepare_openmp_timer_with_flat_entries(timer, num_timers, sparse=.false.)
       if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
       call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
@@ -1258,7 +1258,7 @@ contains
       character(len=70) :: label
       type(ftimer_openmp_t) :: timer
 
-      call prepare_openmp_timer_with_flat_entries(timer, num_timers, sparse=.false.)
+      call prepare_openmp_timer_with_flat_entries(timer, num_timers, sparse=.true.)
       if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
       call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
@@ -1272,11 +1272,48 @@ contains
       call MPI_Barrier(MPI_COMM_WORLD, mpierr)
       call timer%finalize(ierr=ierr)
       call require_success(ierr, 'ftimer_openmp sparse MPI+OpenMP finalize')
+      if (bench_csv_smoke_only .and. is_reporting_rank()) call require_sparse_union_csv_smoke(MPI_CSV_REPORT_PATH)
       if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
       write (label, '("write sparse MPI+OpenMP union CSV N=",i0," entries")') num_timers
       call print_result(trim(label), reps, t0, t1, count_rate)
    end subroutine bench_write_sparse_mpi_openmp_union_csv
 #endif
+
+   subroutine require_sparse_union_csv_smoke(filename)
+      character(len=*), intent(in) :: filename
+      character(len=4096) :: line
+      character(len=256) :: iomsg
+      integer :: file_unit
+      integer :: io
+      logical :: saw_sparse_policy
+      logical :: saw_missing_rank
+
+      saw_sparse_policy = .false.
+      saw_missing_rank = .false.
+      open (newunit=file_unit, file=filename, status='old', action='read', iostat=io, iomsg=iomsg)
+      if (io /= 0) then
+         write (error_unit, '(a)') 'ftimer_bench: unable to read sparse union CSV smoke file: '//trim(iomsg)
+         error stop
+      end if
+
+      do
+         read (file_unit, '(a)', iostat=io, iomsg=iomsg) line
+         if (io /= 0) exit
+         if (index(line, 'sparse_union') > 0) saw_sparse_policy = .true.
+         if (index(line, '"entry"') > 0 .and. index(line, '"ttttttt2"') > 0 .and. &
+             index(line, '"1","1"') > 0) saw_missing_rank = .true.
+      end do
+      close (file_unit)
+
+      if (.not. saw_sparse_policy) then
+         write (error_unit, '(a)') 'ftimer_bench: sparse union CSV smoke file is missing sparse_union policy'
+         error stop
+      end if
+      if (.not. saw_missing_rank) then
+         write (error_unit, '(a)') 'ftimer_bench: sparse union CSV smoke file is missing a sparse entry'
+         error stop
+      end if
+   end subroutine require_sparse_union_csv_smoke
 
    subroutine bench_raw_date_string(reps, count_rate)
       integer, intent(in) :: reps
