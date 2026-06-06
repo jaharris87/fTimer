@@ -1,26 +1,30 @@
-> **When to read this:** When adding, reviewing, or extending OpenMP and
-> MPI+OpenMP validation under umbrella issue #237.
+> **When to read this:** When auditing the validation coverage that landed for
+> the #267 OpenMP and MPI+OpenMP API sequence, or when adding follow-up
+> validation without changing the current timing-mode contract.
 
 # OpenMP And Hybrid Validation Plan
 
-Issue #243 defines the validation strategy for the OpenMP/hybrid direction
-recorded in #238, #239, #240, and #241. This document is a validation contract.
-Issue #268 adds the initial `ftimer_openmp` public API surface and lifecycle
-coverage, #269 adds the first true OpenMP thread-lane runtime, and #270 adds
-stopped-run local OpenMP summary, report, and CSV coverage. Issue #271 adds
-strict MPI+OpenMP rank/lane summary, report, and CSV coverage through
-`ftimer_openmp_t`. Issue #272 adds sparse union MPI+OpenMP rank/lane
-participation reductions, reports, and CSV coverage through `ftimer_openmp_t`.
+This document records the validation strategy that guided the OpenMP/hybrid
+direction from #243 through the landed #267 API sequence. It should now be read
+as current validation guidance plus implementation history, not as an unresolved
+dependency list. Issue #243 established the initial hybrid build and
+installed-consumer compatibility gates. Issues #268, #269, #270, #271, and #272
+then landed the explicit `ftimer_openmp_t` public surface, true level-1
+thread-lane runtime, stopped-run local OpenMP summary/report/CSV output, strict
+MPI+OpenMP rank/lane summary/report/CSV output, and sparse union MPI+OpenMP
+rank/lane participation summary/report/CSV output. Issue #242 moved the
+durable user-facing timing-mode and migration guidance into
+`docs/openmp-timing-modes.md`.
 
 ## Decision
 
-Validation should advance in two layers:
+Validation should stay organized in two layers:
 
 - current compatibility coverage for configurations that exist on `main`; and
-- OpenMP/hybrid behavioral coverage that lands with the corresponding runtime,
-  summary, reduction, documentation, and benchmark work.
+- OpenMP/hybrid behavioral coverage for the landed runtime, summary,
+  reduction, documentation, and benchmark surfaces.
 
-The initial #243 change adds current build-only hybrid coverage:
+The historical #243 change added build-only hybrid coverage:
 
 - a `build-mpi-openmp` CI job that configures, builds, and smoke-tests fTimer
   with both `FTIMER_USE_MPI=ON` and `FTIMER_USE_OPENMP=ON`; and
@@ -32,8 +36,9 @@ The initial #243 change adds current build-only hybrid coverage:
 That initial coverage proved the MPI and OpenMP compatibility options could
 coexist before true worker timing and hybrid reductions landed. Current strict
 and sparse union hybrid smoke coverage now exercises `ftimer_openmp_t`
-rank/lane reductions. None of this should be read as evidence that the current
-`ftimer`/`ftimer_core` APIs perform true worker-thread timing.
+rank/lane reductions. None of this should be read as evidence that the
+procedural `ftimer` or OOP `ftimer_core` APIs perform true worker-thread
+timing.
 
 ## Current Compatibility Coverage
 
@@ -70,8 +75,8 @@ The compatibility matrix is intentionally about today's APIs:
 
 ## Current Thread-Lane Runtime Test Matrix
 
-#269 introduces the first true OpenMP runtime through the explicit
-`ftimer_openmp_t` object. Deterministic tests now cover, and should continue to
+The first true OpenMP runtime is now available through the explicit
+`ftimer_openmp_t` object. Deterministic tests cover, and should continue to
 cover:
 
 - explicit opt-in construction through the current `ftimer_openmp` module and
@@ -187,8 +192,16 @@ missing compiler, MPI wrapper, launcher, OpenMP runtime, or pFUnit dependency.
 
 ## Performance Validation
 
-Performance validation belongs with implementation issues, not with this
-build-only compatibility PR. For true worker timing, measurements should track:
+Performance validation is now part of the current follow-up surface rather than
+an implementation prerequisite. The benchmark harness already includes rows for
+the explicit `ftimer_openmp_t` serial-lane id path, timed-region open/close,
+warmed worker-lane id path, local OpenMP summary merge, strict MPI+OpenMP CSV
+output, and sparse union MPI+OpenMP CSV output. Dedicated, durable CI smoke
+coverage for OpenMP and MPI+OpenMP benchmark configurations remains follow-up
+work under #285, so release docs should not imply those feature-enabled
+benchmark rows run in every CI job yet.
+
+For true worker timing and hybrid reductions, measurements should track:
 
 - serial hot-path overhead relative to current `ftimer_t`;
 - MPI-only hot-path and summary overhead relative to current pure-MPI paths;
@@ -196,8 +209,8 @@ build-only compatibility PR. For true worker timing, measurements should track:
 - warmed worker `start_id`/`stop_id` overhead in the opt-in runtime;
 - timed-region open/close overhead;
 - lane merge cost for local summaries;
-- descriptor-union and rank-level materialization cost for hybrid summaries;
-- optional rank/lane detail materialization cost; and
+- descriptor-union and rank/lane materialization cost for strict and sparse
+  hybrid summaries; and
 - memory growth for lane-local stacks, diagnostics, and summary artifacts.
 
 Benchmarks should report configuration, compiler, MPI implementation, OpenMP
@@ -206,30 +219,42 @@ comparisons are meaningful.
 
 ## Non-Goals
 
-- Claiming true OpenMP worker timing from the initial #243 build-only coverage.
+- Claiming true OpenMP worker timing from the historical #243 build-only
+  coverage alone.
 - Treating MPI+OpenMP build success alone as proof of sparse/union hybrid
   rank/lane reductions.
 - Requiring every CI runner to support every MPI/OpenMP/compiler combination.
 - Weakening current worker no-op compatibility tests.
-- Adding automatic MPI barriers, OpenMP task timing, accelerator/device timing,
-  hardware counters, traces, or profiler callback identity.
+- Adding automatic MPI barriers, nested OpenMP team support, OpenMP task
+  migration support, accelerator/device timing, hardware counters, worker
+  callback streams, traces, or profiler callback identity.
 
-## Dependencies On Later Child Issues
+## Landed Implementation History
 
-- #269 provides runtime lane state, timed-region epochs, active-lane scans, and
+- #243 established the first MPI+OpenMP build and installed-consumer
+  compatibility coverage.
+- #268 landed the initial `ftimer_openmp` lifecycle, configuration, and public
+  API surface.
+- #269 landed runtime lane state, timed-region epochs, active-lane scans, and
   diagnostics for true worker timing tests.
-- #240 provides local OpenMP summary/report/CSV behavior for summary golden
-  tests.
-- #241 provides the hybrid reduction contract that MPI+OpenMP pFUnit and CSV
-  tests must enforce, and #272 implements the sparse union slice.
-- #242 records user-facing timing modes and migration guidance. Current local
-  OpenMP examples and installed consumers should stay compile-checked; sparse
-  union hybrid examples and installed consumers should remain separate from the
-  strict hybrid path.
+- #270 landed stopped-run local OpenMP summary/report/CSV behavior and its
+  validation matrix.
+- #271 landed strict MPI+OpenMP rank/lane summary/report/CSV behavior and the
+  descriptor/eligible-lane checks that MPI+OpenMP tests enforce.
+- #272 landed sparse union MPI+OpenMP rank/lane participation
+  summary/report/CSV behavior, keeping it separate from the strict hybrid
+  path.
+- #242 records the user-facing timing modes and migration guidance now carried
+  by `docs/openmp-timing-modes.md`.
+
+The earlier #240 and #241 design records remain historical inputs for the
+summary and hybrid-reduction contracts. They are no longer prerequisites for
+this validation plan.
 
 ## Validation For This Plan
 
-Issue #243 adds CI/package validation wiring for current feature flags and a
-durable test plan for future APIs. Focused validation should include CMake
-configure/build checks for the added hybrid smoke surface, docs contract checks,
-and `git diff --check`.
+Focused validation for changes to this plan should include the release docs
+contract, the OpenMP/hybrid examples contract, and `git diff --check`. Because
+this file is historical guidance rather than a live user-facing contract,
+changes here should update live docs only when current behavior, examples, or
+release navigation are implicated.

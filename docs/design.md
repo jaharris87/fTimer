@@ -330,8 +330,7 @@ and built successfully, but the generated executables aborted at runtime with
 deferred rather than claimed. The contract-regression job also verifies the
 configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
 Dedicated OpenMP and MPI+OpenMP benchmark CI smoke coverage remains follow-up
-work under issue #285, and the validation-plan refresh for the landed
-`ftimer_openmp_t` APIs remains follow-up work under issue #286.
+work under issue #285.
 
 ## Maintainer Workflow
 
