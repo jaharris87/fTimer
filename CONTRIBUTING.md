@@ -1,8 +1,9 @@
 # Contributing To fTimer
 
 Thanks for helping make fTimer more reliable. This project is currently focused
-on a small, auditable wall-clock timing library for serial and pure-MPI Fortran
-codes, with a narrow OpenMP master-thread-only carve-out.
+on a small, auditable wall-clock timing library for serial, pure-MPI,
+OpenMP-compatibility, and explicit `ftimer_openmp_t` level-1 worker/hybrid
+Fortran timing paths.
 
 ## Before Opening Work
 
@@ -13,8 +14,9 @@ codes, with a narrow OpenMP master-thread-only carve-out.
 - Do not file security-sensitive details in a public issue. Follow
   `SECURITY.md`.
 - Check for existing issues before opening duplicates, especially for deferred
-  topics such as FPM packaging, richer OpenMP timing, hardware counters, traces,
-  accelerator timelines, and profiler-backend integration.
+  topics such as FPM packaging, broader OpenMP support beyond the explicit
+  level-1 worker runtime, hardware counters, traces, accelerator timelines, and
+  profiler-backend integration.
 
 ## Development Setup
 
