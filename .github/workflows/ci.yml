@@ -613,6 +613,47 @@ jobs:
       - name: Smoke test
         run: ctest --test-dir build --output-on-failure
 
+  build-openmp-bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake
+
+      - name: Configure (OpenMP bench)
+        run: FC=gfortran cmake -S . -B build-openmp-bench -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_BENCH=ON
+
+      - name: Build benchmark
+        run: cmake --build build-openmp-bench --target ftimer_bench -j$(nproc)
+
+      - name: CSV smoke test
+        run: ctest --test-dir build-openmp-bench --output-on-failure -R '^bench_csv_smoke$'
+
+  build-mpi-openmp-bench:
+    runs-on: ubuntu-latest
+    env:
+      OMPI_MCA_rmaps_base_oversubscribe: 1
+      PRTE_MCA_rmaps_default_mapping_policy: :oversubscribe
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake libopenmpi-dev openmpi-bin
+
+      - name: Configure (MPI+OpenMP bench)
+        run: FC=mpifort cmake -S . -B build-mpi-openmp-bench -DFTIMER_USE_MPI=ON -DFTIMER_USE_OPENMP=ON -DFTIMER_BUILD_BENCH=ON
+
+      - name: Build benchmark
+        run: cmake --build build-mpi-openmp-bench --target ftimer_bench -j$(nproc)
+
+      - name: CSV smoke test
+        run: ctest --test-dir build-mpi-openmp-bench --output-on-failure -R '^bench_csv_smoke$'
+
   lint:
     runs-on: ubuntu-latest
     steps:

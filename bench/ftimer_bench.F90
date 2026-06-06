@@ -157,6 +157,7 @@ program ftimer_bench
    integer :: bench_nprocs = 1
    integer :: bench_rank = 0
    logical :: bench_csv_enabled = .false.
+   logical :: bench_csv_smoke_only = .false.
    character(len=:), allocatable :: bench_csv_path
    character(len=:), allocatable :: local_csv_report_path
    character(len=:), allocatable :: mpi_csv_report_path
@@ -172,10 +173,23 @@ program ftimer_bench
    call system_clock(count_rate=count_rate)
    call setup_bench_csv()
    call setup_report_scratch_paths()
+   call setup_bench_csv_smoke_only()
 
    call write_bench_line('=== fTimer Performance Benchmark ===')
    call write_bench_line('')
    call write_bench_header()
+
+   if (bench_csv_smoke_only) then
+#if defined(FTIMER_USE_MPI) && defined(FTIMER_USE_OPENMP)
+      call bench_write_strict_mpi_openmp_csv(1, 1, count_rate)
+      call bench_write_sparse_mpi_openmp_union_csv(2, 1, count_rate)
+#endif
+      call close_bench_csv()
+#ifdef FTIMER_USE_MPI
+      call MPI_Finalize(mpierr)
+#endif
+      stop
+   end if
 
    ! --- Hot-path scenarios ---
    call bench_flat_name(REPS_HOT, count_rate)
@@ -275,8 +289,8 @@ program ftimer_bench
    call bench_write_strict_mpi_csv(REPORT_N_SMALL, REPS_MPI_REPORT, count_rate)
 #endif
 #if defined(FTIMER_USE_MPI) && defined(FTIMER_USE_OPENMP)
-   call bench_write_strict_mpi_openmp_csv(REPORT_N_SMALL, REPS_MPI_REPORT, count_rate)
-   call bench_write_sparse_mpi_openmp_union_csv(REPORT_N_SMALL, REPS_MPI_REPORT, count_rate)
+   call bench_write_strict_mpi_openmp_csv(1, 1, count_rate)
+   call bench_write_sparse_mpi_openmp_union_csv(2, 1, count_rate)
 #endif
 
    call write_bench_line('')
@@ -353,6 +367,20 @@ contains
       local_csv_report_path = make_scratch_path('local_report')
       mpi_csv_report_path = make_scratch_path('mpi_report')
    end subroutine setup_report_scratch_paths
+
+   subroutine setup_bench_csv_smoke_only()
+      character(len=16) :: value
+      integer :: env_status
+
+      call get_environment_variable('FTIMER_BENCH_CSV_SMOKE_ONLY', value, status=env_status)
+      if (env_status /= 0) return
+      select case (trim(value))
+      case ('1', 'ON', 'on', 'TRUE', 'true')
+         bench_csv_smoke_only = .true.
+      case default
+         bench_csv_smoke_only = .false.
+      end select
+   end subroutine setup_bench_csv_smoke_only
 
    function make_scratch_path(role) result(path)
       character(len=*), intent(in) :: role
@@ -1197,9 +1225,10 @@ contains
       integer(int64) :: t1
       integer :: ierr
       integer :: i
+      character(len=64) :: label
       type(ftimer_openmp_t) :: timer
 
-      call prepare_openmp_timer_with_flat_entries(timer, num_timers, .false.)
+      call prepare_openmp_timer_with_flat_entries(timer, num_timers, sparse=.false.)
       if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
       call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
@@ -1214,7 +1243,8 @@ contains
       call timer%finalize(ierr=ierr)
       call require_success(ierr, 'ftimer_openmp strict MPI+OpenMP finalize')
       if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
-      call print_result('write strict MPI+OpenMP CSV N=100 entries', reps, t0, t1, count_rate)
+      write (label, '("write strict MPI+OpenMP CSV N=",i0," entries")') num_timers
+      call print_result(trim(label), reps, t0, t1, count_rate)
    end subroutine bench_write_strict_mpi_openmp_csv
 
    subroutine bench_write_sparse_mpi_openmp_union_csv(num_timers, reps, count_rate)
@@ -1225,9 +1255,10 @@ contains
       integer(int64) :: t1
       integer :: ierr
       integer :: i
+      character(len=70) :: label
       type(ftimer_openmp_t) :: timer
 
-      call prepare_openmp_timer_with_flat_entries(timer, num_timers, .true.)
+      call prepare_openmp_timer_with_flat_entries(timer, num_timers, sparse=.true.)
       if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
       call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
@@ -1241,10 +1272,48 @@ contains
       call MPI_Barrier(MPI_COMM_WORLD, mpierr)
       call timer%finalize(ierr=ierr)
       call require_success(ierr, 'ftimer_openmp sparse MPI+OpenMP finalize')
+      if (bench_csv_smoke_only .and. is_reporting_rank()) call require_sparse_union_csv_smoke(MPI_CSV_REPORT_PATH)
       if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
-      call print_result('write sparse MPI+OpenMP union CSV N=100 entries', reps, t0, t1, count_rate)
+      write (label, '("write sparse MPI+OpenMP union CSV N=",i0," entries")') num_timers
+      call print_result(trim(label), reps, t0, t1, count_rate)
    end subroutine bench_write_sparse_mpi_openmp_union_csv
 #endif
+
+   subroutine require_sparse_union_csv_smoke(filename)
+      character(len=*), intent(in) :: filename
+      character(len=4096) :: line
+      character(len=256) :: iomsg
+      integer :: file_unit
+      integer :: io
+      logical :: saw_sparse_policy
+      logical :: saw_missing_rank
+
+      saw_sparse_policy = .false.
+      saw_missing_rank = .false.
+      open (newunit=file_unit, file=filename, status='old', action='read', iostat=io, iomsg=iomsg)
+      if (io /= 0) then
+         write (error_unit, '(a)') 'ftimer_bench: unable to read sparse union CSV smoke file: '//trim(iomsg)
+         error stop
+      end if
+
+      do
+         read (file_unit, '(a)', iostat=io, iomsg=iomsg) line
+         if (io /= 0) exit
+         if (index(line, 'sparse_union') > 0) saw_sparse_policy = .true.
+         if (index(line, '"entry"') > 0 .and. index(line, '"ttttttt2"') > 0 .and. &
+             index(line, '"1","1"') > 0) saw_missing_rank = .true.
+      end do
+      close (file_unit)
+
+      if (.not. saw_sparse_policy) then
+         write (error_unit, '(a)') 'ftimer_bench: sparse union CSV smoke file is missing sparse_union policy'
+         error stop
+      end if
+      if (.not. saw_missing_rank) then
+         write (error_unit, '(a)') 'ftimer_bench: sparse union CSV smoke file is missing a sparse entry'
+         error stop
+      end if
+   end subroutine require_sparse_union_csv_smoke
 
    subroutine bench_raw_date_string(reps, count_rate)
       integer, intent(in) :: reps
