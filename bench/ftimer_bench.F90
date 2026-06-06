@@ -288,6 +288,10 @@ program ftimer_bench
 #ifdef FTIMER_USE_MPI
    call bench_write_strict_mpi_csv(REPORT_N_SMALL, REPS_MPI_REPORT, count_rate)
 #endif
+#if defined(FTIMER_USE_MPI) && defined(FTIMER_USE_OPENMP)
+   call bench_write_strict_mpi_openmp_csv(1, 1, count_rate)
+   call bench_write_sparse_mpi_openmp_union_csv(2, 1, count_rate)
+#endif
 
    call write_bench_line('')
 
@@ -1224,7 +1228,7 @@ contains
       character(len=64) :: label
       type(ftimer_openmp_t) :: timer
 
-      call prepare_openmp_timer_with_flat_entries(timer, num_timers, sparse=.false.)
+      call prepare_openmp_timer_with_flat_entries(timer, num_timers, sparse=.true.)
       if (is_reporting_rank()) call delete_file_if_present(MPI_CSV_REPORT_PATH)
       call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
