@@ -1,6 +1,29 @@
 add_executable(ftimer_bench ftimer_bench.F90)
 target_link_libraries(ftimer_bench PRIVATE ftimer)
 
+set(ftimer_bench_mpiexec_oversubscribe_flags)
+set(ftimer_bench_mpiexec_oversubscribe_flag_count 0)
+if(FTIMER_USE_MPI AND DEFINED MPIEXEC_EXECUTABLE AND NOT MPIEXEC_EXECUTABLE STREQUAL "")
+  execute_process(
+    COMMAND "${MPIEXEC_EXECUTABLE}" --version
+    OUTPUT_VARIABLE ftimer_bench_mpiexec_version_stdout
+    ERROR_VARIABLE ftimer_bench_mpiexec_version_stderr
+    RESULT_VARIABLE ftimer_bench_mpiexec_version_result
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_STRIP_TRAILING_WHITESPACE
+  )
+  if(ftimer_bench_mpiexec_version_result EQUAL 0)
+    set(ftimer_bench_mpiexec_version_text
+      "${ftimer_bench_mpiexec_version_stdout}\n${ftimer_bench_mpiexec_version_stderr}")
+    if(ftimer_bench_mpiexec_version_text MATCHES "Open MPI|OpenRTE|PRTE|PRRTE")
+      set(ftimer_bench_mpiexec_oversubscribe_flags --map-by slot:OVERSUBSCRIBE)
+      set(ftimer_bench_mpiexec_oversubscribe_flag_count 2)
+      set(ftimer_bench_mpiexec_oversubscribe_flag_1 --map-by)
+      set(ftimer_bench_mpiexec_oversubscribe_flag_2 slot:OVERSUBSCRIBE)
+    endif()
+  endif()
+endif()
+
 set(ftimer_bench_command "$<TARGET_FILE:ftimer_bench>")
 if(FTIMER_USE_MPI)
   set(ftimer_bench_command "${MPIEXEC_EXECUTABLE}")
@@ -11,6 +34,9 @@ if(FTIMER_USE_MPI)
   endif()
   if(DEFINED MPIEXEC_PREFLAGS AND NOT MPIEXEC_PREFLAGS STREQUAL "")
     list(APPEND ftimer_bench_command ${MPIEXEC_PREFLAGS})
+  endif()
+  if(ftimer_bench_mpiexec_oversubscribe_flags)
+    list(APPEND ftimer_bench_command ${ftimer_bench_mpiexec_oversubscribe_flags})
   endif()
   list(APPEND ftimer_bench_command "$<TARGET_FILE:ftimer_bench>")
   if(DEFINED MPIEXEC_POSTFLAGS AND NOT MPIEXEC_POSTFLAGS STREQUAL "")
@@ -31,6 +57,9 @@ set(ftimer_bench_script_args
   -DFTIMER_BENCH_MPIEXEC_EXECUTABLE=${MPIEXEC_EXECUTABLE}
   "-DFTIMER_BENCH_MPIEXEC_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}"
   "-DFTIMER_BENCH_MPIEXEC_PREFLAGS=${MPIEXEC_PREFLAGS}"
+  "-DFTIMER_BENCH_MPIEXEC_OVERSUBSCRIBE_FLAG_COUNT=${ftimer_bench_mpiexec_oversubscribe_flag_count}"
+  "-DFTIMER_BENCH_MPIEXEC_OVERSUBSCRIBE_FLAG_1=${ftimer_bench_mpiexec_oversubscribe_flag_1}"
+  "-DFTIMER_BENCH_MPIEXEC_OVERSUBSCRIBE_FLAG_2=${ftimer_bench_mpiexec_oversubscribe_flag_2}"
   "-DFTIMER_BENCH_MPIEXEC_POSTFLAGS=${MPIEXEC_POSTFLAGS}"
 )
 
@@ -42,6 +71,7 @@ add_test(NAME bench_csv_smoke
     -DFTIMER_BENCH_EXPECT_OPENMP_ROW=${FTIMER_USE_OPENMP}
     -DFTIMER_BENCH_EXPECT_MPI_STRICT_ROW=${FTIMER_USE_MPI}
     -DFTIMER_BENCH_EXPECT_MPI_OPENMP_ROWS=$<AND:$<BOOL:${FTIMER_USE_MPI}>,$<BOOL:${FTIMER_USE_OPENMP}>>
+    -DFTIMER_BENCH_SMOKE_ONLY=$<AND:$<BOOL:${FTIMER_USE_MPI}>,$<BOOL:${FTIMER_USE_OPENMP}>>
     -P ${CMAKE_CURRENT_SOURCE_DIR}/check_bench_csv_output.cmake
 )
 set_tests_properties(bench_csv_smoke PROPERTIES
