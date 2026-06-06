@@ -78,6 +78,72 @@ That pattern preserves the current pure-MPI summary contract. The MPI summary
 reduces rank-local wall-clock intervals; fTimer does not add automatic MPI
 barriers around the measured region.
 
+For true OpenMP worker timing, use the explicit `ftimer_openmp_t` object
+surface instead of the procedural default instance. Register timer ids in serial
+context, open a timed level-1 region from serial context, and call id-first
+worker timers inside the OpenMP region. With the `ftimer_openmp` types imported:
+
+```fortran
+type(ftimer_openmp_config_t) :: config
+type(ftimer_openmp_parallel_region_t) :: region
+type(ftimer_openmp_summary_t) :: summary
+type(ftimer_openmp_t) :: timer
+integer :: worker_work_id
+integer :: ierr
+
+call timer%init(config=config, ierr=ierr)
+call timer%register_timer("worker_work", worker_work_id, ierr=ierr)
+
+call timer%begin_parallel_region(region, ierr=ierr)
+!$omp parallel private(ierr)
+call timer%start_id(worker_work_id, ierr=ierr)
+! worker-thread work
+call timer%stop_id(worker_work_id, ierr=ierr)
+!$omp end parallel
+call timer%end_parallel_region(region, ierr=ierr)
+
+call timer%get_openmp_summary(summary, ierr=ierr)
+call timer%finalize(ierr=ierr)
+```
+
+OpenMP worker summaries are stopped-run merge points: call them only after the
+timed region is closed and all lane-local timer stacks are inactive. Lifecycle,
+registration, timed-region open/close, and summary/report calls belong in serial
+context; only valid `start_id`/`stop_id` worker timing belongs inside the
+opened level-1 OpenMP region.
+
+For MPI+OpenMP worker timing, keep MPI initialization and finalization outside
+the `ftimer_openmp_t` object lifetime, capture the communicator with
+`init(config=..., comm=...)`, and use the same id-first worker hot path:
+
+```fortran
+call MPI_Init(ierr)
+
+call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+call timer%register_timer("rank_worker_work", rank_worker_work_id, ierr=ierr)
+
+call timer%begin_parallel_region(region, ierr=ierr)
+!$omp parallel private(ierr)
+call timer%start_id(rank_worker_work_id, ierr=ierr)
+! rank-local worker-thread work
+call timer%stop_id(rank_worker_work_id, ierr=ierr)
+!$omp end parallel
+call timer%end_parallel_region(region, ierr=ierr)
+
+call timer%mpi_openmp_summary(strict_summary, ierr=ierr)
+call timer%finalize(ierr=ierr)
+call MPI_Finalize(ierr)
+```
+
+Use the strict `mpi_openmp_summary` family when every rank and eligible lane
+participates in the same descriptor set. For rank- or lane-conditional hybrid
+timing, keep the same stopped-run lifecycle but consume the sparse union
+`mpi_openmp_union_summary` report family so missing contributors are represented
+as explicit participation metadata rather than zero-filled timing samples.
+
+These worker-timing snippets are concise user-facing versions of the accepted
+source shapes used by the current OpenMP and MPI+OpenMP examples.
+
 `examples/openmp_example.F90` is the reference compatibility example. It
 intentionally exercises a worker-thread no-op call and verifies that only the
 outer `parallel_region` timer appears in the summary.
