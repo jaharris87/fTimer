@@ -605,13 +605,23 @@ jobs:
           sudo apt-get install -y gfortran cmake
 
       - name: Configure (bench)
-        run: cmake -B build -DFTIMER_BUILD_BENCH=ON
+        run: cmake -S . -B build -DFTIMER_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build -j$(nproc)
 
       - name: Smoke test
         run: ctest --test-dir build --output-on-failure
+
+      - name: Run benchmark with CSV artifact
+        run: ./build/bench/ftimer_bench build/bench/ftimer_bench_results.csv
+
+      - name: Upload benchmark CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: ftimer-bench-serial-${{ github.sha }}
+          path: build/bench/ftimer_bench_results.csv
+          if-no-files-found: error
 
   build-openmp-bench:
     runs-on: ubuntu-latest

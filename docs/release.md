@@ -55,7 +55,7 @@ then require GitHub CI to pass before tagging.
 | MPI path | Yes when MPI and matching pFUnit are available |
 | MPI+OpenMP compatibility and hybrid paths | Yes when validating the hybrid compatibility matrix; this proves current feature-flag coexistence, `examples/mpi_openmp_example.F90`, the installed `ftimer_openmp` worker API, and strict plus sparse union hybrid rank/lane summaries/reports/CSV |
 | OpenMP carve-out and true worker example | Yes: GNU pFUnit guard coverage when OpenMP and matching pFUnit are available; LLVM Flang smoke/example coverage for `examples/openmp_example.F90` and `examples/openmp_worker_example.F90` when validating the OpenMP compiler matrix |
-| Bench harness | Yes for hot-path or summary-performance changes |
+| Bench harness | Yes for hot-path, summary, report/CSV, MPI summary/report, or release-readiness performance evidence |
 | Formatting | Yes for source/test/example changes |
 | Diff hygiene | Yes |
 | CI | Yes |
@@ -64,7 +64,20 @@ Use the commands from `AGENTS.md` and `README.md` for each build mode. Minimum
 release-prep evidence should include the exact commands run, the local toolchain
 used, and whether the corresponding required CI jobs passed. Include
 `git diff --check` in every release-prep PR. Include the benchmark harness when
-hot-path timing behavior or summary-generation performance changed.
+hot-path timing behavior, lookup/cached-id behavior, context growth or
+parent-stack accounting, summary generation, report/CSV formatting, or MPI
+summary/report behavior changed.
+
+Benchmark CSVs are review evidence, not a CI pass/fail threshold. Start trend
+review with the rows for flat name-based start/stop, cached-id start/stop,
+lookup scaling across resident timer counts, context scaling across parent-stack
+counts, timer/context first-touch allocation and growth, summary builds, local
+text/CSV reports, sparse MPI-union formatting, and the strict MPI CSV row when
+MPI is enabled. Treat absolute timings from GitHub-hosted runners cautiously;
+runner load and placement are noisy. The serial `build-bench` CI job uploads the
+validated CSV as a `ftimer-bench-serial-<sha>` artifact for PR and release
+review. MPI benchmark artifact upload is intentionally deferred; run an
+MPI-enabled benchmark locally when MPI timing evidence is needed.
 
 Reference commands:
 
@@ -117,6 +130,7 @@ cmake -S . -B build-bench \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build build-bench --target ftimer_bench
 ./build-bench/bench/ftimer_bench
+./build-bench/bench/ftimer_bench /tmp/ftimer_bench_results.csv
 
 git diff --check
 ```
@@ -148,6 +162,10 @@ Do not attach binary packages, generated install trees, compiler module bundles,
 benchmark data, or generated reports to a GitHub release unless a release issue
 explicitly adds that artifact type and records how it was built, validated, and
 licensed.
+
+CI benchmark CSV artifacts are short-lived PR/release review evidence. Do not
+commit generated benchmark CSV output to the repository or promote it to a
+GitHub release asset without an explicit release issue.
 
 ## License Expectations
 
