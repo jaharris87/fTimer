@@ -150,6 +150,10 @@ The exact timings vary by machine and compiler, but a successful run should show
 
 This is the default happy path for first-time evaluation. It exercises the library build, links an example program, and produces believable summary output without requiring MPI or pFUnit.
 
+If the first build, MPI path, OpenMP path, CSV export, or first example fails,
+see the symptom-oriented [`docs/troubleshooting.md`](docs/troubleshooting.md)
+guide before digging into the full semantics reference.
+
 ## Install And Use From Another Project
 
 Install fTimer to a prefix:
@@ -410,6 +414,10 @@ compiler/runtime pair.
 
 The smoke-test path also runs the enabled and disabled instrumentation facade examples so the documented compile-out strategy stays buildable.
 
+For practical remedies to first-use build failures, MPI summary hangs, OpenMP
+worker-call surprises, and CSV append errors, see
+[`docs/troubleshooting.md`](docs/troubleshooting.md).
+
 Supported toolchain matrix:
 
 - Serial smoke/library build: GNU Fortran and LLVM Flang are validated in automation
@@ -487,6 +495,7 @@ The benchmark harness also includes reporting-scale rows for local text reports,
 ## More Detail
 
 - Runtime semantics: [`docs/semantics.md`](docs/semantics.md)
+- Troubleshooting guide: [`docs/troubleshooting.md`](docs/troubleshooting.md)
 - Current architecture reference: [`docs/design.md`](docs/design.md)
 - OpenMP timing modes and migration guide: [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md)
 - Release checklist and artifact policy: [`docs/release.md`](docs/release.md)

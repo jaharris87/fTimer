@@ -185,6 +185,7 @@ Read additional docs only when the task requires them:
 
 - `docs/semantics.md` — when runtime behavior or contract is changing or unclear
 - `README.md` — when user-facing behavior, examples, or docs may need updates
+- `docs/troubleshooting.md` — when first-use build, MPI, OpenMP, CSV, or summary/report failures need practical remedies
 - `docs/design.md` — for architectural or repository-structure questions
 - `docs/implementation-history.md` — for historical roadmap context or landed implementation history
 - `docs/maintainer.md` — for workflow routing; then load only the workflow-specific doc you need:
