@@ -381,10 +381,11 @@ The current #277 implementation uses private catalog and lane-local context
 indexes in that warmed path, plus the clock call and lane-local stack mutation.
 Lane-local array and context-index growth is allowed only as a cold first-touch
 or growth path and must be documented separately from steady-state timing cost.
-Because no public reserve API exists, dummy warm-up regions are a
-benchmark-only overhead practice: they touch the same lane/timer/context
-combinations before an externally measured loop, and fTimer summaries from that
-run still include the warm-up calls.
+Because no public reserve API exists, dummy warm-up work is a benchmark-only
+overhead practice: it touches the same lane/timer/context combinations inside
+the same opened timed region/epoch before an externally measured loop. fTimer
+summaries from that run still include the warm-up calls, and a fresh timed
+region still pays one team-size observation per participating lane.
 
 The first public config surface should stay lean: `max_lanes` plus bounded
 diagnostic policy are enough for correctness. Expected timer counts, context

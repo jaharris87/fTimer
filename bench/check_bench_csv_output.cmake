@@ -122,6 +122,21 @@ function(require_bench_csv_result label expected_reps)
   endforeach()
 endfunction()
 
+function(require_bench_csv_result_or_skip label expected_reps skipped_label)
+  string(REGEX MATCH "(^|\n)\"${label}\",[^\n\r]*" row "${bench_csv}")
+  if(NOT row STREQUAL "")
+    require_bench_csv_result("${label}" "${expected_reps}")
+    return()
+  endif()
+
+  if(bench_stdout MATCHES "(^|\n)${skipped_label}(\n|$)")
+    return()
+  endif()
+
+  message(FATAL_ERROR
+    "ftimer_bench CSV output is missing \"${label}\" and stdout did not report \"${skipped_label}\"")
+endfunction()
+
 if(NOT ftimer_bench_smoke_only)
   set(required_rows
     "\"format local text N=100 entries\""
@@ -145,6 +160,10 @@ if(NOT ftimer_bench_smoke_only)
     require_bench_csv_result("ftimer_openmp catalog lookup N=1000" 100000)
     require_bench_csv_result("ftimer_openmp worker lanes L=2" 50000)
     require_bench_csv_result("ftimer_openmp worker split L=2" 50000)
+    require_bench_csv_result_or_skip("ftimer_openmp worker lanes L=8" 50000
+      "ftimer_openmp worker lanes L=8 skipped")
+    require_bench_csv_result_or_skip("ftimer_openmp worker split L=8" 50000
+      "ftimer_openmp worker split L=8 skipped")
     require_bench_csv_result("ftimer_openmp lane touch K=3 N=1000" 1000)
     require_bench_csv_result("ftimer_openmp lane touch K=65 N=1000" 1000)
   endif()
