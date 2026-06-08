@@ -1364,6 +1364,7 @@ contains
       integer :: shared_idx
       integer :: solo_id
       integer :: solo_idx
+      integer :: solo_seen
       integer :: warm_id
       integer :: warm_idx
       integer :: warm_seen
@@ -1433,7 +1434,7 @@ contains
       end if
 !$omp end parallel
 
-      if (warm_seen < 2) error stop 1435
+      if (warm_seen <= 2) error stop 1435
       if (bad /= 0) error stop 1436
 
       fake_lane_time(0) = 108.0_wp
@@ -1445,9 +1446,11 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 1408)
 
       bad = 0
+      solo_seen = 0
       worker_seen = 0
 
-!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:bad, worker_seen)
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:bad, worker_seen, solo_seen)
+      solo_seen = solo_seen + 1
       if (omp_get_thread_num() == 0) then
          worker_seen = worker_seen + 1
          fake_lane_time(1) = 30.0_wp
@@ -1466,6 +1469,8 @@ contains
 !$omp end parallel
 
       if (worker_seen /= 1) error stop 1409
+      if (solo_seen /= 2) error stop 1443
+      if (warm_seen <= solo_seen) error stop 1444
       if (bad /= 0) error stop 1410
 
       fake_lane_time(0) = 115.0_wp
@@ -1491,6 +1496,7 @@ contains
       call expect_status(summary%entries(shared_idx)%eligible_lane_count, 2, 1419)
       call expect_status(summary%entries(shared_idx)%participating_lane_count, 2, 1420)
       call expect_status(summary%entries(shared_idx)%missing_lane_count, 0, 1421)
+      if (.not. summary%entries(shared_idx)%missing_lane_count_known) error stop 1445
       call expect_time(summary%entries(shared_idx)%sum_lane_inclusive_time, 3.0_wp, 1422)
       call expect_time(summary%entries(shared_idx)%avg_lane_inclusive_time, 1.5_wp, 1423)
       call expect_time(summary%entries(shared_idx)%max_lane_inclusive_time, 2.0_wp, 1424)
@@ -1499,6 +1505,7 @@ contains
       call expect_status(summary%entries(solo_idx)%eligible_lane_count, 2, 1426)
       call expect_status(summary%entries(solo_idx)%participating_lane_count, 1, 1427)
       call expect_status(summary%entries(solo_idx)%missing_lane_count, 1, 1428)
+      if (.not. summary%entries(solo_idx)%missing_lane_count_known) error stop 1446
       call expect_time(summary%entries(solo_idx)%sum_lane_inclusive_time, 8.0_wp, 1429)
       call expect_time(summary%entries(solo_idx)%avg_lane_inclusive_time, 8.0_wp, 1430)
       call expect_time(summary%entries(solo_idx)%avg_lane_call_count, 2.0_wp, 1431)
@@ -1506,6 +1513,7 @@ contains
       call expect_status(summary%entries(warm_idx)%eligible_lane_count, warm_seen, 1439)
       call expect_status(summary%entries(warm_idx)%participating_lane_count, 1, 1440)
       call expect_status(summary%entries(warm_idx)%missing_lane_count, warm_seen - 1, 1441)
+      if (.not. summary%entries(warm_idx)%missing_lane_count_known) error stop 1447
       call expect_time(summary%entries(warm_idx)%sum_lane_inclusive_time, 1.0_wp, 1442)
 
       call timer%finalize(ierr=ierr)
