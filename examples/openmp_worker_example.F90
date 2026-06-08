@@ -22,12 +22,18 @@ program openmp_worker_example
    config%max_lanes = 3
    config%max_worker_diagnostics = 4
 
+   ! ftimer_openmp_t is the opt-in path for true worker timings; configure lane
+   ! capacity before init so each OpenMP thread has storage to write into.
    call timer%init(config=config, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop "ftimer_openmp init failed"
 
+   ! Register once outside the parallel region and use ids inside hot loops to
+   ! avoid repeated name lookups.
    call timer%register_timer("team_work", team_work_id, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop "ftimer_openmp register_timer failed"
 
+   ! The region handle brackets one OpenMP team and must be opened and closed by
+   ! serial code around the !$omp parallel block.
    call timer%begin_parallel_region(region, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop "ftimer_openmp begin_parallel_region failed"
 
@@ -39,6 +45,7 @@ program openmp_worker_example
 !$omp& reduction(+:accumulator, worker_bad, worker_seen)
    worker_seen = worker_seen + 1
 
+   ! Each worker lane records its own local interval for the same registered id.
    call timer%start_id(team_work_id, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
 

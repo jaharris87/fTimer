@@ -12,10 +12,14 @@ program basic_usage
    type(ftimer_summary_t) :: summary
 
 #ifdef FTIMER_USE_MPI
+   ! In MPI builds, keep fTimer inside the MPI lifetime because the clock and
+   ! summary paths may use MPI services.
    call MPI_Init(ierr)
    if (ierr /= 0) error stop 7
 #endif
 
+   ! Minimal lifecycle to copy: initialize once, time named regions, then
+   ! inspect or print the summary before finalizing.
    call ftimer_init()
    call ftimer_start("work")
 
@@ -27,6 +31,8 @@ program basic_usage
    call ftimer_stop("work")
    call ftimer_get_summary(summary)
 
+   ! Structured summaries are intended for programmatic checks; printing is
+   ! just one formatting layer on top.
    if (summary%num_entries /= 1) error stop 1
    if (.not. allocated(summary%entries)) error stop 2
    if (trim(summary%entries(1)%name) /= "work") error stop 3

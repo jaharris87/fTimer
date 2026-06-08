@@ -234,6 +234,8 @@ contains
       parent_id = -1
       if (entry_count >= 2) parent_id = summary%entries(2)%parent_id
 
+      ! Matching descriptors take the cheap hash path and go straight to timing
+      ! reductions; no descriptor allgather should be needed.
       @assertEqual(2, entry_count)
       @assertEqual(1, parent_id)
       @assertEqual(0, allgather_count)
@@ -275,6 +277,8 @@ contains
       call ftimer_test_get_mpi_preflight_mismatch_flags(mismatch_flags)
       mismatch_flag_count = size(mismatch_flags)
 
+      ! On mismatch, gather flags for diagnostics but do not reduce timing data
+      ! by possibly different canonical indices.
       @assertEqual(1, allgather_count)
       @assertEqual(1, mismatch_flag_allgather_count)
       @assertEqual(0, summary_reduction_count)

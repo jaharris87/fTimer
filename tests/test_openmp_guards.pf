@@ -153,6 +153,8 @@ contains
 
       @assertTrue(thread_seen(1))
       @assertTrue(thread_seen(2))
+      ! Worker calls to the guarded core API are silent no-ops and leave ierr
+      ! untouched when the caller supplied one.
       @assertEqual(NOOP_IERR_SENTINEL, worker_start_ierr)
       @assertEqual(NOOP_IERR_SENTINEL, worker_stop_ierr)
       @assertEqual(0, state%num_segments)

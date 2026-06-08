@@ -13,11 +13,18 @@ program nested_timers
    metadata(2)%key = "steps"
    metadata(2)%value = "3"
 
+   ! Metadata is optional, but useful for tagging solver cases or timestep
+   ! batches in saved reports.
    call ftimer_init()
+
+   ! The parent timer remains open while child timers run, so the summary shows
+   ! both the total advance time and the sweep/io split underneath it.
    call ftimer_start("advance")
 
    accumulator = 0.0
    do i = 1, 3
+      ! Reusing the same child names across iterations accumulates call counts
+      ! and times under this parent context.
       call ftimer_start("sweep")
       do j = 1, 75000
          accumulator = accumulator + real(i + j)

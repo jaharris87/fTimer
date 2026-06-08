@@ -20,6 +20,8 @@ contains
    subroutine timing_init(ierr)
       integer, intent(out), optional :: ierr
 
+      ! Keep facade status handling identical to fTimer so application code has
+      ! one error path whether instrumentation is enabled or disabled.
       call ftimer_init(ierr=ierr)
    end subroutine timing_init
 

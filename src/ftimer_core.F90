@@ -739,6 +739,7 @@ contains
 
       if (present(activation_token)) activation_token = 0_int64
 
+      ! Context is keyed by the parent stack before this timer is pushed.
       ctx = find_or_create_segment_context(self, segment_idx, self%call_stack)
       call ensure_context_storage(self%segments(segment_idx), ctx)
 
@@ -944,12 +945,14 @@ contains
 
       if (.not. stack_contains(self%call_stack, idx)) return
 
+      ! One timestamp keeps all repaired timers on the same time boundary.
       now = self%wtime()
       allocate (unwound_ids(self%call_stack%depth))
       unwind_count = 0
 
       do while ((self%call_stack%depth > 0) .and. (self%call_stack%top() /= idx))
          top_id = self%call_stack%top()
+         ! Repair bookkeeping is not a user-visible profiling event.
          call stop_segment_with_now(self, top_id, now, fire_callback=.false.)
          unwind_count = unwind_count + 1
          unwound_ids(unwind_count) = top_id
@@ -1812,6 +1815,7 @@ contains
       integer :: ctx
       integer :: popped_id
 
+      ! Pop first so elapsed time is recorded against the parent context.
       popped_id = self%call_stack%pop()
       if (popped_id /= id) then
          error stop "ftimer internal stop_segment_with_now stack corruption"
@@ -1825,6 +1829,7 @@ contains
       self%segments(id)%time(ctx) = self%segments(id)%time(ctx) + now - self%segments(id)%start_time(ctx)
       self%segments(id)%is_running(ctx) = .false.
 
+      ! Internal repair stops pass fire_callback=.false. to avoid phantom events.
       if (fire_callback .and. associated(self%on_event)) then
          call self%on_event(public_segment_id(self, id), ctx, FTIMER_EVENT_STOP, now, self%user_data)
       end if

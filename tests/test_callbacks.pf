@@ -65,6 +65,8 @@ contains
                                                   FTIMER_EVENT_STOP, FTIMER_EVENT_STOP]
       real(wp), parameter :: expected_timestamps(5) = [0.0_wp, 1.0_wp, 2.0_wp, 5.0_wp, 8.0_wp]
 
+      ! Repair internally stops and restarts timers, but external profilers
+      ! should only see the user-visible events listed above.
       call reset_callback_log()
       call timer%init(mismatch_mode=FTIMER_MISMATCH_REPAIR, ierr=ierr)
       call attach_mock_clock(timer)
