@@ -6106,12 +6106,16 @@ contains
       if (epoch <= 0) return
       if (.not. allocated(self%lanes)) return
       if ((lane_idx < 1) .or. (lane_idx > size(self%lanes))) return
+
+      if ((self%lanes(lane_idx)%observed_epoch == epoch) .and. &
+          (self%lanes(lane_idx)%observed_epoch_team_size > 0)) then
+         worker_lane_count = self%lanes(lane_idx)%observed_epoch_team_size
+         return
+      end if
+
       team_size = current_team_size()
       if (team_size <= 0) return
       worker_lane_count = team_size
-
-      if ((self%lanes(lane_idx)%observed_epoch == epoch) .and. &
-          (self%lanes(lane_idx)%observed_epoch_team_size >= team_size)) return
 
 #ifdef FTIMER_USE_OPENMP
 !$omp critical(ftimer_openmp_epoch_team_size)

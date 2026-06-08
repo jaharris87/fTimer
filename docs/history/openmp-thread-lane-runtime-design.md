@@ -41,9 +41,10 @@ mostly read-only metadata from hot per-lane state.
 Object-level state:
 
 - initialization flag and lifecycle state;
-- optional clock pointer for test/validation injection and summary-window
-  timestamps for future summaries;
-- optional MPI communicator capture for later hybrid work;
+- optional clock pointer for test/validation injection and stopped-run summary
+  windows;
+- optional MPI communicator capture for the strict and sparse union hybrid
+  summary/report families added after the original #239 runtime model;
 - an append-only timer catalog mapping public timer ids to validated names;
 - timed parallel-region epoch state, including whether a worker-timed region is
   open and the current epoch id;
@@ -183,17 +184,17 @@ observation on later starts/stops in the same epoch. This removed the previous
 steady-state critical-section pressure from worker calls while preserving
 eligible-lane summary accounting. Local GNU Fortran 15.2.0 benchmark runs on
 June 8, 2026 measured the 1000-context worker row at about 961 ns/op before and
-about 168 ns/op after, 1000-timer catalog lookup at about 1283 ns/op before and
+about 148 ns/op after, 1000-timer catalog lookup at about 1283 ns/op before and
 about 43 ns/op after, and 8 concurrent worker lanes at about 251 ns/op before
-and about 26 ns/op after. The direct false-sharing comparison measured the
-shared 8-lane object row at about 26 ns/op and one split object per lane at
-about 18 ns/op in the refreshed local run. That split-object row is faster, but
-the absolute delta is small and same-order after the critical-section fix, so
-no padding or lane-record layout ABI promise was introduced. The configured
-lane first-touch comparison with one participating worker lane and 1000
-registered timers stayed comparable for `config%max_lanes=3` and `65`, so the
-chosen design keeps lazy per-participating-lane segment allocation and does not
-add a public reserve/warm path.
+and about 19 ns/op after. The direct false-sharing comparison measured the
+shared 8-lane object row at about 19 ns/op and one split object per lane at
+about 20 ns/op in the refreshed local run. The absolute delta is small and
+same-order after the critical-section and per-call team-size-query fixes, so no
+padding or lane-record layout ABI promise was introduced. The configured lane
+first-touch comparison with one participating worker lane and 1000 registered
+timers stayed comparable for `config%max_lanes=3` and `65`, so the chosen
+design keeps lazy per-participating-lane segment allocation and does not add a
+public reserve/warm path.
 
 Name-based `start` and `stop` may remain convenience calls, but they are not the
 recommended hot path. The first implementation should make catalog mutation
@@ -260,8 +261,9 @@ stack.
 
 Cross-thread and cross-region start/stop pairing is therefore a mismatch, not a
 migration event. The lane that started the timer remains active. Region close,
-summary, reset, and finalize must detect that active lane and fail or report
-active-timer state according to the future summary contract.
+summary, reset, and finalize must detect that active lane and preserve the
+current stopped-run summary contract by rejecting summary/report construction or
+lifecycle transitions until all lane stacks are inactive.
 
 ## Merge Points
 
