@@ -357,6 +357,7 @@ The repository also carries a detailed prompt library under `.github/prompts/det
 The docs set is intentionally split by purpose:
 
 - [`README.md`](../README.md): user-facing setup, usage, limitations, and examples
+- [`docs/troubleshooting.md`](troubleshooting.md): symptom-oriented remedies for first-use build, MPI, OpenMP, CSV, and summary/report failures
 - [`docs/semantics.md`](semantics.md): current runtime contract and behavior
 - [`docs/design.md`](design.md): current repository architecture, validation reality, and workflow context
 - [`docs/openmp-timing-modes.md`](openmp-timing-modes.md): OpenMP and

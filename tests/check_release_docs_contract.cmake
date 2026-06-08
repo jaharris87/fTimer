@@ -251,50 +251,137 @@ endforeach()
 
 file(READ "${REPO_ROOT}/docs/troubleshooting.md" troubleshooting_doc_text)
 file(READ "${REPO_ROOT}/tests/public_symbol_allowlist.txt" public_symbol_allowlist_text)
+file(READ "${REPO_ROOT}/CMakeLists.txt" root_cmakelists_text)
 
-set(troubleshooting_public_api_tokens
-  ftimer_mpi_union_summary
-  ftimer_write_mpi_union_summary_csv
-  ftimer_stop
+set(troubleshooting_routing_docs
+  AGENTS.md
+  CLAUDE.md
+  docs/design.md
+)
+
+foreach(troubleshooting_routing_doc IN LISTS troubleshooting_routing_docs)
+  file(READ "${REPO_ROOT}/${troubleshooting_routing_doc}" troubleshooting_routing_doc_text)
+  string(FIND "${troubleshooting_routing_doc_text}" "docs/troubleshooting.md" troubleshooting_routing_index)
+  if(troubleshooting_routing_index EQUAL -1)
+    message(FATAL_ERROR
+      "${troubleshooting_routing_doc} must route practical first-use, MPI, OpenMP, CSV, and summary/report failures to docs/troubleshooting.md."
+    )
+  endif()
+endforeach()
+
+set(troubleshooting_cmake_option_tokens
+  FTIMER_USE_MPI
+  FTIMER_USE_OPENMP
+  FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK
+  FTIMER_BUILD_TESTS
+  FTIMER_BUILD_SMOKE_TESTS
+  FTIMER_BUILD_EXAMPLES
+  FTIMER_BUILD_BENCH
+)
+
+set(troubleshooting_public_aliases
+  finalize=ftimer_finalize
+  get_summary=ftimer_get_summary
+  init=ftimer_init
+  print_mpi_summary=ftimer_print_mpi_summary
+  print_mpi_union_summary=ftimer_print_mpi_union_summary
+  print_summary=ftimer_print_summary
+  start=ftimer_start
+  stop=ftimer_stop
+  write_mpi_summary=ftimer_write_mpi_summary
+  write_mpi_union_summary=ftimer_write_mpi_union_summary
+  write_summary=ftimer_write_summary
+)
+
+set(troubleshooting_ignored_identifier_tokens
+  ftimer
+  ftimer_core
+  ftimer_installed_package_consumer
+)
+
+string(REGEX MATCHALL "[A-Za-z][A-Za-z0-9_]*" troubleshooting_identifier_tokens "${troubleshooting_doc_text}")
+list(REMOVE_DUPLICATES troubleshooting_identifier_tokens)
+
+set(troubleshooting_documented_public_tokens)
+set(troubleshooting_documented_cmake_options)
+
+foreach(troubleshooting_identifier IN LISTS troubleshooting_identifier_tokens)
+  if(troubleshooting_identifier IN_LIST troubleshooting_ignored_identifier_tokens)
+    continue()
+  endif()
+
+  if(troubleshooting_identifier IN_LIST troubleshooting_cmake_option_tokens)
+    list(APPEND troubleshooting_documented_cmake_options "${troubleshooting_identifier}")
+    continue()
+  endif()
+
+  set(troubleshooting_canonical_symbol "")
+  foreach(troubleshooting_public_alias IN LISTS troubleshooting_public_aliases)
+    string(REPLACE "=" ";" troubleshooting_public_alias_parts "${troubleshooting_public_alias}")
+    list(GET troubleshooting_public_alias_parts 0 troubleshooting_public_alias_name)
+    list(GET troubleshooting_public_alias_parts 1 troubleshooting_public_alias_symbol)
+    if(troubleshooting_identifier STREQUAL troubleshooting_public_alias_name)
+      set(troubleshooting_canonical_symbol "${troubleshooting_public_alias_symbol}")
+    endif()
+  endforeach()
+
+  if(troubleshooting_canonical_symbol)
+    list(APPEND troubleshooting_documented_public_tokens "${troubleshooting_canonical_symbol}")
+    continue()
+  endif()
+
+  if(troubleshooting_identifier MATCHES "^(ftimer_[A-Za-z0-9_]+|FTIMER_[A-Za-z0-9_]+)$")
+    list(APPEND troubleshooting_documented_public_tokens "${troubleshooting_identifier}")
+    continue()
+  endif()
+
+  if(troubleshooting_identifier MATCHES "^(print_|write_)[A-Za-z0-9_]+$")
+    message(FATAL_ERROR
+      "docs/troubleshooting.md documents shorthand public API alias '${troubleshooting_identifier}', but tests/check_release_docs_contract.cmake does not map it to a stable public symbol."
+    )
+  endif()
+endforeach()
+
+list(REMOVE_DUPLICATES troubleshooting_documented_public_tokens)
+list(REMOVE_DUPLICATES troubleshooting_documented_cmake_options)
+
+foreach(troubleshooting_cmake_option IN LISTS troubleshooting_documented_cmake_options)
+  if(NOT root_cmakelists_text MATCHES "option\\([ \t\r\n]*${troubleshooting_cmake_option}([ \t\r\n]|\\))")
+    message(FATAL_ERROR
+      "docs/troubleshooting.md documents CMake option '${troubleshooting_cmake_option}', but CMakeLists.txt does not define it as an option."
+    )
+  endif()
+endforeach()
+
+foreach(troubleshooting_public_token IN LISTS troubleshooting_documented_public_tokens)
+  if(NOT public_symbol_allowlist_text MATCHES "(^|\n)[^|\n]+\\|${troubleshooting_public_token}\\|stable(\n|$)")
+    message(FATAL_ERROR
+      "docs/troubleshooting.md documents '${troubleshooting_public_token}', but tests/public_symbol_allowlist.txt does not mark it as a stable public symbol."
+    )
+  endif()
+endforeach()
+
+set(required_troubleshooting_public_tokens
+  FTIMER_ERR_MPI_INCON
+  FTIMER_ERR_ACTIVE
+  FTIMER_ERR_NOT_IMPLEMENTED
+  FTIMER_ERR_IO
+  ftimer_get_summary
   ftimer_mpi_summary
+  ftimer_mpi_union_summary
+  ftimer_openmp_t
+  ftimer_mpi_summary_t
+  ftimer_mpi_union_summary_t
   ftimer_write_summary_csv
   ftimer_write_mpi_summary_csv
   ftimer_write_mpi_union_summary_csv
 )
 
-foreach(troubleshooting_public_api_token IN LISTS troubleshooting_public_api_tokens)
-  string(FIND "${troubleshooting_doc_text}" "${troubleshooting_public_api_token}" token_doc_index)
-  if(token_doc_index EQUAL -1)
+foreach(required_troubleshooting_public_token IN LISTS required_troubleshooting_public_tokens)
+  list(FIND troubleshooting_documented_public_tokens "${required_troubleshooting_public_token}" required_troubleshooting_public_token_index)
+  if(required_troubleshooting_public_token_index EQUAL -1)
     message(FATAL_ERROR
-      "docs/troubleshooting.md must document public API token '${troubleshooting_public_api_token}'."
-    )
-  endif()
-
-  if(NOT public_symbol_allowlist_text MATCHES "(^|\n)ftimer\\|${troubleshooting_public_api_token}\\|stable(\n|$)")
-    message(FATAL_ERROR
-      "docs/troubleshooting.md documents '${troubleshooting_public_api_token}', but tests/public_symbol_allowlist.txt does not mark it as a stable ftimer API."
-    )
-  endif()
-endforeach()
-
-set(troubleshooting_status_tokens
-  FTIMER_ERR_MPI_INCON
-  FTIMER_ERR_ACTIVE
-  FTIMER_ERR_NOT_IMPLEMENTED
-  FTIMER_ERR_IO
-)
-
-foreach(troubleshooting_status_token IN LISTS troubleshooting_status_tokens)
-  string(FIND "${troubleshooting_doc_text}" "${troubleshooting_status_token}" status_doc_index)
-  if(status_doc_index EQUAL -1)
-    message(FATAL_ERROR
-      "docs/troubleshooting.md must document status token '${troubleshooting_status_token}'."
-    )
-  endif()
-
-  if(NOT public_symbol_allowlist_text MATCHES "(^|\n)ftimer_types\\|${troubleshooting_status_token}\\|stable(\n|$)")
-    message(FATAL_ERROR
-      "docs/troubleshooting.md documents '${troubleshooting_status_token}', but tests/public_symbol_allowlist.txt does not mark it as a stable ftimer_types API."
+      "docs/troubleshooting.md must continue to document public troubleshooting token '${required_troubleshooting_public_token}'."
     )
   endif()
 endforeach()
