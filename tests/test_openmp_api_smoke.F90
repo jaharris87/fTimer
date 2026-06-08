@@ -7,7 +7,8 @@ program ftimer_openmp_api_smoke
    use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, omp_set_num_threads
 #endif
    use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, ftimer_openmp_config_t, &
-                            ftimer_openmp_parallel_region_t, ftimer_openmp_t
+                            ftimer_openmp_parallel_region_t, ftimer_openmp_summary_t, &
+                            ftimer_openmp_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, wp
    implicit none
@@ -25,6 +26,7 @@ program ftimer_openmp_api_smoke
    call check_parallel_rejections()
    call check_thread_lane_runtime()
    call check_worker_hotpath_scaling_invariants()
+   call check_worker_team_size_summary_cache()
 #endif
 
 #ifdef FTIMER_USE_MPI
@@ -1353,6 +1355,134 @@ contains
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 1319)
    end subroutine check_worker_hotpath_scaling_invariants
+
+   subroutine check_worker_team_size_summary_cache()
+      integer :: bad
+      integer :: ierr
+      integer :: lane
+      integer :: shared_id
+      integer :: shared_idx
+      integer :: solo_id
+      integer :: solo_idx
+      integer :: worker_seen
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_summary_t) :: summary
+      type(ftimer_openmp_t) :: timer
+
+      call omp_set_dynamic(.false.)
+      config%max_lanes = 4
+      config%max_worker_diagnostics = 4
+
+      call timer%init(config=config, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1400)
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1401)
+
+      call timer%register_timer("summary_shared", shared_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1402)
+      call timer%register_timer("summary_solo", solo_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1403)
+
+      fake_lane_time(0) = 100.0_wp
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1404)
+
+      bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr, lane) reduction(+:bad, worker_seen)
+      lane = omp_get_thread_num() + 1
+      worker_seen = worker_seen + 1
+      fake_lane_time(lane) = real(10*lane, wp)
+      call timer%start_id(shared_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+      fake_lane_time(lane) = fake_lane_time(lane) + real(lane, wp)
+      call timer%stop_id(shared_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+!$omp end parallel
+
+      if (worker_seen /= 2) error stop 1405
+      if (bad /= 0) error stop 1406
+
+      fake_lane_time(0) = 105.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1407)
+
+      fake_lane_time(0) = 110.0_wp
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1408)
+
+      bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:bad, worker_seen)
+      if (omp_get_thread_num() == 0) then
+         worker_seen = worker_seen + 1
+         fake_lane_time(1) = 30.0_wp
+         call timer%start_id(solo_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         fake_lane_time(1) = 34.0_wp
+         call timer%stop_id(solo_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 1409
+      if (bad /= 0) error stop 1410
+
+      fake_lane_time(0) = 115.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1411)
+
+      fake_lane_time(0) = 120.0_wp
+      call timer%get_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1412)
+
+      call expect_status(summary%num_entries, 2, 1413)
+      call expect_status(summary%configured_lane_capacity, 4, 1414)
+      call expect_status(summary%observed_participating_lane_count, 2, 1415)
+      call expect_time(summary%timed_region_envelope_time, 10.0_wp, 1416)
+
+      shared_idx = find_openmp_summary_entry(summary, "summary_shared", 0)
+      if (shared_idx <= 0) error stop 1417
+      solo_idx = find_openmp_summary_entry(summary, "summary_solo", 0)
+      if (solo_idx <= 0) error stop 1418
+
+      call expect_status(summary%entries(shared_idx)%eligible_lane_count, 2, 1419)
+      call expect_status(summary%entries(shared_idx)%participating_lane_count, 2, 1420)
+      call expect_status(summary%entries(shared_idx)%missing_lane_count, 0, 1421)
+      call expect_time(summary%entries(shared_idx)%sum_lane_inclusive_time, 3.0_wp, 1422)
+      call expect_time(summary%entries(shared_idx)%avg_lane_inclusive_time, 1.5_wp, 1423)
+      call expect_time(summary%entries(shared_idx)%max_lane_inclusive_time, 2.0_wp, 1424)
+      call expect_time(summary%entries(shared_idx)%avg_lane_call_count, 1.0_wp, 1425)
+
+      call expect_status(summary%entries(solo_idx)%eligible_lane_count, 2, 1426)
+      call expect_status(summary%entries(solo_idx)%participating_lane_count, 1, 1427)
+      call expect_status(summary%entries(solo_idx)%missing_lane_count, 1, 1428)
+      call expect_time(summary%entries(solo_idx)%sum_lane_inclusive_time, 4.0_wp, 1429)
+      call expect_time(summary%entries(solo_idx)%avg_lane_inclusive_time, 4.0_wp, 1430)
+      call expect_time(summary%entries(solo_idx)%avg_lane_call_count, 1.0_wp, 1431)
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1432)
+   end subroutine check_worker_team_size_summary_cache
+
+   integer function find_openmp_summary_entry(summary, name, parent_id) result(idx)
+      type(ftimer_openmp_summary_t), intent(in) :: summary
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: parent_id
+      integer :: i
+
+      idx = 0
+      do i = 1, summary%num_entries
+         if (.not. allocated(summary%entries(i)%name)) cycle
+         if ((summary%entries(i)%name == name) .and. (summary%entries(i)%parent_id == parent_id)) then
+            idx = i
+            return
+         end if
+      end do
+   end function find_openmp_summary_entry
 #endif
 
    function mock_openmp_clock() result(t)

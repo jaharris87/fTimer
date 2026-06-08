@@ -221,6 +221,7 @@ program ftimer_bench
    call bench_openmp_catalog_lookup(REPS_OPENMP_WORKER/500, 1000, count_rate)
    call bench_openmp_worker_lanes(REPS_OPENMP_WORKER, 1, count_rate)
    call bench_openmp_worker_lanes(REPS_OPENMP_WORKER/2, 2, count_rate)
+   call bench_openmp_worker_lanes_split(REPS_OPENMP_WORKER/2, 2, count_rate)
    call bench_openmp_worker_lanes(REPS_OPENMP_WORKER/4, 4, count_rate)
    call bench_openmp_worker_lanes(REPS_OPENMP_WORKER/8, 8, count_rate)
    call bench_openmp_worker_lanes_split(REPS_OPENMP_WORKER/8, 8, count_rate)

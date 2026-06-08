@@ -219,8 +219,10 @@ The additive migration surface starts with `ftimer_openmp`:
   captures a caller-owned communicator;
 - register timer names in serial context before hot worker use;
 - pass timer ids into an explicitly opened timed OpenMP region; and
-- run an untimed warm-up region for short hot loops when first-touch allocation
-  would otherwise contaminate the measurement; and
+- for benchmark-only overhead studies, touch the same lane/timer/context
+  combinations before an externally measured loop when first-touch allocation
+  should be separated from warmed steady-state cost; current fTimer summaries
+  include those warm-up calls because no public reserve/warm API exists; and
 - consume `ftimer_openmp_summary_t` local summary/report output or
   `ftimer_mpi_openmp_summary_t` strict hybrid summary/report output, or
   `ftimer_mpi_openmp_union_summary_t` sparse union hybrid summary/report output
@@ -236,8 +238,9 @@ The worker hot path is optimized for pre-registered ids and warmed contexts.
 Internally, `ftimer_openmp_t` uses private catalog and lane-context indexes plus
 per-lane timed-region team-size observation. Callers do not need a reserve API
 for the current implementation: lane segment storage grows only on lanes that
-participate, and short kernels can still use an untimed warm-up region when they
-want first-touch allocation outside the measured interval.
+participate. Benchmark harnesses that need warmed-loop overhead evidence can
+run and then ignore a dummy warm-up region before their externally measured
+loop; user-facing fTimer summaries from that run still include the warm-up data.
 
 ## Example Policy
 

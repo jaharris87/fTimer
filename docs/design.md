@@ -337,17 +337,19 @@ Local issue #277 OpenMP benchmark evidence was collected on June 8, 2026 with
 GNU Fortran 15.2.0 and `FTIMER_USE_OPENMP=ON`. The added rows cover worker
 context cardinality, OpenMP catalog registration/lookup, concurrent worker
 lanes, split-object lane timing, and lazy lane first touch. The 1000-context
-warmed worker row moved from about 961 ns/op to about 163 ns/op, OpenMP catalog
-lookup at 1000 timers moved from about 1283 ns/op to about 44 ns/op, and the
-8-lane concurrent worker row moved from about 251 ns/op to about 29 ns/op after
+warmed worker row moved from about 961 ns/op to about 168 ns/op, OpenMP catalog
+lookup at 1000 timers moved from about 1283 ns/op to about 43 ns/op, and the
+8-lane concurrent worker row moved from about 251 ns/op to about 26 ns/op after
 eliminating the per-call epoch-team critical section. A direct dense-lane
 false-sharing comparison measured the shared 8-lane object row at about
-29 ns/op versus about 37 ns/op for one split object per lane, so padding or
-moving the lane records did not earn its complexity for the supported measured
-lane count. The configured-capacity lane first-touch rows (`K=3` versus
-`K=65`, one participating worker lane, 1000 registered timers) remained
-comparable, so the implementation kept lazy per-participating-lane segment
-allocation and did not add a public reserve/warm API.
+26 ns/op versus about 18 ns/op for one split object per lane in the refreshed
+local run. That leaves a small same-order absolute delta rather than the former
+critical-section-scale bottleneck, so padding or moving lane records did not
+earn its complexity for the supported measured lane count. The
+configured-capacity lane first-touch rows (`K=3` versus `K=65`, one
+participating worker lane, 1000 registered timers) remained comparable, so the
+implementation kept lazy per-participating-lane segment allocation and did not
+add a public reserve/warm API.
 
 ## Maintainer Workflow
 

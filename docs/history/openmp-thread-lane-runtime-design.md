@@ -7,9 +7,12 @@ Issue #239 defines the runtime ownership and aggregation model that should sit
 behind the opt-in API direction from #238. This document is a runtime design
 contract only. Issue #268 adds the initial `ftimer_openmp` module and object
 lifecycle/catalog surface, and #269 adds the first true worker timing runtime
-with lane-local stacks. Issue #270 adds stopped-run local OpenMP summaries,
-reports, and CSV output. MPI+OpenMP reductions and new behavior for the current
-`ftimer_t` compatibility mode remain out of scope for this runtime model.
+with lane-local stacks. Later issues extended that runtime: #270 adds
+stopped-run local OpenMP summaries, reports, and CSV output; #271 adds strict
+MPI+OpenMP rank/lane summaries, reports, and CSV output; #272 adds sparse union
+MPI+OpenMP participation summaries, reports, and CSV output. New behavior for
+the current `ftimer_t` compatibility mode remains out of scope for this runtime
+model.
 
 ## Decision
 
@@ -180,17 +183,17 @@ observation on later starts/stops in the same epoch. This removed the previous
 steady-state critical-section pressure from worker calls while preserving
 eligible-lane summary accounting. Local GNU Fortran 15.2.0 benchmark runs on
 June 8, 2026 measured the 1000-context worker row at about 961 ns/op before and
-about 163 ns/op after, 1000-timer catalog lookup at about 1283 ns/op before and
-about 44 ns/op after, and 8 concurrent worker lanes at about 251 ns/op before
-and about 29 ns/op after. The direct false-sharing comparison measured the
-shared 8-lane object row at about 29 ns/op and one split object per lane at
-about 37 ns/op, so dense lane records were not the observed scaling limit after
-the critical-section fix and no padding or lane-record layout ABI promise was
-introduced. The configured lane first-touch comparison with one participating
-worker lane and 1000 registered timers stayed comparable for
-`config%max_lanes=3` and `65`, so the chosen design keeps lazy
-per-participating-lane segment allocation and does not add a public reserve/warm
-path.
+about 168 ns/op after, 1000-timer catalog lookup at about 1283 ns/op before and
+about 43 ns/op after, and 8 concurrent worker lanes at about 251 ns/op before
+and about 26 ns/op after. The direct false-sharing comparison measured the
+shared 8-lane object row at about 26 ns/op and one split object per lane at
+about 18 ns/op in the refreshed local run. That split-object row is faster, but
+the absolute delta is small and same-order after the critical-section fix, so
+no padding or lane-record layout ABI promise was introduced. The configured
+lane first-touch comparison with one participating worker lane and 1000
+registered timers stayed comparable for `config%max_lanes=3` and `65`, so the
+chosen design keeps lazy per-participating-lane segment allocation and does not
+add a public reserve/warm path.
 
 Name-based `start` and `stop` may remain convenience calls, but they are not the
 recommended hot path. The first implementation should make catalog mutation
@@ -373,15 +376,15 @@ these synchronization properties:
 - lane-local context lookup and lane-local stack mutation only.
 
 The warmed steady-state path assumes names are registered and the relevant
-lane-local contexts have either been reserved or touched once before the
-measured loop. The current #277 implementation uses private catalog and
-lane-local context indexes in that warmed path, plus the clock call and
-lane-local stack mutation. Lane-local array and context-index growth is allowed
-only as a cold first-touch or growth path and must be documented separately
-from steady-state timing cost.
-Until a reserve API exists, users who need warmed hot-loop measurements should
-pre-register ids and run an untimed dummy timed region that touches the same
-lane/timer/context combinations before entering the measured loop.
+lane-local contexts have been touched once before the externally measured loop.
+The current #277 implementation uses private catalog and lane-local context
+indexes in that warmed path, plus the clock call and lane-local stack mutation.
+Lane-local array and context-index growth is allowed only as a cold first-touch
+or growth path and must be documented separately from steady-state timing cost.
+Because no public reserve API exists, dummy warm-up regions are a
+benchmark-only overhead practice: they touch the same lane/timer/context
+combinations before an externally measured loop, and fTimer summaries from that
+run still include the warm-up calls.
 
 The first public config surface should stay lean: `max_lanes` plus bounded
 diagnostic policy are enough for correctness. Expected timer counts, context
@@ -437,13 +440,15 @@ id path so future runtime changes have a baseline.
   implementation issues should add compile-checked worker-timing examples after
   this runtime model and the summary surface become real public APIs.
 
-## Non-Goals
+## Original Non-Goals For Issue #239
 
 - Changing current `ftimer_t` behavior.
 - Changing the current procedural default instance.
 - Changing current OpenMP guard tests.
-- Adding OpenMP summary/result public types in this issue.
-- Adding MPI+OpenMP reductions in this issue.
+- Adding OpenMP summary/result public types in issue #239. Issue #270 later
+  landed the current local OpenMP summary/report/CSV surface.
+- Adding MPI+OpenMP reductions in issue #239. Issues #271 and #272 later landed
+  the current strict and sparse union MPI+OpenMP summary/report/CSV surfaces.
 - Supporting nested OpenMP teams or OpenMP task migration.
 - Making callbacks from worker timing calls.
 - Adding dynamic worker name registration or treating name-based `start` as the

@@ -88,6 +88,40 @@ if(NOT bench_csv MATCHES "^benchmark,reps,total_ms,per_op_ns")
   message(FATAL_ERROR "ftimer_bench CSV output is missing the expected header")
 endif()
 
+function(require_bench_csv_result label expected_reps)
+  string(REGEX MATCH "(^|\n)\"${label}\",[^\n\r]*" row "${bench_csv}")
+  if(row STREQUAL "")
+    message(FATAL_ERROR "ftimer_bench CSV output is missing \"${label}\"")
+  endif()
+
+  string(REGEX REPLACE "^\n" "" row "${row}")
+  string(REPLACE "," ";" row_fields "${row}")
+  list(LENGTH row_fields row_field_count)
+  if(NOT row_field_count EQUAL 4)
+    message(FATAL_ERROR "ftimer_bench CSV row for \"${label}\" has ${row_field_count} fields")
+  endif()
+
+  list(GET row_fields 1 actual_reps)
+  list(GET row_fields 2 total_ms)
+  list(GET row_fields 3 per_op_ns)
+  if(NOT actual_reps STREQUAL "${expected_reps}")
+    message(FATAL_ERROR
+      "ftimer_bench CSV row for \"${label}\" has reps=${actual_reps}, expected ${expected_reps}")
+  endif()
+
+  foreach(metric IN ITEMS total_ms per_op_ns)
+    set(metric_value "${${metric}}")
+    if(NOT metric_value MATCHES "^([0-9]+|[0-9]*\\.[0-9]+)$")
+      message(FATAL_ERROR
+        "ftimer_bench CSV row for \"${label}\" has nonnumeric ${metric}=${metric_value}")
+    endif()
+    if(NOT metric_value GREATER 0)
+      message(FATAL_ERROR
+        "ftimer_bench CSV row for \"${label}\" has nonpositive ${metric}=${metric_value}")
+    endif()
+  endforeach()
+endfunction()
+
 if(NOT ftimer_bench_smoke_only)
   set(required_rows
     "\"format local text N=100 entries\""
@@ -105,22 +139,14 @@ if(NOT ftimer_bench_smoke_only)
   endforeach()
 
   if(FTIMER_BENCH_EXPECT_OPENMP_ROW)
-    set(openmp_required_rows
-      "\"ftimer_openmp summary merge N=100 entries\""
-      "\"ftimer_openmp worker ctx C=1000\""
-      "\"ftimer_openmp catalog register N=1000\""
-      "\"ftimer_openmp catalog lookup N=1000\""
-      "\"ftimer_openmp worker lanes L=8\""
-      "\"ftimer_openmp worker split L=8\""
-      "\"ftimer_openmp lane touch K=3 N=1000\""
-      "\"ftimer_openmp lane touch K=65 N=1000\""
-    )
-
-    foreach(required_row IN LISTS openmp_required_rows)
-      if(NOT bench_csv MATCHES "${required_row}")
-        message(FATAL_ERROR "ftimer_bench CSV output is missing ${required_row}")
-      endif()
-    endforeach()
+    require_bench_csv_result("ftimer_openmp summary merge N=100 entries" 25)
+    require_bench_csv_result("ftimer_openmp worker ctx C=1000" 100000)
+    require_bench_csv_result("ftimer_openmp catalog register N=1000" 50000)
+    require_bench_csv_result("ftimer_openmp catalog lookup N=1000" 100000)
+    require_bench_csv_result("ftimer_openmp worker lanes L=2" 50000)
+    require_bench_csv_result("ftimer_openmp worker split L=2" 50000)
+    require_bench_csv_result("ftimer_openmp lane touch K=3 N=1000" 1000)
+    require_bench_csv_result("ftimer_openmp lane touch K=65 N=1000" 1000)
   endif()
 
   if(FTIMER_BENCH_EXPECT_MPI_STRICT_ROW)
