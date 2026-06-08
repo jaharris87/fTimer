@@ -105,12 +105,22 @@ if(NOT ftimer_bench_smoke_only)
   endforeach()
 
   if(FTIMER_BENCH_EXPECT_OPENMP_ROW)
-    if(NOT bench_csv MATCHES "\"ftimer_openmp summary merge N=100 entries\"")
-      message(FATAL_ERROR "ftimer_bench CSV output is missing the OpenMP summary merge row")
-    endif()
-    if(NOT bench_csv MATCHES "\"ftimer_openmp worker ctx C=1000\"")
-      message(FATAL_ERROR "ftimer_bench CSV output is missing the OpenMP worker context scaling row")
-    endif()
+    set(openmp_required_rows
+      "\"ftimer_openmp summary merge N=100 entries\""
+      "\"ftimer_openmp worker ctx C=1000\""
+      "\"ftimer_openmp catalog register N=1000\""
+      "\"ftimer_openmp catalog lookup N=1000\""
+      "\"ftimer_openmp worker lanes L=8\""
+      "\"ftimer_openmp worker split L=8\""
+      "\"ftimer_openmp lane touch K=3 N=1000\""
+      "\"ftimer_openmp lane touch K=65 N=1000\""
+    )
+
+    foreach(required_row IN LISTS openmp_required_rows)
+      if(NOT bench_csv MATCHES "${required_row}")
+        message(FATAL_ERROR "ftimer_bench CSV output is missing ${required_row}")
+      endif()
+    endforeach()
   endif()
 
   if(FTIMER_BENCH_EXPECT_MPI_STRICT_ROW)

@@ -1246,6 +1246,7 @@ contains
       integer :: parent_ids(num_contexts)
       integer :: worker_seen
       integer :: work_id
+      real(wp) :: elapsed
       character(len=16) :: name
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_parallel_region_t) :: region
@@ -1335,13 +1336,19 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 1313)
       call expect_count(call_count, int(2*num_contexts, int64), 1314)
 
-      call timer%test_lane_parent_call_count(2, work_id, parent_ids(1), call_count, ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 1315)
-      call expect_count(call_count, 2_int64, 1316)
+      do j = 1, num_contexts
+         call timer%test_lane_parent_call_count(2, work_id, parent_ids(j), call_count, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1315)
+         call expect_count(call_count, 2_int64, 1316)
 
-      call timer%test_lane_parent_call_count(2, work_id, parent_ids(num_contexts), call_count, ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 1317)
-      call expect_count(call_count, 2_int64, 1318)
+         call timer%test_lane_parent_total_time(2, work_id, parent_ids(j), elapsed, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1317)
+         call expect_time(elapsed, 2.0_wp, 1318)
+
+         call timer%test_lane_total_time(2, parent_ids(j), elapsed, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1320)
+         call expect_time(elapsed, 3.0_wp, 1321)
+      end do
 
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 1319)

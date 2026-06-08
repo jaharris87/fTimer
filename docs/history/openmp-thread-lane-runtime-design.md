@@ -173,21 +173,24 @@ First-touch context creation appends the new parent stack after an indexed miss
 rather than asking the shared `ftimer_context_list_t` helper to rescan the
 known contexts.
 
-The same issue evaluated multi-lane worker timing and configured lane capacity.
-The implementation now records the current OpenMP team size once per lane and
-timed-region epoch, then reuses that observation on later starts/stops in the
-same epoch. This removed the previous steady-state critical-section pressure
-from worker calls while preserving eligible-lane summary accounting. Local GNU
-Fortran 15.2.0 benchmark runs on June 8, 2026 measured the 1000-context worker
-row at about 961 ns/op before and about 175 ns/op after, 1000-timer catalog
-lookup at about 1283 ns/op before and about 43 ns/op after, and 8 concurrent
-worker lanes at about 251 ns/op before and about 31 ns/op after. The configured
-lane first-touch comparison with one participating worker lane and 1000
-registered timers stayed comparable for `config%max_lanes=3` and `65`, so the
-chosen design keeps lazy per-participating-lane segment allocation and does not
-add a public reserve/warm path. The concurrent-lane evidence points to the old
-shared critical section, not dense lane-record false sharing, as the scaling
-limit addressed here; no lane padding or layout ABI promise was introduced.
+The same issue evaluated multi-lane worker timing, dense lane-record false
+sharing, and configured lane capacity. The implementation now records the
+current OpenMP team size once per lane and timed-region epoch, then reuses that
+observation on later starts/stops in the same epoch. This removed the previous
+steady-state critical-section pressure from worker calls while preserving
+eligible-lane summary accounting. Local GNU Fortran 15.2.0 benchmark runs on
+June 8, 2026 measured the 1000-context worker row at about 961 ns/op before and
+about 163 ns/op after, 1000-timer catalog lookup at about 1283 ns/op before and
+about 44 ns/op after, and 8 concurrent worker lanes at about 251 ns/op before
+and about 29 ns/op after. The direct false-sharing comparison measured the
+shared 8-lane object row at about 29 ns/op and one split object per lane at
+about 37 ns/op, so dense lane records were not the observed scaling limit after
+the critical-section fix and no padding or lane-record layout ABI promise was
+introduced. The configured lane first-touch comparison with one participating
+worker lane and 1000 registered timers stayed comparable for
+`config%max_lanes=3` and `65`, so the chosen design keeps lazy
+per-participating-lane segment allocation and does not add a public reserve/warm
+path.
 
 Name-based `start` and `stop` may remain convenience calls, but they are not the
 recommended hot path. The first implementation should make catalog mutation
@@ -371,11 +374,11 @@ these synchronization properties:
 
 The warmed steady-state path assumes names are registered and the relevant
 lane-local contexts have either been reserved or touched once before the
-measured loop. The current #269 implementation uses lane-local linear context
-lookup plus the clock call; issue #277 tracks the context-indexing and
-context-scaling benchmark work needed to reduce or quantify that cost. Lane-local
-array growth is allowed only as a cold first-touch or growth path and must be
-documented separately from steady-state timing cost.
+measured loop. The current #277 implementation uses private catalog and
+lane-local context indexes in that warmed path, plus the clock call and
+lane-local stack mutation. Lane-local array and context-index growth is allowed
+only as a cold first-touch or growth path and must be documented separately
+from steady-state timing cost.
 Until a reserve API exists, users who need warmed hot-loop measurements should
 pre-register ids and run an untimed dummy timed region that touches the same
 lane/timer/context combinations before entering the measured loop.
