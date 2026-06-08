@@ -21,6 +21,7 @@ module ftimer_core
 #ifdef FTIMER_BUILD_TESTS
    public :: ftimer_test_get_state
    public :: ftimer_test_set_call_count
+   public :: ftimer_test_set_next_segment_id
    public :: ftimer_test_state_t
 #endif
 
@@ -638,7 +639,11 @@ contains
          return
       end if
 
-      segment_idx = self%find_or_create_segment(name(1:trimmed_len))
+      segment_idx = self%find_or_create_segment(name(1:trimmed_len), status)
+      if (status /= FTIMER_SUCCESS) then
+         call report_status(ierr, status, "ftimer timer id space exhausted")
+         return
+      end if
       call start_segment_impl(self, segment_idx, ierr=ierr, activation_token=activation_token)
    end subroutine start_impl
 
@@ -856,6 +861,7 @@ contains
       class(ftimer_t), intent(inout) :: self
       character(len=*), intent(in) :: name
       integer, intent(out), optional :: ierr
+      integer :: segment_idx
       integer :: status
       integer :: trimmed_len
       character(len=:), allocatable :: message
@@ -872,7 +878,13 @@ contains
          return
       end if
 
-      id = public_segment_id(self, self%find_or_create_segment(name(1:trimmed_len)))
+      segment_idx = self%find_or_create_segment(name(1:trimmed_len), status)
+      if (status /= FTIMER_SUCCESS) then
+         call report_status(ierr, status, "ftimer timer id space exhausted")
+         return
+      end if
+
+      id = public_segment_id(self, segment_idx)
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end function lookup_impl
 
@@ -1047,7 +1059,10 @@ contains
    integer function allocate_segment_id(self) result(id)
       class(ftimer_t), intent(inout) :: self
 
-      if (self%next_segment_id <= 0) error stop "ftimer timer id space exhausted"
+      if (self%next_segment_id <= 0) then
+         id = 0
+         return
+      end if
 
       id = self%next_segment_id
       if (self%next_segment_id >= huge(self%next_segment_id)) then
@@ -1057,18 +1072,28 @@ contains
       end if
    end function allocate_segment_id
 
-   integer function find_or_create_segment(self, name) result(idx)
+   integer function find_or_create_segment(self, name, status) result(idx)
       class(ftimer_t), intent(inout) :: self
       character(len=*), intent(in) :: name
+      integer, intent(out), optional :: status
+      integer :: new_id
       integer :: new_idx
 
+      if (present(status)) status = FTIMER_SUCCESS
       idx = find_segment_index(self, name)
       if (idx > 0) return
 
       new_idx = self%num_segments + 1
+      new_id = allocate_segment_id(self)
+      if (new_id <= 0) then
+         idx = 0
+         if (present(status)) status = FTIMER_ERR_UNKNOWN
+         return
+      end if
+
       call ensure_segment_capacity(self, new_idx)
       self%segments(new_idx)%name = name
-      self%segment_ids(new_idx) = allocate_segment_id(self)
+      self%segment_ids(new_idx) = new_id
       call ensure_segment_name_index(self, new_idx)
       call ensure_segment_id_index(self, new_idx)
 
@@ -1139,6 +1164,25 @@ contains
       self%segments(segment_idx)%call_count(context_id) = call_count
       if (present(ierr)) ierr = FTIMER_SUCCESS
    end subroutine ftimer_test_set_call_count
+
+   subroutine ftimer_test_set_next_segment_id(self, next_segment_id, ierr)
+      class(ftimer_t), intent(inout) :: self
+      integer, intent(in) :: next_segment_id
+      integer, intent(out), optional :: ierr
+
+      if (.not. self%initialized) then
+         call report_status(ierr, FTIMER_ERR_NOT_INIT, "ftimer test_set_next_segment_id before init")
+         return
+      end if
+
+      if (has_active_timers(self)) then
+         call report_status(ierr, FTIMER_ERR_ACTIVE, "ftimer test_set_next_segment_id with active timers")
+         return
+      end if
+
+      self%next_segment_id = next_segment_id
+      if (present(ierr)) ierr = FTIMER_SUCCESS
+   end subroutine ftimer_test_set_next_segment_id
 
 #endif
 

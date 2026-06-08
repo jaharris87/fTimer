@@ -198,6 +198,7 @@ are never installed as stable API:
 
 - `ftimer_test_get_state`
 - `ftimer_test_set_call_count`
+- `ftimer_test_set_next_segment_id`
 - `ftimer_test_state_t`
 
 ## Installed implementation artifacts

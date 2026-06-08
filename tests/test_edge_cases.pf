@@ -2,7 +2,7 @@ module test_edge_cases
    use, intrinsic :: iso_c_binding, only: c_ptr
    use pfunit
    use ftimer_clock, only: ftimer_default_clock, ftimer_mpi_clock
-   use ftimer_core, only: ftimer_t, ftimer_test_state_t
+   use ftimer_core, only: ftimer_t, ftimer_test_set_next_segment_id, ftimer_test_state_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, FTIMER_ERR_NOT_INIT, &
                            FTIMER_ERR_UNKNOWN, FTIMER_MISMATCH_STRICT, FTIMER_MISMATCH_WARN, FTIMER_NAME_LEN, &
                            FTIMER_SUCCESS, ftimer_call_stack_t, ftimer_summary_t, wp
@@ -350,6 +350,53 @@ contains
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
    end subroutine test_cached_id_stale_alias_after_reinit_is_rejected
+
+   @test
+   subroutine test_timer_id_exhaustion_reports_unknown_and_preserves_state()
+      type(ftimer_t) :: timer
+      type(ftimer_test_state_t) :: after_state
+      type(ftimer_test_state_t) :: before_state
+      character(len=:), allocatable :: stderr_text
+      integer :: capture_ierr
+      integer :: id
+      integer :: ierr
+      integer :: saved_fd
+      logical :: has_warning
+      logical :: is_silent
+
+      call timer%init(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      call ftimer_test_set_next_segment_id(timer, -1, ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      call snapshot_timer(timer, before_state)
+      call begin_stderr_capture('test_timer_id_exhaustion_ierr.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      id = timer%lookup('exhausted_lookup', ierr=ierr)
+      call end_stderr_capture('test_timer_id_exhaustion_ierr.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      is_silent = len_trim(stderr_text) == 0
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertEqual(0, id)
+      @assertTrue(is_silent)
+      call snapshot_timer(timer, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call begin_stderr_capture('test_timer_id_exhaustion_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start('exhausted_start')
+      call end_stderr_capture('test_timer_id_exhaustion_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_warning = index(stderr_text, 'ftimer timer id space exhausted') > 0
+      @assertTrue(has_warning)
+      call snapshot_timer(timer, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+
+      call timer%finalize(ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+   end subroutine test_timer_id_exhaustion_reports_unknown_and_preserves_state
 
    @test
    subroutine test_stop_id_valid_id_mismatch_preserves_state_and_callbacks()
