@@ -95,6 +95,43 @@ wait on asynchronous offload work, or insert MPI barriers around timer regions.
 - `ierr` absent: emit a diagnostic to stderr
 - Validation and lifecycle errors follow a warn-and-return contract: they leave timer state unchanged unless the caller explicitly selected a repair-capable mismatch mode
 
+### Resource Exhaustion And Internal Hard Stops
+
+The public `ierr` contract covers recoverable API outcomes: validation and
+lifecycle failures, strict nesting mismatches, stale or unknown cached ids,
+unsupported build/runtime features, stopped-run MPI/OpenMP preflight failures,
+MPI descriptor inconsistency, file and CSV append I/O failures, MPI datatype or
+collective failures that can be observed after entering the documented
+collective path, and explicit integer-space guards such as timer-id,
+OpenMP-token, and call-count exhaustion.
+
+`FTIMER_ERR_UNKNOWN` remains the catchall for unexpected but recoverable public
+failures that do not have a more specific status code. A new public error code
+is not required for the current policy because allocation failure is not yet a
+recoverable API promise, and the already-checked integer-space exhaustion paths
+fit the existing unknown-but-reported category.
+
+General allocation failure and process resource exhaustion are outside the
+recoverable `ierr` contract on current `main`. Runtime growth for timer names,
+contexts, summaries, report buffers, MPI descriptors, and OpenMP lane/catalog
+storage uses ordinary Fortran allocatable allocation. If those allocations
+cannot be satisfied, the processor/runtime may terminate the program or raise a
+Fortran runtime error rather than returning a fTimer status. fTimer therefore
+does not currently promise state preservation, stderr silence with `ierr`, or a
+specific `FTIMER_ERR_*` value for arbitrary out-of-memory conditions. This is a
+deliberate narrow policy rather than a silent fallback: adding recoverable
+allocation handling would need a systematic state-preservation design across
+the timing, summary, MPI, report, and OpenMP paths.
+
+Fatal termination remains acceptable for internal invariants that should be
+unreachable through valid public API use and earlier validation. Current
+production hard stops cover unavailable clock backends (`system_clock` reporting
+no rate, or direct use of the internal MPI clock helper in a non-MPI build),
+internal hash/index zero-capacity or overflow states after capacity preflight,
+and stop-path stack/context corruption in the serial and explicit OpenMP lane
+runtimes. These indicate an impossible runtime/backend condition or corrupted
+internal state; continuing could produce plausible but wrong timing data.
+
 ### Public Status And Error Codes
 
 These constants are public from `ftimer_types` and are the canonical status values returned through optional `ierr` arguments.

@@ -26,7 +26,7 @@ The `ftimer_t` class with all timer operations. Write pFUnit tests FIRST for eac
 - [x] `ftimer_t%lookup(name, ...) -> id` — Get or create integer ID for a timer name.
 - [x] `ftimer_t%reset(...)` — Zero times/counts, keep definitions. Error if timers active.
 - [x] Private helper: `ftimer_t%wtime()` — Call `self%clock` if associated, else `ftimer_default_clock()`.
-- [x] Private helper: `ftimer_t%find_or_create_segment(name) -> idx` — Linear search, grow array if new.
+- [x] Private helper: `ftimer_t%find_or_create_segment(name, status) -> idx` — Mapped lookup, grow array if new, report timer-id exhaustion through status.
 - [x] **Tests** (write BEFORE implementation):
   - `tests/test_basic.pf` — init/finalize, single start/stop, auto-creation, ID lookup, time accumulation with mock clock
   - `tests/test_nesting.pf` — 2-level nesting, deep nesting (10+), mismatch in all three modes
