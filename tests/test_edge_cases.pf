@@ -356,18 +356,48 @@ contains
       type(ftimer_t) :: timer
       type(ftimer_test_state_t) :: after_state
       type(ftimer_test_state_t) :: before_state
+      type(ftimer_summary_t) :: summary
       character(len=:), allocatable :: stderr_text
       integer :: capture_ierr
+      integer :: existing_id
+      integer :: existing_idx
       integer :: id
       integer :: ierr
       integer :: saved_fd
-      logical :: has_warning
+      logical :: has_existing_summary
+      logical :: has_lookup_warning
+      logical :: has_start_warning
       logical :: is_silent
 
       call timer%init(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
+      call attach_mock_clock(timer)
+      call reset_lifecycle_callback_count()
+      call timer%set_callback(count_lifecycle_callback, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+
+      existing_id = timer%lookup('existing', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, existing_id)
+      call timer%start_id(existing_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 2.0_wp
+      call timer%stop_id(existing_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, lifecycle_callback_count)
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, summary%num_entries)
+      existing_idx = find_summary_entry(summary, 'existing', 0)
+      has_existing_summary = existing_idx > 0
+      @assertTrue(has_existing_summary)
+      @assertEqual(1, summary%entries(existing_idx)%call_count)
+      @assertEqual(2.0_wp, summary%entries(existing_idx)%inclusive_time)
+
       call ftimer_test_set_next_segment_id(timer, -1, ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
+      call reset_lifecycle_callback_count()
 
       call snapshot_timer(timer, before_state)
       call begin_stderr_capture('test_timer_id_exhaustion_ierr.err', saved_fd, capture_ierr)
@@ -382,17 +412,73 @@ contains
       @assertTrue(is_silent)
       call snapshot_timer(timer, after_state)
       @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, lifecycle_callback_count)
 
-      call begin_stderr_capture('test_timer_id_exhaustion_warn.err', saved_fd, capture_ierr)
+      call begin_stderr_capture('test_timer_id_exhaustion_start_ierr.err', saved_fd, capture_ierr)
       @assertEqual(0, capture_ierr)
-      call timer%start('exhausted_start')
-      call end_stderr_capture('test_timer_id_exhaustion_warn.err', saved_fd, stderr_text, capture_ierr)
+      call timer%start('exhausted_start_ierr', ierr=ierr)
+      call end_stderr_capture('test_timer_id_exhaustion_start_ierr.err', saved_fd, stderr_text, capture_ierr)
       @assertEqual(0, capture_ierr)
 
-      has_warning = index(stderr_text, 'ftimer timer id space exhausted') > 0
-      @assertTrue(has_warning)
+      is_silent = len_trim(stderr_text) == 0
+      @assertEqual(FTIMER_ERR_UNKNOWN, ierr)
+      @assertTrue(is_silent)
       call snapshot_timer(timer, after_state)
       @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, lifecycle_callback_count)
+
+      call begin_stderr_capture('test_timer_id_exhaustion_lookup_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      id = timer%lookup('exhausted_lookup_warn')
+      call end_stderr_capture('test_timer_id_exhaustion_lookup_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_lookup_warning = index(stderr_text, 'ftimer timer id space exhausted') > 0
+      @assertEqual(0, id)
+      @assertTrue(has_lookup_warning)
+      call snapshot_timer(timer, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, lifecycle_callback_count)
+
+      call begin_stderr_capture('test_timer_id_exhaustion_start_warn.err', saved_fd, capture_ierr)
+      @assertEqual(0, capture_ierr)
+      call timer%start('exhausted_start')
+      call end_stderr_capture('test_timer_id_exhaustion_start_warn.err', saved_fd, stderr_text, capture_ierr)
+      @assertEqual(0, capture_ierr)
+
+      has_start_warning = index(stderr_text, 'ftimer timer id space exhausted') > 0
+      @assertTrue(has_start_warning)
+      call snapshot_timer(timer, after_state)
+      @assertTrue(test_state_matches(before_state, after_state))
+      @assertEqual(0, lifecycle_callback_count)
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, summary%num_entries)
+      existing_idx = find_summary_entry(summary, 'existing', 0)
+      has_existing_summary = existing_idx > 0
+      @assertTrue(has_existing_summary)
+      @assertEqual(1, summary%entries(existing_idx)%call_count)
+      @assertEqual(2.0_wp, summary%entries(existing_idx)%inclusive_time)
+
+      id = timer%lookup('existing', ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(existing_id, id)
+      call timer%start_id(existing_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      fake_time = 5.0_wp
+      call timer%stop_id(existing_id, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(2, lifecycle_callback_count)
+
+      call timer%get_summary(summary, ierr=ierr)
+      @assertEqual(FTIMER_SUCCESS, ierr)
+      @assertEqual(1, summary%num_entries)
+      existing_idx = find_summary_entry(summary, 'existing', 0)
+      has_existing_summary = existing_idx > 0
+      @assertTrue(has_existing_summary)
+      @assertEqual(2, summary%entries(existing_idx)%call_count)
+      @assertEqual(5.0_wp, summary%entries(existing_idx)%inclusive_time)
 
       call timer%finalize(ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)
