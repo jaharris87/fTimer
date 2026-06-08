@@ -1440,13 +1440,6 @@ contains
       call timer%end_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 1437)
 
-      if (warm_seen <= 2) then
-         write (*, '(a)') "Skipping variable-team OpenMP cache regression subcase: runtime provided only two worker lanes"
-         call timer%finalize(ierr=ierr)
-         call expect_status(ierr, FTIMER_SUCCESS, 1435)
-         return
-      end if
-
       fake_lane_time(0) = 110.0_wp
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 1408)
@@ -1476,7 +1469,6 @@ contains
 
       if (worker_seen /= 1) error stop 1409
       if (solo_seen /= 2) error stop 1443
-      if (warm_seen <= solo_seen) error stop 1444
       if (bad /= 0) error stop 1410
 
       fake_lane_time(0) = 115.0_wp
@@ -1521,6 +1513,10 @@ contains
       call expect_status(summary%entries(warm_idx)%missing_lane_count, warm_seen - 1, 1441)
       if (.not. summary%entries(warm_idx)%missing_lane_count_known) error stop 1447
       call expect_time(summary%entries(warm_idx)%sum_lane_inclusive_time, 1.0_wp, 1442)
+
+      if (warm_seen <= solo_seen) then
+         write (*, '(a)') "Skipping variable-team OpenMP cache regression subcase: runtime provided only two worker lanes"
+      end if
 
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 1432)
