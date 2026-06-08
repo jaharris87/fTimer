@@ -16,6 +16,7 @@ cmake -E chdir build-smoke ctest --output-on-failure
 For the first example only:
 
 ```bash
+cmake -B build-smoke
 cmake --build build-smoke --target basic_usage
 ./build-smoke/examples/basic_usage
 ```
@@ -66,6 +67,34 @@ FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit
 
 If you only want the smoke path and examples, leave `FTIMER_BUILD_TESTS=OFF`.
 The default smoke build does not require pFUnit.
+
+## Downstream Configure Cannot Find fTimer
+
+Downstream projects should consume the installed CMake package with
+`find_package(fTimer CONFIG REQUIRED)`. If CMake reports that it cannot find
+`fTimerConfig.cmake`, point `CMAKE_PREFIX_PATH` at the prefix where fTimer was
+installed:
+
+```bash
+cmake -B build-install -DCMAKE_INSTALL_PREFIX=/path/to/ftimer-install
+cmake --build build-install
+cmake --install build-install
+cmake -S my_app -B my_app/build -DCMAKE_PREFIX_PATH=/path/to/ftimer-install
+```
+
+Check that the selected prefix contains the package files, usually under
+`lib/cmake/fTimer/`, and the Fortran module artifacts under `include/ftimer/`
+unless `CMAKE_INSTALL_INCLUDEDIR` was changed. If you switched compilers or
+feature modes, rebuild and reinstall into a fresh prefix so the downstream
+project does not mix stale module files with a new compiler or MPI/OpenMP mode.
+
+The smoke suite verifies this contract through the installed-package consumer:
+
+```bash
+cmake -B build-smoke
+cmake --build build-smoke
+cmake -E chdir build-smoke ctest --output-on-failure -R ftimer_installed_package_consumer$
+```
 
 ## Configure Fails With MPI Enabled
 

@@ -180,6 +180,7 @@ endforeach()
 set(release_command_paths
   ${benchmark_docs}
   CONTRIBUTING.md
+  docs/troubleshooting.md
   Makefile
 )
 
@@ -200,6 +201,7 @@ set(current_contract_docs
   docs/maintainer.md
   docs/openmp-timing-modes.md
   docs/semantics.md
+  docs/troubleshooting.md
 )
 
 set(forbidden_current_contract_phrases
@@ -229,6 +231,72 @@ foreach(current_contract_doc IN LISTS current_contract_docs)
       )
     endif()
   endforeach()
+endforeach()
+
+file(READ "${REPO_ROOT}/README.md" release_readme_text)
+set(readme_troubleshooting_needles
+  "see the symptom-oriented [`docs/troubleshooting.md`](docs/troubleshooting.md)"
+  "For practical remedies to first-use build failures, MPI summary hangs, OpenMP"
+  "- Troubleshooting guide: [`docs/troubleshooting.md`](docs/troubleshooting.md)"
+)
+
+foreach(readme_troubleshooting_needle IN LISTS readme_troubleshooting_needles)
+  string(FIND "${release_readme_text}" "${readme_troubleshooting_needle}" troubleshooting_link_index)
+  if(troubleshooting_link_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must keep the troubleshooting guide discoverable: missing '${readme_troubleshooting_needle}'."
+    )
+  endif()
+endforeach()
+
+file(READ "${REPO_ROOT}/docs/troubleshooting.md" troubleshooting_doc_text)
+file(READ "${REPO_ROOT}/tests/public_symbol_allowlist.txt" public_symbol_allowlist_text)
+
+set(troubleshooting_public_api_tokens
+  ftimer_mpi_union_summary
+  ftimer_write_mpi_union_summary_csv
+  ftimer_stop
+  ftimer_mpi_summary
+  ftimer_write_summary_csv
+  ftimer_write_mpi_summary_csv
+  ftimer_write_mpi_union_summary_csv
+)
+
+foreach(troubleshooting_public_api_token IN LISTS troubleshooting_public_api_tokens)
+  string(FIND "${troubleshooting_doc_text}" "${troubleshooting_public_api_token}" token_doc_index)
+  if(token_doc_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/troubleshooting.md must document public API token '${troubleshooting_public_api_token}'."
+    )
+  endif()
+
+  if(NOT public_symbol_allowlist_text MATCHES "(^|\n)ftimer\\|${troubleshooting_public_api_token}\\|stable(\n|$)")
+    message(FATAL_ERROR
+      "docs/troubleshooting.md documents '${troubleshooting_public_api_token}', but tests/public_symbol_allowlist.txt does not mark it as a stable ftimer API."
+    )
+  endif()
+endforeach()
+
+set(troubleshooting_status_tokens
+  FTIMER_ERR_MPI_INCON
+  FTIMER_ERR_ACTIVE
+  FTIMER_ERR_NOT_IMPLEMENTED
+  FTIMER_ERR_IO
+)
+
+foreach(troubleshooting_status_token IN LISTS troubleshooting_status_tokens)
+  string(FIND "${troubleshooting_doc_text}" "${troubleshooting_status_token}" status_doc_index)
+  if(status_doc_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/troubleshooting.md must document status token '${troubleshooting_status_token}'."
+    )
+  endif()
+
+  if(NOT public_symbol_allowlist_text MATCHES "(^|\n)ftimer_types\\|${troubleshooting_status_token}\\|stable(\n|$)")
+    message(FATAL_ERROR
+      "docs/troubleshooting.md documents '${troubleshooting_status_token}', but tests/public_symbol_allowlist.txt does not mark it as a stable ftimer_types API."
+    )
+  endif()
 endforeach()
 
 set(retired_planning_docs
