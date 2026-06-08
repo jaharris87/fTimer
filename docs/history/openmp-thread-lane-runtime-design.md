@@ -7,9 +7,12 @@ Issue #239 defines the runtime ownership and aggregation model that should sit
 behind the opt-in API direction from #238. This document is a runtime design
 contract only. Issue #268 adds the initial `ftimer_openmp` module and object
 lifecycle/catalog surface, and #269 adds the first true worker timing runtime
-with lane-local stacks. Issue #270 adds stopped-run local OpenMP summaries,
-reports, and CSV output. MPI+OpenMP reductions and new behavior for the current
-`ftimer_t` compatibility mode remain out of scope for this runtime model.
+with lane-local stacks. Later issues extended that runtime: #270 adds
+stopped-run local OpenMP summaries, reports, and CSV output; #271 adds strict
+MPI+OpenMP rank/lane summaries, reports, and CSV output; #272 adds sparse union
+MPI+OpenMP participation summaries, reports, and CSV output. New behavior for
+the current `ftimer_t` compatibility mode remains out of scope for this runtime
+model.
 
 ## Decision
 
@@ -38,9 +41,10 @@ mostly read-only metadata from hot per-lane state.
 Object-level state:
 
 - initialization flag and lifecycle state;
-- optional clock pointer for test/validation injection and summary-window
-  timestamps for future summaries;
-- optional MPI communicator capture for later hybrid work;
+- optional clock pointer for test/validation injection and stopped-run summary
+  windows;
+- optional MPI communicator capture for the strict and sparse union hybrid
+  summary/report families added after the original #239 runtime model;
 - an append-only timer catalog mapping public timer ids to validated names;
 - timed parallel-region epoch state, including whether a worker-timed region is
   open and the current epoch id;
@@ -96,7 +100,9 @@ parallel-region epoch and must be stopped by the same lane before that region
 ends. The first implementation should provide a small serial-context region
 guard or begin/end helper that opens a monotonically increasing epoch before
 the `!$omp parallel` region and closes it after the region. Worker stack entries
-record that epoch. A later parallel region reusing the same
+record that epoch. A timed-region epoch is intended to cover one level-1 OpenMP
+team shape; close and reopen the fTimer timed region before timing work in a
+differently shaped OpenMP team. A later parallel region reusing the same
 `omp_get_thread_num()` value is not a valid way to complete an earlier worker
 timer because the top stack entry's epoch will not match the currently open
 epoch.
@@ -163,6 +169,38 @@ serial registration/warm-up. They read the catalog and update only the current
 lane. Any lane-local context creation or array growth is cold first-touch work,
 not the warmed steady-state hot path.
 
+Issue #277 tightened that contract without adding public API. The current
+implementation keeps a private serial-context name index for the shared catalog
+and a private parent-stack context index for each lane segment. A warmed
+`start_id` finds the lane-local parent context through that index, and
+`stop_id` still captures one timestamp, pops the lane stack, and then performs
+the indexed lookup on the parent stack before accumulating elapsed time.
+First-touch context creation appends the new parent stack after an indexed miss
+rather than asking the shared `ftimer_context_list_t` helper to rescan the
+known contexts.
+
+The same issue evaluated multi-lane worker timing, dense lane-record false
+sharing, and configured lane capacity. The implementation now records the
+current OpenMP team size once per lane and timed-region epoch, then reuses that
+observation on later starts/stops in the same epoch. This removed the previous
+steady-state critical-section pressure and per-call team-size query from worker
+calls while preserving eligible-lane summary accounting for the epoch's team
+shape. Local GNU Fortran 15.2.0 benchmark runs on
+June 8, 2026 measured the 1000-context worker row at about 961 ns/op before and
+about 150 ns/op after, 1000-timer catalog registration at about 1313 ns/op
+before and about 173 ns/op after, 1000-timer catalog lookup at about
+1283 ns/op before and about 45 ns/op after, and 8 concurrent worker lanes at
+about 251 ns/op before and about 21 ns/op after. The direct false-sharing
+comparison measured the shared 8-lane object row at about 21 ns/op and one
+split object per lane at about 16 ns/op in the refreshed local run. The
+absolute delta is small and same-order after the critical-section and per-call
+team-size-query fixes, so no padding or lane-record layout ABI promise was
+introduced. The configured lane first-touch comparison with one participating
+worker lane and 1000 registered timers stayed comparable for
+`config%max_lanes=3` and `65` at about 546 ns/op versus about 504 ns/op, so
+the chosen design keeps lazy per-participating-lane segment allocation and does
+not add a public reserve/warm path.
+
 Name-based `start` and `stop` may remain convenience calls, but they are not the
 recommended hot path. The first implementation should make catalog mutation
 serial-only: inside a parallel region, name-based calls may perform read-only
@@ -228,8 +266,9 @@ stack.
 
 Cross-thread and cross-region start/stop pairing is therefore a mismatch, not a
 migration event. The lane that started the timer remains active. Region close,
-summary, reset, and finalize must detect that active lane and fail or report
-active-timer state according to the future summary contract.
+summary, reset, and finalize must detect that active lane and preserve the
+current stopped-run summary contract by rejecting summary/report construction or
+lifecycle transitions until all lane stacks are inactive.
 
 ## Merge Points
 
@@ -344,15 +383,16 @@ these synchronization properties:
 - lane-local context lookup and lane-local stack mutation only.
 
 The warmed steady-state path assumes names are registered and the relevant
-lane-local contexts have either been reserved or touched once before the
-measured loop. The current #269 implementation uses lane-local linear context
-lookup plus the clock call; issue #277 tracks the context-indexing and
-context-scaling benchmark work needed to reduce or quantify that cost. Lane-local
-array growth is allowed only as a cold first-touch or growth path and must be
-documented separately from steady-state timing cost.
-Until a reserve API exists, users who need warmed hot-loop measurements should
-pre-register ids and run an untimed dummy timed region that touches the same
-lane/timer/context combinations before entering the measured loop.
+lane-local contexts have been touched once before the externally measured loop.
+The current #277 implementation uses private catalog and lane-local context
+indexes in that warmed path, plus the clock call and lane-local stack mutation.
+Lane-local array and context-index growth is allowed only as a cold first-touch
+or growth path and must be documented separately from steady-state timing cost.
+Because no public reserve API exists, dummy warm-up work is a benchmark-only
+overhead practice: it touches the same lane/timer/context combinations inside
+the same opened timed region/epoch before an externally measured loop. fTimer
+summaries from that run still include the warm-up calls, and a fresh timed
+region should be used for a different OpenMP team shape.
 
 The first public config surface should stay lean: `max_lanes` plus bounded
 diagnostic policy are enough for correctness. Expected timer counts, context
@@ -408,13 +448,15 @@ id path so future runtime changes have a baseline.
   implementation issues should add compile-checked worker-timing examples after
   this runtime model and the summary surface become real public APIs.
 
-## Non-Goals
+## Original Non-Goals For Issue #239
 
 - Changing current `ftimer_t` behavior.
 - Changing the current procedural default instance.
 - Changing current OpenMP guard tests.
-- Adding OpenMP summary/result public types in this issue.
-- Adding MPI+OpenMP reductions in this issue.
+- Adding OpenMP summary/result public types in issue #239. Issue #270 later
+  landed the current local OpenMP summary/report/CSV surface.
+- Adding MPI+OpenMP reductions in issue #239. Issues #271 and #272 later landed
+  the current strict and sparse union MPI+OpenMP summary/report/CSV surfaces.
 - Supporting nested OpenMP teams or OpenMP task migration.
 - Making callbacks from worker timing calls.
 - Adding dynamic worker name registration or treating name-based `start` as the

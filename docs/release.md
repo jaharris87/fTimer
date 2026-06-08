@@ -73,11 +73,19 @@ review with the rows for flat name-based start/stop, cached-id start/stop,
 lookup scaling across resident timer counts, context scaling across parent-stack
 counts, timer/context first-touch allocation and growth, summary builds, local
 text/CSV reports, sparse MPI-union formatting, and the strict MPI CSV row when
-MPI is enabled. Treat absolute timings from GitHub-hosted runners cautiously;
-runner load and placement are noisy. The serial `build-bench` CI job uploads the
-validated CSV as a `ftimer-bench-serial-<sha>` artifact for PR and release
-review. MPI benchmark artifact upload is intentionally deferred; run an
-MPI-enabled benchmark locally when MPI timing evidence is needed.
+MPI is enabled. For OpenMP hot-path work, also review the feature-enabled
+benchmark rows for `ftimer_openmp_t` serial-lane ids, timed-region open/close,
+worker-lane ids, worker context scaling, OpenMP catalog register/lookup,
+concurrent and split-object worker lanes, participating-lane first touch, and
+local OpenMP summary merge. For MPI+OpenMP work, include the strict and sparse
+union MPI+OpenMP CSV report rows. Treat absolute timings from GitHub-hosted
+runners cautiously; runner load and placement are noisy. The serial
+`build-bench` CI job uploads the validated CSV as a
+`ftimer-bench-serial-<sha>` artifact for PR and release review. The OpenMP and
+MPI+OpenMP benchmark CI jobs currently build `ftimer_bench` and run CSV smoke
+checks, but durable CSV artifact upload for those feature-enabled benchmark
+jobs is intentionally deferred; run the feature-enabled harness locally when
+trend evidence beyond smoke coverage is needed.
 
 Reference commands:
 

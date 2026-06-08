@@ -7,7 +7,8 @@ program ftimer_openmp_api_smoke
    use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, omp_set_num_threads
 #endif
    use ftimer_openmp, only: FTIMER_OPENMP_MODE_THREAD_LANES, ftimer_openmp_config_t, &
-                            ftimer_openmp_parallel_region_t, ftimer_openmp_t
+                            ftimer_openmp_parallel_region_t, ftimer_openmp_summary_t, &
+                            ftimer_openmp_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_NOT_INIT, FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, wp
    implicit none
@@ -24,6 +25,8 @@ program ftimer_openmp_api_smoke
 #ifdef FTIMER_USE_OPENMP
    call check_parallel_rejections()
    call check_thread_lane_runtime()
+   call check_worker_hotpath_scaling_invariants()
+   call check_worker_team_size_summary_cache()
 #endif
 
 #ifdef FTIMER_USE_MPI
@@ -1231,6 +1234,309 @@ contains
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 135)
    end subroutine check_thread_lane_runtime
+
+   subroutine check_worker_hotpath_scaling_invariants()
+      integer, parameter :: num_contexts = 64
+      integer, parameter :: num_catalog_timers = 256
+      integer :: bad
+      integer(int64) :: call_count
+      integer :: catalog_ids(num_catalog_timers)
+      integer :: duplicate_id
+      integer :: ierr
+      integer :: j
+      integer :: lookup_id
+      integer :: parent_ids(num_contexts)
+      integer :: worker_seen
+      integer :: work_id
+      real(wp) :: elapsed
+      character(len=16) :: name
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+
+      call omp_set_dynamic(.false.)
+      config%max_lanes = 3
+      config%max_worker_diagnostics = 4
+
+      call timer%init(config=config, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1300)
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1301)
+
+      do j = 1, num_catalog_timers
+         write (name, '("indexed_",i4.4)') j
+         call timer%register_timer(name, catalog_ids(j), ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1302)
+      end do
+
+      do j = 1, num_catalog_timers
+         write (name, '("indexed_",i4.4)') j
+         call timer%lookup_timer(name, lookup_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1303)
+         if (lookup_id /= catalog_ids(j)) error stop 1304
+         call timer%register_timer(name, duplicate_id, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1305)
+         if (duplicate_id /= catalog_ids(j)) error stop 1306
+      end do
+
+      do j = 1, num_contexts
+         write (name, '("parent_",i4.4)') j
+         call timer%register_timer(name, parent_ids(j), ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1307)
+      end do
+      call timer%register_timer("indexed_worker", work_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1308)
+
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1309)
+
+      bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr, j) reduction(+:bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         do j = 1, num_contexts
+            fake_lane_time(2) = real(10*j, wp)
+            call timer%start_id(parent_ids(j), ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            fake_lane_time(2) = fake_lane_time(2) + 0.25_wp
+            call timer%start_id(work_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            fake_lane_time(2) = fake_lane_time(2) + 1.0_wp
+            call timer%stop_id(work_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            fake_lane_time(2) = fake_lane_time(2) + 0.25_wp
+            call timer%stop_id(parent_ids(j), ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         end do
+
+         do j = 1, num_contexts
+            fake_lane_time(2) = real(1000 + 10*j, wp)
+            call timer%start_id(parent_ids(j), ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            fake_lane_time(2) = fake_lane_time(2) + 0.25_wp
+            call timer%start_id(work_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            fake_lane_time(2) = fake_lane_time(2) + 1.0_wp
+            call timer%stop_id(work_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            fake_lane_time(2) = fake_lane_time(2) + 0.25_wp
+            call timer%stop_id(parent_ids(j), ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         end do
+      end if
+!$omp end parallel
+
+      if (worker_seen <= 0) error stop 1310
+      if (bad /= 0) error stop 1311
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1312)
+
+      call timer%test_lane_total_call_count(2, work_id, call_count, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1313)
+      call expect_count(call_count, int(2*num_contexts, int64), 1314)
+
+      do j = 1, num_contexts
+         call timer%test_lane_parent_call_count(2, work_id, parent_ids(j), call_count, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1315)
+         call expect_count(call_count, 2_int64, 1316)
+
+         call timer%test_lane_parent_total_time(2, work_id, parent_ids(j), elapsed, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1317)
+         call expect_time(elapsed, 2.0_wp, 1318)
+
+         call timer%test_lane_total_time(2, parent_ids(j), elapsed, ierr=ierr)
+         call expect_status(ierr, FTIMER_SUCCESS, 1320)
+         call expect_time(elapsed, 3.0_wp, 1321)
+      end do
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1319)
+   end subroutine check_worker_hotpath_scaling_invariants
+
+   subroutine check_worker_team_size_summary_cache()
+      integer :: bad
+      integer :: ierr
+      integer :: lane
+      integer :: shared_id
+      integer :: shared_idx
+      integer :: solo_id
+      integer :: solo_idx
+      integer :: solo_seen
+      integer :: warm_id
+      integer :: warm_idx
+      integer :: warm_seen
+      integer :: worker_seen
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_summary_t) :: summary
+      type(ftimer_openmp_t) :: timer
+
+      call omp_set_dynamic(.false.)
+      config%max_lanes = 5
+      config%max_worker_diagnostics = 4
+
+      call timer%init(config=config, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1400)
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1401)
+
+      call timer%register_timer("summary_shared", shared_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1402)
+      call timer%register_timer("summary_solo", solo_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1403)
+      call timer%register_timer("summary_warm", warm_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1433)
+
+      fake_lane_time(0) = 100.0_wp
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1404)
+
+      bad = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr, lane) reduction(+:bad, worker_seen)
+      lane = omp_get_thread_num() + 1
+      worker_seen = worker_seen + 1
+      fake_lane_time(lane) = real(10*lane, wp)
+      call timer%start_id(shared_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+      fake_lane_time(lane) = fake_lane_time(lane) + real(lane, wp)
+      call timer%stop_id(shared_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+!$omp end parallel
+
+      if (worker_seen /= 2) error stop 1405
+      if (bad /= 0) error stop 1406
+
+      fake_lane_time(0) = 105.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1407)
+
+      fake_lane_time(0) = 107.0_wp
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1434)
+
+      bad = 0
+      warm_seen = 0
+
+!$omp parallel num_threads(4) default(shared) private(ierr) reduction(+:bad, warm_seen)
+      warm_seen = warm_seen + 1
+      if (omp_get_thread_num() == 0) then
+         fake_lane_time(1) = 24.0_wp
+         call timer%start_id(warm_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         fake_lane_time(1) = 25.0_wp
+         call timer%stop_id(warm_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+      end if
+!$omp end parallel
+
+      if (bad /= 0) error stop 1436
+
+      fake_lane_time(0) = 108.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1437)
+
+      fake_lane_time(0) = 110.0_wp
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1408)
+
+      bad = 0
+      solo_seen = 0
+      worker_seen = 0
+
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:bad, worker_seen, solo_seen)
+      solo_seen = solo_seen + 1
+      if (omp_get_thread_num() == 0) then
+         worker_seen = worker_seen + 1
+         fake_lane_time(1) = 30.0_wp
+         call timer%start_id(solo_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         fake_lane_time(1) = 34.0_wp
+         call timer%stop_id(solo_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         fake_lane_time(1) = 36.0_wp
+         call timer%start_id(solo_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         fake_lane_time(1) = 40.0_wp
+         call timer%stop_id(solo_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+      end if
+!$omp end parallel
+
+      if (worker_seen /= 1) error stop 1409
+      if (solo_seen /= 2) error stop 1443
+      if (bad /= 0) error stop 1410
+
+      fake_lane_time(0) = 115.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1411)
+
+      fake_lane_time(0) = 120.0_wp
+      call timer%get_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1412)
+
+      call expect_status(summary%num_entries, 3, 1413)
+      call expect_status(summary%configured_lane_capacity, 5, 1414)
+      call expect_status(summary%observed_participating_lane_count, 2, 1415)
+      call expect_time(summary%timed_region_envelope_time, 11.0_wp, 1416)
+
+      shared_idx = find_openmp_summary_entry(summary, "summary_shared", 0)
+      if (shared_idx <= 0) error stop 1417
+      solo_idx = find_openmp_summary_entry(summary, "summary_solo", 0)
+      if (solo_idx <= 0) error stop 1418
+      warm_idx = find_openmp_summary_entry(summary, "summary_warm", 0)
+      if (warm_idx <= 0) error stop 1438
+
+      call expect_status(summary%entries(shared_idx)%eligible_lane_count, 2, 1419)
+      call expect_status(summary%entries(shared_idx)%participating_lane_count, 2, 1420)
+      call expect_status(summary%entries(shared_idx)%missing_lane_count, 0, 1421)
+      if (.not. summary%entries(shared_idx)%missing_lane_count_known) error stop 1445
+      call expect_time(summary%entries(shared_idx)%sum_lane_inclusive_time, 3.0_wp, 1422)
+      call expect_time(summary%entries(shared_idx)%avg_lane_inclusive_time, 1.5_wp, 1423)
+      call expect_time(summary%entries(shared_idx)%max_lane_inclusive_time, 2.0_wp, 1424)
+      call expect_time(summary%entries(shared_idx)%avg_lane_call_count, 1.0_wp, 1425)
+
+      call expect_status(summary%entries(solo_idx)%eligible_lane_count, 2, 1426)
+      call expect_status(summary%entries(solo_idx)%participating_lane_count, 1, 1427)
+      call expect_status(summary%entries(solo_idx)%missing_lane_count, 1, 1428)
+      if (.not. summary%entries(solo_idx)%missing_lane_count_known) error stop 1446
+      call expect_time(summary%entries(solo_idx)%sum_lane_inclusive_time, 8.0_wp, 1429)
+      call expect_time(summary%entries(solo_idx)%avg_lane_inclusive_time, 8.0_wp, 1430)
+      call expect_time(summary%entries(solo_idx)%avg_lane_call_count, 2.0_wp, 1431)
+
+      call expect_status(summary%entries(warm_idx)%eligible_lane_count, warm_seen, 1439)
+      call expect_status(summary%entries(warm_idx)%participating_lane_count, 1, 1440)
+      call expect_status(summary%entries(warm_idx)%missing_lane_count, warm_seen - 1, 1441)
+      if (.not. summary%entries(warm_idx)%missing_lane_count_known) error stop 1447
+      call expect_time(summary%entries(warm_idx)%sum_lane_inclusive_time, 1.0_wp, 1442)
+
+      if (warm_seen <= solo_seen) then
+         write (*, '(a)') "Skipping variable-team OpenMP cache regression subcase: runtime provided only two worker lanes"
+      end if
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1432)
+   end subroutine check_worker_team_size_summary_cache
+
+   integer function find_openmp_summary_entry(summary, name, parent_id) result(idx)
+      type(ftimer_openmp_summary_t), intent(in) :: summary
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: parent_id
+      integer :: i
+
+      idx = 0
+      do i = 1, summary%num_entries
+         if (.not. allocated(summary%entries(i)%name)) cycle
+         if ((summary%entries(i)%name == name) .and. (summary%entries(i)%parent_id == parent_id)) then
+            idx = i
+            return
+         end if
+      end do
+   end function find_openmp_summary_entry
 #endif
 
    function mock_openmp_clock() result(t)

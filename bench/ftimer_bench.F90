@@ -61,6 +61,20 @@
 !                                       timed-region token overhead
 !  ftimer_openmp worker lane         -- OpenMP-enabled builds only; captures
 !                                       warmed id-first worker start/stop
+!  ftimer_openmp worker ctx C=...    -- OpenMP-enabled builds only; captures
+!                                       warmed worker context lookup for one
+!                                       timer reused under many parent stacks
+!  ftimer_openmp catalog register/lookup
+!                                    -- serial-context catalog scaling for many
+!                                       registered worker-timing ids
+!  ftimer_openmp worker lanes L=...  -- OpenMP-enabled builds only; captures
+!                                       concurrent multi-lane worker timing
+!  ftimer_openmp worker split L=...  -- OpenMP-enabled builds only; compares
+!                                       shared dense lane records with one
+!                                       timer object per participating lane
+!  ftimer_openmp lane touch K=...    -- OpenMP-enabled builds only; compares
+!                                       lazy per-participating-lane first touch
+!                                       under small vs large configured capacity
 !  raw date string formatting        -- date_and_time + string formatting,
 !                                       matching the original per-call wrapper
 !  ftimer_date_string steady-state   -- cached second-resolution date stamp
@@ -198,6 +212,21 @@ program ftimer_bench
 #ifdef FTIMER_USE_OPENMP
    call bench_openmp_region_open_close(REPS_OPENMP_REGION, count_rate)
    call bench_openmp_worker_lane_id(REPS_OPENMP_WORKER, count_rate)
+   call bench_openmp_worker_context_scaling(REPS_OPENMP_WORKER/10, 10, count_rate)
+   call bench_openmp_worker_context_scaling(REPS_OPENMP_WORKER/50, 100, count_rate)
+   call bench_openmp_worker_context_scaling(REPS_OPENMP_WORKER/500, 1000, count_rate)
+   call bench_openmp_catalog_register(200, 100, count_rate)
+   call bench_openmp_catalog_register(50, 1000, count_rate)
+   call bench_openmp_catalog_lookup(REPS_OPENMP_WORKER/50, 100, count_rate)
+   call bench_openmp_catalog_lookup(REPS_OPENMP_WORKER/500, 1000, count_rate)
+   call bench_openmp_worker_lanes(REPS_OPENMP_WORKER, 1, count_rate)
+   call bench_openmp_worker_lanes(REPS_OPENMP_WORKER/2, 2, count_rate)
+   call bench_openmp_worker_lanes_split(REPS_OPENMP_WORKER/2, 2, count_rate)
+   call bench_openmp_worker_lanes(REPS_OPENMP_WORKER/4, 4, count_rate)
+   call bench_openmp_worker_lanes(REPS_OPENMP_WORKER/8, 8, count_rate)
+   call bench_openmp_worker_lanes_split(REPS_OPENMP_WORKER/8, 8, count_rate)
+   call bench_openmp_lane_first_touch(3, 1000, count_rate)
+   call bench_openmp_lane_first_touch(65, 1000, count_rate)
 #endif
    call bench_long_name(REPS_LONG_NAME, 64, .false., count_rate)
    call bench_long_name(REPS_LONG_NAME, 256, .false., count_rate)
@@ -313,6 +342,7 @@ program ftimer_bench
    call write_bench_line('  - Long-name name-based rows include full per-call validation and hashing of the label.')
    call write_bench_line('  - name-based start/stop remains the default path; lookup/start_id/stop_id is the optional hot path.')
    call write_bench_line('  - ftimer_openmp worker rows appear only in FTIMER_USE_OPENMP=ON builds.')
+   call write_bench_line('  - ftimer_openmp lane touch rows time only participating-lane first touch.')
    call write_bench_line('  - All scenarios use the real wall-clock (no mock clock).')
    call write_bench_line('  - Timings include clock-call overhead inside start/stop.')
    call write_bench_line('  - Pass a CSV path as argv[1] to archive parseable benchmark results.')
@@ -682,6 +712,393 @@ contains
       call require_success(ierr, 'ftimer_openmp worker finalize')
       call print_result('ftimer_openmp worker lane (id-based)', reps, t0, t1, count_rate)
    end subroutine bench_openmp_worker_lane_id
+
+   subroutine bench_openmp_worker_context_scaling(reps_outer, num_contexts, count_rate)
+      integer, intent(in) :: reps_outer
+      integer, intent(in) :: num_contexts
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0, t1
+      integer, allocatable :: parent_ids(:)
+      integer :: bad, i, ierr, j, total_ops, worker_seen, work_id
+      character(len=8) :: parent_name
+      character(len=47) :: label
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+
+      total_ops = reps_outer*num_contexts
+      allocate (parent_ids(num_contexts))
+
+      call omp_set_dynamic(.false.)
+      config%max_lanes = 3
+      call timer%init(config=config, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker context init')
+      do j = 1, num_contexts
+         write (parent_name, '("p",i7.7)') j
+         call timer%register_timer(parent_name, parent_ids(j), ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker context register parent')
+      end do
+      call timer%register_timer('work', work_id, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker context register work')
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker context begin_parallel_region')
+
+      bad = 0
+      worker_seen = 0
+      t0 = 0_int64
+      t1 = 0_int64
+
+!$omp parallel num_threads(2) default(shared) private(ierr, i, j) reduction(+:bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         do j = 1, num_contexts
+            call timer%start_id(parent_ids(j), ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            call timer%start_id(work_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            call timer%stop_id(work_id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            call timer%stop_id(parent_ids(j), ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         end do
+      end if
+!$omp barrier
+      if (omp_get_thread_num() == 1) then
+         call system_clock(t0)
+         do i = 1, reps_outer
+            do j = 1, num_contexts
+               call timer%start_id(parent_ids(j), ierr=ierr)
+               if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+               call timer%start_id(work_id, ierr=ierr)
+               if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+               call timer%stop_id(work_id, ierr=ierr)
+               if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+               call timer%stop_id(parent_ids(j), ierr=ierr)
+               if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            end do
+         end do
+         call system_clock(t1)
+      end if
+!$omp end parallel
+
+      if (bad /= 0) error stop 'ftimer_bench: ftimer_openmp worker context scaling failed'
+      if (worker_seen <= 0) then
+         call timer%end_parallel_region(region, ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker context skipped end_parallel_region')
+         call timer%finalize(ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker context skipped finalize')
+         call write_bench_line('ftimer_openmp worker context scaling skipped: OpenMP did not provide thread 1')
+         deallocate (parent_ids)
+         return
+      end if
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker context end_parallel_region')
+      call timer%finalize(ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker context finalize')
+      deallocate (parent_ids)
+      write (label, '("ftimer_openmp worker ctx C=",i0)') num_contexts
+      call print_result(trim(label), total_ops, t0, t1, count_rate)
+   end subroutine bench_openmp_worker_context_scaling
+
+   subroutine bench_openmp_catalog_register(reps_outer, num_timers, count_rate)
+      integer, intent(in) :: reps_outer
+      integer, intent(in) :: num_timers
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0, t1
+      character(len=8), allocatable :: tnames(:)
+      character(len=47) :: label
+      integer :: i, id, ierr, j, total_ops
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t), allocatable :: timers(:)
+
+      total_ops = reps_outer*num_timers
+      allocate (tnames(num_timers))
+      allocate (timers(reps_outer))
+      config%max_lanes = 1
+      do j = 1, num_timers
+         write (tnames(j), '("t",i7.7)') j
+      end do
+      do i = 1, reps_outer
+         call timers(i)%init(config=config, ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp catalog register init')
+      end do
+
+      call system_clock(t0)
+      do i = 1, reps_outer
+         do j = 1, num_timers
+            call timers(i)%register_timer(tnames(j), id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) error stop 'ftimer_bench: ftimer_openmp register_timer failed'
+         end do
+      end do
+      call system_clock(t1)
+
+      do i = 1, reps_outer
+         call timers(i)%finalize(ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp catalog register finalize')
+      end do
+      deallocate (timers)
+      deallocate (tnames)
+      write (label, '("ftimer_openmp catalog register N=",i0)') num_timers
+      call print_result(trim(label), total_ops, t0, t1, count_rate)
+   end subroutine bench_openmp_catalog_register
+
+   subroutine bench_openmp_catalog_lookup(reps_outer, num_timers, count_rate)
+      integer, intent(in) :: reps_outer
+      integer, intent(in) :: num_timers
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0, t1
+      character(len=8), allocatable :: tnames(:)
+      character(len=47) :: label
+      integer :: i, id, ierr, j, total_ops
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_t) :: timer
+
+      total_ops = reps_outer*num_timers
+      allocate (tnames(num_timers))
+      config%max_lanes = 1
+      call timer%init(config=config, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp catalog lookup init')
+      do j = 1, num_timers
+         write (tnames(j), '("t",i7.7)') j
+         call timer%register_timer(tnames(j), id, ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp catalog lookup register')
+      end do
+
+      call system_clock(t0)
+      do i = 1, reps_outer
+         do j = 1, num_timers
+            call timer%lookup_timer(tnames(j), id, ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) error stop 'ftimer_bench: ftimer_openmp lookup_timer failed'
+         end do
+      end do
+      call system_clock(t1)
+
+      call timer%finalize(ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp catalog lookup finalize')
+      deallocate (tnames)
+      write (label, '("ftimer_openmp catalog lookup N=",i0)') num_timers
+      call print_result(trim(label), total_ops, t0, t1, count_rate)
+   end subroutine bench_openmp_catalog_lookup
+
+   subroutine bench_openmp_worker_lanes(reps, num_lanes, count_rate)
+      integer, intent(in) :: reps
+      integer, intent(in) :: num_lanes
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0, t1
+      character(len=47) :: label
+      integer :: bad, i, id, ierr, total_ops, worker_seen
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+
+      total_ops = reps*num_lanes
+      call omp_set_dynamic(.false.)
+      config%max_lanes = num_lanes + 1
+      call timer%init(config=config, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker lanes init')
+      call timer%register_timer('worker', id, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker lanes register_timer')
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker lanes begin_parallel_region')
+
+      bad = 0
+      worker_seen = 0
+      t0 = 0_int64
+      t1 = 0_int64
+
+!$omp parallel num_threads(num_lanes) default(shared) private(ierr, i) reduction(+:bad, worker_seen)
+      worker_seen = worker_seen + 1
+      call timer%start_id(id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+      call timer%stop_id(id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+!$omp barrier
+!$omp master
+      call system_clock(t0)
+!$omp end master
+!$omp barrier
+      do i = 1, reps
+         call timer%start_id(id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         call timer%stop_id(id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+      end do
+!$omp barrier
+!$omp master
+      call system_clock(t1)
+!$omp end master
+!$omp end parallel
+
+      if (bad /= 0) error stop 'ftimer_bench: ftimer_openmp worker lanes failed'
+      if (worker_seen < num_lanes) then
+         call timer%end_parallel_region(region, ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker lanes skipped end_parallel_region')
+         call timer%finalize(ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker lanes skipped finalize')
+         write (label, '("ftimer_openmp worker lanes L=",i0," skipped")') num_lanes
+         call write_bench_line(trim(label))
+         return
+      end if
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker lanes end_parallel_region')
+      call timer%finalize(ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp worker lanes finalize')
+      write (label, '("ftimer_openmp worker lanes L=",i0)') num_lanes
+      call print_result(trim(label), total_ops, t0, t1, count_rate)
+   end subroutine bench_openmp_worker_lanes
+
+   subroutine bench_openmp_worker_lanes_split(reps, num_lanes, count_rate)
+      integer, intent(in) :: reps
+      integer, intent(in) :: num_lanes
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0, t1
+      character(len=47) :: label
+      integer, allocatable :: ids(:)
+      integer :: bad, i, ierr, lane, total_ops, worker_seen
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t), allocatable :: regions(:)
+      type(ftimer_openmp_t), allocatable :: timers(:)
+
+      total_ops = reps*num_lanes
+      allocate (ids(num_lanes))
+      allocate (regions(num_lanes))
+      allocate (timers(num_lanes))
+
+      call omp_set_dynamic(.false.)
+      config%max_lanes = num_lanes + 1
+      do lane = 1, num_lanes
+         call timers(lane)%init(config=config, ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker split init')
+         call timers(lane)%register_timer('worker', ids(lane), ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker split register_timer')
+         call timers(lane)%begin_parallel_region(regions(lane), ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker split begin_parallel_region')
+      end do
+
+      bad = 0
+      worker_seen = 0
+      t0 = 0_int64
+      t1 = 0_int64
+
+!$omp parallel num_threads(num_lanes) default(shared) private(ierr, i, lane) reduction(+:bad, worker_seen)
+      lane = omp_get_thread_num() + 1
+      worker_seen = worker_seen + 1
+      call timers(lane)%start_id(ids(lane), ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+      call timers(lane)%stop_id(ids(lane), ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+!$omp barrier
+!$omp master
+      call system_clock(t0)
+!$omp end master
+!$omp barrier
+      do i = 1, reps
+         call timers(lane)%start_id(ids(lane), ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         call timers(lane)%stop_id(ids(lane), ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+      end do
+!$omp barrier
+!$omp master
+      call system_clock(t1)
+!$omp end master
+!$omp end parallel
+
+      if (bad /= 0) error stop 'ftimer_bench: ftimer_openmp worker split lanes failed'
+      if (worker_seen < num_lanes) then
+         do lane = 1, num_lanes
+            call timers(lane)%end_parallel_region(regions(lane), ierr=ierr)
+            call require_success(ierr, 'ftimer_openmp worker split skipped end_parallel_region')
+            call timers(lane)%finalize(ierr=ierr)
+            call require_success(ierr, 'ftimer_openmp worker split skipped finalize')
+         end do
+         write (label, '("ftimer_openmp worker split L=",i0," skipped")') num_lanes
+         call write_bench_line(trim(label))
+         deallocate (timers)
+         deallocate (regions)
+         deallocate (ids)
+         return
+      end if
+
+      do lane = 1, num_lanes
+         call timers(lane)%end_parallel_region(regions(lane), ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker split end_parallel_region')
+         call timers(lane)%finalize(ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp worker split finalize')
+      end do
+      deallocate (timers)
+      deallocate (regions)
+      deallocate (ids)
+      write (label, '("ftimer_openmp worker split L=",i0)') num_lanes
+      call print_result(trim(label), total_ops, t0, t1, count_rate)
+   end subroutine bench_openmp_worker_lanes_split
+
+   subroutine bench_openmp_lane_first_touch(configured_lanes, num_timers, count_rate)
+      integer, intent(in) :: configured_lanes
+      integer, intent(in) :: num_timers
+      integer(int64), intent(in) :: count_rate
+      integer(int64) :: t0, t1
+      character(len=8) :: tname
+      character(len=47) :: label
+      integer, allocatable :: ids(:)
+      integer :: bad, ierr, j, worker_seen
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+
+      allocate (ids(num_timers))
+      call omp_set_dynamic(.false.)
+      config%max_lanes = configured_lanes
+      call timer%init(config=config, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp lane touch init')
+      do j = 1, num_timers
+         write (tname, '("t",i7.7)') j
+         call timer%register_timer(tname, ids(j), ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp lane touch register_timer')
+      end do
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp lane touch begin_parallel_region')
+
+      bad = 0
+      worker_seen = 0
+      t0 = 0_int64
+      t1 = 0_int64
+
+!$omp parallel num_threads(2) default(shared) private(ierr, j) reduction(+:bad, worker_seen)
+      if (omp_get_thread_num() == 1) then
+         worker_seen = worker_seen + 1
+         call system_clock(t0)
+         do j = 1, num_timers
+            call timer%start_id(ids(j), ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+            call timer%stop_id(ids(j), ierr=ierr)
+            if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         end do
+         call system_clock(t1)
+      end if
+!$omp end parallel
+
+      if (bad /= 0) error stop 'ftimer_bench: ftimer_openmp lane first touch failed'
+      if (worker_seen <= 0) then
+         call timer%end_parallel_region(region, ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp lane touch skipped end_parallel_region')
+         call timer%finalize(ierr=ierr)
+         call require_success(ierr, 'ftimer_openmp lane touch skipped finalize')
+         call write_bench_line('ftimer_openmp lane first-touch skipped: OpenMP did not provide thread 1')
+         deallocate (ids)
+         return
+      end if
+
+      call timer%end_parallel_region(region, ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp lane touch end_parallel_region')
+      call timer%finalize(ierr=ierr)
+      call require_success(ierr, 'ftimer_openmp lane touch finalize')
+      deallocate (ids)
+      write (label, '("ftimer_openmp lane touch K=",i0," N=",i0)') configured_lanes, num_timers
+      call print_result(trim(label), num_timers, t0, t1, count_rate)
+   end subroutine bench_openmp_lane_first_touch
 #endif
 
    ! Long-name start/stop with one steady-state resident timer.

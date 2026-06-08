@@ -196,10 +196,12 @@ Performance validation is now part of the current follow-up surface rather than
 an implementation prerequisite. The benchmark harness already includes rows for
 the explicit `ftimer_openmp_t` serial-lane id path, timed-region open/close,
 warmed worker-lane id path, local OpenMP summary merge, strict MPI+OpenMP CSV
-output, and sparse union MPI+OpenMP CSV output. Dedicated, durable CI smoke
-coverage for OpenMP and MPI+OpenMP benchmark configurations remains follow-up
-work under #285, so release docs should not imply those feature-enabled
-benchmark rows run in every CI job yet.
+output, and sparse union MPI+OpenMP CSV output. Current CI includes serial,
+OpenMP, and MPI+OpenMP benchmark CSV smoke jobs that build `ftimer_bench` and
+verify parseable CSV output for the configured feature mode. Dedicated artifact
+upload for OpenMP and MPI+OpenMP benchmark CSVs remains follow-up work under
+#285, so release docs should distinguish feature-enabled CSV smoke coverage
+from durable uploaded benchmark artifacts.
 
 For true worker timing and hybrid reductions, measurements should track:
 

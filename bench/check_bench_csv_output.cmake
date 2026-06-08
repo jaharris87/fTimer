@@ -88,6 +88,55 @@ if(NOT bench_csv MATCHES "^benchmark,reps,total_ms,per_op_ns")
   message(FATAL_ERROR "ftimer_bench CSV output is missing the expected header")
 endif()
 
+function(require_bench_csv_result label expected_reps)
+  string(REGEX MATCH "(^|\n)\"${label}\",[^\n\r]*" row "${bench_csv}")
+  if(row STREQUAL "")
+    message(FATAL_ERROR "ftimer_bench CSV output is missing \"${label}\"")
+  endif()
+
+  string(REGEX REPLACE "^\n" "" row "${row}")
+  string(REPLACE "," ";" row_fields "${row}")
+  list(LENGTH row_fields row_field_count)
+  if(NOT row_field_count EQUAL 4)
+    message(FATAL_ERROR "ftimer_bench CSV row for \"${label}\" has ${row_field_count} fields")
+  endif()
+
+  list(GET row_fields 1 actual_reps)
+  list(GET row_fields 2 total_ms)
+  list(GET row_fields 3 per_op_ns)
+  if(NOT actual_reps STREQUAL "${expected_reps}")
+    message(FATAL_ERROR
+      "ftimer_bench CSV row for \"${label}\" has reps=${actual_reps}, expected ${expected_reps}")
+  endif()
+
+  foreach(metric IN ITEMS total_ms per_op_ns)
+    set(metric_value "${${metric}}")
+    if(NOT metric_value MATCHES "^([0-9]+|[0-9]*\\.[0-9]+)$")
+      message(FATAL_ERROR
+        "ftimer_bench CSV row for \"${label}\" has nonnumeric ${metric}=${metric_value}")
+    endif()
+    if(NOT metric_value GREATER 0)
+      message(FATAL_ERROR
+        "ftimer_bench CSV row for \"${label}\" has nonpositive ${metric}=${metric_value}")
+    endif()
+  endforeach()
+endfunction()
+
+function(require_bench_csv_result_or_skip label expected_reps skipped_label)
+  string(REGEX MATCH "(^|\n)\"${label}\",[^\n\r]*" row "${bench_csv}")
+  if(NOT row STREQUAL "")
+    require_bench_csv_result("${label}" "${expected_reps}")
+    return()
+  endif()
+
+  if(bench_stdout MATCHES "(^|\n)${skipped_label}(\n|$)")
+    return()
+  endif()
+
+  message(FATAL_ERROR
+    "ftimer_bench CSV output is missing \"${label}\" and stdout did not report \"${skipped_label}\"")
+endfunction()
+
 if(NOT ftimer_bench_smoke_only)
   set(required_rows
     "\"format local text N=100 entries\""
@@ -105,9 +154,18 @@ if(NOT ftimer_bench_smoke_only)
   endforeach()
 
   if(FTIMER_BENCH_EXPECT_OPENMP_ROW)
-    if(NOT bench_csv MATCHES "\"ftimer_openmp summary merge N=100 entries\"")
-      message(FATAL_ERROR "ftimer_bench CSV output is missing the OpenMP summary merge row")
-    endif()
+    require_bench_csv_result("ftimer_openmp summary merge N=100 entries" 25)
+    require_bench_csv_result("ftimer_openmp worker ctx C=1000" 100000)
+    require_bench_csv_result("ftimer_openmp catalog register N=1000" 50000)
+    require_bench_csv_result("ftimer_openmp catalog lookup N=1000" 100000)
+    require_bench_csv_result("ftimer_openmp worker lanes L=2" 50000)
+    require_bench_csv_result("ftimer_openmp worker split L=2" 50000)
+    require_bench_csv_result_or_skip("ftimer_openmp worker lanes L=8" 50000
+      "ftimer_openmp worker lanes L=8 skipped")
+    require_bench_csv_result_or_skip("ftimer_openmp worker split L=8" 50000
+      "ftimer_openmp worker split L=8 skipped")
+    require_bench_csv_result("ftimer_openmp lane touch K=3 N=1000" 1000)
+    require_bench_csv_result("ftimer_openmp lane touch K=65 N=1000" 1000)
   endif()
 
   if(FTIMER_BENCH_EXPECT_MPI_STRICT_ROW)

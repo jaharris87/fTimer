@@ -110,7 +110,10 @@ OpenMP worker summaries are stopped-run merge points: call them only after the
 timed region is closed and all lane-local timer stacks are inactive. Lifecycle,
 registration, timed-region open/close, and summary/report calls belong in serial
 context; only valid `start_id`/`stop_id` worker timing belongs inside the
-opened level-1 OpenMP region.
+opened level-1 OpenMP region. Treat each fTimer timed-region epoch as covering
+one level-1 OpenMP team shape. If the application changes the OpenMP team size
+or lane set for later worker timing, close the current fTimer timed region and
+open a fresh one before entering the differently shaped OpenMP region.
 
 For MPI+OpenMP worker timing, keep MPI initialization and finalization outside
 the `ftimer_openmp_t` object lifetime, capture the communicator with
@@ -219,8 +222,12 @@ The additive migration surface starts with `ftimer_openmp`:
   captures a caller-owned communicator;
 - register timer names in serial context before hot worker use;
 - pass timer ids into an explicitly opened timed OpenMP region; and
-- run an untimed warm-up region for short hot loops when first-touch allocation
-  would otherwise contaminate the measurement; and
+- for benchmark-only overhead studies, touch the same lane/timer/context
+  combinations inside the same opened timed region/epoch before an externally
+  measured loop when first-touch allocation should be separated from warmed
+  steady-state cost; current fTimer summaries include those warm-up calls
+  because no public reserve/warm API exists; use a fresh timed region for a
+  different OpenMP team shape; and
 - consume `ftimer_openmp_summary_t` local summary/report output or
   `ftimer_mpi_openmp_summary_t` strict hybrid summary/report output, or
   `ftimer_mpi_openmp_union_summary_t` sparse union hybrid summary/report output
@@ -231,6 +238,16 @@ The lifecycle/configuration, timer catalog, timed-region, and worker
 `start_id`/`stop_id` pieces are functional today, along with stopped-run local
 OpenMP summaries, strict MPI+OpenMP summaries, sparse union MPI+OpenMP
 summaries, and report/CSV output.
+
+The worker hot path is optimized for pre-registered ids and warmed contexts.
+Internally, `ftimer_openmp_t` uses private catalog and lane-context indexes plus
+per-lane timed-region team-size observation that is cached for the epoch.
+Callers do not need a reserve API for the current implementation: lane segment
+storage grows only on lanes that participate. Benchmark harnesses that need
+warmed-loop overhead evidence can touch the same lane/timer/context
+combinations inside the same opened timed region before starting their
+external stopwatch; user-facing fTimer summaries from that run still include
+the warm-up data.
 
 ## Example Policy
 
