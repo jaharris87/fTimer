@@ -11,6 +11,7 @@ set(required_paths
   docs/openmp-timing-modes.md
   docs/release.md
   docs/semantics.md
+  docs/troubleshooting.md
   CONTRIBUTING.md
   SECURITY.md
   SUPPORT.md
@@ -256,6 +257,7 @@ set(release_navigation_docs
   docs/installed-api.md
   docs/release.md
   docs/openmp-timing-modes.md
+  docs/troubleshooting.md
 )
 
 foreach(release_navigation_doc IN LISTS release_navigation_docs)
