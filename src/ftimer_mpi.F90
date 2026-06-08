@@ -267,6 +267,8 @@ contains
          return
       end if
 
+      ! Strict summaries reduce timing arrays by canonical descriptor index, so
+      ! ranks must agree on the full timer hierarchy before any timing reduction.
       call build_descriptor_order(local_summary, descriptors, permutation)
       call hash_descriptor_list(descriptors, permutation, local_hashes)
 
@@ -1097,6 +1099,8 @@ contains
       allocate (char_counts(nprocs))
       allocate (char_displacements(nprocs))
 
+      ! Sparse union summaries exchange only the variable-length descriptors
+      ! each rank actually has; ranks do not need dummy timers for absent work.
       call MPI_Allgather(local_descriptor_count, 1, MPI_INTEGER, descriptor_counts, 1, MPI_INTEGER, &
                          active_comm, mpierr)
       if (mpierr /= MPI_SUCCESS) return

@@ -5990,6 +5990,8 @@ contains
       epoch = 0
       worker_lane_count = 0
 
+      ! Lane 0 is the serial control lane; worker lanes require an open
+      ! top-level timed region so summaries know the team they belong to.
       if ((.not. allocated(self%lanes)) .or. (lane_idx < 1) .or. (lane_idx > size(self%lanes))) then
          status = FTIMER_ERR_UNKNOWN
          return
@@ -6161,6 +6163,7 @@ contains
       end if
 
       now = openmp_clock(self)
+      ! Pop before lookup so the elapsed time is attributed to the parent path.
       popped_id = self%lanes(lane_idx)%call_stack%pop(popped_epoch)
       if ((popped_id /= timer_id) .or. (popped_epoch /= int(epoch, int64))) then
          error stop "ftimer_openmp internal lane stack pop mismatch"

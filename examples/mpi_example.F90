@@ -31,6 +31,9 @@ program mpi_example
    end do
 
    call ftimer_stop("rank_work", ierr=ierr)
+
+   ! Strict MPI summaries require every participating rank to expose the same
+   ! timer hierarchy. Use the union summary API for rank-conditional timers.
    call ftimer_mpi_summary(summary, ierr=ierr)
 
    if (rank == 0 .and. summary%num_entries > 0) then

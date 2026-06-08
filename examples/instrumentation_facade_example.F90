@@ -17,6 +17,8 @@ program instrumentation_facade_example
    if (ierr /= 0) error stop 9
 #endif
 
+   ! Applications can call a project facade instead of fTimer directly, then
+   ! swap enabled/disabled instrumentation modules at build time.
    call timing_init(ierr=ierr)
    if (ierr /= timing_success) error stop 1
 

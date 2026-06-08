@@ -50,6 +50,7 @@ contains
       call snapshot_timer(timer, state)
       stack_a = build_stack([1])
       stack_b = build_stack([3])
+      ! The same timer name under different parents must keep distinct totals.
       ctx_a = find_context_idx(state, id_work, stack_a)
       ctx_b = find_context_idx(state, id_work, stack_b)
       time_a = state%segments(id_work)%time(ctx_a)
@@ -140,6 +141,8 @@ contains
       call timer%init(mismatch_mode=FTIMER_MISMATCH_REPAIR, ierr=ierr)
       call attach_mock_clock(timer)
 
+      ! This stress path combines deep context growth with repair; callbacks
+      ! should still count only user-visible starts and stops.
       token = 17
       call timer%set_callback(record_deep_context_callback, c_loc(token), ierr=ierr)
       @assertEqual(FTIMER_SUCCESS, ierr)

@@ -251,6 +251,8 @@ contains
    collective_status = FTIMER_SUCCESS
    collective_message = ''
    if (rank == 0) then
+      ! Only rank 0 writes, then broadcasts the outcome so all ranks return the
+      ! same status to their caller.
       out_unit = output_unit
       if (present(unit)) out_unit = unit
 

@@ -386,6 +386,8 @@ contains
       @assertEqual(10.0_wp, time_c_under_b)
       @assertFalse(state%segments(2)%is_running(ctx_b_root))
       @assertFalse(state%segments(3)%is_running(ctx_c_under_b))
+      ! Six reads means repair captured one shared timestamp, not one per
+      ! unwound/restarted timer.
       @assertEqual(6, call_count)
       @assertEqual(30.0_wp, state%segments(2)%start_time(ctx_b_root))
       @assertEqual(30.0_wp, state%segments(3)%start_time(ctx_c_under_b))

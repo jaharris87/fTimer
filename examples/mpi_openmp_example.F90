@@ -37,12 +37,16 @@ program mpi_openmp_example
    config%max_lanes = 3
    config%max_worker_diagnostics = 4
 
+   ! Keep the hybrid timer inside the MPI lifetime; the communicator is used
+   ! later for cross-rank reductions.
    call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop "ftimer_openmp init failed"
 
    call timer%register_timer("hybrid_all_lanes", all_lanes_id, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop "register hybrid_all_lanes failed"
 
+   ! Strict hybrid summaries are for phases where every rank/lane follows the
+   ! same timer structure.
    call timer%begin_parallel_region(region, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop "begin strict hybrid region failed"
 
@@ -54,6 +58,7 @@ program mpi_openmp_example
 !$omp& reduction(+:accumulator, worker_bad, worker_seen)
    worker_seen = worker_seen + 1
 
+   ! The registered id is safe to use from workers; begin/end stay outside.
    call timer%start_id(all_lanes_id, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) worker_bad = worker_bad + 1
 
@@ -96,6 +101,8 @@ program mpi_openmp_example
    call timer%register_timer("rank0_lane0_only", sparse_id, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop "register rank0_lane0_only failed"
 
+   ! Rank/lane-conditional timing is sparse by design; the union summary reports
+   ! who participated instead of rejecting the missing lanes.
    call timer%begin_parallel_region(region, ierr=ierr)
    if (ierr /= FTIMER_SUCCESS) error stop "begin sparse hybrid region failed"
 

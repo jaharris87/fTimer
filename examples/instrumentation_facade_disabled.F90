@@ -17,6 +17,8 @@ contains
    subroutine timing_init(ierr)
       integer, intent(out), optional :: ierr
 
+      ! Disabled builds still return success so instrumentation calls can remain
+      ! in application code without creating timing data.
       if (present(ierr)) ierr = timing_success
    end subroutine timing_init
 
