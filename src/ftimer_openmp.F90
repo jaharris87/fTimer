@@ -6127,7 +6127,7 @@ contains
 #endif
 
       self%lanes(lane_idx)%observed_epoch = epoch
-      self%lanes(lane_idx)%observed_epoch_team_size = max(self%lanes(lane_idx)%observed_epoch_team_size, team_size)
+      self%lanes(lane_idx)%observed_epoch_team_size = team_size
    end subroutine note_current_epoch_team_size
 
    real(wp) function openmp_clock(self) result(t)

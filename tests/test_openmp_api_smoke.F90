@@ -1364,6 +1364,9 @@ contains
       integer :: shared_idx
       integer :: solo_id
       integer :: solo_idx
+      integer :: warm_id
+      integer :: warm_idx
+      integer :: warm_seen
       integer :: worker_seen
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_parallel_region_t) :: region
@@ -1383,6 +1386,8 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 1402)
       call timer%register_timer("summary_solo", solo_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 1403)
+      call timer%register_timer("summary_warm", warm_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1433)
 
       fake_lane_time(0) = 100.0_wp
       call timer%begin_parallel_region(region, ierr=ierr)
@@ -1409,6 +1414,32 @@ contains
       call timer%end_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 1407)
 
+      fake_lane_time(0) = 107.0_wp
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1434)
+
+      bad = 0
+      warm_seen = 0
+
+!$omp parallel num_threads(4) default(shared) private(ierr) reduction(+:bad, warm_seen)
+      warm_seen = warm_seen + 1
+      if (omp_get_thread_num() == 0) then
+         fake_lane_time(1) = 24.0_wp
+         call timer%start_id(warm_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         fake_lane_time(1) = 25.0_wp
+         call timer%stop_id(warm_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+      end if
+!$omp end parallel
+
+      if (warm_seen < 2) error stop 1435
+      if (bad /= 0) error stop 1436
+
+      fake_lane_time(0) = 108.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 1437)
+
       fake_lane_time(0) = 110.0_wp
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 1408)
@@ -1425,6 +1456,12 @@ contains
          fake_lane_time(1) = 34.0_wp
          call timer%stop_id(solo_id, ierr=ierr)
          if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         fake_lane_time(1) = 36.0_wp
+         call timer%start_id(solo_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
+         fake_lane_time(1) = 40.0_wp
+         call timer%stop_id(solo_id, ierr=ierr)
+         if (ierr /= FTIMER_SUCCESS) bad = bad + 1
       end if
 !$omp end parallel
 
@@ -1439,15 +1476,17 @@ contains
       call timer%get_openmp_summary(summary, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 1412)
 
-      call expect_status(summary%num_entries, 2, 1413)
+      call expect_status(summary%num_entries, 3, 1413)
       call expect_status(summary%configured_lane_capacity, 4, 1414)
       call expect_status(summary%observed_participating_lane_count, 2, 1415)
-      call expect_time(summary%timed_region_envelope_time, 10.0_wp, 1416)
+      call expect_time(summary%timed_region_envelope_time, 11.0_wp, 1416)
 
       shared_idx = find_openmp_summary_entry(summary, "summary_shared", 0)
       if (shared_idx <= 0) error stop 1417
       solo_idx = find_openmp_summary_entry(summary, "summary_solo", 0)
       if (solo_idx <= 0) error stop 1418
+      warm_idx = find_openmp_summary_entry(summary, "summary_warm", 0)
+      if (warm_idx <= 0) error stop 1438
 
       call expect_status(summary%entries(shared_idx)%eligible_lane_count, 2, 1419)
       call expect_status(summary%entries(shared_idx)%participating_lane_count, 2, 1420)
@@ -1460,9 +1499,14 @@ contains
       call expect_status(summary%entries(solo_idx)%eligible_lane_count, 2, 1426)
       call expect_status(summary%entries(solo_idx)%participating_lane_count, 1, 1427)
       call expect_status(summary%entries(solo_idx)%missing_lane_count, 1, 1428)
-      call expect_time(summary%entries(solo_idx)%sum_lane_inclusive_time, 4.0_wp, 1429)
-      call expect_time(summary%entries(solo_idx)%avg_lane_inclusive_time, 4.0_wp, 1430)
-      call expect_time(summary%entries(solo_idx)%avg_lane_call_count, 1.0_wp, 1431)
+      call expect_time(summary%entries(solo_idx)%sum_lane_inclusive_time, 8.0_wp, 1429)
+      call expect_time(summary%entries(solo_idx)%avg_lane_inclusive_time, 8.0_wp, 1430)
+      call expect_time(summary%entries(solo_idx)%avg_lane_call_count, 2.0_wp, 1431)
+
+      call expect_status(summary%entries(warm_idx)%eligible_lane_count, warm_seen, 1439)
+      call expect_status(summary%entries(warm_idx)%participating_lane_count, 1, 1440)
+      call expect_status(summary%entries(warm_idx)%missing_lane_count, warm_seen - 1, 1441)
+      call expect_time(summary%entries(warm_idx)%sum_lane_inclusive_time, 1.0_wp, 1442)
 
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 1432)

@@ -100,7 +100,9 @@ parallel-region epoch and must be stopped by the same lane before that region
 ends. The first implementation should provide a small serial-context region
 guard or begin/end helper that opens a monotonically increasing epoch before
 the `!$omp parallel` region and closes it after the region. Worker stack entries
-record that epoch. A later parallel region reusing the same
+record that epoch. A timed-region epoch is intended to cover one level-1 OpenMP
+team shape; close and reopen the fTimer timed region before timing work in a
+differently shaped OpenMP team. A later parallel region reusing the same
 `omp_get_thread_num()` value is not a valid way to complete an earlier worker
 timer because the top stack entry's epoch will not match the currently open
 epoch.
@@ -181,20 +183,23 @@ The same issue evaluated multi-lane worker timing, dense lane-record false
 sharing, and configured lane capacity. The implementation now records the
 current OpenMP team size once per lane and timed-region epoch, then reuses that
 observation on later starts/stops in the same epoch. This removed the previous
-steady-state critical-section pressure from worker calls while preserving
-eligible-lane summary accounting. Local GNU Fortran 15.2.0 benchmark runs on
+steady-state critical-section pressure and per-call team-size query from worker
+calls while preserving eligible-lane summary accounting for the epoch's team
+shape. Local GNU Fortran 15.2.0 benchmark runs on
 June 8, 2026 measured the 1000-context worker row at about 961 ns/op before and
-about 148 ns/op after, 1000-timer catalog lookup at about 1283 ns/op before and
-about 43 ns/op after, and 8 concurrent worker lanes at about 251 ns/op before
-and about 19 ns/op after. The direct false-sharing comparison measured the
-shared 8-lane object row at about 19 ns/op and one split object per lane at
-about 20 ns/op in the refreshed local run. The absolute delta is small and
-same-order after the critical-section and per-call team-size-query fixes, so no
-padding or lane-record layout ABI promise was introduced. The configured lane
-first-touch comparison with one participating worker lane and 1000 registered
-timers stayed comparable for `config%max_lanes=3` and `65`, so the chosen
-design keeps lazy per-participating-lane segment allocation and does not add a
-public reserve/warm path.
+about 150 ns/op after, 1000-timer catalog registration at about 1313 ns/op
+before and about 173 ns/op after, 1000-timer catalog lookup at about
+1283 ns/op before and about 45 ns/op after, and 8 concurrent worker lanes at
+about 251 ns/op before and about 21 ns/op after. The direct false-sharing
+comparison measured the shared 8-lane object row at about 21 ns/op and one
+split object per lane at about 16 ns/op in the refreshed local run. The
+absolute delta is small and same-order after the critical-section and per-call
+team-size-query fixes, so no padding or lane-record layout ABI promise was
+introduced. The configured lane first-touch comparison with one participating
+worker lane and 1000 registered timers stayed comparable for
+`config%max_lanes=3` and `65` at about 546 ns/op versus about 504 ns/op, so
+the chosen design keeps lazy per-participating-lane segment allocation and does
+not add a public reserve/warm path.
 
 Name-based `start` and `stop` may remain convenience calls, but they are not the
 recommended hot path. The first implementation should make catalog mutation
@@ -387,7 +392,7 @@ Because no public reserve API exists, dummy warm-up work is a benchmark-only
 overhead practice: it touches the same lane/timer/context combinations inside
 the same opened timed region/epoch before an externally measured loop. fTimer
 summaries from that run still include the warm-up calls, and a fresh timed
-region still pays one team-size observation per participating lane.
+region should be used for a different OpenMP team shape.
 
 The first public config surface should stay lean: `max_lanes` plus bounded
 diagnostic policy are enough for correctness. Expected timer counts, context

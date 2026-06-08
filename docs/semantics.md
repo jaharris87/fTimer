@@ -500,7 +500,9 @@ enforcement should pass `ierr` and check it.
 - `eligible_lane_count`, `participating_lane_count`, and
   `missing_lane_count` describe lane participation for that descriptor.
   Eligible worker lanes come from the actual level-1 team lanes observed for
-  contributing timed-region epochs, not from `config%max_lanes`. Serial-lane
+  contributing timed-region epochs, not from `config%max_lanes`. Treat one
+  fTimer timed-region epoch as one level-1 OpenMP team shape; close and reopen
+  the fTimer timed region before timing a differently shaped team. Serial-lane
   descriptors use lane 0 as their eligible participant. When mixed contributing
   epochs make the aggregate missing-lane interpretation ambiguous,
   `missing_lane_count_known` is false.
