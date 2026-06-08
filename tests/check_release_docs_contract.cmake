@@ -253,6 +253,150 @@ file(READ "${REPO_ROOT}/docs/troubleshooting.md" troubleshooting_doc_text)
 file(READ "${REPO_ROOT}/tests/public_symbol_allowlist.txt" public_symbol_allowlist_text)
 file(READ "${REPO_ROOT}/CMakeLists.txt" root_cmakelists_text)
 
+function(require_troubleshooting_contains needle)
+  string(FIND "${troubleshooting_doc_text}" "${needle}" troubleshooting_needle_index)
+  if(troubleshooting_needle_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/troubleshooting.md must keep troubleshooting contract text: missing '${needle}'."
+    )
+  endif()
+endfunction()
+
+function(require_troubleshooting_section_contains section_title needle)
+  set(section_header "## ${section_title}")
+  string(FIND "${troubleshooting_doc_text}" "${section_header}" troubleshooting_section_index)
+  if(troubleshooting_section_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/troubleshooting.md must keep troubleshooting section '${section_header}'."
+    )
+  endif()
+
+  string(SUBSTRING "${troubleshooting_doc_text}" "${troubleshooting_section_index}" -1 troubleshooting_section_tail)
+  string(FIND "${troubleshooting_section_tail}" "\n## " troubleshooting_next_section_index)
+  if(troubleshooting_next_section_index EQUAL -1)
+    set(troubleshooting_section_text "${troubleshooting_section_tail}")
+  else()
+    string(SUBSTRING "${troubleshooting_section_tail}" 0 "${troubleshooting_next_section_index}" troubleshooting_section_text)
+  endif()
+
+  string(FIND "${troubleshooting_section_text}" "${needle}" troubleshooting_section_needle_index)
+  if(troubleshooting_section_needle_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/troubleshooting.md section '${section_header}' must keep troubleshooting contract text: missing '${needle}'."
+    )
+  endif()
+endfunction()
+
+require_troubleshooting_contains("cmake -B build-smoke")
+require_troubleshooting_contains("cmake --build build-smoke")
+require_troubleshooting_contains("cmake -E chdir build-smoke ctest --output-on-failure")
+require_troubleshooting_contains("cmake --build build-smoke --target basic_usage")
+require_troubleshooting_contains("./build-smoke/examples/basic_usage")
+
+require_troubleshooting_section_contains("Configure Fails With pFUnit Enabled"
+  "FC=gfortran cmake -B build -DFTIMER_BUILD_TESTS=ON -DPFUNIT_DIR=/path/to/pfunit"
+)
+require_troubleshooting_section_contains("Configure Fails With pFUnit Enabled"
+  "If you only want the smoke path and examples, leave `FTIMER_BUILD_TESTS=OFF`."
+)
+require_troubleshooting_section_contains("Downstream Configure Cannot Find fTimer"
+  "find_package(fTimer CONFIG REQUIRED)"
+)
+require_troubleshooting_section_contains("Downstream Configure Cannot Find fTimer"
+  "CMAKE_PREFIX_PATH=/path/to/ftimer-install"
+)
+require_troubleshooting_section_contains("Downstream Configure Cannot Find fTimer"
+  "cmake -E chdir build-smoke ctest --output-on-failure -R ftimer_installed_package_consumer$"
+)
+require_troubleshooting_section_contains("Configure Fails With MPI Enabled"
+  "FC=mpifort cmake -B build-mpi-smoke -DFTIMER_USE_MPI=ON -DFTIMER_BUILD_TESTS=OFF"
+)
+require_troubleshooting_section_contains("Configure Fails With MPI Enabled"
+  "Configure runs a small `mpi_f08` probe and fails early"
+)
+require_troubleshooting_section_contains("Configure Fails With OpenMP Enabled"
+  "FC=gfortran cmake -B build-openmp -DFTIMER_USE_OPENMP=ON"
+)
+require_troubleshooting_section_contains("Configure Fails With OpenMP Enabled"
+  "FC=flang-19 cmake -B build-openmp-flang -DFTIMER_USE_OPENMP=ON -DOpenMP_ROOT=/path/to/libomp"
+)
+require_troubleshooting_section_contains("OpenMP Worker Calls Do Not Appear In The Summary"
+  "Worker-thread calls made inside an"
+)
+require_troubleshooting_section_contains("OpenMP Worker Calls Do Not Appear In The Summary"
+  "Global compiler flags such as `-fopenmp` do not enable fTimer's guards when the"
+)
+require_troubleshooting_section_contains("OpenMP Worker Calls Do Not Appear In The Summary"
+  "library was configured with `FTIMER_USE_OPENMP=OFF`"
+)
+
+require_troubleshooting_section_contains("MPI Summary Returns `FTIMER_ERR_MPI_INCON`"
+  "Strict MPI summaries and reports require identical timer descriptor trees"
+)
+require_troubleshooting_section_contains("MPI Summary Returns `FTIMER_ERR_MPI_INCON`"
+  "cause `FTIMER_ERR_MPI_INCON`"
+)
+require_troubleshooting_section_contains("MPI Summary Returns `FTIMER_ERR_MPI_INCON`"
+  "Sparse union entries report explicit participation counts."
+)
+require_troubleshooting_section_contains("MPI Summary Returns `FTIMER_ERR_ACTIVE`"
+  "MPI summaries and MPI report/CSV writers require a fully stopped timer set."
+)
+require_troubleshooting_section_contains("MPI Summary Returns `FTIMER_ERR_ACTIVE`"
+  "returns `FTIMER_ERR_ACTIVE`"
+)
+require_troubleshooting_section_contains("MPI Summary Returns `FTIMER_ERR_ACTIVE`"
+  "For local debugging snapshots, use `ftimer_get_summary()` separately."
+)
+require_troubleshooting_section_contains("MPI Summary Returns `FTIMER_ERR_ACTIVE`"
+  "MPI summary APIs intentionally do not."
+)
+require_troubleshooting_section_contains("MPI Summary Hangs"
+  "divergent communicators or missing collective"
+)
+require_troubleshooting_section_contains("MPI Summary Hangs"
+  "Rank-conditional code does not skip the collective itself."
+)
+require_troubleshooting_section_contains("MPI APIs Return `FTIMER_ERR_NOT_IMPLEMENTED`"
+  "They do not fall back to local summaries"
+)
+require_troubleshooting_section_contains("MPI APIs Return `FTIMER_ERR_NOT_IMPLEMENTED`"
+  "not create or replace MPI report files."
+)
+require_troubleshooting_section_contains("CSV Columns Look Different Between Files"
+  "Local and strict MPI CSV use `format_version=2`."
+)
+require_troubleshooting_section_contains("CSV Columns Look Different Between Files"
+  "Do not append sparse union rows to a local/strict MPI CSV file or the reverse."
+)
+require_troubleshooting_section_contains("CSV Append Returns `FTIMER_ERR_IO`"
+  "With `append=.true.`, fTimer validates the existing non-empty file before adding"
+)
+require_troubleshooting_section_contains("CSV Append Returns `FTIMER_ERR_IO`"
+  "a final record that is not newline-terminated"
+)
+require_troubleshooting_section_contains("CSV Append Returns `FTIMER_ERR_IO`"
+  "The existing file is left unchanged on validation failure."
+)
+require_troubleshooting_section_contains("Reports Look Incomplete"
+  "Strict MPI text reports are abbreviated human reports."
+)
+require_troubleshooting_section_contains("Reports Look Incomplete"
+  "The complete"
+)
+require_troubleshooting_section_contains("Reports Look Incomplete"
+  "machine-facing data is in `ftimer_mpi_summary_t` or the strict MPI CSV output."
+)
+require_troubleshooting_section_contains("Reports Look Incomplete"
+  "For sparse/rank-conditional work, use `ftimer_mpi_union_summary_t` or sparse"
+)
+require_troubleshooting_section_contains("Timings Do Not Include Device Or Synchronized MPI Time"
+  "does not synchronize GPU/device queues"
+)
+require_troubleshooting_section_contains("Timings Do Not Include Device Or Synchronized MPI Time"
+  "does not insert MPI barriers"
+)
+
 set(troubleshooting_routing_docs
   AGENTS.md
   CLAUDE.md
