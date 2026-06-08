@@ -33,8 +33,16 @@ module ftimer_openmp
 
    integer, parameter :: FTIMER_OPENMP_MODE_THREAD_LANES = 1
    integer, parameter :: FTIMER_OPENMP_CATALOG_INITIAL_CAPACITY = 16
+   integer, parameter :: FTIMER_OPENMP_CONTEXT_LIST_INITIAL_CAPACITY = 4
+   integer, parameter :: FTIMER_OPENMP_CONTEXT_INDEX_INITIAL_CAPACITY = 8
+   integer, parameter :: FTIMER_OPENMP_NAME_INDEX_INITIAL_CAPACITY = 32
+   integer, parameter :: FTIMER_OPENMP_INDEX_LOAD_NUMERATOR = 7
+   integer, parameter :: FTIMER_OPENMP_INDEX_LOAD_DENOMINATOR = 10
    integer, parameter :: FTIMER_OPENMP_DEFAULT_WORKER_DIAGNOSTICS = 32
    integer, parameter :: FTIMER_OPENMP_CONTEXT_EPOCH_UNKNOWN = -1
+   integer(int64), parameter :: FTIMER_OPENMP_HASH_MODULUS = 2147483629_int64
+   integer(int64), parameter :: FTIMER_OPENMP_HASH_MULTIPLIER = 131_int64
+   integer(int64), parameter :: FTIMER_OPENMP_HASH_MIX_MULTIPLIER = 1597334677_int64
    character(len=*), parameter :: FTIMER_OPENMP_CSV_FORMAT_VERSION = '1'
    character(len=*), parameter :: FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION = '1'
    character(len=*), parameter :: FTIMER_MPI_OPENMP_UNION_CSV_FORMAT_VERSION = '1'
@@ -66,6 +74,10 @@ module ftimer_openmp
       integer :: id = 0
    end type ftimer_openmp_catalog_entry_t
 
+   type :: ftimer_openmp_context_index_t
+      integer, allocatable :: slots(:)
+   end type ftimer_openmp_context_index_t
+
    type :: ftimer_openmp_init_keyword_guard_t
    end type ftimer_openmp_init_keyword_guard_t
 
@@ -74,6 +86,9 @@ module ftimer_openmp
       logical :: participated = .false.
       type(ftimer_call_stack_t) :: call_stack
       type(ftimer_segment_t), allocatable :: segments(:)
+      type(ftimer_openmp_context_index_t), allocatable :: context_indices(:)
+      integer :: observed_epoch = 0
+      integer :: observed_epoch_team_size = 0
    end type ftimer_openmp_lane_t
 
    type :: ftimer_openmp_summary_entry_t
@@ -296,6 +311,7 @@ module ftimer_openmp
       logical :: initialized = .false.
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_catalog_entry_t), allocatable :: catalog(:)
+      integer, allocatable :: catalog_name_slots(:)
       integer, allocatable :: id_to_catalog_idx(:)
       integer :: id_index_base = 0
       type(ftimer_openmp_lane_t), allocatable :: lanes(:)
@@ -601,6 +617,9 @@ contains
       self%num_timers = self%num_timers + 1
       self%catalog(self%num_timers)%name = name(1:trimmed_len)
       self%catalog(self%num_timers)%id = id
+      call ensure_catalog_name_index(self, self%num_timers)
+      call insert_catalog_name_slot(self%catalog_name_slots, self%catalog, &
+                                    self%num_timers, self%catalog(self%num_timers)%name)
       call ensure_id_index_capacity(self, id)
       self%id_to_catalog_idx(id - self%id_index_base + 1) = self%num_timers
 
@@ -5903,6 +5922,7 @@ contains
       self%initialized = .false.
       self%config = ftimer_openmp_config_t()
       if (allocated(self%catalog)) deallocate (self%catalog)
+      if (allocated(self%catalog_name_slots)) deallocate (self%catalog_name_slots)
       if (allocated(self%id_to_catalog_idx)) deallocate (self%id_to_catalog_idx)
       self%id_index_base = 0
       if (allocated(self%lanes)) deallocate (self%lanes)
@@ -5954,6 +5974,8 @@ contains
       do i = 1, size(self%lanes)
          self%lanes(i)%lane_id = i - 1
          self%lanes(i)%participated = .false.
+         self%lanes(i)%observed_epoch = 0
+         self%lanes(i)%observed_epoch_team_size = 0
       end do
    end subroutine allocate_lanes
 
@@ -6013,7 +6035,7 @@ contains
       end if
 
       epoch = self%current_epoch
-      call note_current_epoch_team_size(self, epoch, worker_lane_count)
+      call note_current_epoch_team_size(self, lane_idx, epoch, worker_lane_count)
       status = FTIMER_SUCCESS
    end function resolve_timing_lane
 
@@ -6073,17 +6095,23 @@ contains
       end if
    end subroutine ensure_epoch_capacity
 
-   subroutine note_current_epoch_team_size(self, epoch, worker_lane_count)
+   subroutine note_current_epoch_team_size(self, lane_idx, epoch, worker_lane_count)
       class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in) :: lane_idx
       integer, intent(in) :: epoch
       integer, intent(out) :: worker_lane_count
       integer :: team_size
 
       worker_lane_count = 0
       if (epoch <= 0) return
+      if (.not. allocated(self%lanes)) return
+      if ((lane_idx < 1) .or. (lane_idx > size(self%lanes))) return
       team_size = current_team_size()
       if (team_size <= 0) return
       worker_lane_count = team_size
+
+      if ((self%lanes(lane_idx)%observed_epoch == epoch) .and. &
+          (self%lanes(lane_idx)%observed_epoch_team_size >= team_size)) return
 
 #ifdef FTIMER_USE_OPENMP
 !$omp critical(ftimer_openmp_epoch_team_size)
@@ -6093,6 +6121,9 @@ contains
 #ifdef FTIMER_USE_OPENMP
 !$omp end critical(ftimer_openmp_epoch_team_size)
 #endif
+
+      self%lanes(lane_idx)%observed_epoch = epoch
+      self%lanes(lane_idx)%observed_epoch_team_size = max(self%lanes(lane_idx)%observed_epoch_team_size, team_size)
    end subroutine note_current_epoch_team_size
 
    real(wp) function openmp_clock(self) result(t)
@@ -6119,7 +6150,7 @@ contains
       call ensure_lane_segment_capacity(self%lanes(lane_idx), catalog_idx)
       call ensure_lane_timer_metadata(self%lanes(lane_idx), catalog_idx, self%catalog(catalog_idx)%name)
 
-      ctx = self%lanes(lane_idx)%segments(catalog_idx)%contexts%add(self%lanes(lane_idx)%call_stack)
+      ctx = find_or_create_lane_context(self%lanes(lane_idx), catalog_idx, self%lanes(lane_idx)%call_stack)
       call ensure_context_storage(self%lanes(lane_idx)%segments(catalog_idx), ctx)
       call note_context_epoch(self%lanes(lane_idx)%segments(catalog_idx), ctx, epoch, worker_lane_count)
 
@@ -6169,7 +6200,7 @@ contains
          error stop "ftimer_openmp internal lane stack pop mismatch"
       end if
 
-      ctx = self%lanes(lane_idx)%segments(catalog_idx)%contexts%find(self%lanes(lane_idx)%call_stack)
+      ctx = find_lane_context(self%lanes(lane_idx), catalog_idx, self%lanes(lane_idx)%call_stack)
       if (ctx <= 0) error stop "ftimer_openmp internal stop_id missing lane context"
 
       self%lanes(lane_idx)%segments(catalog_idx)%time(ctx) = &
@@ -6183,6 +6214,7 @@ contains
    subroutine ensure_lane_segment_capacity(lane, required_size)
       type(ftimer_openmp_lane_t), intent(inout) :: lane
       integer, intent(in) :: required_size
+      type(ftimer_openmp_context_index_t), allocatable :: old_context_indices(:)
       type(ftimer_segment_t), allocatable :: old_segments(:)
       integer :: new_size
 
@@ -6191,11 +6223,17 @@ contains
       if (allocated(lane%segments)) then
          if (size(lane%segments) >= required_size) return
          call move_alloc(lane%segments, old_segments)
+         if (allocated(lane%context_indices)) call move_alloc(lane%context_indices, old_context_indices)
          new_size = max(required_size, 2*size(old_segments))
          allocate (lane%segments(new_size))
+         allocate (lane%context_indices(new_size))
          if (size(old_segments) > 0) lane%segments(1:size(old_segments)) = old_segments
+         if (allocated(old_context_indices)) then
+            if (size(old_context_indices) > 0) lane%context_indices(1:size(old_context_indices)) = old_context_indices
+         end if
       else
          allocate (lane%segments(required_size))
+         allocate (lane%context_indices(required_size))
       end if
    end subroutine ensure_lane_segment_capacity
 
@@ -6208,6 +6246,167 @@ contains
          lane%segments(catalog_idx)%name = name
       end if
    end subroutine ensure_lane_timer_metadata
+
+   subroutine ensure_lane_context_index(lane, catalog_idx, required_count)
+      type(ftimer_openmp_lane_t), intent(inout) :: lane
+      integer, intent(in) :: catalog_idx
+      integer, intent(in) :: required_count
+      integer, allocatable :: new_slots(:)
+      integer :: current_capacity
+      integer :: i
+      integer :: new_capacity
+
+      if (required_count <= 0) return
+      if (.not. allocated(lane%segments)) return
+      if (.not. allocated(lane%context_indices)) return
+      if ((catalog_idx < 1) .or. (catalog_idx > size(lane%segments))) return
+      if (catalog_idx > size(lane%context_indices)) return
+
+      current_capacity = 0
+      if (allocated(lane%context_indices(catalog_idx)%slots)) then
+         current_capacity = size(lane%context_indices(catalog_idx)%slots)
+      end if
+
+      if (current_capacity > 0) then
+         if (required_count*FTIMER_OPENMP_INDEX_LOAD_DENOMINATOR <= &
+             FTIMER_OPENMP_INDEX_LOAD_NUMERATOR*current_capacity) then
+            return
+         end if
+         new_capacity = current_capacity
+      else
+         new_capacity = FTIMER_OPENMP_CONTEXT_INDEX_INITIAL_CAPACITY
+      end if
+
+      do while (required_count*FTIMER_OPENMP_INDEX_LOAD_DENOMINATOR > &
+                FTIMER_OPENMP_INDEX_LOAD_NUMERATOR*new_capacity)
+         new_capacity = 2*new_capacity
+      end do
+
+      allocate (new_slots(new_capacity))
+      new_slots = 0
+      do i = 1, lane%segments(catalog_idx)%contexts%count
+         call insert_lane_context_slot(lane%segments(catalog_idx), new_slots, &
+                                       lane%segments(catalog_idx)%contexts%stacks(i), i)
+      end do
+
+      call move_alloc(new_slots, lane%context_indices(catalog_idx)%slots)
+   end subroutine ensure_lane_context_index
+
+   subroutine insert_lane_context_slot(segment, slots, stack, ctx)
+      type(ftimer_segment_t), intent(in) :: segment
+      integer, intent(inout) :: slots(:)
+      type(ftimer_call_stack_t), intent(in) :: stack
+      integer, intent(in) :: ctx
+      integer :: candidate_ctx
+      integer :: slot
+      integer :: start_slot
+
+      if (size(slots) <= 0) error stop "ftimer_openmp internal context index has zero capacity"
+
+      slot = openmp_hash_context_slot(stack, size(slots))
+      start_slot = slot
+      do
+         candidate_ctx = slots(slot)
+         if (candidate_ctx == 0) then
+            slots(slot) = ctx
+            return
+         end if
+
+         if (candidate_ctx == ctx) return
+         if ((candidate_ctx >= 1) .and. (candidate_ctx <= segment%contexts%count)) then
+            if (segment%contexts%stacks(candidate_ctx)%equals(stack)) return
+         end if
+
+         slot = slot + 1
+         if (slot > size(slots)) slot = 1
+         if (slot == start_slot) exit
+      end do
+
+      error stop "ftimer_openmp internal context index overflow"
+   end subroutine insert_lane_context_slot
+
+   integer function append_lane_context(segment, stack) result(ctx)
+      type(ftimer_segment_t), intent(inout) :: segment
+      type(ftimer_call_stack_t), intent(in) :: stack
+      type(ftimer_call_stack_t), allocatable :: new_stacks(:)
+      integer :: new_capacity
+
+      if (.not. allocated(segment%contexts%stacks)) then
+         allocate (segment%contexts%stacks(FTIMER_OPENMP_CONTEXT_LIST_INITIAL_CAPACITY))
+      else if (segment%contexts%count >= size(segment%contexts%stacks)) then
+         new_capacity = max(FTIMER_OPENMP_CONTEXT_LIST_INITIAL_CAPACITY, 2*size(segment%contexts%stacks))
+         allocate (new_stacks(new_capacity))
+         if (segment%contexts%count > 0) then
+            new_stacks(1:segment%contexts%count) = segment%contexts%stacks(1:segment%contexts%count)
+         end if
+         call move_alloc(new_stacks, segment%contexts%stacks)
+      end if
+
+      segment%contexts%count = segment%contexts%count + 1
+      call segment%contexts%stacks(segment%contexts%count)%copy(stack)
+      ctx = segment%contexts%count
+   end function append_lane_context
+
+   integer function find_lane_context(lane, catalog_idx, stack) result(ctx)
+      type(ftimer_openmp_lane_t), intent(inout) :: lane
+      integer, intent(in) :: catalog_idx
+      type(ftimer_call_stack_t), intent(in) :: stack
+      integer :: candidate_ctx
+      integer :: slot
+      integer :: start_slot
+
+      ctx = 0
+      if (.not. allocated(lane%segments)) return
+      if ((catalog_idx < 1) .or. (catalog_idx > size(lane%segments))) return
+      if (lane%segments(catalog_idx)%contexts%count <= 0) return
+
+      if (allocated(lane%context_indices)) then
+         if ((catalog_idx >= 1) .and. (catalog_idx <= size(lane%context_indices))) then
+            if (allocated(lane%context_indices(catalog_idx)%slots)) then
+               slot = openmp_hash_context_slot(stack, size(lane%context_indices(catalog_idx)%slots))
+               start_slot = slot
+               do
+                  candidate_ctx = lane%context_indices(catalog_idx)%slots(slot)
+                  if (candidate_ctx == 0) exit
+                  if ((candidate_ctx >= 1) .and. &
+                      (candidate_ctx <= lane%segments(catalog_idx)%contexts%count)) then
+                     if (lane%segments(catalog_idx)%contexts%stacks(candidate_ctx)%equals(stack)) then
+                        ctx = candidate_ctx
+                        return
+                     end if
+                  end if
+
+                  slot = slot + 1
+                  if (slot > size(lane%context_indices(catalog_idx)%slots)) slot = 1
+                  if (slot == start_slot) exit
+               end do
+            end if
+         end if
+      end if
+
+      ctx = lane%segments(catalog_idx)%contexts%find(stack)
+      if (ctx > 0) then
+         call ensure_lane_context_index(lane, catalog_idx, lane%segments(catalog_idx)%contexts%count)
+         if (allocated(lane%context_indices(catalog_idx)%slots)) then
+            call insert_lane_context_slot(lane%segments(catalog_idx), &
+                                          lane%context_indices(catalog_idx)%slots, stack, ctx)
+         end if
+      end if
+   end function find_lane_context
+
+   integer function find_or_create_lane_context(lane, catalog_idx, stack) result(ctx)
+      type(ftimer_openmp_lane_t), intent(inout) :: lane
+      integer, intent(in) :: catalog_idx
+      type(ftimer_call_stack_t), intent(in) :: stack
+
+      ctx = find_lane_context(lane, catalog_idx, stack)
+      if (ctx > 0) return
+
+      call ensure_lane_context_index(lane, catalog_idx, lane%segments(catalog_idx)%contexts%count + 1)
+      ctx = append_lane_context(lane%segments(catalog_idx), stack)
+      call insert_lane_context_slot(lane%segments(catalog_idx), &
+                                    lane%context_indices(catalog_idx)%slots, stack, ctx)
+   end function find_or_create_lane_context
 
    subroutine ensure_context_storage(segment, required_size)
       type(ftimer_segment_t), intent(inout) :: segment
@@ -6398,6 +6597,78 @@ contains
       end if
    end subroutine ensure_catalog_capacity
 
+   subroutine ensure_catalog_name_index(self, required_count)
+      class(ftimer_openmp_t), intent(inout) :: self
+      integer, intent(in) :: required_count
+      integer, allocatable :: new_slots(:)
+      integer :: current_capacity
+      integer :: i
+      integer :: new_capacity
+
+      if (required_count <= 0) return
+
+      current_capacity = 0
+      if (allocated(self%catalog_name_slots)) current_capacity = size(self%catalog_name_slots)
+
+      if (current_capacity > 0) then
+         if (required_count*FTIMER_OPENMP_INDEX_LOAD_DENOMINATOR <= &
+             FTIMER_OPENMP_INDEX_LOAD_NUMERATOR*current_capacity) then
+            return
+         end if
+         new_capacity = current_capacity
+      else
+         new_capacity = FTIMER_OPENMP_NAME_INDEX_INITIAL_CAPACITY
+      end if
+
+      do while (required_count*FTIMER_OPENMP_INDEX_LOAD_DENOMINATOR > &
+                FTIMER_OPENMP_INDEX_LOAD_NUMERATOR*new_capacity)
+         new_capacity = 2*new_capacity
+      end do
+
+      allocate (new_slots(new_capacity))
+      new_slots = 0
+      do i = 1, self%num_timers
+         call insert_catalog_name_slot(new_slots, self%catalog, i, self%catalog(i)%name)
+      end do
+
+      call move_alloc(new_slots, self%catalog_name_slots)
+   end subroutine ensure_catalog_name_index
+
+   subroutine insert_catalog_name_slot(slots, catalog, catalog_idx, name)
+      integer, intent(inout) :: slots(:)
+      type(ftimer_openmp_catalog_entry_t), intent(in) :: catalog(:)
+      integer, intent(in) :: catalog_idx
+      character(len=*), intent(in) :: name
+      integer :: candidate_idx
+      integer :: slot
+      integer :: start_slot
+
+      if (size(slots) <= 0) error stop "ftimer_openmp internal catalog name index has zero capacity"
+
+      slot = openmp_hash_name_slot(name, size(slots))
+      start_slot = slot
+      do
+         candidate_idx = slots(slot)
+         if (candidate_idx == 0) then
+            slots(slot) = catalog_idx
+            return
+         end if
+
+         if (candidate_idx == catalog_idx) return
+         if ((candidate_idx >= 1) .and. (candidate_idx <= size(catalog))) then
+            if (allocated(catalog(candidate_idx)%name)) then
+               if (catalog(candidate_idx)%name == name) return
+            end if
+         end if
+
+         slot = slot + 1
+         if (slot > size(slots)) slot = 1
+         if (slot == start_slot) exit
+      end do
+
+      error stop "ftimer_openmp internal catalog name index overflow"
+   end subroutine insert_catalog_name_slot
+
    subroutine ensure_id_index_capacity(self, required_id)
       class(ftimer_openmp_t), intent(inout) :: self
       integer, intent(in) :: required_id
@@ -6456,10 +6727,34 @@ contains
    integer function find_timer_index(self, name) result(idx)
       class(ftimer_openmp_t), intent(in) :: self
       character(len=*), intent(in) :: name
+      integer :: candidate_idx
       integer :: i
+      integer :: slot
+      integer :: start_slot
 
       idx = 0
       if (.not. allocated(self%catalog)) return
+
+      if (allocated(self%catalog_name_slots)) then
+         slot = openmp_hash_name_slot(name, size(self%catalog_name_slots))
+         start_slot = slot
+         do
+            candidate_idx = self%catalog_name_slots(slot)
+            if (candidate_idx == 0) return
+            if ((candidate_idx >= 1) .and. (candidate_idx <= self%num_timers)) then
+               if (allocated(self%catalog(candidate_idx)%name)) then
+                  if (self%catalog(candidate_idx)%name == name) then
+                     idx = candidate_idx
+                     return
+                  end if
+               end if
+            end if
+
+            slot = slot + 1
+            if (slot > size(self%catalog_name_slots)) slot = 1
+            if (slot == start_slot) return
+         end do
+      end if
 
       do i = 1, self%num_timers
          if (allocated(self%catalog(i)%name)) then
@@ -6484,6 +6779,50 @@ contains
       idx = self%id_to_catalog_idx(offset)
       if ((idx < 1) .or. (idx > self%num_timers)) idx = 0
    end function find_timer_id_index
+
+   integer function openmp_hash_name_slot(name, table_size) result(slot)
+      character(len=*), intent(in) :: name
+      integer, intent(in) :: table_size
+      integer(int64) :: hash
+      integer :: i
+      integer :: trimmed_len
+
+      if (table_size <= 0) error stop "ftimer_openmp internal hash_name_slot called with empty table"
+
+      hash = 0_int64
+      trimmed_len = len_trim(name)
+      do i = 1, trimmed_len
+         hash = modulo(FTIMER_OPENMP_HASH_MULTIPLIER*hash + int(iachar(name(i:i)), int64), &
+                       FTIMER_OPENMP_HASH_MODULUS)
+      end do
+
+      hash = ieor(hash, shiftr(hash, 15))
+      hash = modulo(FTIMER_OPENMP_HASH_MIX_MULTIPLIER*hash, FTIMER_OPENMP_HASH_MODULUS)
+      hash = ieor(hash, shiftr(hash, 15))
+
+      slot = 1 + int(modulo(hash, int(table_size, int64)))
+   end function openmp_hash_name_slot
+
+   integer function openmp_hash_context_slot(stack, table_size) result(slot)
+      type(ftimer_call_stack_t), intent(in) :: stack
+      integer, intent(in) :: table_size
+      integer(int64) :: hash
+      integer :: i
+
+      if (table_size <= 0) error stop "ftimer_openmp internal hash_context_slot called with empty table"
+
+      hash = int(stack%depth, int64)
+      do i = 1, stack%depth
+         hash = modulo(FTIMER_OPENMP_HASH_MULTIPLIER*hash + int(stack%ids(i), int64), &
+                       FTIMER_OPENMP_HASH_MODULUS)
+      end do
+
+      hash = ieor(hash, shiftr(hash, 15))
+      hash = modulo(FTIMER_OPENMP_HASH_MIX_MULTIPLIER*hash, FTIMER_OPENMP_HASH_MODULUS)
+      hash = ieor(hash, shiftr(hash, 15))
+
+      slot = 1 + int(modulo(hash, int(table_size, int64)))
+   end function openmp_hash_context_slot
 
 #ifdef FTIMER_BUILD_SMOKE_TESTS
    subroutine test_set_clock(self, clock, ierr)

@@ -155,6 +155,7 @@ The current implementation is organized around a few design choices that show up
 - The clock is injectable, which keeps tests deterministic and benchmarking controlled.
 - Name-based timing remains the primary ergonomic story, backed internally by mapped resident-timer lookup, mapped per-segment parent-stack lookup, and capacity-based growth so the default path no longer depends on repeated resident-timer linear scans, steady-state context-list scans, or one-slot-at-a-time array growth.
 - Per-segment context selection remains fully context-sensitive, but it now uses a per-segment parent-stack index in steady state instead of rescanning the known parent-stack variants for that timer on every hit.
+- The explicit `ftimer_openmp_t` worker runtime keeps its hot path id-first and private-indexed: catalog names use a serial-context name index, each lane segment uses a parent-stack context index, and each lane records the current timed-region team size once per epoch so warmed worker `start_id`/`stop_id` does not enter a shared critical section on every call.
 - Callback hooks are lightweight intra-run hooks for normal start/stop events only; internal mismatch repair transitions must stay invisible to callback consumers, and current `main` does not define a stronger profiler-backend identity contract.
 - MPI summary-field reductions are descriptor-validated first, and reduced cross-rank fields are valid only in the documented result shape. The validation itself uses MPI collectives over the init communicator before any timer-data reduction assumes matching canonical entries.
 - Sparse/union MPI summaries are a separate opt-in result shape. They build a descriptor union with participation-aware entry statistics while preserving strict-summary descriptor validation for `mpi_summary()`. The descriptor-union exchange uses exact per-rank descriptor lengths and packed character payloads instead of padding every rank to the communicator-wide maximum descriptor count and path length; local path materialization, all-rank gathered packed descriptor metadata/payloads before deduplication, MPI default-integer count limits, and final union-sized reduction arrays remain the documented scale boundaries.
@@ -331,6 +332,18 @@ deferred rather than claimed. The contract-regression job also verifies the
 configure-time MPI/OpenMP gates and the documented Makefile wrapper behavior.
 Dedicated OpenMP and MPI+OpenMP benchmark CI smoke coverage remains follow-up
 work under issue #285.
+
+Local issue #277 OpenMP benchmark evidence was collected on June 8, 2026 with
+GNU Fortran 15.2.0 and `FTIMER_USE_OPENMP=ON`. The added rows cover worker
+context cardinality, OpenMP catalog registration/lookup, concurrent worker
+lanes, and lazy lane first touch. The 1000-context warmed worker row moved from
+about 961 ns/op to about 175 ns/op, OpenMP catalog lookup at 1000 timers moved
+from about 1283 ns/op to about 43 ns/op, and the 8-lane concurrent worker row
+moved from about 251 ns/op to about 31 ns/op after eliminating the per-call
+epoch-team critical section. The configured-capacity lane first-touch rows
+(`K=3` versus `K=65`, one participating worker lane, 1000 registered timers)
+remained comparable, so the implementation kept lazy per-participating-lane
+segment allocation and did not add a public reserve/warm API.
 
 ## Maintainer Workflow
 

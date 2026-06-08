@@ -163,6 +163,32 @@ serial registration/warm-up. They read the catalog and update only the current
 lane. Any lane-local context creation or array growth is cold first-touch work,
 not the warmed steady-state hot path.
 
+Issue #277 tightened that contract without adding public API. The current
+implementation keeps a private serial-context name index for the shared catalog
+and a private parent-stack context index for each lane segment. A warmed
+`start_id` finds the lane-local parent context through that index, and
+`stop_id` still captures one timestamp, pops the lane stack, and then performs
+the indexed lookup on the parent stack before accumulating elapsed time.
+First-touch context creation appends the new parent stack after an indexed miss
+rather than asking the shared `ftimer_context_list_t` helper to rescan the
+known contexts.
+
+The same issue evaluated multi-lane worker timing and configured lane capacity.
+The implementation now records the current OpenMP team size once per lane and
+timed-region epoch, then reuses that observation on later starts/stops in the
+same epoch. This removed the previous steady-state critical-section pressure
+from worker calls while preserving eligible-lane summary accounting. Local GNU
+Fortran 15.2.0 benchmark runs on June 8, 2026 measured the 1000-context worker
+row at about 961 ns/op before and about 175 ns/op after, 1000-timer catalog
+lookup at about 1283 ns/op before and about 43 ns/op after, and 8 concurrent
+worker lanes at about 251 ns/op before and about 31 ns/op after. The configured
+lane first-touch comparison with one participating worker lane and 1000
+registered timers stayed comparable for `config%max_lanes=3` and `65`, so the
+chosen design keeps lazy per-participating-lane segment allocation and does not
+add a public reserve/warm path. The concurrent-lane evidence points to the old
+shared critical section, not dense lane-record false sharing, as the scaling
+limit addressed here; no lane padding or layout ABI promise was introduced.
+
 Name-based `start` and `stop` may remain convenience calls, but they are not the
 recommended hot path. The first implementation should make catalog mutation
 serial-only: inside a parallel region, name-based calls may perform read-only

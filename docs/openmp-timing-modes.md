@@ -232,6 +232,13 @@ The lifecycle/configuration, timer catalog, timed-region, and worker
 OpenMP summaries, strict MPI+OpenMP summaries, sparse union MPI+OpenMP
 summaries, and report/CSV output.
 
+The worker hot path is optimized for pre-registered ids and warmed contexts.
+Internally, `ftimer_openmp_t` uses private catalog and lane-context indexes plus
+per-lane timed-region team-size observation. Callers do not need a reserve API
+for the current implementation: lane segment storage grows only on lanes that
+participate, and short kernels can still use an untimed warm-up region when they
+want first-touch allocation outside the measured interval.
+
 ## Example Policy
 
 Keep current and future examples separate.
