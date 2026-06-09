@@ -386,38 +386,37 @@ foreach(readme_troubleshooting_needle IN LISTS readme_troubleshooting_needles)
   endif()
 endforeach()
 
-set(readme_audience_needles
-  "First-time user:"
-  "Advanced user:"
-  "Maintainer or release reviewer:"
-  "Coding agent:"
-)
-
-foreach(readme_audience_needle IN LISTS readme_audience_needles)
-  string(FIND "${release_readme_text}" "${readme_audience_needle}" audience_index)
-  if(audience_index EQUAL -1)
-    message(FATAL_ERROR
-      "README.md must keep the explicit audience split for #336: missing '${readme_audience_needle}'."
-    )
+function(extract_markdown_section text header out_var)
+  string(FIND "${text}" "## ${header}" section_start_index)
+  if(section_start_index EQUAL -1)
+    message(FATAL_ERROR "README.md must keep the '## ${header}' section.")
   endif()
-endforeach()
 
-set(readme_source_of_truth_needles
-  "[`docs/semantics.md`](docs/semantics.md)"
-  "[`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md)"
-  "[`docs/csv-schema.md`](docs/csv-schema.md)"
-  "[`docs/installed-api.md`](docs/installed-api.md)"
-  "[`docs/release-evidence.md`](docs/release-evidence.md)"
-  "[`docs/maintainer.md`](docs/maintainer.md)"
-  "[`AGENTS.md`](AGENTS.md)"
-  "[`CLAUDE.md`](CLAUDE.md)"
+  string(SUBSTRING "${text}" "${section_start_index}" -1 section_tail)
+  string(FIND "${section_tail}" "\n## " next_section_index)
+  if(next_section_index EQUAL -1)
+    set(section_text "${section_tail}")
+  else()
+    string(SUBSTRING "${section_tail}" 0 "${next_section_index}" section_text)
+  endif()
+
+  set(${out_var} "${section_text}" PARENT_SCOPE)
+endfunction()
+
+extract_markdown_section("${release_readme_text}" "Where To Go Next" readme_where_to_go_next_text)
+
+set(readme_role_routes
+  "- First-time user: stay in this README for `First Success`, `Quick Start`, and `Install And Use From Another Project`, then see the symptom-oriented [`docs/troubleshooting.md`](docs/troubleshooting.md) guide if first use goes sideways."
+  "- Advanced user: use [Supported Workflows](#supported-workflows) to choose a mode, then jump to [`docs/semantics.md`](docs/semantics.md), [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md), [`docs/csv-schema.md`](docs/csv-schema.md), or [`docs/installed-api.md`](docs/installed-api.md) for the exact contract."
+  "- Maintainer or release reviewer: use [`docs/release-evidence.md`](docs/release-evidence.md), [`docs/release.md`](docs/release.md), and [`docs/maintainer.md`](docs/maintainer.md)."
+  "- Coding agent: use [`AGENTS.md`](AGENTS.md) or [`CLAUDE.md`](CLAUDE.md) for repo workflow and source-of-truth rules, then read [`docs/semantics.md`](docs/semantics.md) and [`docs/maintainer.md`](docs/maintainer.md) as needed."
 )
 
-foreach(readme_source_of_truth_needle IN LISTS readme_source_of_truth_needles)
-  string(FIND "${release_readme_text}" "${readme_source_of_truth_needle}" source_of_truth_index)
-  if(source_of_truth_index EQUAL -1)
+foreach(readme_role_route IN LISTS readme_role_routes)
+  string(FIND "${readme_where_to_go_next_text}" "${readme_role_route}" role_route_index)
+  if(role_route_index EQUAL -1)
     message(FATAL_ERROR
-      "README.md must route detailed contracts to focused docs after #336: missing '${readme_source_of_truth_needle}'."
+      "README.md must keep the explicit #336 audience routing in '## Where To Go Next': missing '${readme_role_route}'."
     )
   endif()
 endforeach()
