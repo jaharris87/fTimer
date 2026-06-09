@@ -174,6 +174,7 @@ function(ftimer_verify_installed_artifacts)
     ftimer.mod
     ftimer_clock.mod
     ftimer_core.mod
+    ftimer_csv_validation.mod
     ftimer_mpi.mod
     ftimer_openmp.mod
     ftimer_summary.mod
