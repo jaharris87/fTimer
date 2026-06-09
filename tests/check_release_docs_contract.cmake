@@ -5,6 +5,7 @@ set(required_paths
   CLAUDE.md
   README.md
   docs/design.md
+  docs/fault-model-traceability.md
   docs/installed-api.md
   docs/implementation-history.md
   docs/maintainer.md
@@ -54,6 +55,106 @@ foreach(markdown_path IN LISTS required_paths)
       string(REGEX REPLACE "^[^[]*\\[[^]]*\\]\\([^)]+\\)" "" remaining_line "${remaining_line}")
     endwhile()
   endforeach()
+endforeach()
+
+file(READ "${REPO_ROOT}/docs/semantics.md" semantics_text)
+string(FIND "${semantics_text}"
+  "[`docs/fault-model-traceability.md`](fault-model-traceability.md)"
+  fault_model_semantics_link_index)
+if(fault_model_semantics_link_index EQUAL -1)
+  message(FATAL_ERROR
+    "docs/semantics.md must Markdown-link to docs/fault-model-traceability.md."
+  )
+endif()
+
+file(READ "${REPO_ROOT}/docs/fault-model-traceability.md" fault_model_text)
+file(STRINGS "${REPO_ROOT}/docs/fault-model-traceability.md" fault_model_lines)
+
+function(require_fault_model_contains needle)
+  string(FIND "${fault_model_text}" "${needle}" fault_model_needle_index)
+  if(fault_model_needle_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/fault-model-traceability.md must retain the #309 traceability checkpoint: ${needle}"
+    )
+  endif()
+endfunction()
+
+set(fault_model_required_rows
+  "Strict nesting and repair"
+  "Callback suppression during repair"
+  "Active local snapshots versus stopped-run reductions"
+  "Nonmonotonic custom or backend clocks"
+  "MPI descriptor mismatch"
+  "MPI communicator lifetime and agreement"
+  "Sparse participation semantics"
+  "Legacy OpenMP worker no-op compatibility"
+  "Strict versus sparse hybrid lane/rank mismatches"
+  "Scoped-guard ownership versus public ids"
+  "Worker diagnostic draining paths"
+)
+
+set(fault_model_required_needles
+  "#317 owns mixed OpenMP epoch / eligible-lane interpretation evidence"
+  "#314 and #316"
+)
+
+foreach(fault_model_required_needle IN LISTS fault_model_required_needles)
+  require_fault_model_contains("${fault_model_required_needle}")
+endforeach()
+
+set(fault_model_matrix_rows)
+foreach(fault_model_line IN LISTS fault_model_lines)
+  if(NOT fault_model_line MATCHES "^\\|")
+    continue()
+  endif()
+  if(fault_model_line MATCHES "^\\|[ \t]*---")
+    continue()
+  endif()
+  if(fault_model_line MATCHES "^\\|[ \t]*Fault category[ \t]*\\|")
+    continue()
+  endif()
+
+  if(NOT fault_model_line MATCHES "^\\|([^|]*)\\|([^|]*)\\|([^|]*)\\|([^|]*)\\|([^|]*)\\|([^|]*)\\|[ \t]*$")
+    message(FATAL_ERROR
+      "docs/fault-model-traceability.md matrix rows must have exactly six columns: ${fault_model_line}"
+    )
+  endif()
+
+  set(fault_model_category_cell "${CMAKE_MATCH_1}")
+  set(fault_model_evidence_cell "${CMAKE_MATCH_5}")
+  string(STRIP "${fault_model_category_cell}" fault_model_category_cell)
+  string(STRIP "${fault_model_evidence_cell}" fault_model_evidence_cell)
+  list(APPEND fault_model_matrix_rows "${fault_model_category_cell}")
+
+  set(fault_model_evidence_remaining "${fault_model_evidence_cell}")
+  while(fault_model_evidence_remaining MATCHES "`([^`]+)`")
+    set(fault_model_evidence_token "${CMAKE_MATCH_1}")
+    if(fault_model_evidence_token MATCHES "^(AGENTS|CLAUDE|README|CONTRIBUTING|SECURITY|SUPPORT|Makefile)(\\.md)?$|^(docs|src|tests|examples|bench)/")
+      get_filename_component(fault_model_evidence_abs
+        "${REPO_ROOT}/${fault_model_evidence_token}" ABSOLUTE)
+      if(NOT EXISTS "${fault_model_evidence_abs}")
+        message(FATAL_ERROR
+          "docs/fault-model-traceability.md cites missing evidence path: ${fault_model_evidence_token}"
+        )
+      endif()
+    endif()
+    string(REGEX REPLACE "^[^`]*`[^`]+`" "" fault_model_evidence_remaining
+      "${fault_model_evidence_remaining}")
+  endwhile()
+endforeach()
+
+foreach(fault_model_required_row IN LISTS fault_model_required_rows)
+  set(fault_model_required_row_count 0)
+  foreach(fault_model_matrix_row IN LISTS fault_model_matrix_rows)
+    if(fault_model_matrix_row STREQUAL fault_model_required_row)
+      math(EXPR fault_model_required_row_count "${fault_model_required_row_count} + 1")
+    endif()
+  endforeach()
+  if(NOT fault_model_required_row_count EQUAL 1)
+    message(FATAL_ERROR
+      "docs/fault-model-traceability.md must contain exactly one matrix row named '${fault_model_required_row}', found ${fault_model_required_row_count}."
+    )
+  endif()
 endforeach()
 
 file(READ "${REPO_ROOT}/src/ftimer_types.F90" ftimer_types_text)
