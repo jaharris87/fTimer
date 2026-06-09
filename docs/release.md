@@ -43,12 +43,13 @@ Before starting a release candidate:
 - Update the project version in `CMakeLists.txt`.
 - Confirm the pre-1.0 CMake package compatibility rule is still accurate in
   `README.md` and `docs/installed-api.md`.
-- If a stable source-level symbol, installed module artifact, CSV schema field,
-  or package compatibility boundary changes, update the relevant docs and
-  smoke/contract checks in the same release-prep PR. Use the public-surface
-  change map in [`docs/installed-api.md`](installed-api.md) to keep source,
-  docs, examples, installed consumers, release evidence, and CI proof paths
-  aligned without applying that checklist to private implementation-only edits.
+- If a stable source-level symbol, installed module artifact, text report field,
+  CSV schema field, or package compatibility boundary changes, update the
+  relevant docs and smoke/contract checks in the same release-prep PR. Use the
+  public-surface change map in [`docs/installed-api.md`](installed-api.md) to
+  keep source, docs, examples, installed consumers, release evidence, and CI
+  proof paths aligned without applying that checklist to private
+  implementation-only edits.
 - Treat installed Fortran `.mod` artifacts as compiler/toolchain/mode-specific
   outputs. Do not imply that one installed prefix can be reused across
   different compilers, MPI wrappers, or feature modes unless release validation
