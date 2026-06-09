@@ -463,6 +463,22 @@ foreach(readme_project_only_target IN LISTS readme_project_only_targets)
   endif()
 endforeach()
 
+set(readme_agent_only_targets
+  "AGENTS.md"
+  "CLAUDE.md"
+  ".github/prompts/"
+)
+
+foreach(readme_agent_only_target IN LISTS readme_agent_only_targets)
+  string(FIND "${readme_where_user_text}" "${readme_agent_only_target}"
+    agent_only_in_where_user_index)
+  if(NOT agent_only_in_where_user_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must not put '${readme_agent_only_target}' in the user-facing part of '## Where To Go Next'."
+    )
+  endif()
+endforeach()
+
 set(readme_more_detail_labels
   "User-facing references:"
   "Contributor, maintainer, and release references:"
@@ -560,12 +576,6 @@ foreach(readme_more_detail_agent_needle IN LISTS readme_more_detail_agent_needle
     )
   endif()
 endforeach()
-
-set(readme_agent_only_targets
-  "AGENTS.md"
-  "CLAUDE.md"
-  ".github/prompts/"
-)
 
 foreach(readme_agent_only_target IN LISTS readme_agent_only_targets)
   string(FIND "${readme_more_detail_user_text}" "${readme_agent_only_target}"
