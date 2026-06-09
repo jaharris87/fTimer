@@ -603,9 +603,14 @@ contains
       type(ftimer_openmp_t) :: timer
       type(ftimer_metadata_t) :: metadata(1)
       character(len=:), allocatable :: bad_text
+      character(len=:), allocatable :: bad_record_text
+      character(len=:), allocatable :: bare_cr_text
       character(len=:), allocatable :: csv_text
       character(len=:), allocatable :: header
+      character(len=:), allocatable :: malformed_quote_text
       character(len=:), allocatable :: metadata_line
+      character(len=:), allocatable :: truncated_text
+      character(len=:), allocatable :: wrong_header_text
       integer :: ierr
       integer :: record_type_col
       integer :: value_col
@@ -663,41 +668,46 @@ contains
       call expect_equal_text(csv_field_value(metadata_line, record_type_col), 'metadata', 199)
       call expect_equal_text(csv_field_value(metadata_line, value_col), 'openmp, "quoted"', 210)
 
-      bad_text = header//new_line('a')//'"1","openmp","summary"'//new_line('a')
-      call write_text_file(bad_csv_path, bad_text)
+      bad_record_text = header//new_line('a')//'"1","openmp","summary"'//new_line('a')
+      call write_text_file(bad_csv_path, bad_record_text)
       call timer%write_openmp_summary_csv(bad_csv_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 188)
-      call expect_equal_text(read_file_text(bad_csv_path), bad_text, 189)
+      call expect_equal_text(read_file_text(bad_csv_path), bad_record_text, 189)
 
-      bad_text = header//new_line('a')//'"1","openmp","summary",'
-      call write_text_file(truncated_csv_path, bad_text)
+      truncated_text = header//new_line('a')//'"1","openmp","summary",'
+      call write_text_file(truncated_csv_path, truncated_text)
       call timer%write_openmp_summary_csv(truncated_csv_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 190)
-      call expect_equal_text(read_file_text(truncated_csv_path), bad_text, 191)
+      call expect_equal_text(read_file_text(truncated_csv_path), truncated_text, 191)
 
-      bad_text = header//new_line('a')//'1"bad'//new_line('a')
-      call write_text_file(malformed_quote_path, bad_text)
+      malformed_quote_text = header//new_line('a')//'1"bad'//new_line('a')
+      call write_text_file(malformed_quote_path, malformed_quote_text)
       call timer%write_openmp_summary_csv(malformed_quote_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 211)
-      call expect_equal_text(read_file_text(malformed_quote_path), bad_text, 212)
+      call expect_equal_text(read_file_text(malformed_quote_path), malformed_quote_text, 212)
 
-      bad_text = header//new_line('a')//'"1","openmp","summary"'//achar(13)//'x'//new_line('a')
-      call write_text_file(bare_cr_path, bad_text)
+      bare_cr_text = header//new_line('a')//'"1","openmp","summary"'//achar(13)//'x'//new_line('a')
+      call write_text_file(bare_cr_path, bare_cr_text)
       call timer%write_openmp_summary_csv(bare_cr_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 213)
-      call expect_equal_text(read_file_text(bare_cr_path), bad_text, 214)
+      call expect_equal_text(read_file_text(bare_cr_path), bare_cr_text, 214)
 
-      bad_text = 'format_version,summary_kind,record_type'//new_line('a')
-      call write_text_file(wrong_header_csv_path, bad_text)
+      wrong_header_text = 'format_version,summary_kind,record_type'//new_line('a')
+      call write_text_file(wrong_header_csv_path, wrong_header_text)
       call timer%write_openmp_summary_csv(wrong_header_csv_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 193)
-      call expect_equal_text(read_file_text(wrong_header_csv_path), bad_text, 194)
+      call expect_equal_text(read_file_text(wrong_header_csv_path), wrong_header_text, 194)
 
       call timer%write_openmp_summary_csv(bad_csv_path, append=.true.)
       call timer%write_openmp_summary_csv(truncated_csv_path, append=.true.)
       call timer%write_openmp_summary_csv(malformed_quote_path, append=.true.)
       call timer%write_openmp_summary_csv(bare_cr_path, append=.true.)
       call timer%write_openmp_summary_csv(wrong_header_csv_path, append=.true.)
+      call expect_equal_text(read_file_text(bad_csv_path), bad_record_text, 220)
+      call expect_equal_text(read_file_text(truncated_csv_path), truncated_text, 221)
+      call expect_equal_text(read_file_text(malformed_quote_path), malformed_quote_text, 222)
+      call expect_equal_text(read_file_text(bare_cr_path), bare_cr_text, 223)
+      call expect_equal_text(read_file_text(wrong_header_csv_path), wrong_header_text, 224)
 
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 195)

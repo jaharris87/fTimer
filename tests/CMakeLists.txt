@@ -12,6 +12,14 @@ if(FTIMER_BUILD_SMOKE_TESTS)
   target_link_libraries(ftimer_phase0_smoke PRIVATE ftimer)
   add_test(NAME ftimer_phase0_smoke COMMAND ftimer_phase0_smoke)
 
+  add_executable(ftimer_csv_no_ierr_diagnostics test_csv_no_ierr_diagnostics.F90)
+  target_link_libraries(ftimer_csv_no_ierr_diagnostics PRIVATE ftimer)
+  add_test(NAME ftimer_csv_no_ierr_diagnostics
+    COMMAND ${CMAKE_COMMAND}
+      -DTEST_EXECUTABLE=$<TARGET_FILE:ftimer_csv_no_ierr_diagnostics>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/check_csv_no_ierr_diagnostics.cmake
+  )
+
   add_executable(ftimer_openmp_api_smoke test_openmp_api_smoke.F90)
   target_link_libraries(ftimer_openmp_api_smoke PRIVATE ftimer_smoke_test)
   add_test(NAME ftimer_openmp_api_smoke COMMAND ftimer_openmp_api_smoke)

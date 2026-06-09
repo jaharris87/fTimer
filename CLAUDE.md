@@ -89,6 +89,7 @@ Use a separate build directory for each mode/compiler combination. Reconfiguring
 ftimer.F90  (procedural wrappers + default global instance)
   └─► ftimer_core.F90  (ftimer_t OOP class: init, start, stop, reset, finalize)
         ├─► ftimer_types.F90   (derived types, kinds, constants, enums, summary types, callback interface)
+        ├─► ftimer_csv_validation.F90 (shared CSV append-target validation)
         ├─► ftimer_clock.F90   (injectable wall-clock: MPI_Wtime vs system_clock)
         ├─► ftimer_summary.F90 (structured summary building + text formatting)
         ├─► ftimer_mpi.F90    (strict MPI reductions + sparse/union descriptor reductions)
@@ -99,13 +100,14 @@ ftimer_openmp.F90 (explicit opt-in OpenMP thread-lane runtime + local summaries/
 ### Module Dependency Order (build order)
 
 1. `ftimer_types` — no dependencies (all types, enums, error codes, abstract interfaces)
-2. `ftimer_clock` — depends on `ftimer_types`
-3. `ftimer_core` — depends on `ftimer_types`, `ftimer_clock`
-4. `ftimer_summary` — depends on `ftimer_types`
-5. `ftimer_mpi` — depends on `ftimer_types`, `ftimer_core`, `ftimer_summary`
-6. `ftimer_core_summary_bindings` — submodule of `ftimer_core`; depends on `ftimer_clock`, `ftimer_summary`, and `ftimer_mpi`
-7. `ftimer_openmp` — depends on `ftimer_types`, `ftimer_clock`; in MPI/OpenMP builds it also imports `mpi_f08` / `omp_lib` behind feature guards
-8. `ftimer` — depends on all above except `ftimer_openmp` (procedural wrappers)
+2. `ftimer_csv_validation` — depends on `ftimer_types`
+3. `ftimer_clock` — depends on `ftimer_types`
+4. `ftimer_core` — depends on `ftimer_types`, `ftimer_clock`
+5. `ftimer_summary` — depends on `ftimer_types`
+6. `ftimer_mpi` — depends on `ftimer_types`, `ftimer_core`, `ftimer_summary`
+7. `ftimer_core_summary_bindings` — submodule of `ftimer_core`; depends on `ftimer_clock`, `ftimer_csv_validation`, `ftimer_summary`, and `ftimer_mpi`
+8. `ftimer_openmp` — depends on `ftimer_types`, `ftimer_clock`, `ftimer_csv_validation`; in MPI/OpenMP builds it also imports `mpi_f08` / `omp_lib` behind feature guards
+9. `ftimer` — depends on all above except `ftimer_openmp` (procedural wrappers)
 
 ### Key Design Decisions
 
