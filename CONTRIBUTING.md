@@ -72,6 +72,10 @@ not need those files for ordinary build, test, or PR navigation.
 - Prefer correctness and explicit error handling over silent fallbacks.
 - Preserve deterministic tests by using the injectable mock clock instead of
   sleeps or wall-clock timing assumptions.
+- Use the short audience guide in
+  [`docs/documentation-audience.md`](docs/documentation-audience.md) when
+  deciding what belongs in public docs, contract references, maintainer
+  workflow docs, release evidence, or agent guidance.
 - Keep public API and installed-package docs aligned with implementation.
 - Keep release-scope docs honest about what current `main` supports and what is
   deferred.

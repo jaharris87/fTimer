@@ -74,6 +74,9 @@ download identity and cache identity together when updating pinned tools.
 
 Use the workflow docs below for workflow-specific operating procedures. Load only the workflow you need.
 
+- [`docs/documentation-audience.md`](documentation-audience.md) — where public
+  docs, contract references, release evidence, maintainer workflow docs, and
+  agent guidance should each carry detail
 - [`docs/workflows/pr-open.md`](workflows/pr-open.md) — opening a PR,
   applying review labels, review prompt library
 - [`docs/workflows/review-monitoring.md`](workflows/review-monitoring.md) —

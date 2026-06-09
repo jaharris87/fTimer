@@ -6,6 +6,7 @@ set(required_paths
   README.md
   docs/design.md
   docs/csv-schema.md
+  docs/documentation-audience.md
   docs/fault-model-traceability.md
   docs/installed-api.md
   docs/implementation-history.md
