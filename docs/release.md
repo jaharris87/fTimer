@@ -15,6 +15,10 @@ Before starting a release candidate:
   issues and ready PRs.
 - Review open `release-blocker`, `release-audit`, `bug`, and `post-release`
   issues for items that should affect the release notes or block the tag.
+- Review the compact claim-evidence ledger in
+  [`docs/release-evidence.md`](release-evidence.md) and update any rows whose
+  CI jobs, tests, examples, caveats, or support status changed since the last
+  release.
 - Keep the release claim within the documented support boundary: serial timing,
   pure-MPI timing, the narrow master-thread-only OpenMP carve-out, the
   `ftimer_openmp` lifecycle/configuration/timer-catalog and id-first
