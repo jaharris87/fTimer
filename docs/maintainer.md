@@ -2,7 +2,15 @@
 
 # Maintainer Guide
 
-This document routes to workflow-specific docs. Shared coding-agent context lives in `CLAUDE.md` / `AGENTS.md`; this file is for maintainer workflow, not implementation guidance.
+This document routes maintainers to workflow-specific docs for issue setup, PR
+opening, review monitoring, findings disposition, and release closeout. It is
+not the first-stop user documentation for building or using fTimer; normal
+users should start with [`README.md`](../README.md), examples, and
+[`docs/troubleshooting.md`](troubleshooting.md).
+
+Shared coding-agent context lives in `CLAUDE.md` / `AGENTS.md`. Those files
+remain available for automation and source-of-truth discipline, but this guide
+keeps the human maintainer workflow separate from agent implementation context.
 
 ## Repository Bootstrap
 

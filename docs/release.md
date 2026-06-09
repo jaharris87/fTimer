@@ -79,13 +79,13 @@ then require GitHub CI to pass before tagging.
 | Diff hygiene | Yes |
 | CI | Yes |
 
-Use the commands from `AGENTS.md` and `README.md` for each build mode. Minimum
-release-prep evidence should include the exact commands run, the local toolchain
-used, and whether the corresponding required CI jobs passed. Include
-`git diff --check` in every release-prep PR. Include the benchmark harness when
-hot-path timing behavior, lookup/cached-id behavior, context growth or
-parent-stack accounting, summary generation, report/CSV formatting, or MPI
-summary/report behavior changed.
+Use the commands from `README.md` and this release checklist for each build
+mode. Minimum release-prep evidence should include the exact commands run, the
+local toolchain used, and whether the corresponding required CI jobs passed.
+Include `git diff --check` in every release-prep PR. Include the benchmark
+harness when hot-path timing behavior, lookup/cached-id behavior, context
+growth or parent-stack accounting, summary generation, report/CSV formatting,
+or MPI summary/report behavior changed.
 
 Benchmark CSVs are review evidence, not a CI pass/fail threshold. Start trend
 review with the rows for flat name-based start/stop, cached-id start/stop,

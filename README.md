@@ -155,12 +155,19 @@ For metadata headers, construct `ftimer_metadata_t` values by assigning `%key` a
 
 ## Where To Go Next
 
-Use the shortest path that matches your role:
+Use the shortest path that matches what you are trying to do. The normal user
+journey does not require the maintainer workflow or coding-agent files.
 
-- First-time user: stay in this README for `First Success`, `Quick Start`, and `Install And Use From Another Project`, then see the symptom-oriented [`docs/troubleshooting.md`](docs/troubleshooting.md) guide if first use goes sideways.
-- Advanced user: use [Supported Workflows](#supported-workflows) to choose a mode, then jump to [`docs/semantics.md`](docs/semantics.md), [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md), [`docs/csv-schema.md`](docs/csv-schema.md), or [`docs/installed-api.md`](docs/installed-api.md) for the exact contract.
-- Maintainer or release reviewer: use [`docs/release-evidence.md`](docs/release-evidence.md), [`docs/release.md`](docs/release.md), and [`docs/maintainer.md`](docs/maintainer.md).
-- Coding agent: use [`AGENTS.md`](AGENTS.md) or [`CLAUDE.md`](CLAUDE.md) for repo workflow and source-of-truth rules, then read [`docs/semantics.md`](docs/semantics.md) and [`docs/maintainer.md`](docs/maintainer.md) as needed.
+For users:
+
+- First-time users: stay in this README for `First Success`, `Quick Start`, and `Install And Use From Another Project`, then use the symptom-oriented [`docs/troubleshooting.md`](docs/troubleshooting.md) guide if first use goes sideways.
+- Advanced users: use [Supported Workflows](#supported-workflows) to choose a mode, then jump to [`docs/semantics.md`](docs/semantics.md), [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md), [`docs/csv-schema.md`](docs/csv-schema.md), or [`docs/installed-api.md`](docs/installed-api.md) for the exact contract.
+
+For project work:
+
+- Contributors and maintainers: start with [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution expectations. Use [`docs/maintainer.md`](docs/maintainer.md) and the routed workflow docs only when you are opening, reviewing, or closing out repository work.
+- Release reviewers: use [`docs/release-evidence.md`](docs/release-evidence.md) for claim evidence and [`docs/release.md`](docs/release.md) for release checklist and artifact policy.
+- Coding agents: use [`AGENTS.md`](AGENTS.md) or [`CLAUDE.md`](CLAUDE.md) for agent-specific repository rules. Those files preserve workflow context for automation, but they are not part of the ordinary user path.
 
 ## Install And Use From Another Project
 
@@ -258,7 +265,7 @@ Support tiers still matter, but the detailed claim ledger lives outside the READ
 - **Experimental/deferred**: package-manager installs, profiler backends, hardware counters, traces, dashboards, and similar ecosystem work.
 - Exact status, evidence, and caveats for each release-facing claim live in [`docs/release-evidence.md`](docs/release-evidence.md). Use that ledger, not this README, when you need release-review wording.
 
-For failure-oriented guidance, see [`docs/troubleshooting.md`](docs/troubleshooting.md). For architecture and validation context, see [`docs/design.md`](docs/design.md). For installed package stability details, see [`docs/installed-api.md`](docs/installed-api.md).
+For failure-oriented guidance, see [`docs/troubleshooting.md`](docs/troubleshooting.md). For installed package stability details, see [`docs/installed-api.md`](docs/installed-api.md).
 
 ## Compile-Out / No-Op Instrumentation Pattern
 
@@ -480,18 +487,27 @@ The harness records trend evidence, not pass/fail thresholds, and GitHub-hosted 
 
 ## More Detail
 
+User-facing references:
+
 - Runtime semantics: [`docs/semantics.md`](docs/semantics.md)
 - Troubleshooting guide: [`docs/troubleshooting.md`](docs/troubleshooting.md)
-- Current architecture reference: [`docs/design.md`](docs/design.md)
 - Installed API stability and public symbol boundary: [`docs/installed-api.md`](docs/installed-api.md)
 - CSV schema dictionary: [`docs/csv-schema.md`](docs/csv-schema.md)
 - OpenMP timing modes and migration guide: [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md)
-- Release claim evidence: [`docs/release-evidence.md`](docs/release-evidence.md)
-- Maintainer workflow: [`docs/maintainer.md`](docs/maintainer.md)
-- Release checklist and artifact policy: [`docs/release.md`](docs/release.md)
-- Coding-agent workflow guide: [`AGENTS.md`](AGENTS.md), [`CLAUDE.md`](CLAUDE.md)
-- Contributor guidance: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Support and security reporting: [`SUPPORT.md`](SUPPORT.md), [`SECURITY.md`](SECURITY.md)
+
+Contributor, maintainer, and release references:
+
+- Contributor guidance: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Current architecture and repository-layout reference: [`docs/design.md`](docs/design.md)
+- Maintainer workflow: [`docs/maintainer.md`](docs/maintainer.md)
+- Release claim evidence: [`docs/release-evidence.md`](docs/release-evidence.md)
+- Release checklist and artifact policy: [`docs/release.md`](docs/release.md)
+
+Coding-agent references:
+
+- Coding-agent workflow guides: [`AGENTS.md`](AGENTS.md), [`CLAUDE.md`](CLAUDE.md)
+- Codex review prompt contracts: [`.github/prompts/README.md`](.github/prompts/README.md), [`.github/prompts/detailed/README.md`](.github/prompts/detailed/README.md)
 
 When current-state sources disagree, use this repository-wide precedence order:
 
