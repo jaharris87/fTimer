@@ -437,6 +437,77 @@ foreach(readme_route_destination_heading IN LISTS readme_route_destination_headi
   endif()
 endforeach()
 
+extract_markdown_section("${release_readme_text}" "First Success" readme_first_success_text)
+extract_markdown_section("${release_readme_text}" "Quick Start" readme_quick_start_text)
+extract_markdown_section("${release_readme_text}" "Install And Use From Another Project"
+  readme_install_text)
+extract_markdown_section("${release_readme_text}" "Supported Workflows"
+  readme_supported_workflows_text)
+
+set(readme_first_success_needles
+  "cmake -B build-smoke"
+  "cmake --build build-smoke --target basic_usage"
+  "./build-smoke/examples/basic_usage"
+  "Recorded timers: 1"
+)
+
+foreach(readme_first_success_needle IN LISTS readme_first_success_needles)
+  string(FIND "${readme_first_success_text}" "${readme_first_success_needle}"
+    first_success_index)
+  if(first_success_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md '## First Success' must keep the first-success guidance required by the #336 audience routing: missing '${readme_first_success_needle}'."
+    )
+  endif()
+endforeach()
+
+set(readme_quick_start_needles
+  "call ftimer_init()"
+  "call ftimer_start(\"work\")"
+  "call ftimer_get_summary(summary)"
+  "call ftimer_print_summary()"
+)
+
+foreach(readme_quick_start_needle IN LISTS readme_quick_start_needles)
+  string(FIND "${readme_quick_start_text}" "${readme_quick_start_needle}" quick_start_index)
+  if(quick_start_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md '## Quick Start' must keep the minimal procedural example required by the #336 audience routing: missing '${readme_quick_start_needle}'."
+    )
+  endif()
+endforeach()
+
+set(readme_install_needles
+  "find_package(fTimer CONFIG REQUIRED)"
+  "CMAKE_PREFIX_PATH"
+)
+
+foreach(readme_install_needle IN LISTS readme_install_needles)
+  string(FIND "${readme_install_text}" "${readme_install_needle}" install_index)
+  if(install_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md '## Install And Use From Another Project' must keep the downstream install guidance required by the #336 audience routing: missing '${readme_install_needle}'."
+    )
+  endif()
+endforeach()
+
+set(readme_supported_workflows_needles
+  "Serial/local timing through `ftimer` or `ftimer_core`"
+  "Strict pure-MPI timing and sparse pure-MPI union timing on the validated `mpi_f08` path"
+  "OpenMP compatibility timing through the existing APIs when one timer brackets a parallel region"
+  "Explicit worker timing through `ftimer_openmp_t`, including strict and sparse MPI+OpenMP report families"
+)
+
+foreach(readme_supported_workflows_needle IN LISTS readme_supported_workflows_needles)
+  string(FIND "${readme_supported_workflows_text}" "${readme_supported_workflows_needle}"
+    supported_workflows_index)
+  if(supported_workflows_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md '## Supported Workflows' must keep the mode summary required by the #336 audience routing: missing '${readme_supported_workflows_needle}'."
+    )
+  endif()
+endforeach()
+
 file(READ "${REPO_ROOT}/docs/troubleshooting.md" troubleshooting_doc_text)
 file(READ "${REPO_ROOT}/tests/public_symbol_allowlist.txt" public_symbol_allowlist_text)
 file(READ "${REPO_ROOT}/CMakeLists.txt" root_cmakelists_text)
