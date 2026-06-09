@@ -479,7 +479,6 @@ set(readme_more_detail_user_needles
   "[`docs/installed-api.md`](docs/installed-api.md)"
   "[`docs/csv-schema.md`](docs/csv-schema.md)"
   "[`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md)"
-  "[`docs/design.md`](docs/design.md)"
   "[`SUPPORT.md`](SUPPORT.md), [`SECURITY.md`](SECURITY.md)"
 )
 
@@ -495,6 +494,7 @@ endforeach()
 
 set(readme_more_detail_project_needles
   "[`CONTRIBUTING.md`](CONTRIBUTING.md)"
+  "[`docs/design.md`](docs/design.md)"
   "[`docs/maintainer.md`](docs/maintainer.md)"
   "[`docs/release-evidence.md`](docs/release-evidence.md)"
   "[`docs/release.md`](docs/release.md)"

@@ -410,6 +410,7 @@ library path.
 **Maintainer and release docs**
 
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md): contribution expectations and contributor-facing validation
+- [`docs/design.md`](design.md): current architecture, repository layout, validation reality, and workflow context
 - [`docs/maintainer.md`](maintainer.md) and [`docs/workflows/`](workflows/): issue/PR/review operating procedures
 - [`docs/release.md`](release.md): release checklist, validation matrix, and artifact policy
 - [`docs/release-evidence.md`](release-evidence.md): support-claim evidence and caveats

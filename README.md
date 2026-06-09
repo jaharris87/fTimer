@@ -494,12 +494,12 @@ User-facing references:
 - Installed API stability and public symbol boundary: [`docs/installed-api.md`](docs/installed-api.md)
 - CSV schema dictionary: [`docs/csv-schema.md`](docs/csv-schema.md)
 - OpenMP timing modes and migration guide: [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md)
-- Current architecture reference: [`docs/design.md`](docs/design.md)
 - Support and security reporting: [`SUPPORT.md`](SUPPORT.md), [`SECURITY.md`](SECURITY.md)
 
 Contributor, maintainer, and release references:
 
 - Contributor guidance: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Current architecture and repository-layout reference: [`docs/design.md`](docs/design.md)
 - Maintainer workflow: [`docs/maintainer.md`](docs/maintainer.md)
 - Release claim evidence: [`docs/release-evidence.md`](docs/release-evidence.md)
 - Release checklist and artifact policy: [`docs/release.md`](docs/release.md)
