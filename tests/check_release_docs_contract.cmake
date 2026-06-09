@@ -11,6 +11,7 @@ set(required_paths
   docs/implementation-history.md
   docs/maintainer.md
   docs/openmp-timing-modes.md
+  docs/package-manager-readiness.md
   docs/release-evidence.md
   docs/release.md
   docs/semantics.md
@@ -750,6 +751,7 @@ set(required_release_evidence_terms
   "Strict/sparse hybrid output"
   "Stable CSV/export claims"
   "Installed CMake package behavior"
+  "Spack/EasyBuild readiness"
   "Public symbols"
   "Benchmark evidence"
   "Plausible but unvalidated"
@@ -774,6 +776,7 @@ set(required_release_evidence_rows
   "Strict/sparse hybrid output"
   "Stable CSV/export claims"
   "Installed CMake package behavior"
+  "Spack/EasyBuild readiness"
   "Public symbols"
   "Benchmark evidence"
 )
@@ -820,6 +823,34 @@ foreach(required_release_evidence_row IN LISTS required_release_evidence_rows)
   if(release_evidence_row_count GREATER 1)
     message(FATAL_ERROR
       "docs/release-evidence.md must keep exactly one claim ledger table row for '${required_release_evidence_row}'."
+    )
+  endif()
+endforeach()
+
+file(READ "${REPO_ROOT}/docs/package-manager-readiness.md" package_manager_readiness_text)
+set(package_manager_required_terms
+  "spack"
+  "eb"
+  "Serial | Package-manager friendly"
+  "MPI | Package-manager friendly"
+  "OpenMP | Package-manager friendly"
+  "MPI+OpenMP | Package-manager friendly"
+  "Cross-compiling or execution-restricted OpenMP"
+  "No fTimer source patches were identified"
+  "Local package-manager execution was not available during this spike"
+  "Do not add maintained in-repository Spack or EasyBuild recipe files now"
+  "Recommended action: docs clarification plus future upstream recipe"
+  "depends_on(\"cmake@3.24:\", when=\"+openmp\", type=\"build\")"
+  "LLVM Flang OpenMP packages have the compiler-id support fTimer requires"
+  "wrapper-, and feature-mode-specific"
+)
+
+foreach(package_manager_required_term IN LISTS package_manager_required_terms)
+  string(FIND "${package_manager_readiness_text}" "${package_manager_required_term}"
+    package_manager_term_index)
+  if(package_manager_term_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/package-manager-readiness.md must keep package-manager readiness acceptance term: ${package_manager_required_term}"
     )
   endif()
 endforeach()
