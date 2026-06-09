@@ -1,21 +1,10 @@
 # fTimer
 
-fTimer is a lightweight, correctness-first wall-clock timing library for modern Fortran. Current `main` is positioned first for disciplined serial and pure-MPI codes that need hierarchical timers, predictable accounting, and summaries you can inspect programmatically instead of scraping from ad hoc text output.
+fTimer is a lightweight, correctness-first wall-clock timing library for modern Fortran. It is strongest today when you want a dependable way to time named regions in a serial code or a pure-MPI code and inspect the result as structured summary data instead of scraping ad hoc text output.
 
-> Current product position: fTimer's core supported stories are serial timing and pure-MPI timing. `FTIMER_USE_OPENMP=ON` keeps the existing procedural and `ftimer_core` APIs on a master-thread-only carve-out, while `ftimer_openmp_t` provides an explicit opt-in serial-lane and level-1 OpenMP worker timing runtime with stopped-run local OpenMP summaries, text reports, CSV output, strict MPI+OpenMP rank/lane summaries, and sparse MPI+OpenMP union summaries over its captured MPI communicator. MPI+OpenMP builds default that communicator to `MPI_COMM_WORLD` unless `comm=` is supplied at init. The callback hook is a lightweight intra-run event hook, not a stable external-profiler integration contract.
+If you are deciding whether fTimer fits your codebase, start with the serial path below. You can get to a first successful timing result without MPI, pFUnit, or a long mode-selection read, then move to MPI, OpenMP, CSV, or install-package details only if you need them.
 
-For a first release, the focus is a small, dependable core:
-
-- strict, stack-based start/stop timing by default
-- context-sensitive accounting for the same timer name under different parents
-- inclusive and self time in structured summaries with explicit tree linkage
-- small procedural and explicit OOP scoped guards for lexical blocks with early exits
-- procedural wrappers and an OOP core API
-- optional MPI global summaries plus first-class strict text/CSV and sparse text/CSV report output
-- an explicit `ftimer_openmp_t` runtime for id-first serial-lane and level-1 OpenMP worker timing
-- strict MPI+OpenMP rank/lane summaries, reports, and CSV output through `ftimer_openmp_t`
-- sparse MPI+OpenMP union summaries, reports, and CSV output with explicit rank/lane participation through `ftimer_openmp_t`
-- an installable CMake package for downstream projects
+> Current product position: serial timing and pure-MPI timing are the core supported stories on current `main`. `FTIMER_USE_OPENMP=ON` keeps the existing procedural and `ftimer_core` APIs on a master-thread-only compatibility carve-out, while `ftimer_openmp_t` is the explicit opt-in surface for serial-lane and level-1 OpenMP worker timing, local OpenMP summaries/reports/CSV, and strict or sparse MPI+OpenMP rank/lane summaries over its captured communicator. The callback hook remains a lightweight intra-run event hook, not a stable external-profiler integration contract.
 
 ## Why Use fTimer
 
@@ -24,16 +13,157 @@ fTimer fits best when you want timing behavior you can trust:
 - nested timers are treated as a real hierarchy, not a flat label list
 - mismatch handling is explicit and configurable (`strict`, `warn`, `repair`)
 - summaries are available as data first (`get_summary()`), with text formatting layered on top
-- stable CSV export is available for dashboards, CI comparisons, plotting, and archives
-- local summaries are live snapshots: active timers are included explicitly and marked in the data model/report output
-- local summary entries retain formatter-friendly preorder `name`/`depth` data and also expose explicit `node_id`/`parent_id` tree links
-- local summaries expose context-cardinality diagnostics so callers can spot one timer name accumulating many parent-stack contexts
-- pure-MPI reductions return a distinct `ftimer_mpi_summary_t` with globally meaningful fields on every participating rank
-- rank-conditional MPI reductions and reports are available through opt-in sparse/union APIs and `ftimer_mpi_union_summary_t`
+- local summaries expose inclusive time, self time, call counts, and tree structure without forcing you into a text-only workflow
+- pure-MPI reductions and sparse rank-conditional reductions are available when your serial instrumentation needs to grow into communicator-level reporting
 - an injectable clock supports deterministic tests and controlled benchmarking
-- optional callback hooks let in-process code observe normal timer start/stop events during a run
 
-If you need a tiny serial timing helper, you can use fTimer that way. If you need structured local summaries, opt-in pure-MPI reductions, and a clear error contract, that is where the library is strongest.
+If you need a tiny serial timing helper, you can use fTimer that way. If you need structured local summaries, optional MPI reductions, and a clear error contract, that is where the library is strongest.
+
+## First Success
+
+The fastest evaluation path is the serial smoke build plus the `basic_usage` example:
+
+```bash
+cmake -B build-smoke
+cmake --build build-smoke --target basic_usage
+./build-smoke/examples/basic_usage
+```
+
+You should see output shaped like this:
+
+```text
+Recorded timers: 1
+Total time (s) : <nonnegative elapsed time>
+
+Timer name  Inclusive (s)     Self (s)    Calls   % Total
+---------------------------------------------------------
+work         <nonnegative>   <nonnegative>       1   <nonnegative>
+```
+
+The exact timings vary by machine and compiler, but a successful run should show:
+
+- one recorded timer
+- a nonnegative total time, usually positive on typical runs
+- a `work` row with one call and nonnegative inclusive/self time
+
+This is the default happy path for first-time evaluation. It exercises the library build, links an example program, and produces believable summary output without requiring MPI or pFUnit.
+
+Local summaries are live snapshots, so stop all timers before you treat the output as a final report.
+
+If the first build, MPI path, OpenMP path, CSV export, or first example fails,
+see the symptom-oriented [`docs/troubleshooting.md`](docs/troubleshooting.md)
+guide before digging into the full semantics reference.
+
+## Quick Start
+
+The smallest procedural example looks like this:
+
+```fortran
+program quick_start
+   use ftimer, only: ftimer_finalize, ftimer_get_summary, ftimer_init, &
+                     ftimer_print_summary, ftimer_start, ftimer_stop
+   use ftimer_types, only: ftimer_summary_t
+   implicit none
+
+   type(ftimer_summary_t) :: summary
+
+   call ftimer_init()
+   call ftimer_start("work")
+   call ftimer_stop("work")
+
+   call ftimer_get_summary(summary)
+   call ftimer_print_summary()
+   call ftimer_finalize()
+end program quick_start
+```
+
+Use `ftimer` for the procedural API and `ftimer_types` for shared types and constants such as `ftimer_summary_t`, `ftimer_context_diagnostic_t`, `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, `ftimer_metadata_t`, and `FTIMER_MISMATCH_*`.
+
+For lexical blocks with early exits, the procedural API also provides a scalar scoped guard:
+
+```fortran
+block
+   use ftimer, only: ftimer_guard_t, ftimer_scope
+   type(ftimer_guard_t) :: guard
+   integer :: ierr
+
+   call ftimer_scope(guard, "work", ierr=ierr)
+   if (ierr /= 0) error stop
+
+   ! work that may return or exit the block early
+end block
+```
+
+The guard starts the named timer through the default procedural instance and stops that same activation when the guard leaves scope. Call `guard%stop(ierr=ierr)` when you need to observe the stop result before scope exit. For non-lexical lifetimes, cached-id hot paths, or complex ownership, prefer explicit `ftimer_start`/`ftimer_stop`.
+
+OOP users can use the same scoped pattern when they make the borrowed timer
+lifetime explicit with a pointer:
+
+```fortran
+use ftimer_core, only: ftimer_oop_guard_t, ftimer_oop_scope, ftimer_t
+
+type(ftimer_t), target :: timer_storage
+type(ftimer_t), pointer :: timer
+
+timer => timer_storage
+call timer%init()
+
+block
+   type(ftimer_oop_guard_t) :: guard
+
+   call ftimer_oop_scope(timer, guard, "work")
+end block
+
+call timer%finalize()
+```
+
+The OOP guard stores a non-owning pointer to the timer, so the timer target must outlive the guard and remain initialized until the guard is inactive. Keep explicit `timer%start()` / `timer%stop()` as the primary OOP API when a pointer-borrowed lexical guard would make ownership less clear.
+
+For metadata headers, construct `ftimer_metadata_t` values by assigning `%key` and `%value` directly. These fields use allocatable-length storage, so assigned strings are not silently capped at the legacy 64-character threshold. Human-readable text reports escape metadata C0/C1 control bytes, UTF-8 encoded C1 controls, terminal escape bytes, backslashes, and leading blanks with the same visible policy used for formatted timer names, while valid non-control UTF-8 text is preserved. fTimer does not currently provide a helper constructor such as `ftimer_metadata(...)`; for formatted numeric metadata, write to a temporary character variable and then assign that string to `%value`.
+
+## Where To Go Next
+
+- Want a downstream CMake package path? See [Install And Use From Another Project](#install-and-use-from-another-project).
+- Need help choosing between serial, MPI, OpenMP compatibility, and true worker timing? See [Supported Workflows](#supported-workflows).
+- Need the exact runtime contract, support evidence, or installed-package stability details? See [`docs/semantics.md`](docs/semantics.md), [`docs/release-evidence.md`](docs/release-evidence.md), and [`docs/installed-api.md`](docs/installed-api.md).
+- Need practical help with first-use failures? See [`docs/troubleshooting.md`](docs/troubleshooting.md).
+
+## Install And Use From Another Project
+
+Install fTimer to a prefix:
+
+```bash
+cmake -B build-install -DCMAKE_INSTALL_PREFIX=/path/to/ftimer-install
+cmake --build build-install
+cmake --install build-install
+```
+
+Then consume it from a downstream CMake project:
+
+```cmake
+cmake_minimum_required(VERSION 3.16)
+project(my_app LANGUAGES Fortran)
+
+find_package(fTimer CONFIG REQUIRED)
+
+add_executable(my_app main.F90)
+target_link_libraries(my_app PRIVATE fTimer::ftimer)
+```
+
+Configure the downstream build with `CMAKE_PREFIX_PATH` pointing at the installed prefix:
+
+```bash
+cmake -S my_app -B my_app/build -DCMAKE_PREFIX_PATH=/path/to/ftimer-install
+cmake --build my_app/build
+```
+
+The supported downstream contract is the installed package export. New adopters should not need to infer the intended consumption model from the test suite.
+
+Pre-1.0 CMake package compatibility is intentionally limited to the same minor release line. For example, a `0.2.z` install may satisfy `find_package(fTimer 0.2 CONFIG REQUIRED)` or an older compatible `0.2.x` request, but it will not satisfy a `0.1.x`, `0.3.x`, or later-minor request. Versionless `find_package(fTimer CONFIG REQUIRED)` remains available for consumers that deliberately accept whichever installed fTimer package appears on `CMAKE_PREFIX_PATH`. The `0.2` package line is the first line whose stable summary/result types expose local `call_count` and MPI `min_call_count`/`max_call_count` fields as `integer(int64)`; MPI `avg_call_count` remains `real(wp)`.
+
+The downstream examples under [`tests/install-consumer/`](tests/install-consumer/) are also part of the smoke path. They show the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer`, `use ftimer_types`, scoped timing, summary retrieval, and the explicit `use ftimer_openmp` API surface from an installed prefix.
+
+The supported source-level module surface is intentionally narrow: `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the explicit opt-in OpenMP timing surface; its lifecycle/configuration, timer registration/lookup, timed parallel-region, id-first thread-lane timing, local OpenMP summary/report entry points, strict MPI+OpenMP hybrid summary/report/CSV entry points, and sparse union MPI+OpenMP hybrid summary/report/CSV entry points are real. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt`; visible implementation helpers are documented as unstable rather than implied stable API. The installed include tree is a curated compiler module artifact set and currently includes `ftimer_clock.mod`, `ftimer_csv_validation.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so consumers get a coherent Fortran module set. Those implementation modules are not stable import targets. The installed package includes `share/doc/fTimer/installed-api.md` with the same stability contract and `share/doc/fTimer/LICENSE` with the BSD terms. The smoke tests verify the exact module artifact set and installed documentation artifacts.
 
 ## Supported Workflows
 
@@ -110,141 +240,6 @@ validation context, and claim evidence behind the matrix, see
 [`docs/release-evidence.md`](docs/release-evidence.md).
 For installed package stability details, see
 [`docs/installed-api.md`](docs/installed-api.md).
-
-## Quick Start
-
-```fortran
-program quick_start
-   use ftimer, only: ftimer_finalize, ftimer_get_summary, ftimer_init, &
-                     ftimer_print_summary, ftimer_start, ftimer_stop
-   use ftimer_types, only: ftimer_summary_t
-   implicit none
-
-   type(ftimer_summary_t) :: summary
-
-   call ftimer_init()
-   call ftimer_start("work")
-   call ftimer_stop("work")
-
-   call ftimer_get_summary(summary)
-   call ftimer_print_summary()
-   call ftimer_finalize()
-end program quick_start
-```
-
-For lexical blocks with early exits, the procedural API also provides a scalar scoped guard:
-
-```fortran
-block
-   use ftimer, only: ftimer_guard_t, ftimer_scope
-   type(ftimer_guard_t) :: guard
-   integer :: ierr
-
-   call ftimer_scope(guard, "work", ierr=ierr)
-   if (ierr /= 0) error stop
-
-   ! work that may return or exit the block early
-end block
-```
-
-The guard starts the named timer through the default procedural instance and stops that same activation when the guard leaves scope. Call `guard%stop(ierr=ierr)` when you need to observe the stop result before scope exit. For non-lexical lifetimes, cached-id hot paths, or complex ownership, prefer explicit `ftimer_start`/`ftimer_stop`.
-
-OOP users can use the same scoped pattern when they make the borrowed timer
-lifetime explicit with a pointer:
-
-```fortran
-use ftimer_core, only: ftimer_oop_guard_t, ftimer_oop_scope, ftimer_t
-
-type(ftimer_t), target :: timer_storage
-type(ftimer_t), pointer :: timer
-
-timer => timer_storage
-call timer%init()
-
-block
-   type(ftimer_oop_guard_t) :: guard
-
-   call ftimer_oop_scope(timer, guard, "work")
-end block
-
-call timer%finalize()
-```
-
-The OOP guard stores a non-owning pointer to the timer, so the timer target must outlive the guard and remain initialized until the guard is inactive. Keep explicit `timer%start()` / `timer%stop()` as the primary OOP API when a pointer-borrowed lexical guard would make ownership less clear.
-
-Use `ftimer` for the procedural API and `ftimer_types` for shared types and constants such as `ftimer_summary_t`, `ftimer_context_diagnostic_t`, `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, `ftimer_metadata_t`, and `FTIMER_MISMATCH_*`.
-
-For metadata headers, construct `ftimer_metadata_t` values by assigning `%key` and `%value` directly. These fields use allocatable-length storage, so assigned strings are not silently capped at the legacy 64-character threshold. Human-readable text reports escape metadata C0/C1 control bytes, UTF-8 encoded C1 controls, terminal escape bytes, backslashes, and leading blanks with the same visible policy used for formatted timer names, while valid non-control UTF-8 text is preserved. fTimer does not currently provide a helper constructor such as `ftimer_metadata(...)`; for formatted numeric metadata, write to a temporary character variable and then assign that string to `%value`.
-
-## First Success
-
-The fastest evaluation path is the serial smoke build plus the `basic_usage` example:
-
-```bash
-cmake -B build-smoke
-cmake --build build-smoke --target basic_usage
-./build-smoke/examples/basic_usage
-```
-
-You should see output shaped like this:
-
-```text
-Recorded timers: 1
-Total time (s) : <nonnegative elapsed time>
-
-Timer name  Inclusive (s)     Self (s)    Calls   % Total
----------------------------------------------------------
-work         <nonnegative>   <nonnegative>       1   <nonnegative>
-```
-
-The exact timings vary by machine and compiler, but a successful run should show:
-
-- one recorded timer
-- a nonnegative total time, usually positive on typical runs
-- a `work` row with one call and nonnegative inclusive/self time
-
-This is the default happy path for first-time evaluation. It exercises the library build, links an example program, and produces believable summary output without requiring MPI or pFUnit.
-
-If the first build, MPI path, OpenMP path, CSV export, or first example fails,
-see the symptom-oriented [`docs/troubleshooting.md`](docs/troubleshooting.md)
-guide before digging into the full semantics reference.
-
-## Install And Use From Another Project
-
-Install fTimer to a prefix:
-
-```bash
-cmake -B build-install -DCMAKE_INSTALL_PREFIX=/path/to/ftimer-install
-cmake --build build-install
-cmake --install build-install
-```
-
-Then consume it from a downstream CMake project:
-
-```cmake
-cmake_minimum_required(VERSION 3.16)
-project(my_app LANGUAGES Fortran)
-
-find_package(fTimer CONFIG REQUIRED)
-
-add_executable(my_app main.F90)
-target_link_libraries(my_app PRIVATE fTimer::ftimer)
-```
-
-Configure the downstream build with `CMAKE_PREFIX_PATH` pointing at the installed prefix:
-
-```bash
-cmake -S my_app -B my_app/build -DCMAKE_PREFIX_PATH=/path/to/ftimer-install
-cmake --build my_app/build
-```
-
-The supported downstream contract is the installed package export. New adopters should not need to infer the intended consumption model from the test suite.
-
-Pre-1.0 CMake package compatibility is intentionally limited to the same minor release line. For example, a `0.2.z` install may satisfy `find_package(fTimer 0.2 CONFIG REQUIRED)` or an older compatible `0.2.x` request, but it will not satisfy a `0.1.x`, `0.3.x`, or later-minor request. Versionless `find_package(fTimer CONFIG REQUIRED)` remains available for consumers that deliberately accept whichever installed fTimer package appears on `CMAKE_PREFIX_PATH`. The `0.2` package line is the first line whose stable summary/result types expose local `call_count` and MPI `min_call_count`/`max_call_count` fields as `integer(int64)`; MPI `avg_call_count` remains `real(wp)`.
-
-The downstream examples under [`tests/install-consumer/`](tests/install-consumer/) are also part of the smoke path. They show the supported installed-package happy path with `find_package(fTimer CONFIG REQUIRED)`, `use ftimer`, `use ftimer_types`, scoped timing, summary retrieval, and the explicit `use ftimer_openmp` API surface from an installed prefix.
-
-The supported source-level module surface is intentionally narrow: `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the explicit opt-in OpenMP timing surface; its lifecycle/configuration, timer registration/lookup, timed parallel-region, id-first thread-lane timing, local OpenMP summary/report entry points, strict MPI+OpenMP hybrid summary/report/CSV entry points, and sparse union MPI+OpenMP hybrid summary/report/CSV entry points are real. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt`; visible implementation helpers are documented as unstable rather than implied stable API. The installed include tree is a curated compiler module artifact set and currently includes `ftimer_clock.mod`, `ftimer_csv_validation.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so consumers get a coherent Fortran module set. Those implementation modules are not stable import targets. The installed package includes `share/doc/fTimer/installed-api.md` with the same stability contract and `share/doc/fTimer/LICENSE` with the BSD terms. The smoke tests verify the exact module artifact set and installed documentation artifacts.
 
 ## Compile-Out / No-Op Instrumentation Pattern
 
