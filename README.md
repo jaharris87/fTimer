@@ -343,6 +343,10 @@ See [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md) for the current
 
 The first stable machine-readable export format is CSV, chosen because fTimer summaries are snapshot tables rather than event streams. The local and strict MPI schema is versioned by the `format_version` column and currently uses version `2`. Sparse union MPI CSV uses a separate participation-aware schema with `format_version=1` and `summary_kind=mpi_union`; local OpenMP CSV uses its own schema with `format_version=1` and `summary_kind=openmp`; strict MPI+OpenMP CSV uses a separate schema with `format_version=1` and `summary_kind=mpi_openmp`; sparse union MPI+OpenMP CSV uses a separate schema with `format_version=1`, `summary_kind=mpi_openmp_union`, and `participation_policy=sparse_union`. These dedicated schemas are intentionally not append-compatible with the local/strict MPI v2 header or with each other.
 
+See [`docs/csv-schema.md`](docs/csv-schema.md) for the compact field dictionary,
+schema-family signatures, denominator choices, active snapshot fields, append
+constraints, and sparse participation interpretation used by CSV readers.
+
 Each CSV starts with one header row followed by typed records. All schemas use:
 
 - `record_type=summary` carries run-level fields.
