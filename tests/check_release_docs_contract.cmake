@@ -386,6 +386,128 @@ foreach(readme_troubleshooting_needle IN LISTS readme_troubleshooting_needles)
   endif()
 endforeach()
 
+function(extract_markdown_section text header out_var)
+  string(FIND "${text}" "## ${header}" section_start_index)
+  if(section_start_index EQUAL -1)
+    message(FATAL_ERROR "README.md must keep the '## ${header}' section.")
+  endif()
+
+  string(SUBSTRING "${text}" "${section_start_index}" -1 section_tail)
+  string(FIND "${section_tail}" "\n## " next_section_index)
+  if(next_section_index EQUAL -1)
+    set(section_text "${section_tail}")
+  else()
+    string(SUBSTRING "${section_tail}" 0 "${next_section_index}" section_text)
+  endif()
+
+  set(${out_var} "${section_text}" PARENT_SCOPE)
+endfunction()
+
+extract_markdown_section("${release_readme_text}" "Where To Go Next" readme_where_to_go_next_text)
+
+set(readme_role_routes
+  "- First-time user: stay in this README for `First Success`, `Quick Start`, and `Install And Use From Another Project`, then see the symptom-oriented [`docs/troubleshooting.md`](docs/troubleshooting.md) guide if first use goes sideways."
+  "- Advanced user: use [Supported Workflows](#supported-workflows) to choose a mode, then jump to [`docs/semantics.md`](docs/semantics.md), [`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md), [`docs/csv-schema.md`](docs/csv-schema.md), or [`docs/installed-api.md`](docs/installed-api.md) for the exact contract."
+  "- Maintainer or release reviewer: use [`docs/release-evidence.md`](docs/release-evidence.md), [`docs/release.md`](docs/release.md), and [`docs/maintainer.md`](docs/maintainer.md)."
+  "- Coding agent: use [`AGENTS.md`](AGENTS.md) or [`CLAUDE.md`](CLAUDE.md) for repo workflow and source-of-truth rules, then read [`docs/semantics.md`](docs/semantics.md) and [`docs/maintainer.md`](docs/maintainer.md) as needed."
+)
+
+foreach(readme_role_route IN LISTS readme_role_routes)
+  string(FIND "${readme_where_to_go_next_text}" "${readme_role_route}" role_route_index)
+  if(role_route_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must keep the explicit #336 audience routing in '## Where To Go Next': missing '${readme_role_route}'."
+    )
+  endif()
+endforeach()
+
+set(readme_route_destination_headings
+  "## First Success"
+  "## Quick Start"
+  "## Install And Use From Another Project"
+  "## Supported Workflows"
+)
+
+foreach(readme_route_destination_heading IN LISTS readme_route_destination_headings)
+  string(FIND "${release_readme_text}" "${readme_route_destination_heading}" destination_heading_index)
+  if(destination_heading_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must keep the in-README destination heading required by the #336 audience routing: missing '${readme_route_destination_heading}'."
+    )
+  endif()
+endforeach()
+
+extract_markdown_section("${release_readme_text}" "First Success" readme_first_success_text)
+extract_markdown_section("${release_readme_text}" "Quick Start" readme_quick_start_text)
+extract_markdown_section("${release_readme_text}" "Install And Use From Another Project"
+  readme_install_text)
+extract_markdown_section("${release_readme_text}" "Supported Workflows"
+  readme_supported_workflows_text)
+
+set(readme_first_success_needles
+  "cmake -B build-smoke"
+  "cmake --build build-smoke --target basic_usage"
+  "./build-smoke/examples/basic_usage"
+  "Recorded timers: 1"
+)
+
+foreach(readme_first_success_needle IN LISTS readme_first_success_needles)
+  string(FIND "${readme_first_success_text}" "${readme_first_success_needle}"
+    first_success_index)
+  if(first_success_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md '## First Success' must keep the first-success guidance required by the #336 audience routing: missing '${readme_first_success_needle}'."
+    )
+  endif()
+endforeach()
+
+set(readme_quick_start_needles
+  "call ftimer_init()"
+  "call ftimer_start(\"work\")"
+  "call ftimer_get_summary(summary)"
+  "call ftimer_print_summary()"
+)
+
+foreach(readme_quick_start_needle IN LISTS readme_quick_start_needles)
+  string(FIND "${readme_quick_start_text}" "${readme_quick_start_needle}" quick_start_index)
+  if(quick_start_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md '## Quick Start' must keep the minimal procedural example required by the #336 audience routing: missing '${readme_quick_start_needle}'."
+    )
+  endif()
+endforeach()
+
+set(readme_install_needles
+  "find_package(fTimer CONFIG REQUIRED)"
+  "CMAKE_PREFIX_PATH"
+)
+
+foreach(readme_install_needle IN LISTS readme_install_needles)
+  string(FIND "${readme_install_text}" "${readme_install_needle}" install_index)
+  if(install_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md '## Install And Use From Another Project' must keep the downstream install guidance required by the #336 audience routing: missing '${readme_install_needle}'."
+    )
+  endif()
+endforeach()
+
+set(readme_supported_workflows_needles
+  "Serial/local timing through `ftimer` or `ftimer_core`"
+  "Strict pure-MPI timing and sparse pure-MPI union timing on the validated `mpi_f08` path"
+  "OpenMP compatibility timing through the existing APIs when one timer brackets a parallel region"
+  "Explicit worker timing through `ftimer_openmp_t`, including strict and sparse MPI+OpenMP report families"
+)
+
+foreach(readme_supported_workflows_needle IN LISTS readme_supported_workflows_needles)
+  string(FIND "${readme_supported_workflows_text}" "${readme_supported_workflows_needle}"
+    supported_workflows_index)
+  if(supported_workflows_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md '## Supported Workflows' must keep the mode summary required by the #336 audience routing: missing '${readme_supported_workflows_needle}'."
+    )
+  endif()
+endforeach()
+
 file(READ "${REPO_ROOT}/docs/troubleshooting.md" troubleshooting_doc_text)
 file(READ "${REPO_ROOT}/tests/public_symbol_allowlist.txt" public_symbol_allowlist_text)
 file(READ "${REPO_ROOT}/CMakeLists.txt" root_cmakelists_text)
