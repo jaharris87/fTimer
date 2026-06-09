@@ -100,6 +100,50 @@ checks, but durable CSV artifact upload for those feature-enabled benchmark
 jobs is intentionally deferred; run the feature-enabled harness locally when
 trend evidence beyond smoke coverage is needed.
 
+### Benchmark Provenance And Feature-Mode Evidence
+
+Benchmark result CSVs record numeric observations only: scenario label,
+repetition count, total milliseconds, and per-operation nanoseconds. Treat the
+provenance for a benchmark run as a sidecar record kept beside the CSV in PR or
+release evidence, not as extra benchmark rows and not as release-note prose
+alone. A sidecar avoids repeating identical metadata on every result row,
+preserves the simple benchmark CSV shape used by smoke checks, and makes clear
+that provenance describes one run of noisy wall-clock observations.
+
+A useful benchmark sidecar should include enough context for a maintainer to
+decide whether two CSVs are comparable:
+
+- fTimer commit SHA and benchmark CSV artifact name or path;
+- benchmark mode: serial, OpenMP, MPI, or MPI+OpenMP;
+- `FTIMER_USE_MPI`, `FTIMER_USE_OPENMP`, `FTIMER_BUILD_BENCH`,
+  `CMAKE_BUILD_TYPE`, Fortran compiler path/version, and relevant Fortran
+  compile/link flags;
+- MPI launcher, requested rank count, and oversubscription-relevant launcher
+  flags when MPI is enabled;
+- OpenMP runtime shape when OpenMP is enabled, including requested thread count
+  or the environment variables that determine it;
+- runner or host identity, operating system/kernel, architecture, and any
+  available CPU allocation detail;
+- clock context: benchmark measurement uses the real wall clock through
+  `system_clock`; when MPI is enabled, also record that the fTimer backend
+  clock under test for `ftimer_t` paths is `MPI_Wtime()`;
+- run shape, including repeated-sample count, whether samples were sequential
+  or concurrent, and any known local load caveat.
+
+Release notes may summarize benchmark observations only after the corresponding
+CSV and sidecar are available in the PR or release evidence. The release note
+summary should cite trends or risk checks, not absolute overhead promises.
+
+For feature-enabled benchmark evidence, keep CI artifact upload limited to the
+serial benchmark CSV until a future issue adds sidecar-aware artifact handling
+for additional modes. OpenMP and MPI+OpenMP benchmark CI jobs remain
+smoke-oriented: they prove that the harness builds and that feature-mode CSV
+rows are parseable, but their CSVs are not retained as durable CI artifacts.
+When OpenMP, MPI, or MPI+OpenMP performance-risk work needs trend evidence,
+run the feature-enabled benchmark harness locally and attach the CSV plus
+sidecar to the PR or release evidence. Do not turn those observations into CI
+thresholds or universal overhead claims.
+
 Reference commands:
 
 ```bash
