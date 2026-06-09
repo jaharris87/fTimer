@@ -124,8 +124,9 @@ decide whether two CSVs are comparable:
   or the environment variables that determine it;
 - runner or host identity, operating system/kernel, architecture, and any
   available CPU allocation detail;
-- clock context: the harness uses the real wall clock, `system_clock` in
-  non-MPI builds and `MPI_Wtime()` in MPI-enabled builds;
+- clock context: benchmark measurement uses the real wall clock through
+  `system_clock`; when MPI is enabled, also record that the fTimer backend
+  clock under test for `ftimer_t` paths is `MPI_Wtime()`;
 - run shape, including repeated-sample count, whether samples were sequential
   or concurrent, and any known local load caveat.
 

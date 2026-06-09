@@ -92,9 +92,10 @@
 !   ./build-bench/bench/ftimer_bench
 !   ./build-bench/bench/ftimer_bench /tmp/ftimer_bench_results.csv
 !
-! The optional first argument writes parseable CSV benchmark results for trend
-! review or archival. It intentionally records observations only, not pass/fail
-! thresholds.
+! The optional first argument writes parseable CSV benchmark observations.
+! Durable PR or release trend evidence should keep provenance sidecar context
+! beside the CSV; the CSV intentionally records observations only, not
+! pass/fail thresholds.
 ! The report-writing rows use per-run scratch files in the system temporary
 ! directory and delete only those scratch files when the rows complete.
 !
@@ -343,9 +344,10 @@ program ftimer_bench
    call write_bench_line('  - name-based start/stop remains the default path; lookup/start_id/stop_id is the optional hot path.')
    call write_bench_line('  - ftimer_openmp worker rows appear only in FTIMER_USE_OPENMP=ON builds.')
    call write_bench_line('  - ftimer_openmp lane touch rows time only participating-lane first touch.')
-   call write_bench_line('  - All scenarios use the real wall-clock (no mock clock).')
+   call write_bench_line('  - Benchmark envelopes use system_clock real wall-clock timing (no mock clock).')
    call write_bench_line('  - Timings include clock-call overhead inside start/stop.')
-   call write_bench_line('  - Pass a CSV path as argv[1] to archive parseable benchmark results.')
+   call write_bench_line('  - Pass a CSV path as argv[1] to write parseable benchmark observations.')
+   call write_bench_line('  - Durable PR/release trend evidence needs a provenance sidecar beside the CSV.')
 
    call close_bench_csv()
 #ifdef FTIMER_USE_MPI
