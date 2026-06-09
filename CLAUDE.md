@@ -75,7 +75,7 @@ Supported toolchain matrix:
 - MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH. Smoke/install-consumer coverage runs for both, and MPI pFUnit coverage runs for OpenMPI plus MPICH on hosted Ubuntu 22.04 with a matching MPICH-built pFUnit. `FTIMER_USE_MPI=ON` now runs a configure-time `mpi_f08` probe and fails early if the active compiler cannot consume the discovered MPI module files.
 - OpenMP: GNU Fortran (`gfortran`) with pFUnit guard coverage, plus LLVM Flang smoke/example coverage for the documented master-thread-only carve-out.
   LLVM Flang OpenMP validation requires CMake 3.24 or newer so CMake reports compiler ID `LLVMFlang`.
-- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested for current compatibility mode, the opt-in `ftimer_openmp` worker API, strict and sparse union hybrid rank/lane summaries/reports/CSV, and MPI-initialized OpenMP installed consumers.
+- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested in CI for current compatibility mode, the opt-in `ftimer_openmp` worker API, strict and sparse union hybrid rank/lane summaries/reports/CSV, and MPI-initialized OpenMP installed consumers. MPICH wrapper builds have focused local smoke/install-consumer evidence recorded in `docs/release-evidence.md`, but not permanent CI coverage.
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 

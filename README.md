@@ -99,13 +99,15 @@ Support tiers mean:
 | Pure MPI | **Core validated** for GNU Fortran MPI wrapper compilers with OpenMPI and MPICH, using `mpi_f08`, after `MPI_Init` and before `MPI_Finalize`. OpenMPI and MPICH smoke/install-consumer paths are validated; MPI pFUnit coverage is validated where matching pFUnit is available. Legacy `mpif.h`, integer communicator handles, and MPI use outside the MPI lifetime are **unsupported**. |
 | OpenMP compatibility through `ftimer` / `ftimer_core` | **Supported advanced** with GNU Fortran pFUnit guard coverage and LLVM Flang smoke/example coverage. The contract is master-thread-only; worker-thread calls through these existing APIs are silent no-ops. |
 | Explicit `ftimer_openmp_t` worker timing | **Supported advanced** with GNU Fortran and LLVM Flang OpenMP smoke/example coverage. Use this object API for serial-lane and level-1 worker timing; active-region rejection and queued diagnostics are part of this path, not the legacy worker no-op carve-out. |
-| MPI+OpenMP hybrid summaries, reports, CSV, and installed consumer | **Supported advanced** today for OpenMPI wrapper builds with GNU Fortran and OpenMP. MPICH hybrid and other MPI/compiler/OpenMP runtime combinations are **plausible but unvalidated** until separate release evidence promotes them. |
+| MPI+OpenMP hybrid summaries, reports, CSV, and installed consumer | **Supported advanced** today for OpenMPI wrapper builds with GNU Fortran and OpenMP, with focused MPICH wrapper smoke/install-consumer evidence recorded in the release ledger. Other MPI/compiler/OpenMP runtime combinations are **plausible but unvalidated** until separate release evidence promotes them. |
 | Installed CMake package and `.mod` artifacts | **Core validated** for matching compiler, toolchain, and feature mode. Installed Fortran `.mod` files are compiler/toolchain/mode specific; cross-compiler or cross-mode reuse is **unsupported**. |
 | FPM/package-manager installs, profiler backends, hardware counters, traces, dashboards, accelerator timelines | **Experimental/deferred**. These are not part of the current release support claim. |
 
 For failure-oriented guidance, see
-[`docs/troubleshooting.md`](docs/troubleshooting.md). For the architecture and
-validation context behind the matrix, see [`docs/design.md`](docs/design.md).
+[`docs/troubleshooting.md`](docs/troubleshooting.md). For the architecture,
+validation context, and claim evidence behind the matrix, see
+[`docs/design.md`](docs/design.md) and
+[`docs/release-evidence.md`](docs/release-evidence.md).
 For installed package stability details, see
 [`docs/installed-api.md`](docs/installed-api.md).
 
@@ -482,7 +484,7 @@ Supported toolchain matrix:
 - Serial plus pFUnit tests: GNU Fortran with a matching pFUnit installation
 - MPI: GNU Fortran wrapper compiler paths are validated with OpenMPI and MPICH; smoke/install-consumer coverage runs for both, and MPI pFUnit coverage runs for OpenMPI plus MPICH on hosted Ubuntu 22.04 with a matching MPICH-built pFUnit
 - OpenMP: GNU Fortran with pFUnit guard coverage, plus LLVM Flang smoke/example coverage for the documented master-thread-only carve-out and the opt-in `examples/openmp_worker_example.F90` path
-- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested for current compatibility mode, `examples/mpi_openmp_example.F90`, the opt-in `ftimer_openmp` worker API, strict and sparse union MPI+OpenMP hybrid summary/report/CSV output, and MPI-initialized OpenMP installed consumers
+- MPI+OpenMP: OpenMPI wrapper builds with OpenMP are smoke-tested in CI for current compatibility mode, `examples/mpi_openmp_example.F90`, the opt-in `ftimer_openmp` worker API, strict and sparse union MPI+OpenMP hybrid summary/report/CSV output, and MPI-initialized OpenMP installed consumers; MPICH wrapper builds have focused local smoke/install-consumer evidence recorded in `docs/release-evidence.md`
 
 Other serial compilers may still work, but they are not part of the current release-validated matrix unless the repo adds direct automation for them.
 

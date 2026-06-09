@@ -27,10 +27,12 @@ Before starting a release candidate:
   MPI+OpenMP hybrid participation summaries/reports/CSV, and the CMake package
   path.
 - Keep release notes and support claims aligned with the public operational
-  support matrix in `README.md`. In particular, MPI+OpenMP is release-validated
-  today for OpenMPI wrapper builds with GNU Fortran and OpenMP; MPICH hybrid and
-  other MPI/compiler/OpenMP runtime combinations remain plausible but
-  unvalidated until a release issue adds matching evidence.
+  support matrix in `README.md`. In particular, MPI+OpenMP has CI evidence for
+  OpenMPI wrapper builds with GNU Fortran and OpenMP, plus focused local MPICH
+  wrapper smoke/install-consumer evidence recorded in
+  [`docs/release-evidence.md`](release-evidence.md). Other MPI/compiler/OpenMP
+  runtime combinations remain plausible but unvalidated until a release issue
+  adds matching evidence.
 - Do not promote deferred non-goals into the release unless a linked issue has
   changed scope. Current non-goals include full profiler integration, FPM
   packaging, hardware counters, traces, accelerator timelines, automatic MPI
