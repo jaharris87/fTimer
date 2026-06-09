@@ -39,8 +39,9 @@ cmake --build build
 cmake -E chdir build ctest --output-on-failure
 ```
 
-MPI and OpenMP validation commands are listed in `AGENTS.md`, `README.md`, and
-`docs/release.md`.
+MPI and OpenMP validation commands for contributors are listed in `README.md`.
+Release-check validation lives in [`docs/release.md`](docs/release.md), and the
+maintainer routing page links the workflow-specific PR and review procedures.
 
 ## Pull Requests
 
@@ -61,7 +62,10 @@ release evidence, or CI proof paths. It is not required for private
 implementation-only edits.
 
 Repository PR handling, review labels, fallback review, and findings disposition
-are documented in `docs/maintainer.md` and `docs/workflows/`.
+are maintainer workflow topics documented in
+[`docs/maintainer.md`](docs/maintainer.md) and `docs/workflows/`. Coding-agent
+specific instructions remain in `AGENTS.md` and `CLAUDE.md`; contributors do
+not need those files for ordinary build, test, or PR navigation.
 
 ## Coding And Documentation Expectations
 

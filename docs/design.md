@@ -393,18 +393,36 @@ The repository also carries a detailed prompt library under `.github/prompts/det
 
 ## Documentation Boundaries
 
-The docs set is intentionally split by purpose:
+The docs set is intentionally split by audience and purpose. The README is the
+normal entry point for users; maintainer and coding-agent workflow files are
+kept available for repository operations without being part of the first-use
+library path.
+
+**User docs**
 
 - [`README.md`](../README.md): user-facing setup, usage, limitations, and examples
 - [`docs/troubleshooting.md`](troubleshooting.md): symptom-oriented remedies for first-use build, MPI, OpenMP, CSV, and summary/report failures
 - [`docs/semantics.md`](semantics.md): current runtime contract and behavior
-- [`docs/design.md`](design.md): current repository architecture, validation reality, and workflow context
-- [`docs/openmp-timing-modes.md`](openmp-timing-modes.md): OpenMP and
-  MPI+OpenMP mode selection, accepted current examples, and migration guidance
-- `docs/history/`: historical decision records and implementation-planning
-  artifacts. These are not the navigation surface for current behavior.
-- [`docs/implementation-history.md`](implementation-history.md): historical phase roadmap and landing history
+- [`docs/installed-api.md`](installed-api.md): installed package, public symbol, and downstream consumption contract
+- [`docs/csv-schema.md`](csv-schema.md): CSV schema families and reader-aid fixtures
+- [`docs/openmp-timing-modes.md`](openmp-timing-modes.md): OpenMP and MPI+OpenMP mode selection, accepted current examples, and migration guidance
+
+**Maintainer and release docs**
+
+- [`CONTRIBUTING.md`](../CONTRIBUTING.md): contribution expectations and contributor-facing validation
 - [`docs/maintainer.md`](maintainer.md) and [`docs/workflows/`](workflows/): issue/PR/review operating procedures
+- [`docs/release.md`](release.md): release checklist, validation matrix, and artifact policy
+- [`docs/release-evidence.md`](release-evidence.md): support-claim evidence and caveats
+
+**Coding-agent docs**
+
+- [`AGENTS.md`](../AGENTS.md) and [`CLAUDE.md`](../CLAUDE.md): coding-agent repository instructions, build/test context, and source-of-truth rules
+- `.github/prompts/`: Codex review prompt contracts and fallback prompt library
+
+**Historical docs**
+
+- `docs/history/`: historical decision records and implementation-planning artifacts. These are not the navigation surface for current behavior.
+- [`docs/implementation-history.md`](implementation-history.md): historical phase roadmap and landing history
 
 Keeping those boundaries sharp matters. When current behavior changes, update the document that owns that contract instead of leaving design notes or historical plans to imply current behavior indirectly.
 
