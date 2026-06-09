@@ -11,6 +11,7 @@ set(required_paths
   docs/implementation-history.md
   docs/maintainer.md
   docs/openmp-timing-modes.md
+  docs/package-manager-readiness.md
   docs/release-evidence.md
   docs/release.md
   docs/semantics.md
