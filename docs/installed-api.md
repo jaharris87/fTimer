@@ -206,6 +206,13 @@ are never installed as stable API:
 Installed implementation module artifacts: `ftimer_clock.mod`,
 `ftimer_summary.mod`, `ftimer_mpi.mod`.
 
+Fortran `.mod` files are compiler-, toolchain-, and feature-mode-specific
+artifacts. A prefix installed by one compiler or MPI/OpenMP mode is intended for
+downstream builds that use the matching compiler family, MPI wrapper family,
+and fTimer feature mode. Reusing installed module files across compilers or
+across serial/MPI/OpenMP mode boundaries is outside the supported package
+contract unless a release issue adds explicit validation for that combination.
+
 Those implementation module files may be present in the installed include tree
 because Fortran consumers need a coherent compiler module artifact set when they
 import the supported modules above. They are not stable import targets, and

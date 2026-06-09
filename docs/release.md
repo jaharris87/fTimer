@@ -22,6 +22,11 @@ Before starting a release candidate:
   reports, CSV, strict MPI+OpenMP hybrid summaries/reports/CSV, sparse union
   MPI+OpenMP hybrid participation summaries/reports/CSV, and the CMake package
   path.
+- Keep release notes and support claims aligned with the public operational
+  support matrix in `README.md`. In particular, MPI+OpenMP is release-validated
+  today for OpenMPI wrapper builds with GNU Fortran and OpenMP; MPICH hybrid and
+  other MPI/compiler/OpenMP runtime combinations remain plausible but
+  unvalidated until a release issue adds matching evidence.
 - Do not promote deferred non-goals into the release unless a linked issue has
   changed scope. Current non-goals include full profiler integration, FPM
   packaging, hardware counters, traces, accelerator timelines, automatic MPI
@@ -35,6 +40,10 @@ Before starting a release candidate:
 - If a stable source-level symbol, installed module artifact, CSV schema field,
   or package compatibility boundary changes, update the relevant docs and
   smoke/contract checks in the same release-prep PR.
+- Treat installed Fortran `.mod` artifacts as compiler/toolchain/mode-specific
+  outputs. Do not imply that one installed prefix can be reused across
+  different compilers, MPI wrappers, or feature modes unless release validation
+  explicitly proves that combination.
 - Treat release notes as part of the compatibility contract: describe
   user-visible behavior changes, limitations, and migration notes directly.
 - For the first release containing the true OpenMP and hybrid APIs, name
