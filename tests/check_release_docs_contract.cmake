@@ -574,9 +574,33 @@ foreach(release_navigation_doc IN LISTS release_navigation_docs)
   endforeach()
 endforeach()
 
-file(READ "${REPO_ROOT}/docs/release.md" release_doc_text)
-string(FIND "${release_doc_text}" "docs/release-evidence.md" release_evidence_link_index)
-if(release_evidence_link_index EQUAL -1)
+file(STRINGS "${REPO_ROOT}/docs/release.md" release_doc_lines)
+get_filename_component(release_doc_dir "${REPO_ROOT}/docs/release.md" DIRECTORY)
+get_filename_component(release_evidence_abs "${REPO_ROOT}/docs/release-evidence.md" ABSOLUTE)
+set(release_links_to_evidence FALSE)
+
+foreach(release_doc_line IN LISTS release_doc_lines)
+  set(remaining_line "${release_doc_line}")
+  while(remaining_line MATCHES "\\[[^]]*\\]\\(([^)]+)\\)")
+    set(link_target "${CMAKE_MATCH_1}")
+    string(REGEX REPLACE "^[ \t]*<([^>]+)>.*$" "\\1" link_target "${link_target}")
+    string(REGEX REPLACE "^[ \t]*([^ \t\"']+).*$" "\\1" link_target "${link_target}")
+    string(REGEX REPLACE "#.*$" "" link_path "${link_target}")
+
+    if(NOT link_path STREQUAL "" AND
+       NOT link_path MATCHES "^[A-Za-z][A-Za-z0-9+.-]*:" AND
+       NOT link_path MATCHES "^#")
+      get_filename_component(link_abs "${release_doc_dir}/${link_path}" ABSOLUTE)
+      if(link_abs STREQUAL release_evidence_abs)
+        set(release_links_to_evidence TRUE)
+      endif()
+    endif()
+
+    string(REGEX REPLACE "^[^[]*\\[[^]]*\\]\\([^)]+\\)" "" remaining_line "${remaining_line}")
+  endwhile()
+endforeach()
+
+if(NOT release_links_to_evidence)
   message(FATAL_ERROR
     "docs/release.md must link to docs/release-evidence.md for release claim-evidence review."
   )
@@ -602,6 +626,65 @@ foreach(required_release_evidence_term IN LISTS required_release_evidence_terms)
   if(release_evidence_term_index EQUAL -1)
     message(FATAL_ERROR
       "docs/release-evidence.md must keep release ledger term '${required_release_evidence_term}'."
+    )
+  endif()
+endforeach()
+
+file(STRINGS "${REPO_ROOT}/docs/release-evidence.md" release_evidence_lines)
+set(required_release_evidence_rows
+  "Serial timing"
+  "Pure MPI"
+  "OpenMP compatibility"
+  "`ftimer_openmp_t`"
+  "Strict/sparse hybrid output"
+  "Stable CSV/export claims"
+  "Installed CMake package behavior"
+  "Public symbols"
+  "Benchmark evidence"
+)
+
+foreach(required_release_evidence_row IN LISTS required_release_evidence_rows)
+  set(release_evidence_row_found FALSE)
+  set(release_evidence_row_count 0)
+
+  foreach(release_evidence_line IN LISTS release_evidence_lines)
+    if(release_evidence_line MATCHES
+       "^\\|[ \t]*${required_release_evidence_row}[ \t]*\\|[ \t]*([^|]+)[ \t]*\\|[ \t]*([^|]+)[ \t]*\\|[ \t]*([^|]+)[ \t]*\\|[ \t]*$")
+      math(EXPR release_evidence_row_count "${release_evidence_row_count} + 1")
+      set(release_evidence_row_found TRUE)
+      set(release_evidence_status_cell "${CMAKE_MATCH_1}")
+      set(release_evidence_evidence_cell "${CMAKE_MATCH_2}")
+      set(release_evidence_caveat_cell "${CMAKE_MATCH_3}")
+      string(STRIP "${release_evidence_status_cell}" release_evidence_status_cell)
+      string(STRIP "${release_evidence_evidence_cell}" release_evidence_evidence_cell)
+      string(STRIP "${release_evidence_caveat_cell}" release_evidence_caveat_cell)
+
+      if(release_evidence_status_cell STREQUAL "" OR
+         release_evidence_evidence_cell STREQUAL "" OR
+         release_evidence_caveat_cell STREQUAL "")
+        message(FATAL_ERROR
+          "docs/release-evidence.md claim row '${required_release_evidence_row}' must keep non-empty status, evidence, and caveat cells."
+        )
+      endif()
+
+      if(NOT release_evidence_evidence_cell MATCHES
+         "(build-[A-Za-z0-9_-]+|test-[A-Za-z0-9_-]+|[A-Za-z0-9_]+_smoke|tests/|examples/|docs/|README\\.md|CMakeLists\\.txt|CI job|CTest)")
+        message(FATAL_ERROR
+          "docs/release-evidence.md claim row '${required_release_evidence_row}' must cite concrete evidence such as CI jobs, CTest names, tests, examples, or docs."
+        )
+      endif()
+    endif()
+  endforeach()
+
+  if(NOT release_evidence_row_found)
+    message(FATAL_ERROR
+      "docs/release-evidence.md must keep a claim ledger table row for '${required_release_evidence_row}'."
+    )
+  endif()
+
+  if(release_evidence_row_count GREATER 1)
+    message(FATAL_ERROR
+      "docs/release-evidence.md must keep exactly one claim ledger table row for '${required_release_evidence_row}'."
     )
   endif()
 endforeach()
