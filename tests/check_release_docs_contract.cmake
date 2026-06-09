@@ -427,6 +427,35 @@ foreach(readme_role_route IN LISTS readme_role_routes)
   endif()
 endforeach()
 
+string(FIND "${readme_where_to_go_next_text}" "For project work:"
+  readme_where_project_start)
+if(readme_where_project_start EQUAL -1)
+  message(FATAL_ERROR
+    "README.md must keep the 'For project work:' boundary in '## Where To Go Next'."
+  )
+endif()
+
+string(SUBSTRING "${readme_where_to_go_next_text}" 0
+  "${readme_where_project_start}" readme_where_user_text)
+
+set(readme_project_only_targets
+  "CONTRIBUTING.md"
+  "docs/design.md"
+  "docs/maintainer.md"
+  "docs/release-evidence.md"
+  "docs/release.md"
+)
+
+foreach(readme_project_only_target IN LISTS readme_project_only_targets)
+  string(FIND "${readme_where_user_text}" "${readme_project_only_target}"
+    project_only_in_where_user_index)
+  if(NOT project_only_in_where_user_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must not put '${readme_project_only_target}' in the user-facing part of '## Where To Go Next'."
+    )
+  endif()
+endforeach()
+
 set(readme_more_detail_labels
   "User-facing references:"
   "Contributor, maintainer, and release references:"
@@ -545,6 +574,16 @@ foreach(readme_agent_only_target IN LISTS readme_agent_only_targets)
   if(NOT agent_only_in_project_index EQUAL -1)
     message(FATAL_ERROR
       "README.md must not put '${readme_agent_only_target}' in '## More Detail' contributor/maintainer/release references."
+    )
+  endif()
+endforeach()
+
+foreach(readme_project_only_target IN LISTS readme_project_only_targets)
+  string(FIND "${readme_more_detail_user_text}" "${readme_project_only_target}"
+    project_only_in_more_detail_user_index)
+  if(NOT project_only_in_more_detail_user_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must not put '${readme_project_only_target}' in '## More Detail' user-facing references."
     )
   endif()
 endforeach()

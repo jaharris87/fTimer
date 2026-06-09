@@ -265,7 +265,7 @@ Support tiers still matter, but the detailed claim ledger lives outside the READ
 - **Experimental/deferred**: package-manager installs, profiler backends, hardware counters, traces, dashboards, and similar ecosystem work.
 - Exact status, evidence, and caveats for each release-facing claim live in [`docs/release-evidence.md`](docs/release-evidence.md). Use that ledger, not this README, when you need release-review wording.
 
-For failure-oriented guidance, see [`docs/troubleshooting.md`](docs/troubleshooting.md). For architecture and validation context, see [`docs/design.md`](docs/design.md). For installed package stability details, see [`docs/installed-api.md`](docs/installed-api.md).
+For failure-oriented guidance, see [`docs/troubleshooting.md`](docs/troubleshooting.md). For installed package stability details, see [`docs/installed-api.md`](docs/installed-api.md).
 
 ## Compile-Out / No-Op Instrumentation Pattern
 
