@@ -9,7 +9,8 @@ program ftimer_openmp_mpi_summary_smoke
    use mpi_f08, only: MPI_Barrier, MPI_COMM_NULL, MPI_COMM_WORLD, MPI_Comm, &
                       MPI_Comm_free, MPI_Comm_rank, MPI_Comm_size, MPI_Comm_split, &
                       MPI_Finalize, MPI_Init, MPI_SUCCESS
-   use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, omp_set_num_threads
+   use omp_lib, only: omp_get_num_threads, omp_get_thread_num, omp_in_parallel, omp_set_dynamic, &
+                      omp_set_num_threads
    implicit none
 
    real(wp), save :: fake_lane_time(0:4) = 0.0_wp
@@ -668,7 +669,9 @@ contains
       character(len=:), allocatable :: report_text
       integer :: domain_id
       integer :: ierr
+      integer :: mixed_epoch_first_team_size
       integer :: serial_idx
+      integer :: mixed_epoch_second_team_size
       integer :: worker_idx
       integer :: mixed_epoch_id
       integer :: mixed_epoch_idx
@@ -740,7 +743,9 @@ contains
          fake_lane_time(0) = 3013.0_wp
          call timer%begin_parallel_region(region, ierr=ierr)
          call expect_status(ierr, FTIMER_SUCCESS, 2432)
-!$omp parallel num_threads(2) default(shared) private(ierr)
+         mixed_epoch_first_team_size = 0
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(max:mixed_epoch_first_team_size)
+         mixed_epoch_first_team_size = max(mixed_epoch_first_team_size, omp_get_num_threads())
          if (omp_get_thread_num() == 0) then
             fake_lane_time(1) = 30.0_wp
             call timer%start_id(mixed_epoch_id, ierr=ierr)
@@ -757,7 +762,9 @@ contains
          fake_lane_time(0) = 3016.0_wp
          call timer%begin_parallel_region(region, ierr=ierr)
          call expect_status(ierr, FTIMER_SUCCESS, 2436)
-!$omp parallel num_threads(3) default(shared) private(ierr)
+         mixed_epoch_second_team_size = 0
+!$omp parallel num_threads(3) default(shared) private(ierr) reduction(max:mixed_epoch_second_team_size)
+         mixed_epoch_second_team_size = max(mixed_epoch_second_team_size, omp_get_num_threads())
          if (omp_get_thread_num() == 0) then
             fake_lane_time(1) = 32.0_wp
             call timer%start_id(mixed_epoch_id, ierr=ierr)
@@ -770,6 +777,7 @@ contains
          fake_lane_time(0) = 3019.0_wp
          call timer%end_parallel_region(region, ierr=ierr)
          call expect_status(ierr, FTIMER_SUCCESS, 2439)
+         if (mixed_epoch_second_team_size <= mixed_epoch_first_team_size) error stop 2454
       end if
 
       fake_lane_time(0) = 3020.0_wp
@@ -1947,7 +1955,9 @@ contains
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_parallel_region_t) :: region
       type(ftimer_openmp_t) :: timer
+      integer :: first_epoch_team_size
       integer :: ierr
+      integer :: second_epoch_team_size
       integer :: timer_id
 
       config%max_lanes = 4
@@ -1962,7 +1972,9 @@ contains
       fake_lane_time(0) = 4910.0_wp
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 4903)
-!$omp parallel num_threads(2) default(shared) private(ierr)
+      first_epoch_team_size = 0
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(max:first_epoch_team_size)
+      first_epoch_team_size = max(first_epoch_team_size, omp_get_num_threads())
       fake_lane_time(1 + omp_get_thread_num()) = 1.0_wp
       call timer%start_id(timer_id, ierr=ierr)
       if (ierr /= FTIMER_SUCCESS) error stop 4904
@@ -1977,7 +1989,9 @@ contains
       fake_lane_time(0) = 4920.0_wp
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 4907)
-!$omp parallel num_threads(3) default(shared) private(ierr)
+      second_epoch_team_size = 0
+!$omp parallel num_threads(3) default(shared) private(ierr) reduction(max:second_epoch_team_size)
+      second_epoch_team_size = max(second_epoch_team_size, omp_get_num_threads())
       fake_lane_time(1 + omp_get_thread_num()) = 3.0_wp
       call timer%start_id(timer_id, ierr=ierr)
       if (ierr /= FTIMER_SUCCESS) error stop 4908
@@ -1988,6 +2002,7 @@ contains
       fake_lane_time(0) = 4923.0_wp
       call timer%end_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 4910)
+      if (second_epoch_team_size <= first_epoch_team_size) error stop 4914
 
       call timer%mpi_openmp_summary(summary, ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_MPI_INCON, 4911)

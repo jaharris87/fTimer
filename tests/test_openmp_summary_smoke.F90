@@ -1,6 +1,7 @@
 program ftimer_openmp_summary_smoke
    use, intrinsic :: iso_fortran_env, only: int64
-   use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, omp_set_num_threads
+   use omp_lib, only: omp_get_num_threads, omp_get_thread_num, omp_in_parallel, omp_set_dynamic, &
+                      omp_set_num_threads
    use ftimer_openmp, only: ftimer_openmp_config_t, ftimer_openmp_parallel_region_t, &
                             ftimer_openmp_summary_t, ftimer_openmp_t
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_IO, FTIMER_SUCCESS, ftimer_metadata_t, wp
@@ -393,6 +394,8 @@ contains
       integer :: ierr
       integer :: mixed_id
       integer :: mixed_idx
+      integer :: first_epoch_team_size
+      integer :: second_epoch_team_size
       integer :: worker_bad
       integer :: worker_seen
 
@@ -411,9 +414,12 @@ contains
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 123)
+      first_epoch_team_size = 0
       worker_bad = 0
       worker_seen = 0
-!$omp parallel num_threads(2) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(max:first_epoch_team_size) &
+!$omp& reduction(+:worker_bad, worker_seen)
+      first_epoch_team_size = max(first_epoch_team_size, omp_get_num_threads())
       worker_seen = worker_seen + 1
       if (omp_get_thread_num() == 0) then
          fake_lane_time(1) = 10.0_wp
@@ -432,9 +438,12 @@ contains
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 127)
+      second_epoch_team_size = 0
       worker_bad = 0
       worker_seen = 0
-!$omp parallel num_threads(4) default(shared) private(ierr) reduction(+:worker_bad, worker_seen)
+!$omp parallel num_threads(4) default(shared) private(ierr) reduction(max:second_epoch_team_size) &
+!$omp& reduction(+:worker_bad, worker_seen)
+      second_epoch_team_size = max(second_epoch_team_size, omp_get_num_threads())
       worker_seen = worker_seen + 1
       if (omp_get_thread_num() == 0) then
          fake_lane_time(1) = 20.0_wp
@@ -447,6 +456,7 @@ contains
 !$omp end parallel
       if (worker_seen < 2) error stop 128
       if (worker_bad /= 0) error stop 129
+      if (second_epoch_team_size <= first_epoch_team_size) error stop 146
       expected_eligible = max(2, worker_seen)
       fake_lane_time(0) = 411.0_wp
       call timer%end_parallel_region(region, ierr=ierr)
