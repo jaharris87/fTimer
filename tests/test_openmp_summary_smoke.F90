@@ -642,6 +642,8 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 186)
       csv_text = read_file_text(csv_path)
       call expect_int(count_occurrences(csv_text, header), 1, 187)
+      call expect_csv_record_count(csv_text, 'summary', 2, 215)
+      call expect_csv_record_count(csv_text, 'entry', 2, 216)
 
       metadata(1)%key = 'Notes'
       metadata(1)%value = 'openmp, "quoted"'
@@ -655,6 +657,9 @@ contains
       record_type_col = csv_column_index(csv_text, 'record_type')
       value_col = csv_column_index(csv_text, 'value')
       call expect_int(count_occurrences(csv_text, header), 1, 198)
+      call expect_csv_record_count(csv_text, 'summary', 2, 217)
+      call expect_csv_record_count(csv_text, 'metadata', 1, 218)
+      call expect_csv_record_count(csv_text, 'entry', 2, 219)
       call expect_equal_text(csv_field_value(metadata_line, record_type_col), 'metadata', 199)
       call expect_equal_text(csv_field_value(metadata_line, value_col), 'openmp, "quoted"', 210)
 
@@ -688,6 +693,7 @@ contains
       call expect_status(ierr, FTIMER_ERR_IO, 193)
       call expect_equal_text(read_file_text(wrong_header_csv_path), bad_text, 194)
 
+      call timer%write_openmp_summary_csv(bad_csv_path, append=.true.)
       call timer%write_openmp_summary_csv(truncated_csv_path, append=.true.)
       call timer%write_openmp_summary_csv(malformed_quote_path, append=.true.)
       call timer%write_openmp_summary_csv(bare_cr_path, append=.true.)
@@ -1040,6 +1046,39 @@ contains
       actual = csv_field_value(row, column_idx)
       if ((len(actual) /= len(expected)) .or. (actual /= expected)) error stop stop_code + 2000
    end subroutine expect_csv_record_field
+
+   subroutine expect_csv_record_count(csv_text, record_type, expected, stop_code)
+      character(len=*), intent(in) :: csv_text
+      character(len=*), intent(in) :: record_type
+      integer, intent(in) :: expected
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: candidate
+      integer :: count
+      integer :: line_end
+      integer :: line_start
+      integer :: newline_pos
+      integer :: record_type_col
+
+      record_type_col = csv_column_index(csv_text, 'record_type')
+      if (record_type_col <= 0) error stop stop_code
+      count = 0
+      line_start = len(first_line(csv_text)) + 2
+      do while (line_start <= len(csv_text))
+         newline_pos = index(csv_text(line_start:), new_line('a'))
+         if (newline_pos <= 0) then
+            line_end = len(csv_text)
+         else
+            line_end = line_start + newline_pos - 2
+         end if
+         if (line_end >= line_start) then
+            candidate = csv_text(line_start:line_end)
+            if (csv_field_value(candidate, record_type_col) == record_type) count = count + 1
+         end if
+         if (newline_pos <= 0) exit
+         line_start = line_end + 2
+      end do
+      if (count /= expected) error stop stop_code
+   end subroutine expect_csv_record_count
 
    integer function csv_column_index(csv_text, column) result(idx)
       character(len=*), intent(in) :: csv_text

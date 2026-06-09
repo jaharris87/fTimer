@@ -2414,9 +2414,15 @@ contains
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_parallel_region_t) :: region
       type(ftimer_openmp_t) :: timer
-      character(len=:), allocatable :: bad_text
+      character(len=:), allocatable :: bad_record_text
+      character(len=:), allocatable :: bare_cr_text
       character(len=:), allocatable :: csv_text
       character(len=:), allocatable :: header
+      character(len=:), allocatable :: malformed_quote_text
+      character(len=:), allocatable :: no_newline_text
+      character(len=:), allocatable :: unknown_record_text
+      character(len=:), allocatable :: unterminated_quote_text
+      character(len=:), allocatable :: wrong_header_text
       integer :: ierr
       integer :: timer_id
 
@@ -2454,22 +2460,25 @@ contains
          csv_text = read_file_text(csv_path)
          header = first_line(csv_text)
          call expect_int(count_occurrences(csv_text, header), 1, 189)
+         call expect_csv_record_count(csv_text, 'summary', 2, 199)
+         call expect_csv_record_count(csv_text, 'rank', 4, 200)
+         call expect_csv_record_count(csv_text, 'entry', 2, 201)
 
-         bad_text = header//new_line('a')//'"1","mpi_openmp","summary"'//new_line('a')
-         call write_raw_text_file(bad_record_path, bad_text)
-         bad_text = header//new_line('a')//'"1","mpi_openmp","summary",'
-         call write_raw_text_file(no_newline_path, bad_text)
-         bad_text = header//new_line('a')// &
-                    replace_first(csv_line_at(csv_text, 2), '"summary"', '"invalid"')//new_line('a')
-         call write_raw_text_file(unknown_record_path, bad_text)
-         bad_text = header//new_line('a')//'"1","mpi_openmp","summary'//new_line('a')
-         call write_raw_text_file(unterminated_quote_path, bad_text)
-         bad_text = header//new_line('a')//'1"bad'//new_line('a')
-         call write_raw_text_file(malformed_quote_path, bad_text)
-         bad_text = header//new_line('a')//'"1","mpi_openmp","summary"'//achar(13)//'x'//new_line('a')
-         call write_raw_text_file(bare_cr_path, bad_text)
-         bad_text = 'format_version,summary_kind,record_type'//new_line('a')
-         call write_raw_text_file(wrong_header_path, bad_text)
+         bad_record_text = header//new_line('a')//'"1","mpi_openmp","summary"'//new_line('a')
+         call write_raw_text_file(bad_record_path, bad_record_text)
+         no_newline_text = header//new_line('a')//'"1","mpi_openmp","summary",'
+         call write_raw_text_file(no_newline_path, no_newline_text)
+         unknown_record_text = header//new_line('a')// &
+                               replace_first(csv_line_at(csv_text, 2), '"summary"', '"invalid"')//new_line('a')
+         call write_raw_text_file(unknown_record_path, unknown_record_text)
+         unterminated_quote_text = header//new_line('a')//'"1","mpi_openmp","summary'//new_line('a')
+         call write_raw_text_file(unterminated_quote_path, unterminated_quote_text)
+         malformed_quote_text = header//new_line('a')//'1"bad'//new_line('a')
+         call write_raw_text_file(malformed_quote_path, malformed_quote_text)
+         bare_cr_text = header//new_line('a')//'"1","mpi_openmp","summary"'//achar(13)//'x'//new_line('a')
+         call write_raw_text_file(bare_cr_path, bare_cr_text)
+         wrong_header_text = 'format_version,summary_kind,record_type'//new_line('a')
+         call write_raw_text_file(wrong_header_path, wrong_header_text)
       end if
       call MPI_Barrier(MPI_COMM_WORLD, ierr)
       if (ierr /= MPI_SUCCESS) error stop 190
@@ -2495,6 +2504,15 @@ contains
       call timer%write_mpi_openmp_summary_csv(malformed_quote_path, append=.true.)
       call timer%write_mpi_openmp_summary_csv(bare_cr_path, append=.true.)
       call timer%write_mpi_openmp_summary_csv(wrong_header_path, append=.true.)
+      if (rank == 0) then
+         call expect_file_text(bad_record_path, bad_record_text, 202)
+         call expect_file_text(unknown_record_path, unknown_record_text, 203)
+         call expect_file_text(no_newline_path, no_newline_text, 204)
+         call expect_file_text(unterminated_quote_path, unterminated_quote_text, 205)
+         call expect_file_text(malformed_quote_path, malformed_quote_text, 206)
+         call expect_file_text(bare_cr_path, bare_cr_text, 207)
+         call expect_file_text(wrong_header_path, wrong_header_text, 208)
+      end if
 
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 195)
@@ -2526,10 +2544,17 @@ contains
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_parallel_region_t) :: region
       type(ftimer_openmp_t) :: timer
-      character(len=:), allocatable :: bad_text
+      character(len=:), allocatable :: bad_record_text
+      character(len=:), allocatable :: bare_cr_text
       character(len=:), allocatable :: csv_text
       character(len=:), allocatable :: header
+      character(len=:), allocatable :: malformed_quote_text
+      character(len=:), allocatable :: no_newline_text
       character(len=:), allocatable :: report_text
+      character(len=:), allocatable :: strict_target_text
+      character(len=:), allocatable :: unknown_record_text
+      character(len=:), allocatable :: unterminated_quote_text
+      character(len=:), allocatable :: wrong_header_text
       integer :: ierr
       integer :: timer_id
 
@@ -2581,23 +2606,24 @@ contains
          call expect_csv_record_count(csv_text, 'summary', 2, 2281)
          call expect_csv_record_count(csv_text, 'rank', 4, 2282)
          call expect_csv_record_count(csv_text, 'entry', 2, 2283)
+         strict_target_text = read_file_text(strict_target_path)
 
-         bad_text = header//new_line('a')//'"1","mpi_openmp_union","summary"'//new_line('a')
-         call write_raw_text_file(bad_record_path, bad_text)
-         bad_text = header//new_line('a')//'"1","mpi_openmp_union","summary",'
-         call write_raw_text_file(no_newline_path, bad_text)
-         bad_text = header//new_line('a')// &
-                    replace_first(csv_line_at(csv_text, 2), '"summary"', '"invalid"')//new_line('a')
-         call write_raw_text_file(unknown_record_path, bad_text)
-         bad_text = header//new_line('a')//'"1","mpi_openmp_union","summary'//new_line('a')
-         call write_raw_text_file(unterminated_quote_path, bad_text)
-         bad_text = header//new_line('a')//'1"bad'//new_line('a')
-         call write_raw_text_file(malformed_quote_path, bad_text)
-         bad_text = header//new_line('a')//'"1","mpi_openmp_union","summary"'//achar(13)//'x'// &
-                    new_line('a')
-         call write_raw_text_file(bare_cr_path, bad_text)
-         bad_text = 'format_version,summary_kind,record_type'//new_line('a')
-         call write_raw_text_file(wrong_header_path, bad_text)
+         bad_record_text = header//new_line('a')//'"1","mpi_openmp_union","summary"'//new_line('a')
+         call write_raw_text_file(bad_record_path, bad_record_text)
+         no_newline_text = header//new_line('a')//'"1","mpi_openmp_union","summary",'
+         call write_raw_text_file(no_newline_path, no_newline_text)
+         unknown_record_text = header//new_line('a')// &
+                               replace_first(csv_line_at(csv_text, 2), '"summary"', '"invalid"')//new_line('a')
+         call write_raw_text_file(unknown_record_path, unknown_record_text)
+         unterminated_quote_text = header//new_line('a')//'"1","mpi_openmp_union","summary'//new_line('a')
+         call write_raw_text_file(unterminated_quote_path, unterminated_quote_text)
+         malformed_quote_text = header//new_line('a')//'1"bad'//new_line('a')
+         call write_raw_text_file(malformed_quote_path, malformed_quote_text)
+         bare_cr_text = header//new_line('a')//'"1","mpi_openmp_union","summary"'//achar(13)//'x'// &
+                        new_line('a')
+         call write_raw_text_file(bare_cr_path, bare_cr_text)
+         wrong_header_text = 'format_version,summary_kind,record_type'//new_line('a')
+         call write_raw_text_file(wrong_header_path, wrong_header_text)
       end if
       call MPI_Barrier(MPI_COMM_WORLD, ierr)
       if (ierr /= MPI_SUCCESS) error stop 2271
@@ -2626,6 +2652,16 @@ contains
       call timer%write_mpi_openmp_union_summary_csv(bare_cr_path, append=.true.)
       call timer%write_mpi_openmp_union_summary_csv(wrong_header_path, append=.true.)
       call timer%write_mpi_openmp_union_summary_csv(strict_target_path, append=.true.)
+      if (rank == 0) then
+         call expect_file_text(bad_record_path, bad_record_text, 2288)
+         call expect_file_text(unknown_record_path, unknown_record_text, 2289)
+         call expect_file_text(no_newline_path, no_newline_text, 2290)
+         call expect_file_text(unterminated_quote_path, unterminated_quote_text, 2291)
+         call expect_file_text(malformed_quote_path, malformed_quote_text, 2292)
+         call expect_file_text(bare_cr_path, bare_cr_text, 2293)
+         call expect_file_text(wrong_header_path, wrong_header_text, 2294)
+         call expect_file_text(strict_target_path, strict_target_text, 2295)
+      end if
 
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 2280)
@@ -3436,6 +3472,16 @@ contains
       end do
       if (count /= expected) error stop stop_code
    end subroutine expect_csv_record_count
+
+   subroutine expect_file_text(path, expected, stop_code)
+      character(len=*), intent(in) :: path
+      character(len=*), intent(in) :: expected
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: actual
+
+      actual = read_file_text(path)
+      if ((len(actual) /= len(expected)) .or. (actual /= expected)) error stop stop_code
+   end subroutine expect_file_text
 
    subroutine expect_csv_record_field(csv_text, record_type, selector, column, expected, stop_code)
       character(len=*), intent(in) :: csv_text
