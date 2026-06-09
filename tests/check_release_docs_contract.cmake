@@ -466,6 +466,8 @@ set(readme_quick_start_needles
   "call ftimer_start(\"work\")"
   "call ftimer_get_summary(summary)"
   "call ftimer_print_summary()"
+  "summary%has_active_timers"
+  "[`docs/semantics.md`](docs/semantics.md) for the full local-summary and report"
 )
 
 foreach(readme_quick_start_needle IN LISTS readme_quick_start_needles)
@@ -476,6 +478,37 @@ foreach(readme_quick_start_needle IN LISTS readme_quick_start_needles)
     )
   endif()
 endforeach()
+
+set(readme_quick_start_checked_ierr_snippet [=[
+integer :: ierr
+type(ftimer_summary_t) :: summary
+
+call ftimer_init(ierr=ierr)
+if (ierr /= 0) error stop
+
+call ftimer_start("work", ierr=ierr)
+if (ierr /= 0) error stop
+
+call ftimer_stop("work", ierr=ierr)
+if (ierr /= 0) error stop
+
+call ftimer_get_summary(summary, ierr=ierr)
+if (ierr /= 0) error stop
+
+call ftimer_print_summary(ierr=ierr)
+if (ierr /= 0) error stop
+
+call ftimer_finalize(ierr=ierr)
+if (ierr /= 0) error stop
+]=])
+
+string(FIND "${readme_quick_start_text}" "${readme_quick_start_checked_ierr_snippet}"
+  quick_start_checked_ierr_index)
+if(quick_start_checked_ierr_index EQUAL -1)
+  message(FATAL_ERROR
+    "README.md '## Quick Start' must keep the checked ierr production idiom as an ordered snippet."
+  )
+endif()
 
 set(readme_install_needles
   "find_package(fTimer CONFIG REQUIRED)"
@@ -496,6 +529,11 @@ set(readme_supported_workflows_needles
   "Strict pure-MPI timing and sparse pure-MPI union timing on the validated `mpi_f08` path"
   "OpenMP compatibility timing through the existing APIs when one timer brackets a parallel region"
   "Explicit worker timing through `ftimer_openmp_t`, including strict and sparse MPI+OpenMP report families"
+  "not add an implicit barrier around the timed region"
+  "MPI summary/report/CSV collective"
+  "Avoid this misleading anti-pattern on current `main`"
+  "worker-thread calls through the existing"
+  "[`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md)"
 )
 
 foreach(readme_supported_workflows_needle IN LISTS readme_supported_workflows_needles)
@@ -507,6 +545,39 @@ foreach(readme_supported_workflows_needle IN LISTS readme_supported_workflows_ne
     )
   endif()
 endforeach()
+
+set(readme_supported_workflows_openmp_compat_snippet [=[
+call ftimer_start("parallel_region", ierr=ierr)
+!$omp parallel
+! worker work
+!$omp end parallel
+call ftimer_stop("parallel_region", ierr=ierr)
+]=])
+
+string(FIND "${readme_supported_workflows_text}"
+  "${readme_supported_workflows_openmp_compat_snippet}" supported_workflows_openmp_compat_index)
+if(supported_workflows_openmp_compat_index EQUAL -1)
+  message(FATAL_ERROR
+    "README.md '## Supported Workflows' must keep the accepted OpenMP compatibility bracketing snippet."
+  )
+endif()
+
+set(readme_supported_workflows_openmp_antipattern_snippet [=[
+!$omp parallel
+call ftimer_start("worker_work")
+! worker work
+call ftimer_stop("worker_work")
+!$omp end parallel
+]=])
+
+string(FIND "${readme_supported_workflows_text}"
+  "${readme_supported_workflows_openmp_antipattern_snippet}"
+  supported_workflows_openmp_antipattern_index)
+if(supported_workflows_openmp_antipattern_index EQUAL -1)
+  message(FATAL_ERROR
+    "README.md '## Supported Workflows' must keep the misleading OpenMP worker-call anti-pattern snippet."
+  )
+endif()
 
 file(READ "${REPO_ROOT}/docs/troubleshooting.md" troubleshooting_doc_text)
 file(READ "${REPO_ROOT}/tests/public_symbol_allowlist.txt" public_symbol_allowlist_text)
