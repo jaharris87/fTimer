@@ -9,6 +9,7 @@ set(required_paths
   docs/implementation-history.md
   docs/maintainer.md
   docs/openmp-timing-modes.md
+  docs/release-evidence.md
   docs/release.md
   docs/semantics.md
   docs/troubleshooting.md
@@ -554,6 +555,7 @@ set(release_navigation_docs
   docs/semantics.md
   docs/design.md
   docs/installed-api.md
+  docs/release-evidence.md
   docs/release.md
   docs/openmp-timing-modes.md
   docs/troubleshooting.md
@@ -570,4 +572,36 @@ foreach(release_navigation_doc IN LISTS release_navigation_docs)
       )
     endif()
   endforeach()
+endforeach()
+
+file(READ "${REPO_ROOT}/docs/release.md" release_doc_text)
+string(FIND "${release_doc_text}" "docs/release-evidence.md" release_evidence_link_index)
+if(release_evidence_link_index EQUAL -1)
+  message(FATAL_ERROR
+    "docs/release.md must link to docs/release-evidence.md for release claim-evidence review."
+  )
+endif()
+
+file(READ "${REPO_ROOT}/docs/release-evidence.md" release_evidence_text)
+set(required_release_evidence_terms
+  "Serial timing"
+  "Pure MPI"
+  "OpenMP compatibility"
+  "`ftimer_openmp_t`"
+  "Strict/sparse hybrid output"
+  "Stable CSV/export claims"
+  "Installed CMake package behavior"
+  "Public symbols"
+  "Benchmark evidence"
+  "Plausible but unvalidated"
+  "Release-validated"
+)
+
+foreach(required_release_evidence_term IN LISTS required_release_evidence_terms)
+  string(FIND "${release_evidence_text}" "${required_release_evidence_term}" release_evidence_term_index)
+  if(release_evidence_term_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/release-evidence.md must keep release ledger term '${required_release_evidence_term}'."
+    )
+  endif()
 endforeach()
