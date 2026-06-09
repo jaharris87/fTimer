@@ -53,6 +53,12 @@ For normal changes:
 - Run `git diff --check` before opening the PR.
 - Record any unavailable local validation with a reason.
 
+For intentional public-surface changes, first use the public-surface change map
+in [`docs/installed-api.md`](docs/installed-api.md). This applies to stable or
+unstable source imports, installed `.mod` artifacts, package-version behavior,
+report/CSV schemas, supported examples, installed consumers, release evidence,
+or CI proof paths. It is not required for private implementation-only edits.
+
 Repository PR handling, review labels, fallback review, and findings disposition
 are documented in `docs/maintainer.md` and `docs/workflows/`.
 
