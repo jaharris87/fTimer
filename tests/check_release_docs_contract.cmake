@@ -5,6 +5,7 @@ set(required_paths
   CLAUDE.md
   README.md
   docs/design.md
+  docs/fault-model-traceability.md
   docs/installed-api.md
   docs/implementation-history.md
   docs/maintainer.md
@@ -54,6 +55,37 @@ foreach(markdown_path IN LISTS required_paths)
       string(REGEX REPLACE "^[^[]*\\[[^]]*\\]\\([^)]+\\)" "" remaining_line "${remaining_line}")
     endwhile()
   endforeach()
+endforeach()
+
+file(READ "${REPO_ROOT}/docs/fault-model-traceability.md" fault_model_text)
+
+function(require_fault_model_contains needle)
+  string(FIND "${fault_model_text}" "${needle}" fault_model_needle_index)
+  if(fault_model_needle_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/fault-model-traceability.md must retain the #309 traceability checkpoint: ${needle}"
+    )
+  endif()
+endfunction()
+
+set(fault_model_required_needles
+  "Strict nesting and repair"
+  "Callback suppression during repair"
+  "Active local snapshots versus stopped-run reductions"
+  "Nonmonotonic custom or backend clocks"
+  "MPI descriptor mismatch"
+  "MPI communicator lifetime and agreement"
+  "Sparse participation semantics"
+  "Legacy OpenMP worker no-op compatibility"
+  "Strict versus sparse hybrid lane/rank mismatches"
+  "Scoped-guard ownership versus public ids"
+  "Worker diagnostic draining paths"
+  "#317 owns mixed OpenMP epoch / eligible-lane interpretation evidence"
+  "#314 and #316"
+)
+
+foreach(fault_model_required_needle IN LISTS fault_model_required_needles)
+  require_fault_model_contains("${fault_model_required_needle}")
 endforeach()
 
 file(READ "${REPO_ROOT}/src/ftimer_types.F90" ftimer_types_text)

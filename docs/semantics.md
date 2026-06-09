@@ -8,7 +8,13 @@ Current `main` implements stack-based start/stop timing, context-sensitive accou
 
 This contract is strongest for disciplined serial and pure-MPI wall-clock timing. OpenMP support has two current paths: existing `ftimer`/`ftimer_core` calls keep the master-thread-only carve-out for bracketing a parallel region as a whole, while `ftimer_openmp_t` provides explicit opt-in serial-lane and level-1 worker timing with local OpenMP summaries plus strict and sparse union MPI+OpenMP rank/lane reductions. Likewise, `on_event` is a lightweight intra-run hook, not a stable external-profiler integration API.
 
-Current architecture, validation, and workflow notes belong in `docs/design.md`. Historical phase-roadmap notes belong in `docs/implementation-history.md`. When current-state sources disagree, use this repository-wide precedence order: current code under `src/`, then current behavioral tests, then `docs/semantics.md`, then `README.md`, then `docs/design.md`.
+Current architecture, validation, and workflow notes belong in `docs/design.md`.
+High-risk fault categories and their evidence homes are mapped in
+`docs/fault-model-traceability.md`. Historical phase-roadmap notes belong in
+`docs/implementation-history.md`. When current-state sources disagree, use this
+repository-wide precedence order: current code under `src/`, then current
+behavioral tests, then `docs/semantics.md`, then `README.md`, then
+`docs/design.md`.
 
 ## Timing Model
 
