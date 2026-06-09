@@ -77,6 +77,38 @@ program quick_start
 end program quick_start
 ```
 
+For production call sites, thread `ierr` through the same sequence so failures
+stay visible and quiet:
+
+```fortran
+integer :: ierr
+type(ftimer_summary_t) :: summary
+
+call ftimer_init(ierr=ierr)
+if (ierr /= 0) error stop
+
+call ftimer_start("work", ierr=ierr)
+if (ierr /= 0) error stop
+
+call ftimer_stop("work", ierr=ierr)
+if (ierr /= 0) error stop
+
+call ftimer_get_summary(summary, ierr=ierr)
+if (ierr /= 0) error stop
+
+call ftimer_print_summary(ierr=ierr)
+if (ierr /= 0) error stop
+
+call ftimer_finalize(ierr=ierr)
+if (ierr /= 0) error stop
+```
+
+`ftimer_get_summary()` and `ftimer_print_summary()` are live snapshots. For a
+final local report, stop all timers first and treat `summary%has_active_timers`
+as a sign that you are still looking at an interim snapshot. See
+[`docs/semantics.md`](docs/semantics.md) for the full local-summary and report
+contract.
+
 Use `ftimer` for the procedural API and `ftimer_types` for shared types and constants such as `ftimer_summary_t`, `ftimer_context_diagnostic_t`, `ftimer_mpi_summary_t`, `ftimer_mpi_union_summary_t`, `ftimer_metadata_t`, and `FTIMER_MISMATCH_*`.
 
 For lexical blocks with early exits, the procedural API also provides a scalar scoped guard:
@@ -177,6 +209,40 @@ fTimer currently supports a small set of distinct stories:
 - Application-owned instrumentation facades that can select either the real fTimer implementation or a dependency-free no-op implementation at build time
 
 Choose the smallest mode that matches the measurement you need. Start with serial, add strict MPI only when every rank shares the same descriptor tree, add sparse MPI union when participation is rank-conditional, keep existing OpenMP calls outside the parallel region for compatibility timing, and use `ftimer_openmp_t` only when you need per-lane worker data.
+
+For pure-MPI timing, fTimer reduces rank-local wall-clock intervals. It does
+not add an implicit barrier around the timed region, and every rank in the
+captured communicator must enter each MPI summary/report collective. See
+[`docs/semantics.md`](docs/semantics.md) for the runtime contract and
+[`docs/troubleshooting.md`](docs/troubleshooting.md) for failure-oriented
+remedies.
+
+For OpenMP compatibility timing, bracket the parallel region from serial
+context:
+
+```fortran
+call ftimer_start("parallel_region", ierr=ierr)
+!$omp parallel
+! worker work
+!$omp end parallel
+call ftimer_stop("parallel_region", ierr=ierr)
+```
+
+Avoid this misleading anti-pattern on current `main`:
+
+```fortran
+!$omp parallel
+call ftimer_start("worker_work")
+! worker work
+call ftimer_stop("worker_work")
+!$omp end parallel
+```
+
+With `FTIMER_USE_OPENMP=ON`, those worker-thread calls through the existing
+`ftimer` / `ftimer_core` APIs are silent no-ops. Use `ftimer_openmp_t` when
+you need real worker-lane timing, and see
+[`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md) for the full
+migration guide.
 
 CSV schemas follow the same split: local/strict MPI share one v2 family, while sparse MPI union, local OpenMP, strict MPI+OpenMP, and sparse MPI+OpenMP union each use dedicated schemas that are not append-compatible with one another.
 

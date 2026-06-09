@@ -466,6 +466,10 @@ set(readme_quick_start_needles
   "call ftimer_start(\"work\")"
   "call ftimer_get_summary(summary)"
   "call ftimer_print_summary()"
+  "call ftimer_init(ierr=ierr)"
+  "call ftimer_print_summary(ierr=ierr)"
+  "summary%has_active_timers"
+  "[`docs/semantics.md`](docs/semantics.md) for the full local-summary and report"
 )
 
 foreach(readme_quick_start_needle IN LISTS readme_quick_start_needles)
@@ -496,6 +500,13 @@ set(readme_supported_workflows_needles
   "Strict pure-MPI timing and sparse pure-MPI union timing on the validated `mpi_f08` path"
   "OpenMP compatibility timing through the existing APIs when one timer brackets a parallel region"
   "Explicit worker timing through `ftimer_openmp_t`, including strict and sparse MPI+OpenMP report families"
+  "not add an implicit barrier around the timed region"
+  "MPI summary/report collective"
+  "call ftimer_start(\"parallel_region\", ierr=ierr)"
+  "Avoid this misleading anti-pattern on current `main`"
+  "call ftimer_start(\"worker_work\")"
+  "worker-thread calls through the existing"
+  "[`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md)"
 )
 
 foreach(readme_supported_workflows_needle IN LISTS readme_supported_workflows_needles)
