@@ -182,10 +182,12 @@ The tiny CSV files under `tests/fixtures/csv-schema/` exercise the intended
 reader interpretation:
 
 - `local-active-reader-aid.csv` shows live active snapshot fields.
+- `strict-mpi-reader-aid.csv` shows strict MPI fields plus metadata rows.
 - `mpi-union-sparse-reader-aid.csv` shows rank participation without
   zero-filling the missing rank.
 - `openmp-mixed-epoch-reader-aid.csv` shows a local OpenMP mixed-epoch row
   where missing lane precision is unknown.
+- `mpi-openmp-strict-reader-aid.csv` shows strict hybrid rank rows.
 - `mpi-openmp-union-mixed-epoch-reader-aid.csv` shows sparse hybrid
   rank/lane participation with unknown missing-sample precision.
 

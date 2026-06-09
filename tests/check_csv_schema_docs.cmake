@@ -142,6 +142,15 @@ function(require_csv_value header record column expected)
   endif()
 endfunction()
 
+function(require_csv_index_value record field_index expected)
+  csv_field_value("${record}" ${field_index} actual)
+  if(NOT actual STREQUAL "${expected}")
+    message(FATAL_ERROR
+      "Expected CSV field ${field_index} to be '${expected}', got '${actual}' in record: ${record}"
+    )
+  endif()
+endfunction()
+
 function(require_csv_column header column)
   csv_column_index("${header}" "${column}" column_index)
 endfunction()
@@ -206,6 +215,33 @@ function(load_fixture path expected_kind expected_version out_header out_summary
   set(${out_entry} "${entry_record}" PARENT_SCOPE)
 endfunction()
 
+function(find_fixture_record path record_type out_header out_record)
+  if(NOT EXISTS "${path}")
+    message(FATAL_ERROR "CSV parser fixture is missing: ${path}")
+  endif()
+
+  file(STRINGS "${path}" records)
+  list(GET records 0 header)
+  set(found_record "")
+  foreach(record IN LISTS records)
+    if(record STREQUAL "${header}")
+      continue()
+    endif()
+    csv_value_by_column("${header}" "${record}" "record_type" actual_record_type)
+    if(actual_record_type STREQUAL "${record_type}")
+      set(found_record "${record}")
+      break()
+    endif()
+  endforeach()
+
+  if(found_record STREQUAL "")
+    message(FATAL_ERROR "CSV parser fixture '${path}' has no '${record_type}' record")
+  endif()
+
+  set(${out_header} "${header}" PARENT_SCOPE)
+  set(${out_record} "${found_record}" PARENT_SCOPE)
+endfunction()
+
 set(csv_schema_doc "${REPO_ROOT}/docs/csv-schema.md")
 require_text_contains("${csv_schema_doc}" "Issue #303 validates that fTimer needs this compact field dictionary plus tiny")
 require_text_contains("${csv_schema_doc}" "It does not need generated golden CSV fixtures")
@@ -228,6 +264,22 @@ require_csv_value("${local_header}" "${local_summary}" "has_active_timers" "true
 require_csv_value("${local_header}" "${local_entry}" "is_active" "true")
 require_csv_value("${local_header}" "${local_entry}" "name" "active_root")
 require_csv_column("${local_header}" "pct_time")
+
+set(strict_mpi_fixture "${fixture_dir}/strict-mpi-reader-aid.csv")
+load_fixture(
+  "${strict_mpi_fixture}"
+  "mpi"
+  "2"
+  strict_mpi_header
+  strict_mpi_summary
+  strict_mpi_entry
+)
+find_fixture_record("${strict_mpi_fixture}" "metadata" strict_mpi_metadata_header strict_mpi_metadata)
+require_csv_value("${strict_mpi_header}" "${strict_mpi_summary}" "num_ranks" "2")
+require_csv_value("${strict_mpi_header}" "${strict_mpi_entry}" "name" "strict_root")
+require_csv_value("${strict_mpi_header}" "${strict_mpi_entry}" "avg_pct_time" "4.00000000000000000E+0001")
+require_csv_value("${strict_mpi_metadata_header}" "${strict_mpi_metadata}" "key" "case")
+require_csv_value("${strict_mpi_metadata_header}" "${strict_mpi_metadata}" "value" "strict mpi")
 
 load_fixture(
   "${fixture_dir}/mpi-union-sparse-reader-aid.csv"
@@ -260,6 +312,30 @@ require_csv_value("${openmp_header}" "${openmp_entry}" "participating_lane_count
 require_csv_value("${openmp_header}" "${openmp_entry}" "missing_lane_count" "2")
 require_csv_value("${openmp_header}" "${openmp_entry}" "missing_lane_count_known" "false")
 require_csv_column("${openmp_header}" "avg_lane_inclusive_time")
+require_csv_index_value("${openmp_summary}" 24 "")
+require_csv_index_value("${openmp_entry}" 11 "")
+require_csv_index_value("${openmp_entry}" 24 "1.20000000000000000E+0000")
+
+set(strict_hybrid_fixture "${fixture_dir}/mpi-openmp-strict-reader-aid.csv")
+load_fixture(
+  "${strict_hybrid_fixture}"
+  "mpi_openmp"
+  "1"
+  strict_hybrid_header
+  strict_hybrid_summary
+  strict_hybrid_entry
+)
+find_fixture_record("${strict_hybrid_fixture}" "metadata" strict_hybrid_metadata_header strict_hybrid_metadata)
+find_fixture_record("${strict_hybrid_fixture}" "rank" strict_hybrid_rank_header strict_hybrid_rank)
+require_csv_value("${strict_hybrid_header}" "${strict_hybrid_summary}" "num_ranks" "2")
+require_csv_value("${strict_hybrid_header}" "${strict_hybrid_entry}" "name" "strict_rank_lane")
+require_csv_value("${strict_hybrid_header}" "${strict_hybrid_entry}" "missing_rank_lane_sample_count" "0")
+require_csv_value("${strict_hybrid_header}" "${strict_hybrid_entry}" "missing_rank_lane_sample_count_known" "true")
+require_csv_value("${strict_hybrid_metadata_header}" "${strict_hybrid_metadata}" "key" "case")
+require_csv_value("${strict_hybrid_metadata_header}" "${strict_hybrid_metadata}" "value" "strict hybrid")
+require_csv_value("${strict_hybrid_rank_header}" "${strict_hybrid_rank}" "rank" "1")
+require_csv_value("${strict_hybrid_rank_header}" "${strict_hybrid_rank}" "configured_lane_capacity" "4")
+require_csv_value("${strict_hybrid_rank_header}" "${strict_hybrid_rank}" "observed_participating_lane_count" "2")
 
 load_fixture(
   "${fixture_dir}/mpi-openmp-union-mixed-epoch-reader-aid.csv"
@@ -275,7 +351,7 @@ require_csv_value("${hybrid_union_header}" "${hybrid_union_entry}" "participatin
 require_csv_value("${hybrid_union_header}" "${hybrid_union_entry}" "missing_rank_count" "1")
 require_csv_value("${hybrid_union_header}" "${hybrid_union_entry}" "eligible_rank_lane_sample_count" "4")
 require_csv_value("${hybrid_union_header}" "${hybrid_union_entry}" "participating_rank_lane_sample_count" "2")
-require_csv_value("${hybrid_union_header}" "${hybrid_union_entry}" "missing_rank_lane_sample_count" "2")
+require_csv_value("${hybrid_union_header}" "${hybrid_union_entry}" "missing_rank_lane_sample_count" "0")
 require_csv_value("${hybrid_union_header}" "${hybrid_union_entry}" "missing_rank_lane_sample_count_known" "false")
 require_csv_column("${hybrid_union_header}" "avg_participating_lane_inclusive_time")
 require_csv_column("${hybrid_union_header}" "avg_participating_lane_pct_time")
