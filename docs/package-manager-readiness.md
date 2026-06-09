@@ -9,11 +9,11 @@ Status date: 2026-06-09.
 
 ## Spike Summary
 
-fTimer is package-manager friendly for source builds that follow its existing
-CMake install contract. The package recipe should configure, build, install,
-and then run a downstream `find_package(fTimer CONFIG REQUIRED)` consumer
-against the installed prefix. No fTimer source patches were identified for the
-serial, MPI, OpenMP, or MPI+OpenMP feature modes.
+fTimer appears package-manager friendly for source builds that follow its
+existing CMake install contract. The package recipe should configure, build,
+install, and then run a downstream `find_package(fTimer CONFIG REQUIRED)`
+consumer against the installed prefix. No fTimer source patches were identified
+for the serial, MPI, OpenMP, or MPI+OpenMP feature modes.
 
 The main packaging boundary is that Fortran `.mod` files are compiler-,
 wrapper-, and feature-mode-specific. A package manager should treat serial,
@@ -31,7 +31,7 @@ Spack or EasyBuild directly.
 
 A Spack package can be modeled as a `CMakePackage` with `mpi` and `openmp`
 variants. The serial prototype is the base case; MPI, OpenMP, and MPI+OpenMP
-only add dependencies and CMake option flips.
+add dependencies, CMake option flips, and the feature-mode caveats below.
 
 ```python
 from spack.package import *
@@ -51,6 +51,8 @@ class Ftimer(CMakePackage):
     variant("openmp", default=False, description="Enable OpenMP timing support")
 
     depends_on("cmake@3.16:", type="build")
+    depends_on("cmake@3.24:", when="+openmp", type="build")
+    depends_on("fortran", type="build")
     depends_on("mpi", when="+mpi")
 
     def cmake_args(self):
@@ -74,6 +76,10 @@ Spack support assumptions:
   CMake consumer with `CMAKE_PREFIX_PATH` set to the installed prefix.
 - Keep `+openmp` off by default until the selected compiler/runtime pair is
   validated by fTimer's OpenMP configure probe.
+- The prototype conservatively requires CMake 3.24 or newer for `+openmp` so
+  LLVM Flang OpenMP packages have the compiler-id support fTimer requires.
+  Site recipes that scope OpenMP support to GNU Fortran may relax that
+  requirement after validating their selected compiler/runtime pair.
 
 ## Out-of-Tree EasyBuild Prototype
 
