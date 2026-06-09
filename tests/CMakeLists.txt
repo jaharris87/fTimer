@@ -7,6 +7,127 @@ set(FTIMER_INSTALLED_CONSUMER_RUN_TIMEOUT 120 CACHE STRING
 math(EXPR FTIMER_OPENMP_MPI_SUMMARY_SMOKE_CTEST_TIMEOUT
   "${FTIMER_OPENMP_MPI_SUMMARY_SMOKE_TIMEOUT} + 15")
 
+function(ftimer_expect_target_property target_name property expected_value)
+  get_target_property(actual_value ${target_name} ${property})
+  if(NOT actual_value STREQUAL expected_value)
+    message(FATAL_ERROR
+      "${target_name} ${property} contract mismatch: expected '${expected_value}', got '${actual_value}'"
+    )
+  endif()
+endfunction()
+
+function(ftimer_expect_target_property_unset target_name property)
+  get_target_property(actual_value ${target_name} ${property})
+  if(actual_value)
+    message(FATAL_ERROR
+      "${target_name} ${property} contract mismatch: expected unset, got '${actual_value}'"
+    )
+  endif()
+endfunction()
+
+function(ftimer_expect_target_property_contains target_name property expected_item)
+  get_target_property(actual_values ${target_name} ${property})
+  if(NOT expected_item IN_LIST actual_values)
+    message(FATAL_ERROR
+      "${target_name} ${property} contract mismatch: expected list to contain '${expected_item}', got '${actual_values}'"
+    )
+  endif()
+endfunction()
+
+function(ftimer_expect_target_property_lacks target_name property unexpected_item)
+  get_target_property(actual_values ${target_name} ${property})
+  if(unexpected_item IN_LIST actual_values)
+    message(FATAL_ERROR
+      "${target_name} ${property} contract mismatch: expected list not to contain '${unexpected_item}', got '${actual_values}'"
+    )
+  endif()
+endfunction()
+
+function(ftimer_expect_feature_dependencies target_name)
+  if(FTIMER_USE_MPI)
+    ftimer_expect_target_property_contains(${target_name}
+      COMPILE_DEFINITIONS FTIMER_USE_MPI)
+    ftimer_expect_target_property_contains(${target_name}
+      INTERFACE_COMPILE_DEFINITIONS FTIMER_USE_MPI)
+    ftimer_expect_target_property_contains(${target_name}
+      LINK_LIBRARIES MPI::MPI_Fortran)
+    ftimer_expect_target_property_contains(${target_name}
+      INTERFACE_LINK_LIBRARIES MPI::MPI_Fortran)
+  else()
+    ftimer_expect_target_property_lacks(${target_name}
+      COMPILE_DEFINITIONS FTIMER_USE_MPI)
+    ftimer_expect_target_property_lacks(${target_name}
+      INTERFACE_COMPILE_DEFINITIONS FTIMER_USE_MPI)
+    ftimer_expect_target_property_lacks(${target_name}
+      LINK_LIBRARIES MPI::MPI_Fortran)
+    ftimer_expect_target_property_lacks(${target_name}
+      INTERFACE_LINK_LIBRARIES MPI::MPI_Fortran)
+  endif()
+
+  if(FTIMER_USE_OPENMP)
+    ftimer_expect_target_property_contains(${target_name}
+      COMPILE_DEFINITIONS FTIMER_USE_OPENMP)
+    ftimer_expect_target_property_contains(${target_name}
+      INTERFACE_COMPILE_DEFINITIONS FTIMER_USE_OPENMP)
+    ftimer_expect_target_property_contains(${target_name}
+      LINK_LIBRARIES OpenMP::OpenMP_Fortran)
+    ftimer_expect_target_property_contains(${target_name}
+      INTERFACE_LINK_LIBRARIES OpenMP::OpenMP_Fortran)
+  else()
+    ftimer_expect_target_property_lacks(${target_name}
+      COMPILE_DEFINITIONS FTIMER_USE_OPENMP)
+    ftimer_expect_target_property_lacks(${target_name}
+      INTERFACE_COMPILE_DEFINITIONS FTIMER_USE_OPENMP)
+    ftimer_expect_target_property_lacks(${target_name}
+      LINK_LIBRARIES OpenMP::OpenMP_Fortran)
+    ftimer_expect_target_property_lacks(${target_name}
+      INTERFACE_LINK_LIBRARIES OpenMP::OpenMP_Fortran)
+  endif()
+endfunction()
+
+function(ftimer_expect_internal_library_contract target_name module_dir build_definition)
+  ftimer_expect_target_property(${target_name}
+    Fortran_MODULE_DIRECTORY "${module_dir}")
+  ftimer_expect_target_property(${target_name}
+    OUTPUT_NAME ${target_name})
+  ftimer_expect_target_property_contains(${target_name}
+    INCLUDE_DIRECTORIES "$<BUILD_INTERFACE:${module_dir}>")
+  ftimer_expect_target_property_contains(${target_name}
+    INTERFACE_INCLUDE_DIRECTORIES "$<BUILD_INTERFACE:${module_dir}>")
+  ftimer_expect_target_property_contains(${target_name}
+    COMPILE_DEFINITIONS ${build_definition})
+  ftimer_expect_target_property_lacks(${target_name}
+    INTERFACE_COMPILE_DEFINITIONS ${build_definition})
+  ftimer_expect_feature_dependencies(${target_name})
+endfunction()
+
+ftimer_expect_target_property(ftimer
+  Fortran_MODULE_DIRECTORY "${FTIMER_PUBLIC_MODULE_DIR}")
+ftimer_expect_target_property_unset(ftimer OUTPUT_NAME)
+ftimer_expect_target_property_contains(ftimer
+  INCLUDE_DIRECTORIES "$<BUILD_INTERFACE:${FTIMER_PUBLIC_MODULE_DIR}>")
+ftimer_expect_target_property_contains(ftimer
+  INTERFACE_INCLUDE_DIRECTORIES "$<BUILD_INTERFACE:${FTIMER_PUBLIC_MODULE_DIR}>")
+ftimer_expect_target_property_contains(ftimer
+  INTERFACE_INCLUDE_DIRECTORIES "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ftimer>")
+ftimer_expect_feature_dependencies(ftimer)
+
+if(FTIMER_BUILD_TESTS)
+  ftimer_expect_internal_library_contract(
+    ftimer_test
+    "${FTIMER_TEST_LIBRARY_MODULE_DIR}"
+    FTIMER_BUILD_TESTS
+  )
+endif()
+
+if(FTIMER_BUILD_SMOKE_TESTS)
+  ftimer_expect_internal_library_contract(
+    ftimer_smoke_test
+    "${FTIMER_SMOKE_TEST_LIBRARY_MODULE_DIR}"
+    FTIMER_BUILD_SMOKE_TESTS
+  )
+endif()
+
 if(FTIMER_BUILD_SMOKE_TESTS)
   add_executable(ftimer_phase0_smoke test_phase0_smoke.F90)
   target_link_libraries(ftimer_phase0_smoke PRIVATE ftimer)
