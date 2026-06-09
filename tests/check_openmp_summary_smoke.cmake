@@ -21,6 +21,10 @@ endif()
 
 string(REPLACE "\r\n" "\n" summary_stderr_normalized "${summary_stderr}")
 string(CONCAT expected_stderr
+  "ftimer_openmp write_openmp_summary_csv append validation failed: existing OpenMP summary CSV append target does not end with a newline\n"
+  "ftimer_openmp write_openmp_summary_csv append validation failed: existing OpenMP summary CSV records contain malformed quoted fields\n"
+  "ftimer_openmp write_openmp_summary_csv append validation failed: existing OpenMP summary CSV records contain a bare carriage return\n"
+  "ftimer_openmp write_openmp_summary_csv append validation failed: existing OpenMP summary CSV header does not match format version 1\n"
   "ftimer_openmp recorded 1 worker diagnostics; first status 4, overflow 0\n"
   "ftimer_openmp recorded 1 worker diagnostics; first status 4, overflow 0\n"
 )

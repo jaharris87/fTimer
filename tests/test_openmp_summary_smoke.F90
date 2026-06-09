@@ -593,19 +593,29 @@ contains
 
    subroutine check_openmp_summary_csv_append_validation()
       character(len=*), parameter :: bad_csv_path = 'openmp_summary_bad_append.csv'
+      character(len=*), parameter :: bare_cr_path = 'openmp_summary_bare_cr_append.csv'
       character(len=*), parameter :: csv_path = 'openmp_summary_append.csv'
+      character(len=*), parameter :: malformed_quote_path = 'openmp_summary_malformed_quote_append.csv'
+      character(len=*), parameter :: quoted_csv_path = 'openmp_summary_quoted_append.csv'
       character(len=*), parameter :: truncated_csv_path = 'openmp_summary_truncated_append.csv'
       character(len=*), parameter :: wrong_header_csv_path = 'openmp_summary_wrong_header_append.csv'
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_t) :: timer
+      type(ftimer_metadata_t) :: metadata(1)
       character(len=:), allocatable :: bad_text
       character(len=:), allocatable :: csv_text
       character(len=:), allocatable :: header
+      character(len=:), allocatable :: metadata_line
       integer :: ierr
+      integer :: record_type_col
+      integer :: value_col
       integer :: timer_id
 
       call delete_if_exists(csv_path)
       call delete_if_exists(bad_csv_path)
+      call delete_if_exists(bare_cr_path)
+      call delete_if_exists(malformed_quote_path)
+      call delete_if_exists(quoted_csv_path)
       call delete_if_exists(truncated_csv_path)
       call delete_if_exists(wrong_header_csv_path)
 
@@ -633,6 +643,21 @@ contains
       csv_text = read_file_text(csv_path)
       call expect_int(count_occurrences(csv_text, header), 1, 187)
 
+      metadata(1)%key = 'Notes'
+      metadata(1)%value = 'openmp, "quoted"'
+      call timer%write_openmp_summary_csv(quoted_csv_path, metadata=metadata, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 196)
+      call timer%write_openmp_summary_csv(quoted_csv_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 197)
+      csv_text = read_file_text(quoted_csv_path)
+      header = first_line(csv_text)
+      metadata_line = find_csv_record(csv_text, 'metadata', 'Notes')
+      record_type_col = csv_column_index(csv_text, 'record_type')
+      value_col = csv_column_index(csv_text, 'value')
+      call expect_int(count_occurrences(csv_text, header), 1, 198)
+      call expect_equal_text(csv_field_value(metadata_line, record_type_col), 'metadata', 199)
+      call expect_equal_text(csv_field_value(metadata_line, value_col), 'openmp, "quoted"', 210)
+
       bad_text = header//new_line('a')//'"1","openmp","summary"'//new_line('a')
       call write_text_file(bad_csv_path, bad_text)
       call timer%write_openmp_summary_csv(bad_csv_path, append=.true., ierr=ierr)
@@ -645,16 +670,36 @@ contains
       call expect_status(ierr, FTIMER_ERR_IO, 190)
       call expect_equal_text(read_file_text(truncated_csv_path), bad_text, 191)
 
+      bad_text = header//new_line('a')//'1"bad'//new_line('a')
+      call write_text_file(malformed_quote_path, bad_text)
+      call timer%write_openmp_summary_csv(malformed_quote_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 211)
+      call expect_equal_text(read_file_text(malformed_quote_path), bad_text, 212)
+
+      bad_text = header//new_line('a')//'"1","openmp","summary"'//achar(13)//'x'//new_line('a')
+      call write_text_file(bare_cr_path, bad_text)
+      call timer%write_openmp_summary_csv(bare_cr_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 213)
+      call expect_equal_text(read_file_text(bare_cr_path), bad_text, 214)
+
       bad_text = 'format_version,summary_kind,record_type'//new_line('a')
       call write_text_file(wrong_header_csv_path, bad_text)
       call timer%write_openmp_summary_csv(wrong_header_csv_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 193)
       call expect_equal_text(read_file_text(wrong_header_csv_path), bad_text, 194)
 
+      call timer%write_openmp_summary_csv(truncated_csv_path, append=.true.)
+      call timer%write_openmp_summary_csv(malformed_quote_path, append=.true.)
+      call timer%write_openmp_summary_csv(bare_cr_path, append=.true.)
+      call timer%write_openmp_summary_csv(wrong_header_csv_path, append=.true.)
+
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 195)
       call delete_if_exists(csv_path)
       call delete_if_exists(bad_csv_path)
+      call delete_if_exists(bare_cr_path)
+      call delete_if_exists(malformed_quote_path)
+      call delete_if_exists(quoted_csv_path)
       call delete_if_exists(truncated_csv_path)
       call delete_if_exists(wrong_header_csv_path)
    end subroutine check_openmp_summary_csv_append_validation
