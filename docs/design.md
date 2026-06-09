@@ -103,6 +103,9 @@ ftimer_mpi.F90
 ftimer_clock.F90
   └─ default wall clock, MPI wall clock wrapper, date-string helper
 
+ftimer_csv_validation.F90
+  └─ shared CSV append-target validation helper
+
 ftimer_openmp.F90
   └─ explicit opt-in OpenMP lifecycle/catalog/timed-region thread-lane runtime
 
@@ -113,19 +116,22 @@ ftimer_types.F90
 The CMake source order reflects the real dependency order:
 
 1. `ftimer_types.F90`
-2. `ftimer_clock.F90`
-3. `ftimer_core.F90`
-4. `ftimer_summary.F90`
-5. `ftimer_mpi.F90`
-6. `ftimer_core_summary_bindings.F90`
-7. `ftimer_openmp.F90`
-8. `ftimer.F90`
+2. `ftimer_csv_validation.F90`
+3. `ftimer_clock.F90`
+4. `ftimer_core.F90`
+5. `ftimer_summary.F90`
+6. `ftimer_mpi.F90`
+7. `ftimer_core_summary_bindings.F90`
+8. `ftimer_openmp.F90`
+9. `ftimer.F90`
 
 ### Module Roles
 
 `ftimer_types.F90` is the shared foundation. It defines kind parameters, error codes, mismatch-mode constants, MPI summary-state constants, summary types, call-stack/context helpers, and the abstract interfaces for clocks and lightweight callback hooks.
 
 `ftimer_clock.F90` is an internal time-acquisition helper module. Serial builds use `system_clock`; MPI-enabled builds can use the MPI wall clock path. Tests rely on the injectable clock interface so behavior is deterministic without sleeps.
+
+`ftimer_csv_validation.F90` is an internal CSV append-target validation helper. Core, MPI, OpenMP, and hybrid CSV output paths pass explicit schema headers, format versions, summary kinds, and record types to keep schema-specific behavior visible while sharing quoted-field, CR, newline, and record-prefix validation.
 
 `ftimer_core.F90` owns the mutable timer state in `ftimer_t`: timer definitions, active stack state, mismatch policy, communicator capture, lightweight callback registration, and the guarded timer entry points.
 
