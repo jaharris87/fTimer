@@ -10,11 +10,11 @@ This contract is strongest for disciplined serial and pure-MPI wall-clock timing
 
 Current architecture, validation, and workflow notes belong in `docs/design.md`.
 High-risk fault categories and their evidence homes are mapped in
-`docs/fault-model-traceability.md`. Historical phase-roadmap notes belong in
-`docs/implementation-history.md`. When current-state sources disagree, use this
-repository-wide precedence order: current code under `src/`, then current
-behavioral tests, then `docs/semantics.md`, then `README.md`, then
-`docs/design.md`.
+[`docs/fault-model-traceability.md`](fault-model-traceability.md). Historical
+phase-roadmap notes belong in `docs/implementation-history.md`. When
+current-state sources disagree, use this repository-wide precedence order:
+current code under `src/`, then current behavioral tests, then
+`docs/semantics.md`, then `README.md`, then `docs/design.md`.
 
 ## Timing Model
 

@@ -58,10 +58,12 @@ foreach(markdown_path IN LISTS required_paths)
 endforeach()
 
 file(READ "${REPO_ROOT}/docs/semantics.md" semantics_text)
-string(FIND "${semantics_text}" "docs/fault-model-traceability.md" fault_model_semantics_link_index)
+string(FIND "${semantics_text}"
+  "[`docs/fault-model-traceability.md`](fault-model-traceability.md)"
+  fault_model_semantics_link_index)
 if(fault_model_semantics_link_index EQUAL -1)
   message(FATAL_ERROR
-    "docs/semantics.md must link to docs/fault-model-traceability.md."
+    "docs/semantics.md must Markdown-link to docs/fault-model-traceability.md."
   )
 endif()
 
