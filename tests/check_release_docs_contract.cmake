@@ -840,6 +840,8 @@ set(package_manager_required_terms
   "Local package-manager execution was not available during this spike"
   "Do not add maintained in-repository Spack or EasyBuild recipe files now"
   "Recommended action: docs clarification plus future upstream recipe"
+  "depends_on(\"cmake@3.24:\", when=\"+openmp\", type=\"build\")"
+  "LLVM Flang OpenMP packages have the compiler-id support fTimer requires"
   "wrapper-, and feature-mode-specific"
 )
 
