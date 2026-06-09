@@ -381,7 +381,11 @@ silently relax descriptor or lane-participation consistency.
   eligible rank/lane samples. Missing lane counts are derived from the observed
   eligible lane set for contributing timed-region epochs, not from configured
   lane capacity. When a precise missing-lane interpretation is not available,
-  `missing_rank_lane_sample_count_known` is false.
+  `eligible_rank_lane_sample_count` retains the sum of each participating
+  rank's maximum/union eligible lane count for that descriptor, and
+  `missing_rank_lane_sample_count_known` is false. In that state,
+  `missing_rank_lane_sample_count` must not be read as precise epoch-level
+  absence.
 - Entry min/avg/max, call-count, percent, and imbalance fields are defined over
   participating rank/lane samples only. Absent ranks and absent lanes are not
   zero-filled. A materialized present zero-time or zero-call descriptor
@@ -404,7 +408,10 @@ silently relax descriptor or lane-participation consistency.
   reports.
 - Sparse hybrid report and CSV entry statistics are over participating
   rank/lane samples only. Missing ranks and missing lanes are exposed as
-  participation fields, not hidden as zero-valued contributors.
+  participation fields, not hidden as zero-valued contributors. Sparse hybrid
+  text reports print `unknown` for missing rank/lane samples when
+  `missing_rank_lane_sample_count_known` is false; CSV keeps the explicit false
+  flag next to the aggregate participation fields.
 
 ## Name Validation Error Contract
 
@@ -511,12 +518,18 @@ enforcement should pass `ierr` and check it.
   the fTimer timed region before timing a differently shaped team. Serial-lane
   descriptors use lane 0 as their eligible participant. When mixed contributing
   epochs make the aggregate missing-lane interpretation ambiguous,
-  `missing_lane_count_known` is false.
+  `eligible_lane_count` is the maximum observed eligible lane id/count for the
+  descriptor across those epochs, and `missing_lane_count_known` is false. In
+  that state, `missing_lane_count` is a conservative aggregate derived from the
+  retained eligible count, not a precise count of lanes absent from every epoch.
 - The OpenMP text report is an abbreviated human-facing view of
   `ftimer_openmp_summary_t`. The OpenMP CSV export uses a dedicated
   `format_version=1`, `summary_kind=openmp` schema with `summary`,
   `metadata`, and aggregate `entry` rows. It is not append-compatible with the
-  local/strict MPI version-2 CSV header or the sparse MPI union CSV header.
+  local/strict MPI version-2 CSV header or the sparse MPI union CSV header. The
+  text report prints `unknown` in the `Missing` column when
+  `missing_lane_count_known` is false; CSV keeps the numeric aggregate field
+  and the explicit `missing_lane_count_known=false` flag.
 - Local OpenMP summaries are summary tables, not traces. They do not expose
   interval timelines, profiler event streams, or per-entry wall-clock interval
   unions.
@@ -539,7 +552,10 @@ enforcement should pass `ierr` and check it.
   eligible lane must participate. Missing ranks, missing lanes, different
   timer paths, or different eligible lane structures fail as
   `FTIMER_ERR_MPI_INCON` before numeric timing reductions. Missing rank/lane
-  data is not silently filled with zero.
+  data is not silently filled with zero. A descriptor that spans mixed OpenMP
+  timed-region epochs with different team sizes has unknown missing-lane
+  precision and is rejected by this strict surface even when all lanes observed
+  in the retained eligible set contributed at least once.
 - `ftimer_mpi_openmp_summary_t` stores communicator-level rank extrema and
   averages for summary-window time, timed-region envelope time, summed lane
   root work, and summed lane self work; rank rows for each communicator-local

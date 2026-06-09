@@ -9,7 +9,8 @@ program ftimer_openmp_mpi_summary_smoke
    use mpi_f08, only: MPI_Barrier, MPI_COMM_NULL, MPI_COMM_WORLD, MPI_Comm, &
                       MPI_Comm_free, MPI_Comm_rank, MPI_Comm_size, MPI_Comm_split, &
                       MPI_Finalize, MPI_Init, MPI_SUCCESS
-   use omp_lib, only: omp_get_thread_num, omp_in_parallel, omp_set_dynamic, omp_set_num_threads
+   use omp_lib, only: omp_get_num_threads, omp_get_thread_num, omp_in_parallel, omp_set_dynamic, &
+                      omp_set_num_threads
    implicit none
 
    real(wp), save :: fake_lane_time(0:4) = 0.0_wp
@@ -56,6 +57,7 @@ program ftimer_openmp_mpi_summary_smoke
    call check_strict_hybrid_lane_participation_mismatch(rank)
    call check_strict_hybrid_execution_domain_mismatch(rank)
    call check_strict_hybrid_eligible_lane_mismatch(rank)
+   call check_strict_hybrid_mixed_epoch_unknown_missing_failure(rank)
    call check_strict_hybrid_varied_call_counts(rank)
    call check_strict_hybrid_worker_varied_call_counts(rank)
    call check_strict_hybrid_worker_context_call_counts(rank)
@@ -667,10 +669,12 @@ contains
       character(len=:), allocatable :: report_text
       integer :: domain_id
       integer :: ierr
+      integer :: mixed_epoch_first_team_size
       integer :: serial_idx
+      integer :: mixed_epoch_second_team_size
       integer :: worker_idx
-      integer :: unknown_id
-      integer :: unknown_idx
+      integer :: mixed_epoch_id
+      integer :: mixed_epoch_idx
       integer :: zero_id
       integer :: zero_idx
 
@@ -691,7 +695,7 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 2302)
       call timer%register_timer('zero_sparse', zero_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 2303)
-      call timer%register_timer('unknown_sparse', unknown_id, ierr=ierr)
+      call timer%register_timer('mixed_epoch_sparse', mixed_epoch_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 2431)
 
       if (rank == 0) then
@@ -739,13 +743,15 @@ contains
          fake_lane_time(0) = 3013.0_wp
          call timer%begin_parallel_region(region, ierr=ierr)
          call expect_status(ierr, FTIMER_SUCCESS, 2432)
-!$omp parallel num_threads(2) default(shared) private(ierr)
+         mixed_epoch_first_team_size = 0
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(max:mixed_epoch_first_team_size)
+         mixed_epoch_first_team_size = max(mixed_epoch_first_team_size, omp_get_num_threads())
          if (omp_get_thread_num() == 0) then
             fake_lane_time(1) = 30.0_wp
-            call timer%start_id(unknown_id, ierr=ierr)
+            call timer%start_id(mixed_epoch_id, ierr=ierr)
             if (ierr /= FTIMER_SUCCESS) error stop 2433
             fake_lane_time(1) = 31.0_wp
-            call timer%stop_id(unknown_id, ierr=ierr)
+            call timer%stop_id(mixed_epoch_id, ierr=ierr)
             if (ierr /= FTIMER_SUCCESS) error stop 2434
          end if
 !$omp end parallel
@@ -756,19 +762,22 @@ contains
          fake_lane_time(0) = 3016.0_wp
          call timer%begin_parallel_region(region, ierr=ierr)
          call expect_status(ierr, FTIMER_SUCCESS, 2436)
-!$omp parallel num_threads(3) default(shared) private(ierr)
+         mixed_epoch_second_team_size = 0
+!$omp parallel num_threads(3) default(shared) private(ierr) reduction(max:mixed_epoch_second_team_size)
+         mixed_epoch_second_team_size = max(mixed_epoch_second_team_size, omp_get_num_threads())
          if (omp_get_thread_num() == 0) then
             fake_lane_time(1) = 32.0_wp
-            call timer%start_id(unknown_id, ierr=ierr)
+            call timer%start_id(mixed_epoch_id, ierr=ierr)
             if (ierr /= FTIMER_SUCCESS) error stop 2437
             fake_lane_time(1) = 34.0_wp
-            call timer%stop_id(unknown_id, ierr=ierr)
+            call timer%stop_id(mixed_epoch_id, ierr=ierr)
             if (ierr /= FTIMER_SUCCESS) error stop 2438
          end if
 !$omp end parallel
          fake_lane_time(0) = 3019.0_wp
          call timer%end_parallel_region(region, ierr=ierr)
          call expect_status(ierr, FTIMER_SUCCESS, 2439)
+         if (mixed_epoch_second_team_size <= mixed_epoch_first_team_size) error stop 2454
       end if
 
       fake_lane_time(0) = 3020.0_wp
@@ -777,7 +786,7 @@ contains
       call expect_int(summary%num_entries, 4, 2315)
       call expect_union_entry_identity(summary, 1, 'zero_sparse', 0, &
                                        'openmp_level1_team', 0, 2316)
-      call expect_union_entry_identity(summary, 2, 'unknown_sparse', 0, &
+      call expect_union_entry_identity(summary, 2, 'mixed_epoch_sparse', 0, &
                                        'openmp_level1_team', 0, 2317)
       call expect_union_entry_identity(summary, 3, 'domain_split_sparse', 0, &
                                        'openmp_level1_team', 0, 2318)
@@ -785,11 +794,11 @@ contains
                                        'serial_lane', 0, 2440)
 
       zero_idx = find_union_entry_by_domain(summary, 'zero_sparse', 0, 'openmp_level1_team')
-      unknown_idx = find_union_entry_by_domain(summary, 'unknown_sparse', 0, 'openmp_level1_team')
+      mixed_epoch_idx = find_union_entry_by_domain(summary, 'mixed_epoch_sparse', 0, 'openmp_level1_team')
       worker_idx = find_union_entry_by_domain(summary, 'domain_split_sparse', 0, 'openmp_level1_team')
       serial_idx = find_union_entry_by_domain(summary, 'domain_split_sparse', 0, 'serial_lane')
       if (zero_idx <= 0) error stop 2319
-      if (unknown_idx <= 0) error stop 2320
+      if (mixed_epoch_idx <= 0) error stop 2320
       if (worker_idx <= 0) error stop 2321
       if (serial_idx <= 0) error stop 2441
 
@@ -802,7 +811,10 @@ contains
                               self_imbalance=1.0_wp, min_calls=1_int64, avg_calls=1.0_wp, &
                               max_calls=1_int64, min_pct=0.0_wp, avg_pct=0.0_wp, max_pct=0.0_wp, &
                               pct_imbalance=1.0_wp, stop_code=2322)
-      call expect_union_entry_unknown_missing(summary, unknown_idx, execution_domain='openmp_level1_team', &
+      ! The same descriptor spans 2-worker and 3-worker timed-region epochs.
+      ! Sparse union keeps the maximum/union eligible lane sample count but
+      ! marks the missing sample count unknown.
+      call expect_union_entry_unknown_missing(summary, mixed_epoch_idx, execution_domain='openmp_level1_team', &
                                               depth=0, rank_count=1, missing_ranks=1, eligible_samples=3, &
                                               participating_samples=1, sum_inclusive=3.0_wp, sum_self=3.0_wp, &
                                               min_inclusive=3.0_wp, avg_inclusive=3.0_wp, &
@@ -841,8 +853,8 @@ contains
 
       if (rank == 0) then
          report_text = read_file_text(report_path)
-         call expect_text_before(report_text, 'zero_sparse', 'unknown_sparse', 2400)
-         call expect_text_before(report_text, 'unknown_sparse', 'domain_split_sparse', 2445)
+         call expect_text_before(report_text, 'zero_sparse', 'mixed_epoch_sparse', 2400)
+         call expect_text_before(report_text, 'mixed_epoch_sparse', 'domain_split_sparse', 2445)
          call expect_sparse_union_report_entry_line(report_text, 'zero_sparse', &
                                                     depth=0, ranks=1, missing_ranks=1, &
                                                     samples=1, missing_samples=1, &
@@ -850,7 +862,7 @@ contains
                                                     min_inclusive=0.0_wp, avg_inclusive=0.0_wp, &
                                                     max_inclusive=0.0_wp, avg_calls=1.0_wp, &
                                                     stop_code=2401)
-         call expect_sparse_union_report_entry_line_text_missing(report_text, 'unknown_sparse', &
+         call expect_sparse_union_report_entry_line_text_missing(report_text, 'mixed_epoch_sparse', &
                                                                  'openmp_level1_team', depth=0, &
                                                                  ranks=1, missing_ranks=1, samples=1, &
                                                                  missing_samples_text='unknown', &
@@ -876,16 +888,25 @@ contains
                                                                  stop_code=2448)
          csv_text = read_file_text(csv_path)
          call expect_csv_record_count(csv_text, 'entry', 4, 2402)
-         call expect_text_before(csv_text, 'zero_sparse', 'unknown_sparse', 2403)
+         call expect_text_before(csv_text, 'zero_sparse', 'mixed_epoch_sparse', 2403)
          call expect_csv_entry_field_by_domain(csv_text, 'domain_split_sparse', '0', &
                                                'openmp_level1_team', 'sum_participating_lane_inclusive_time', &
                                                real_csv_text(13.0_wp), 2404)
          call expect_csv_entry_field_by_domain(csv_text, 'domain_split_sparse', '0', &
                                                'serial_lane', 'sum_participating_lane_inclusive_time', &
                                                real_csv_text(4.0_wp), 2449)
-         call expect_csv_entry_field_by_domain(csv_text, 'unknown_sparse', '0', &
+         call expect_csv_entry_field_by_domain(csv_text, 'mixed_epoch_sparse', '0', &
                                                'openmp_level1_team', &
-                                               'missing_rank_lane_sample_count_known', 'false', 2450)
+                                               'eligible_rank_lane_sample_count', '3', 2450)
+         call expect_csv_entry_field_by_domain(csv_text, 'mixed_epoch_sparse', '0', &
+                                               'openmp_level1_team', &
+                                               'participating_rank_lane_sample_count', '1', 2451)
+         call expect_csv_entry_field_by_domain(csv_text, 'mixed_epoch_sparse', '0', &
+                                               'openmp_level1_team', &
+                                               'missing_rank_lane_sample_count', '0', 2452)
+         call expect_csv_entry_field_by_domain(csv_text, 'mixed_epoch_sparse', '0', &
+                                               'openmp_level1_team', &
+                                               'missing_rank_lane_sample_count_known', 'false', 2453)
          call expect_csv_entry_real_field(csv_text, 'zero_sparse', '0', &
                                           'min_participating_lane_inclusive_time', 0.0_wp, 2405)
          call expect_csv_entry_field(csv_text, 'zero_sparse', '0', &
@@ -1927,6 +1948,68 @@ contains
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 159)
    end subroutine check_strict_hybrid_eligible_lane_mismatch
+
+   subroutine check_strict_hybrid_mixed_epoch_unknown_missing_failure(rank)
+      integer, intent(in) :: rank
+      type(ftimer_mpi_openmp_summary_t) :: summary
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: timer
+      integer :: first_epoch_team_size
+      integer :: ierr
+      integer :: second_epoch_team_size
+      integer :: timer_id
+
+      config%max_lanes = 4
+      call timer%init(config=config, comm=MPI_COMM_WORLD, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 4900)
+      fake_lane_time(0) = 4900.0_wp
+      call timer%test_set_clock(mock_openmp_clock, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 4901)
+      call timer%register_timer('mixed_epoch_strict', timer_id, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 4902)
+
+      fake_lane_time(0) = 4910.0_wp
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 4903)
+      first_epoch_team_size = 0
+!$omp parallel num_threads(2) default(shared) private(ierr) reduction(max:first_epoch_team_size)
+      first_epoch_team_size = max(first_epoch_team_size, omp_get_num_threads())
+      fake_lane_time(1 + omp_get_thread_num()) = 1.0_wp
+      call timer%start_id(timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 4904
+      fake_lane_time(1 + omp_get_thread_num()) = 2.0_wp + real(rank, wp)
+      call timer%stop_id(timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 4905
+!$omp end parallel
+      fake_lane_time(0) = 4912.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 4906)
+
+      fake_lane_time(0) = 4920.0_wp
+      call timer%begin_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 4907)
+      second_epoch_team_size = 0
+!$omp parallel num_threads(3) default(shared) private(ierr) reduction(max:second_epoch_team_size)
+      second_epoch_team_size = max(second_epoch_team_size, omp_get_num_threads())
+      fake_lane_time(1 + omp_get_thread_num()) = 3.0_wp
+      call timer%start_id(timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 4908
+      fake_lane_time(1 + omp_get_thread_num()) = 5.0_wp + real(rank, wp)
+      call timer%stop_id(timer_id, ierr=ierr)
+      if (ierr /= FTIMER_SUCCESS) error stop 4909
+!$omp end parallel
+      fake_lane_time(0) = 4923.0_wp
+      call timer%end_parallel_region(region, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 4910)
+      if (second_epoch_team_size <= first_epoch_team_size) error stop 4914
+
+      call timer%mpi_openmp_summary(summary, ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_MPI_INCON, 4911)
+      call expect_int(summary%num_entries, 0, 4912)
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 4913)
+   end subroutine check_strict_hybrid_mixed_epoch_unknown_missing_failure
 
    subroutine check_strict_hybrid_varied_call_counts(rank)
       integer, intent(in) :: rank

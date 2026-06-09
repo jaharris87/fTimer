@@ -5183,6 +5183,7 @@ contains
       integer :: i
       integer :: key_width
       integer :: line_width
+      integer :: missing_width
       integer :: name_width
 
       call init_openmp_report_buffer(buffer, default_report_buffer_capacity)
@@ -5220,14 +5221,19 @@ contains
                               'Report note: lane min/avg/max fields are over participating lanes only; '// &
                               'missing lanes are not zero-filled.')
       call append_openmp_line(buffer, &
+                              'Report note: missing lane counts are shown as unknown when mixed timed-region '// &
+                              'epochs make the aggregate count ambiguous.')
+      call append_openmp_line(buffer, &
                               'Report note: timed-region envelope time is wall-clock time, not summed lane work.')
       call append_openmp_line(buffer, '')
 
       name_width = openmp_summary_name_width(summary)
-      line_width = name_width + 220
+      missing_width = openmp_summary_missing_width(summary)
+      line_width = name_width + missing_width + 220
       allocate (character(len=line_width) :: line)
       write (line, '(a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a,2x,a)') &
-         padded_openmp_text('Timer name', name_width), 'Part', 'Missing', 'Sum Incl (s)', 'Sum Self (s)', &
+         padded_openmp_text('Timer name', name_width), 'Part', padded_openmp_text('Missing', missing_width), &
+         'Sum Incl (s)', 'Sum Self (s)', &
          'Min Lane Incl (s)', 'Avg Lane Incl (s)', 'Max Lane Incl (s)', 'Avg Lane Self (s)', &
          'Min Calls', 'Avg Calls', 'Max Calls'
       call append_openmp_line(buffer, trim(line))
@@ -5235,9 +5241,10 @@ contains
 
       do i = 1, summary%num_entries
          display = repeat(' ', 2*summary%entries(i)%depth)//openmp_entry_name(summary%entries(i))
-         write (line, '(a,2x,i4,2x,i7,2x,f12.6,2x,f12.6,2x,f17.6,2x,f17.6,2x,f17.6,2x,f17.6,2x,i9,2x,f9.3,2x,i9)') &
+         write (line, '(a,2x,i4,2x,a,2x,f12.6,2x,f12.6,2x,f17.6,2x,f17.6,2x,f17.6,2x,f17.6,2x,i9,2x,f9.3,2x,i9)') &
             padded_openmp_text(display, name_width), summary%entries(i)%participating_lane_count, &
-            summary%entries(i)%missing_lane_count, summary%entries(i)%sum_lane_inclusive_time, &
+            padded_openmp_text(openmp_missing_lane_count_text(summary%entries(i)), missing_width), &
+            summary%entries(i)%sum_lane_inclusive_time, &
             summary%entries(i)%sum_lane_self_time, summary%entries(i)%min_lane_inclusive_time, &
             summary%entries(i)%avg_lane_inclusive_time, summary%entries(i)%max_lane_inclusive_time, &
             summary%entries(i)%avg_lane_self_time, summary%entries(i)%min_lane_call_count, &
@@ -5247,6 +5254,29 @@ contains
 
       call finish_openmp_report_buffer(buffer, text)
    end subroutine format_openmp_summary
+
+   integer function openmp_summary_missing_width(summary) result(width)
+      type(ftimer_openmp_summary_t), intent(in) :: summary
+      integer :: i
+
+      width = len('Missing')
+      do i = 1, summary%num_entries
+         width = max(width, len(openmp_missing_lane_count_text(summary%entries(i))))
+      end do
+   end function openmp_summary_missing_width
+
+   function openmp_missing_lane_count_text(entry) result(text)
+      type(ftimer_openmp_summary_entry_t), intent(in) :: entry
+      character(len=:), allocatable :: text
+      character(len=32) :: buffer
+
+      if (.not. entry%missing_lane_count_known) then
+         text = 'unknown'
+      else
+         write (buffer, '(i0)') entry%missing_lane_count
+         text = trim(buffer)
+      end if
+   end function openmp_missing_lane_count_text
 
    subroutine append_openmp_real_metric(buffer, label, key_width, value)
       type(openmp_report_buffer_t), intent(inout) :: buffer
