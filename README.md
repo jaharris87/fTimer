@@ -212,7 +212,7 @@ Choose the smallest mode that matches the measurement you need. Start with seria
 
 For pure-MPI timing, fTimer reduces rank-local wall-clock intervals. It does
 not add an implicit barrier around the timed region, and every rank in the
-captured communicator must enter each MPI summary/report collective. See
+captured communicator must enter each MPI summary/report/CSV collective. See
 [`docs/semantics.md`](docs/semantics.md) for the runtime contract and
 [`docs/troubleshooting.md`](docs/troubleshooting.md) for failure-oriented
 remedies.
