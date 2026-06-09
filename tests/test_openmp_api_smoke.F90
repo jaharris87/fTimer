@@ -437,16 +437,12 @@ contains
    end subroutine check_parallel_rejections
 
    subroutine check_thread_lane_runtime()
-      integer :: capacity_bad
-      integer(int64) :: call_count
       integer :: child_id
       integer :: ierr
       integer :: mismatch_child_id
       integer :: mismatch_parent_id
-      integer :: nested_status
       integer :: other_id
       integer :: parent_id
-      integer :: second_id
       integer :: common_parent_id
       integer :: grand_a_id
       integer :: grand_b_id
@@ -455,25 +451,57 @@ contains
       integer :: shared_parent_a_id
       integer :: shared_parent_b_id
       integer :: timer_id
-      integer :: default_id
-      integer :: worker_bad
-      integer :: worker_seen
-      integer :: stack_ids(2)
-      logical :: is_running
-      real(wp) :: elapsed
       type(ftimer_openmp_config_t) :: config
-      type(ftimer_openmp_parallel_region_t) :: region
-      type(ftimer_openmp_parallel_region_t) :: second_region
-      type(ftimer_openmp_parallel_region_t) :: stale_region
-      type(ftimer_openmp_t) :: forgotten_timer
-      type(ftimer_openmp_t) :: limited_timer
-      type(ftimer_openmp_t) :: second_timer
-      type(ftimer_openmp_t) :: default_timer
       type(ftimer_openmp_t) :: timer
+
+      call init_thread_lane_runtime_fixture(timer, config, timer_id, other_id, parent_id, child_id, &
+                                            mismatch_parent_id, mismatch_child_id, shared_parent_a_id, &
+                                            shared_parent_b_id, shared_child_id, grand_a_id, grand_b_id, &
+                                            common_parent_id, shared_leaf_id)
+      call check_serial_lane_active_state(timer, timer_id)
+      call check_parallel_region_tokens(timer, config)
+      call check_two_worker_lane_timing(timer, timer_id)
+      call check_worker_stop_mismatch_recovery(timer, timer_id)
+      call check_default_lane_capacity()
+      call check_single_worker_lane(timer, other_id)
+      call check_nested_worker_context(timer, parent_id, child_id)
+      call check_shared_child_contexts(timer, shared_parent_a_id, shared_parent_b_id, shared_child_id)
+      call check_deep_stack_contexts(timer, grand_a_id, grand_b_id, common_parent_id, shared_leaf_id)
+      call check_worker_mismatch_recovery(timer, mismatch_parent_id, mismatch_child_id)
+      call check_nested_parallel_region_rejection(timer, timer_id)
+      call check_cross_lane_mismatch_and_stopped_region_guard(timer, timer_id)
+      call check_forgotten_active_timer_recovery()
+      call check_limited_lane_capacity()
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 135)
+   end subroutine check_thread_lane_runtime
+
+   subroutine init_thread_lane_runtime_fixture(timer, config, timer_id, other_id, parent_id, child_id, &
+                                               mismatch_parent_id, mismatch_child_id, shared_parent_a_id, &
+                                               shared_parent_b_id, shared_child_id, grand_a_id, grand_b_id, &
+                                               common_parent_id, shared_leaf_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      type(ftimer_openmp_config_t), intent(out) :: config
+      integer, intent(out) :: timer_id
+      integer, intent(out) :: other_id
+      integer, intent(out) :: parent_id
+      integer, intent(out) :: child_id
+      integer, intent(out) :: mismatch_parent_id
+      integer, intent(out) :: mismatch_child_id
+      integer, intent(out) :: shared_parent_a_id
+      integer, intent(out) :: shared_parent_b_id
+      integer, intent(out) :: shared_child_id
+      integer, intent(out) :: grand_a_id
+      integer, intent(out) :: grand_b_id
+      integer, intent(out) :: common_parent_id
+      integer, intent(out) :: shared_leaf_id
+      integer :: ierr
 
       call omp_set_dynamic(.false.)
       call omp_set_num_threads(2)
 
+      config = ftimer_openmp_config_t()
       config%max_lanes = 4
       config%max_worker_diagnostics = 4
 
@@ -521,6 +549,16 @@ contains
 
       call timer%register_timer("shared_leaf", shared_leaf_id, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 275)
+   end subroutine init_thread_lane_runtime_fixture
+
+   subroutine check_serial_lane_active_state(timer, timer_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: timer_id
+      integer(int64) :: call_count
+      integer :: ierr
+      logical :: is_running
+      real(wp) :: elapsed
+      type(ftimer_openmp_parallel_region_t) :: region
 
       fake_lane_time(0) = 1.0_wp
       call timer%start_id(timer_id, ierr=ierr)
@@ -550,6 +588,17 @@ contains
 
       call timer%reset(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 106)
+   end subroutine check_serial_lane_active_state
+
+   subroutine check_parallel_region_tokens(timer, config)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      type(ftimer_openmp_config_t), intent(in) :: config
+      integer :: ierr
+      integer :: second_id
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_parallel_region_t) :: second_region
+      type(ftimer_openmp_parallel_region_t) :: stale_region
+      type(ftimer_openmp_t) :: second_timer
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 107)
@@ -599,6 +648,17 @@ contains
 
       call second_timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 187)
+   end subroutine check_parallel_region_tokens
+
+   subroutine check_two_worker_lane_timing(timer, timer_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: timer_id
+      integer(int64) :: call_count
+      integer :: ierr
+      integer :: worker_bad
+      integer :: worker_seen
+      real(wp) :: elapsed
+      type(ftimer_openmp_parallel_region_t) :: region
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 139)
@@ -653,6 +713,14 @@ contains
       call timer%test_lane_total_time(2, timer_id, elapsed, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 218)
       call expect_time(elapsed, 7.0_wp, 219)
+   end subroutine check_two_worker_lane_timing
+
+   subroutine check_worker_stop_mismatch_recovery(timer, timer_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: timer_id
+      integer :: ierr
+      integer :: worker_seen
+      type(ftimer_openmp_parallel_region_t) :: region
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 292)
@@ -673,6 +741,18 @@ contains
 
       call timer%end_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 295)
+   end subroutine check_worker_stop_mismatch_recovery
+
+   subroutine check_default_lane_capacity()
+      integer(int64) :: call_count
+      integer :: default_id
+      integer :: ierr
+      integer :: worker_bad
+      integer :: worker_seen
+      real(wp) :: elapsed
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: second_region
+      type(ftimer_openmp_t) :: default_timer
 
       config = ftimer_openmp_config_t()
       config%max_worker_diagnostics = 4
@@ -733,6 +813,16 @@ contains
 
       call default_timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 251)
+   end subroutine check_default_lane_capacity
+
+   subroutine check_single_worker_lane(timer, other_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: other_id
+      integer(int64) :: call_count
+      integer :: ierr
+      integer :: worker_bad
+      integer :: worker_seen
+      type(ftimer_openmp_parallel_region_t) :: region
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 111)
@@ -763,6 +853,19 @@ contains
       call timer%test_lane_total_call_count(2, other_id, call_count, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 154)
       call expect_count(call_count, 1_int64, 155)
+   end subroutine check_single_worker_lane
+
+   subroutine check_nested_worker_context(timer, parent_id, child_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: parent_id
+      integer, intent(in) :: child_id
+      integer(int64) :: call_count
+      integer :: ierr
+      integer :: worker_bad
+      integer :: worker_seen
+      logical :: is_running
+      real(wp) :: elapsed
+      type(ftimer_openmp_parallel_region_t) :: region
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 156)
@@ -817,6 +920,19 @@ contains
       call timer%test_lane_is_running(2, child_id, is_running, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 203)
       if (is_running) error stop 204
+   end subroutine check_nested_worker_context
+
+   subroutine check_shared_child_contexts(timer, shared_parent_a_id, shared_parent_b_id, shared_child_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: shared_parent_a_id
+      integer, intent(in) :: shared_parent_b_id
+      integer, intent(in) :: shared_child_id
+      integer(int64) :: call_count
+      integer :: ierr
+      integer :: worker_bad
+      integer :: worker_seen
+      real(wp) :: elapsed
+      type(ftimer_openmp_parallel_region_t) :: region
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 256)
@@ -884,6 +1000,21 @@ contains
       call timer%test_lane_total_time(2, shared_child_id, elapsed, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 270)
       call expect_time(elapsed, 11.0_wp, 271)
+   end subroutine check_shared_child_contexts
+
+   subroutine check_deep_stack_contexts(timer, grand_a_id, grand_b_id, common_parent_id, shared_leaf_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: grand_a_id
+      integer, intent(in) :: grand_b_id
+      integer, intent(in) :: common_parent_id
+      integer, intent(in) :: shared_leaf_id
+      integer(int64) :: call_count
+      integer :: ierr
+      integer :: stack_ids(2)
+      integer :: worker_bad
+      integer :: worker_seen
+      real(wp) :: elapsed
+      type(ftimer_openmp_parallel_region_t) :: region
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 276)
@@ -965,6 +1096,19 @@ contains
       call timer%test_lane_total_time(2, shared_leaf_id, elapsed, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 290)
       call expect_time(elapsed, 11.0_wp, 291)
+   end subroutine check_deep_stack_contexts
+
+   subroutine check_worker_mismatch_recovery(timer, mismatch_parent_id, mismatch_child_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: mismatch_parent_id
+      integer, intent(in) :: mismatch_child_id
+      integer(int64) :: call_count
+      integer :: ierr
+      integer :: worker_bad
+      integer :: worker_seen
+      logical :: is_running
+      real(wp) :: elapsed
+      type(ftimer_openmp_parallel_region_t) :: region
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 205)
@@ -1042,6 +1186,14 @@ contains
       call timer%test_lane_parent_total_time(2, mismatch_child_id, mismatch_parent_id, elapsed, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 234)
       call expect_time(elapsed, 6.0_wp, 235)
+   end subroutine check_worker_mismatch_recovery
+
+   subroutine check_nested_parallel_region_rejection(timer, timer_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: timer_id
+      integer :: ierr
+      integer :: nested_status
+      type(ftimer_openmp_parallel_region_t) :: region
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 213)
@@ -1061,6 +1213,15 @@ contains
 
       call timer%end_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 215)
+   end subroutine check_nested_parallel_region_rejection
+
+   subroutine check_cross_lane_mismatch_and_stopped_region_guard(timer, timer_id)
+      type(ftimer_openmp_t), intent(inout) :: timer
+      integer, intent(in) :: timer_id
+      integer :: ierr
+      integer :: worker_bad
+      integer :: worker_seen
+      type(ftimer_openmp_parallel_region_t) :: region
 
       call timer%begin_parallel_region(region, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 115)
@@ -1106,6 +1267,19 @@ contains
 
       if (worker_seen /= 1) error stop 119
       if (worker_bad /= 0) error stop 120
+   end subroutine check_cross_lane_mismatch_and_stopped_region_guard
+
+   subroutine check_forgotten_active_timer_recovery()
+      integer :: ierr
+      integer :: timer_id
+      integer :: worker_bad
+      integer :: worker_seen
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: forgotten_timer
+
+      config = ftimer_openmp_config_t()
+      config%max_worker_diagnostics = 4
 
       call forgotten_timer%init(config=config, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 121)
@@ -1164,7 +1338,20 @@ contains
 
       call forgotten_timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 168)
+   end subroutine check_forgotten_active_timer_recovery
 
+   subroutine check_limited_lane_capacity()
+      integer :: capacity_bad
+      integer(int64) :: call_count
+      integer :: ierr
+      integer :: timer_id
+      integer :: worker_seen
+      type(ftimer_openmp_config_t) :: config
+      type(ftimer_openmp_parallel_region_t) :: region
+      type(ftimer_openmp_t) :: limited_timer
+
+      config = ftimer_openmp_config_t()
+      config%max_worker_diagnostics = 4
       config%max_lanes = 2
       call limited_timer%init(config=config, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 128)
@@ -1230,10 +1417,7 @@ contains
 
       call limited_timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 134)
-
-      call timer%finalize(ierr=ierr)
-      call expect_status(ierr, FTIMER_SUCCESS, 135)
-   end subroutine check_thread_lane_runtime
+   end subroutine check_limited_lane_capacity
 
    subroutine check_worker_hotpath_scaling_invariants()
       integer, parameter :: num_contexts = 64
