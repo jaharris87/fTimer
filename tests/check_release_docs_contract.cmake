@@ -386,6 +386,42 @@ foreach(readme_troubleshooting_needle IN LISTS readme_troubleshooting_needles)
   endif()
 endforeach()
 
+set(readme_audience_needles
+  "First-time user:"
+  "Advanced user:"
+  "Maintainer or release reviewer:"
+  "Coding agent:"
+)
+
+foreach(readme_audience_needle IN LISTS readme_audience_needles)
+  string(FIND "${release_readme_text}" "${readme_audience_needle}" audience_index)
+  if(audience_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must keep the explicit audience split for #336: missing '${readme_audience_needle}'."
+    )
+  endif()
+endforeach()
+
+set(readme_source_of_truth_needles
+  "[`docs/semantics.md`](docs/semantics.md)"
+  "[`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md)"
+  "[`docs/csv-schema.md`](docs/csv-schema.md)"
+  "[`docs/installed-api.md`](docs/installed-api.md)"
+  "[`docs/release-evidence.md`](docs/release-evidence.md)"
+  "[`docs/maintainer.md`](docs/maintainer.md)"
+  "[`AGENTS.md`](AGENTS.md)"
+  "[`CLAUDE.md`](CLAUDE.md)"
+)
+
+foreach(readme_source_of_truth_needle IN LISTS readme_source_of_truth_needles)
+  string(FIND "${release_readme_text}" "${readme_source_of_truth_needle}" source_of_truth_index)
+  if(source_of_truth_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must route detailed contracts to focused docs after #336: missing '${readme_source_of_truth_needle}'."
+    )
+  endif()
+endforeach()
+
 file(READ "${REPO_ROOT}/docs/troubleshooting.md" troubleshooting_doc_text)
 file(READ "${REPO_ROOT}/tests/public_symbol_allowlist.txt" public_symbol_allowlist_text)
 file(READ "${REPO_ROOT}/CMakeLists.txt" root_cmakelists_text)
