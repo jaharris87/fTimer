@@ -54,6 +54,27 @@ matters inside one level-1 team, strict MPI+OpenMP when all ranks and lanes must
 share the same descriptor tree, and sparse union MPI+OpenMP when rank- or
 lane-conditional work should be represented with explicit participation metadata.
 
+### First-Hour Timing Mode Chooser
+
+Start with the row that matches the measurement you want, then move to a more
+specialized mode only when the participation pattern requires it.
+
+| Measurement goal | Use this mode | First API or report family | Caveat to keep visible |
+| --- | --- | --- | --- |
+| One process, one thread, or rank-local data before any MPI reduction | Serial/local timing through `ftimer` or `ftimer_core` | `get_summary()`, `print_summary()`, `write_summary_csv()` | Local summaries are live snapshots. Active timers are included and marked; stop all timers first for a final report. |
+| Same timer tree on every MPI rank | Strict pure-MPI timing | `mpi_summary()`, `print_mpi_summary()`, `write_mpi_summary_csv()` | fTimer reduces rank-local intervals and does not add barriers. Descriptor mismatches are errors. |
+| Rank-conditional pure-MPI timers | Sparse pure-MPI union timing | `mpi_union_summary()`, `print_mpi_union_summary()`, `write_mpi_union_summary_csv()` | Missing ranks are explicit nonparticipants, not zero-time contributors. |
+| One wall-clock interval around an OpenMP parallel region | OpenMP compatibility timing with current `ftimer` / `ftimer_core` calls outside the parallel region | Local summaries, or strict/sparse pure-MPI summaries in MPI builds | Worker-thread calls through these existing APIs are silent no-ops; this does not produce per-worker data. |
+| Per-lane OpenMP worker participation inside one level-1 team | Explicit worker timing through `ftimer_openmp_t` | `get_openmp_summary()`, `print_openmp_summary()`, `write_openmp_summary_csv()` | OpenMP worker summaries are stopped-run merge points. Close the timed region and stop all lane stacks first. |
+| Same worker timer tree on every MPI rank and eligible lane | Strict MPI+OpenMP worker timing through `ftimer_openmp_t` | `mpi_openmp_summary()`, `print_mpi_openmp_summary()`, `write_mpi_openmp_summary_csv()` | These collective stopped-run APIs require matching rank/lane descriptors and eligible-lane participation. |
+| Rank- or lane-conditional MPI+OpenMP worker timers | Sparse MPI+OpenMP union timing through `ftimer_openmp_t` | `mpi_openmp_union_summary()`, `print_mpi_openmp_union_summary()`, `write_mpi_openmp_union_summary_csv()` | Missing ranks and lanes are explicit participation metadata, not zero-filled samples. |
+
+CSV schemas follow the same mode choice: local/strict MPI share one v2 family,
+while sparse MPI union, local OpenMP, strict MPI+OpenMP, and sparse
+MPI+OpenMP union each use dedicated schemas that are not append-compatible with
+one another. For the full OpenMP and hybrid lifecycle, see
+[`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md).
+
 Important limitations are documented later in this README. The short version is that serial and pure-MPI are the core supported stories on current `main`; OpenMP has a legacy master-thread-only compatibility path plus the explicit `ftimer_openmp_t` worker-timing object, local stopped-run summaries, strict MPI+OpenMP rank/lane reductions, and separate sparse union MPI+OpenMP rank/lane reductions.
 
 ## Operational Support Matrix
