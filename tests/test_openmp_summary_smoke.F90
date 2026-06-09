@@ -381,16 +381,23 @@ contains
    end subroutine check_openmp_summary_serial_active_refusal
 
    subroutine check_openmp_summary_mixed_epochs()
+      character(len=*), parameter :: csv_path = 'openmp_summary_mixed_epochs.csv'
+      character(len=*), parameter :: report_path = 'openmp_summary_mixed_epochs.txt'
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_parallel_region_t) :: region
       type(ftimer_openmp_summary_t) :: summary
       type(ftimer_openmp_t) :: timer
+      character(len=:), allocatable :: csv_text
+      character(len=:), allocatable :: report_text
       integer :: expected_eligible
       integer :: ierr
       integer :: mixed_id
       integer :: mixed_idx
       integer :: worker_bad
       integer :: worker_seen
+
+      call delete_if_exists(report_path)
+      call delete_if_exists(csv_path)
 
       config%max_lanes = 5
       config%max_worker_diagnostics = 4
@@ -450,6 +457,8 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 131)
       mixed_idx = find_entry(summary, "mixed", 0)
       if (mixed_idx <= 0) error stop 132
+      ! Mixed epochs retain the union/maximum eligible lane set while marking
+      ! missing-lane precision unknown.
       call expect_int(summary%entries(mixed_idx)%eligible_lane_count, expected_eligible, 133)
       call expect_int(summary%entries(mixed_idx)%participating_lane_count, 1, 134)
       call expect_int(summary%entries(mixed_idx)%missing_lane_count, expected_eligible - 1, 135)
@@ -458,8 +467,22 @@ contains
       call expect_time(summary%entries(mixed_idx)%sum_lane_self_time, 6.0_wp, 138)
       call expect_int64(summary%entries(mixed_idx)%max_lane_call_count, 2_int64, 139)
 
-      call timer%finalize(ierr=ierr)
+      call timer%write_openmp_summary(report_path, ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 140)
+      report_text = read_file_text(report_path)
+      call expect_report_entry_missing_text(report_text, 'mixed', 'unknown', 141)
+
+      call timer%write_openmp_summary_csv(csv_path, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 142)
+      csv_text = read_file_text(csv_path)
+      call expect_csv_entry_field(csv_text, 'mixed', 'eligible_lane_count', &
+                                  csv_int_text(expected_eligible), 143)
+      call expect_csv_entry_field(csv_text, 'mixed', 'missing_lane_count_known', 'false', 144)
+
+      call timer%finalize(ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 145)
+      call delete_if_exists(report_path)
+      call delete_if_exists(csv_path)
    end subroutine check_openmp_summary_mixed_epochs
 
    subroutine check_openmp_summary_self_time_boundaries()
@@ -834,6 +857,25 @@ contains
       call expect_int64(parsed_max_calls, max_calls, stop_code + 2200)
    end subroutine expect_report_entry
 
+   subroutine expect_report_entry_missing_text(report_text, name, expected, stop_code)
+      character(len=*), intent(in) :: report_text
+      character(len=*), intent(in) :: name
+      character(len=*), intent(in) :: expected
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: row
+      character(len=128) :: parsed_missing
+      character(len=128) :: parsed_name
+      integer :: io
+      integer :: parsed_part
+
+      row = find_report_row(report_text, name)
+      if (len(row) <= 0) error stop stop_code
+      read (row, *, iostat=io) parsed_name, parsed_part, parsed_missing
+      if (io /= 0) error stop stop_code + 1000
+      if (trim(parsed_name) /= name) error stop stop_code + 1100
+      if (trim(parsed_missing) /= expected) error stop stop_code + 1200
+   end subroutine expect_report_entry_missing_text
+
    function find_report_row(report_text, name) result(row)
       character(len=*), intent(in) :: report_text
       character(len=*), intent(in) :: name
@@ -1110,6 +1152,15 @@ contains
       write (buffer, '(es32.17e4)') value
       text = trim(adjustl(buffer))
    end function csv_real_text
+
+   function csv_int_text(value) result(text)
+      integer, intent(in) :: value
+      character(len=:), allocatable :: text
+      character(len=32) :: buffer
+
+      write (buffer, '(i0)') value
+      text = trim(buffer)
+   end function csv_int_text
 
    function first_line(text) result(line)
       character(len=*), intent(in) :: text
