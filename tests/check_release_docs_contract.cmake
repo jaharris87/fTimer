@@ -404,6 +404,7 @@ function(extract_markdown_section text header out_var)
 endfunction()
 
 extract_markdown_section("${release_readme_text}" "Where To Go Next" readme_where_to_go_next_text)
+extract_markdown_section("${release_readme_text}" "More Detail" readme_more_detail_text)
 
 set(readme_role_routes
   "The normal user"
@@ -422,6 +423,128 @@ foreach(readme_role_route IN LISTS readme_role_routes)
   if(role_route_index EQUAL -1)
     message(FATAL_ERROR
       "README.md must keep the explicit #338 audience-boundary routing in '## Where To Go Next': missing '${readme_role_route}'."
+    )
+  endif()
+endforeach()
+
+set(readme_more_detail_labels
+  "User-facing references:"
+  "Contributor, maintainer, and release references:"
+  "Coding-agent references:"
+)
+
+foreach(readme_more_detail_label IN LISTS readme_more_detail_labels)
+  string(FIND "${readme_more_detail_text}" "${readme_more_detail_label}"
+    more_detail_label_index)
+  if(more_detail_label_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must keep the #338 audience grouping in '## More Detail': missing '${readme_more_detail_label}'."
+    )
+  endif()
+endforeach()
+
+string(FIND "${readme_more_detail_text}" "User-facing references:"
+  more_detail_user_start)
+string(FIND "${readme_more_detail_text}"
+  "Contributor, maintainer, and release references:" more_detail_project_start)
+string(FIND "${readme_more_detail_text}" "Coding-agent references:"
+  more_detail_agent_start)
+
+if(more_detail_user_start EQUAL -1 OR
+   more_detail_project_start EQUAL -1 OR
+   more_detail_agent_start EQUAL -1 OR
+   NOT more_detail_user_start LESS more_detail_project_start OR
+   NOT more_detail_project_start LESS more_detail_agent_start)
+  message(FATAL_ERROR
+    "README.md must order '## More Detail' as user-facing, project, then coding-agent references."
+  )
+endif()
+
+math(EXPR more_detail_user_length
+  "${more_detail_project_start} - ${more_detail_user_start}")
+string(SUBSTRING "${readme_more_detail_text}" "${more_detail_user_start}"
+  "${more_detail_user_length}" readme_more_detail_user_text)
+
+math(EXPR more_detail_project_length
+  "${more_detail_agent_start} - ${more_detail_project_start}")
+string(SUBSTRING "${readme_more_detail_text}" "${more_detail_project_start}"
+  "${more_detail_project_length}" readme_more_detail_project_text)
+
+string(SUBSTRING "${readme_more_detail_text}" "${more_detail_agent_start}" -1
+  readme_more_detail_agent_text)
+
+set(readme_more_detail_user_needles
+  "[`docs/semantics.md`](docs/semantics.md)"
+  "[`docs/troubleshooting.md`](docs/troubleshooting.md)"
+  "[`docs/installed-api.md`](docs/installed-api.md)"
+  "[`docs/csv-schema.md`](docs/csv-schema.md)"
+  "[`docs/openmp-timing-modes.md`](docs/openmp-timing-modes.md)"
+  "[`docs/design.md`](docs/design.md)"
+  "[`SUPPORT.md`](SUPPORT.md), [`SECURITY.md`](SECURITY.md)"
+)
+
+foreach(readme_more_detail_user_needle IN LISTS readme_more_detail_user_needles)
+  string(FIND "${readme_more_detail_user_text}"
+    "${readme_more_detail_user_needle}" more_detail_user_needle_index)
+  if(more_detail_user_needle_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md '## More Detail' user-facing references must include '${readme_more_detail_user_needle}'."
+    )
+  endif()
+endforeach()
+
+set(readme_more_detail_project_needles
+  "[`CONTRIBUTING.md`](CONTRIBUTING.md)"
+  "[`docs/maintainer.md`](docs/maintainer.md)"
+  "[`docs/release-evidence.md`](docs/release-evidence.md)"
+  "[`docs/release.md`](docs/release.md)"
+)
+
+foreach(readme_more_detail_project_needle IN LISTS readme_more_detail_project_needles)
+  string(FIND "${readme_more_detail_project_text}"
+    "${readme_more_detail_project_needle}" more_detail_project_needle_index)
+  if(more_detail_project_needle_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md '## More Detail' project references must include '${readme_more_detail_project_needle}'."
+    )
+  endif()
+endforeach()
+
+set(readme_more_detail_agent_needles
+  "[`AGENTS.md`](AGENTS.md), [`CLAUDE.md`](CLAUDE.md)"
+  "[`.github/prompts/README.md`](.github/prompts/README.md), [`.github/prompts/detailed/README.md`](.github/prompts/detailed/README.md)"
+)
+
+foreach(readme_more_detail_agent_needle IN LISTS readme_more_detail_agent_needles)
+  string(FIND "${readme_more_detail_agent_text}"
+    "${readme_more_detail_agent_needle}" more_detail_agent_needle_index)
+  if(more_detail_agent_needle_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md '## More Detail' coding-agent references must include '${readme_more_detail_agent_needle}'."
+    )
+  endif()
+endforeach()
+
+set(readme_agent_only_targets
+  "AGENTS.md"
+  "CLAUDE.md"
+  ".github/prompts/"
+)
+
+foreach(readme_agent_only_target IN LISTS readme_agent_only_targets)
+  string(FIND "${readme_more_detail_user_text}" "${readme_agent_only_target}"
+    agent_only_in_user_index)
+  if(NOT agent_only_in_user_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must not put '${readme_agent_only_target}' in '## More Detail' user-facing references."
+    )
+  endif()
+
+  string(FIND "${readme_more_detail_project_text}" "${readme_agent_only_target}"
+    agent_only_in_project_index)
+  if(NOT agent_only_in_project_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must not put '${readme_agent_only_target}' in '## More Detail' contributor/maintainer/release references."
     )
   endif()
 endforeach()
