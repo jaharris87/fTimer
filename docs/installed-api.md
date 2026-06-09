@@ -93,6 +93,47 @@ allowlist check intentionally requires default-private modules and standalone
 `public :: name` declarations so new module-level exports cannot bypass the
 checked boundary through implicit visibility or declaration attributes.
 
+## Public-surface change map
+
+This map is a contributor checklist for intentional public-surface changes. It
+does not apply to private implementation changes that leave source imports,
+installed artifacts, package-version behavior, report text, and CSV schemas
+unchanged. The default answer for a proposed new public surface remains "no"
+unless a linked issue explains the user need, compatibility boundary, and
+validation plan.
+
+Use the map when a PR changes any of these surfaces:
+
+- stable or unstable module-level public symbols in `ftimer`, `ftimer_core`,
+  `ftimer_openmp`, or `ftimer_types`;
+- public fields or procedure bindings on stable installed types;
+- installed `.mod` artifacts, installed docs, or CMake package version
+  compatibility behavior;
+- text report fields, CSV headers, `format_version`, `summary_kind`,
+  append-compatibility rules, or schema-family membership;
+- supported examples, installed-consumer paths, release claims, or CI jobs that
+  prove one of those contracts.
+
+Representative dry-run recorded for #307: promote the existing
+`ftimer_summary_entry_t%timer_context_count` structured-summary field into the
+local/strict-MPI text report and CSV schema. This PR does not make that change;
+the dry-run exists only to expose the blast radius.
+
+| Surface | Dry-run movement |
+| --- | --- |
+| Source declarations and formatting | `src/ftimer_types.F90` already exposes the structured field. A real report/CSV promotion would still move `src/ftimer_summary.F90` report formatting and `src/ftimer_core_summary_bindings.F90` local/strict-MPI CSV headers, rows, and append validation. A new entry point would also move `src/ftimer.F90`, `src/ftimer_core.F90`, and the public symbol allowlist. |
+| Public symbol and installed API docs | Any new module-level symbol must update `tests/public_symbol_allowlist.txt` and this document's stable, unstable, or test-only classification. Stable type-field, report, or CSV promotions must update this document even when no module-level symbol changes. |
+| CSV/schema docs and fixtures | `docs/csv-schema.md`, `README.md` CSV text, `docs/troubleshooting.md` if user-facing remedies change, `tests/check_csv_schema_docs.cmake`, and the reader-aid fixtures under `tests/fixtures/csv-schema/` must either move together or explicitly state why the schema family is unchanged. |
+| Behavioral and contract tests | Local report/CSV behavior would need pFUnit coverage in `tests/test_summary.pf`, `tests/test_file_output.pf`, and procedural parity in `tests/test_procedural_api.pf`. MPI, OpenMP, or hybrid surfaces additionally require the matching `tests/mpi/` or OpenMP smoke tests and append-validation checks. |
+| Examples and installed consumers | If the promoted surface is part of the supported user story, update the relevant `examples/*.F90` and `tests/install-consumer/*.F90` path. If examples should not change, record that decision so the surface is not accidentally advertised. |
+| Installed artifacts and package version | Changes to the installed `.mod` artifact set, installed docs, or pre-1.0 compatibility rule must update `CMakeLists.txt`, `cmake/install_ftimer_modules.cmake.in` as applicable, and `tests/check_installed_package_consumer.cmake`, including package-version probes when the compatibility boundary changes. |
+| Release evidence and CI | Update `docs/release-evidence.md`, `docs/release.md`, and any affected `.github/workflows/ci.yml` job names or filters when the release claim or proof path changes. Keep evidence narrow: local/strict MPI CSV, sparse MPI union CSV, OpenMP CSV, strict hybrid CSV, and sparse hybrid CSV are separate schema families. |
+
+For related change-amplification examples, #312, #314, #315, and #316 identify
+concrete API, CSV, report, and install-contract follow-ups, while #313 covers
+test locality. Those issues should own their specific implementation scopes;
+this map only keeps the shared public-surface blast radius visible.
+
 ## Stable user API
 
 Stable public symbols in `ftimer`:
