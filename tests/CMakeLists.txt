@@ -215,6 +215,12 @@ add_test(NAME ftimer_release_docs_contract
     -P ${CMAKE_CURRENT_SOURCE_DIR}/check_release_docs_contract.cmake
 )
 
+add_test(NAME ftimer_csv_schema_docs
+  COMMAND ${CMAKE_COMMAND}
+    -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/check_csv_schema_docs.cmake
+)
+
 add_test(NAME ftimer_installed_openmp_hybrid_api_surface
   COMMAND ${CMAKE_COMMAND}
     -DREPO_ROOT=${CMAKE_SOURCE_DIR}

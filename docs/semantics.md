@@ -412,6 +412,10 @@ silently relax descriptor or lane-participation consistency.
   text reports print `unknown` for missing rank/lane samples when
   `missing_rank_lane_sample_count_known` is false; CSV keeps the explicit false
   flag next to the aggregate participation fields.
+- The compact CSV field dictionary and parser-facing schema-family notes live in
+  [`docs/csv-schema.md`](csv-schema.md). That page is documentation for the
+  current CSV families; it does not add zero-filled sparse views or new CSV
+  schema fields.
 
 ## Name Validation Error Contract
 

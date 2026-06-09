@@ -5,6 +5,7 @@ set(required_paths
   CLAUDE.md
   README.md
   docs/design.md
+  docs/csv-schema.md
   docs/fault-model-traceability.md
   docs/installed-api.md
   docs/implementation-history.md
@@ -58,6 +59,7 @@ foreach(markdown_path IN LISTS required_paths)
 endforeach()
 
 file(READ "${REPO_ROOT}/docs/semantics.md" semantics_text)
+file(READ "${REPO_ROOT}/docs/csv-schema.md" csv_schema_text)
 string(FIND "${semantics_text}"
   "[`docs/fault-model-traceability.md`](fault-model-traceability.md)"
   fault_model_semantics_link_index)
@@ -66,6 +68,38 @@ if(fault_model_semantics_link_index EQUAL -1)
     "docs/semantics.md must Markdown-link to docs/fault-model-traceability.md."
   )
 endif()
+
+string(FIND "${semantics_text}"
+  "[`docs/csv-schema.md`](csv-schema.md)"
+  csv_schema_semantics_link_index)
+if(csv_schema_semantics_link_index EQUAL -1)
+  message(FATAL_ERROR
+    "docs/semantics.md must Markdown-link to docs/csv-schema.md."
+  )
+endif()
+
+set(csv_schema_required_terms
+  "Issue #303 validates that fTimer needs this compact field dictionary plus tiny"
+  "It does not need generated golden CSV fixtures"
+  "missing sparse contributors are not zero-filled"
+  "Field type"
+  "Schema Families"
+  "Append validation is a schema-shape"
+  "Local summaries are live snapshots"
+  "The denominator for participating averages is `participating_rank_count`"
+  "`missing_lane_count_known=false`"
+  "`missing_rank_lane_sample_count_known=false`"
+  "The no-behavior append-validation consolidation question is"
+)
+
+foreach(csv_schema_required_term IN LISTS csv_schema_required_terms)
+  string(FIND "${csv_schema_text}" "${csv_schema_required_term}" csv_schema_term_index)
+  if(csv_schema_term_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/csv-schema.md must retain CSV schema decision/field term: ${csv_schema_required_term}"
+    )
+  endif()
+endforeach()
 
 file(READ "${REPO_ROOT}/docs/fault-model-traceability.md" fault_model_text)
 file(STRINGS "${REPO_ROOT}/docs/fault-model-traceability.md" fault_model_lines)
