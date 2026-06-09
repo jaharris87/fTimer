@@ -421,6 +421,22 @@ foreach(readme_role_route IN LISTS readme_role_routes)
   endif()
 endforeach()
 
+set(readme_route_destination_headings
+  "## First Success"
+  "## Quick Start"
+  "## Install And Use From Another Project"
+  "## Supported Workflows"
+)
+
+foreach(readme_route_destination_heading IN LISTS readme_route_destination_headings)
+  string(FIND "${release_readme_text}" "${readme_route_destination_heading}" destination_heading_index)
+  if(destination_heading_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must keep the in-README destination heading required by the #336 audience routing: missing '${readme_route_destination_heading}'."
+    )
+  endif()
+endforeach()
+
 file(READ "${REPO_ROOT}/docs/troubleshooting.md" troubleshooting_doc_text)
 file(READ "${REPO_ROOT}/tests/public_symbol_allowlist.txt" public_symbol_allowlist_text)
 file(READ "${REPO_ROOT}/CMakeLists.txt" root_cmakelists_text)
