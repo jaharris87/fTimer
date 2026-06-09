@@ -204,7 +204,7 @@ are never installed as stable API:
 ## Installed implementation artifacts
 
 Installed implementation module artifacts: `ftimer_clock.mod`,
-`ftimer_summary.mod`, `ftimer_mpi.mod`.
+`ftimer_csv_validation.mod`, `ftimer_summary.mod`, `ftimer_mpi.mod`.
 
 Fortran `.mod` files are compiler-, toolchain-, and feature-mode-specific
 artifacts. A prefix installed by one compiler or MPI/OpenMP mode is intended for
@@ -218,8 +218,8 @@ because Fortran consumers need a coherent compiler module artifact set when they
 import the supported modules above. They are not stable import targets, and
 their installed visibility does not promote the corresponding source modules
 into supported API. Downstream code should not import `ftimer_clock`,
-`ftimer_summary`, or `ftimer_mpi` directly unless it is deliberately accepting
-implementation-detail coupling.
+`ftimer_csv_validation`, `ftimer_summary`, or `ftimer_mpi` directly unless it
+is deliberately accepting implementation-detail coupling.
 
 The exact installed module artifact set is curated and smoke-tested. Extra
 compiler-specific companion artifacts should be added only when a validated

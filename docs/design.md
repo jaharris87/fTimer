@@ -44,6 +44,7 @@ The repository layout that matters for day-to-day work is:
 fTimer/
 ├── src/
 │   ├── ftimer_types.F90
+│   ├── ftimer_csv_validation.F90
 │   ├── ftimer_clock.F90
 │   ├── ftimer_core.F90
 │   ├── ftimer_summary.F90
@@ -103,6 +104,9 @@ ftimer_mpi.F90
 ftimer_clock.F90
   └─ default wall clock, MPI wall clock wrapper, date-string helper
 
+ftimer_csv_validation.F90
+  └─ shared CSV append-target validation helper
+
 ftimer_openmp.F90
   └─ explicit opt-in OpenMP lifecycle/catalog/timed-region thread-lane runtime
 
@@ -113,19 +117,22 @@ ftimer_types.F90
 The CMake source order reflects the real dependency order:
 
 1. `ftimer_types.F90`
-2. `ftimer_clock.F90`
-3. `ftimer_core.F90`
-4. `ftimer_summary.F90`
-5. `ftimer_mpi.F90`
-6. `ftimer_core_summary_bindings.F90`
-7. `ftimer_openmp.F90`
-8. `ftimer.F90`
+2. `ftimer_csv_validation.F90`
+3. `ftimer_clock.F90`
+4. `ftimer_core.F90`
+5. `ftimer_summary.F90`
+6. `ftimer_mpi.F90`
+7. `ftimer_core_summary_bindings.F90`
+8. `ftimer_openmp.F90`
+9. `ftimer.F90`
 
 ### Module Roles
 
 `ftimer_types.F90` is the shared foundation. It defines kind parameters, error codes, mismatch-mode constants, MPI summary-state constants, summary types, call-stack/context helpers, and the abstract interfaces for clocks and lightweight callback hooks.
 
 `ftimer_clock.F90` is an internal time-acquisition helper module. Serial builds use `system_clock`; MPI-enabled builds can use the MPI wall clock path. Tests rely on the injectable clock interface so behavior is deterministic without sleeps.
+
+`ftimer_csv_validation.F90` is an internal CSV append-target validation helper. Core, MPI, OpenMP, and hybrid CSV output paths pass explicit schema headers, format versions, summary kinds, and record types to keep schema-specific behavior visible while sharing quoted-field, CR, newline, and record-prefix validation.
 
 `ftimer_core.F90` owns the mutable timer state in `ftimer_t`: timer definitions, active stack state, mismatch policy, communicator capture, lightweight callback registration, and the guarded timer entry points.
 
@@ -186,7 +193,7 @@ The public surface on current `main` is split between:
 - the explicit opt-in OpenMP API surface in `use ftimer_openmp`
 - shared types and constants from `use ftimer_types`
 
-The supported source-level module surface is intentionally limited to `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the additive opt-in API surface for true OpenMP worker timing; its lifecycle/configuration, timer catalog, timed-region, id-first thread-lane timing, local OpenMP summary/report methods, strict MPI+OpenMP hybrid summary/report methods, and sparse union MPI+OpenMP hybrid summary/report methods are available now. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt` so runtime storage helpers are not accidentally promoted into the stable downstream contract. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md` and `share/doc/fTimer/LICENSE`, and the installed-consumer smoke test checks those documentation artifacts against the source tree.
+The supported source-level module surface is intentionally limited to `ftimer`, `ftimer_core`, `ftimer_openmp`, and `ftimer_types`. `ftimer_openmp` is the additive opt-in API surface for true OpenMP worker timing; its lifecycle/configuration, timer catalog, timed-region, id-first thread-lane timing, local OpenMP summary/report methods, strict MPI+OpenMP hybrid summary/report methods, and sparse union MPI+OpenMP hybrid summary/report methods are available now. Module-level public symbols are checked against `tests/public_symbol_allowlist.txt` so runtime storage helpers are not accidentally promoted into the stable downstream contract. The installed include tree is a curated compiler module artifact set; it currently includes `ftimer_clock.mod`, `ftimer_csv_validation.mod`, `ftimer_summary.mod`, and `ftimer_mpi.mod` so downstream builds see a coherent Fortran module set, but those implementation modules are not stable import targets. The installed package also carries `share/doc/fTimer/installed-api.md` and `share/doc/fTimer/LICENSE`, and the installed-consumer smoke test checks those documentation artifacts against the source tree.
 
 The currently exported procedural entry points are:
 

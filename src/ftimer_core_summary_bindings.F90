@@ -1,6 +1,7 @@
 submodule(ftimer_core) ftimer_core_summary_bindings
-   use, intrinsic :: iso_fortran_env, only: error_unit, int64, iostat_end, output_unit
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64, output_unit
    use ftimer_clock, only: ftimer_date_string
+   use ftimer_csv_validation, only: ftimer_get_csv_append_header_mode
    use ftimer_mpi, only: build_mpi_summary, build_mpi_union_summary, check_mpi_summary_prereqs, &
                          get_mpi_summary_comm_info
    use ftimer_summary, only: build_summary, format_mpi_summary, format_mpi_union_summary, format_summary
@@ -1523,34 +1524,9 @@ contains
       character(len=*), intent(in), optional :: schema_description
       character(len=*), intent(in), optional :: summary_kind
       character(len=*), intent(in), optional :: format_version
-      character(len=1) :: ch
       character(len=:), allocatable :: expected_header
-      character(len=:), allocatable :: header_line
-      character(len=:), allocatable :: record_text
+      character(len=:), allocatable :: row_format_version
       character(len=:), allocatable :: schema_name
-      integer :: expected_field_count
-      integer :: file_unit
-      integer :: io
-      integer :: record_field_count
-      integer :: record_prefix_limit
-      character(len=1) :: last_char
-      logical :: exists
-      logical :: after_quoted_field
-      logical :: field_has_content
-      logical :: in_quotes
-      logical :: pending_record_cr
-      logical :: pending_quote
-      logical :: reading_header
-      logical :: saw_any_char
-
-      include_header = .true.
-      status = FTIMER_SUCCESS
-      iomsg = ''
-      if (.not. append_mode) return
-
-      exists = .false.
-      inquire (file=filename, exist=exists)
-      if (.not. exists) return
 
       if (present(expected_csv_header)) then
          expected_header = expected_csv_header
@@ -1562,228 +1538,33 @@ contains
       else
          schema_name = 'CSV format_version '//FTIMER_CSV_FORMAT_VERSION
       end if
-      expected_field_count = csv_field_count(expected_header)
-      record_prefix_limit = 64
-      header_line = ''
-      record_text = ''
-      record_field_count = 1
-      last_char = ''
-      reading_header = .true.
-      after_quoted_field = .false.
-      field_has_content = .false.
-      in_quotes = .false.
-      pending_record_cr = .false.
-      pending_quote = .false.
-      saw_any_char = .false.
-
-      open (newunit=file_unit, file=filename, status='old', access='stream', form='unformatted', &
-            action='read', iostat=io, iomsg=iomsg)
-      if (io /= 0) then
-         status = FTIMER_ERR_IO
-         return
-      end if
-
-      do
-         read (file_unit, iostat=io, iomsg=iomsg) ch
-         if (io == iostat_end) exit
-         if (io /= 0) then
-            close (file_unit)
-            status = FTIMER_ERR_IO
-            return
-         end if
-
-         last_char = ch
-         saw_any_char = .true.
-
-         if (reading_header) then
-            if (ch == new_line('a')) then
-               reading_header = .false.
-               call strip_trailing_carriage_return(header_line)
-               if ((len(header_line) /= len(expected_header)) .or. (header_line /= expected_header)) then
-                  close (file_unit)
-                  status = FTIMER_ERR_IO
-                  iomsg = 'existing CSV header does not match fTimer '//schema_name
-                  return
-               end if
-            else
-               if (len(header_line) >= len(expected_header) + 1) then
-                  close (file_unit)
-                  status = FTIMER_ERR_IO
-                  iomsg = 'existing CSV header does not match fTimer '//schema_name
-                  return
-               end if
-               header_line = header_line//ch
-            end if
-            cycle
-         end if
-
-         if (pending_record_cr) then
-            if (ch /= new_line('a')) then
-               close (file_unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing CSV records contain a bare carriage return'
-               return
-            end if
-            pending_record_cr = .false.
-         end if
-
-         if (pending_quote) then
-            if (ch == '"') then
-               pending_quote = .false.
-               call append_limited_csv_record_prefix(record_text, ch, record_prefix_limit)
-               cycle
-            end if
-            in_quotes = .false.
-            pending_quote = .false.
-            after_quoted_field = .true.
-         end if
-
-         if ((ch == achar(13)) .and. (.not. in_quotes)) then
-            pending_record_cr = .true.
-            cycle
-         end if
-
-         if (after_quoted_field) then
-            if ((ch /= ',') .and. (ch /= new_line('a'))) then
-               close (file_unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing CSV records contain malformed quoted fields'
-               return
-            end if
-         end if
-
-         if ((ch == new_line('a')) .and. (.not. in_quotes)) then
-            call strip_trailing_carriage_return(record_text)
-            if ((record_field_count /= expected_field_count) .or. &
-                (.not. csv_record_has_valid_prefix(record_text, summary_kind=summary_kind, &
-                                                   format_version=format_version))) then
-               close (file_unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing CSV records do not match fTimer '//schema_name
-               return
-            end if
-            record_text = ''
-            record_field_count = 1
-            after_quoted_field = .false.
-            field_has_content = .false.
-            cycle
-         end if
-
-         call append_limited_csv_record_prefix(record_text, ch, record_prefix_limit)
-
-         if ((ch == ',') .and. (.not. in_quotes)) then
-            record_field_count = record_field_count + 1
-            if (after_quoted_field) after_quoted_field = .false.
-            field_has_content = .false.
-            cycle
-         end if
-
-         if (ch == '"') then
-            if (in_quotes) then
-               pending_quote = .true.
-            else if (field_has_content) then
-               close (file_unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing CSV records contain malformed quoted fields'
-               return
-            else
-               in_quotes = .true.
-               after_quoted_field = .false.
-            end if
-         else if (.not. in_quotes) then
-            field_has_content = .true.
-         end if
-      end do
-      close (file_unit)
-
-      if (.not. saw_any_char) return
-
-      if (last_char /= new_line('a')) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing CSV append target does not end with a newline'
-         return
-      end if
-
-      if (in_quotes) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing CSV records contain an unterminated quoted field'
-         return
-      end if
-
-      if (pending_record_cr) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing CSV records contain a bare carriage return'
-         return
-      end if
-
-      include_header = .false.
-   end subroutine get_csv_header_mode
-
-   subroutine append_limited_csv_record_prefix(record_text, ch, prefix_limit)
-      character(len=:), allocatable, intent(inout) :: record_text
-      character(len=1), intent(in) :: ch
-      integer, intent(in) :: prefix_limit
-
-      if (len(record_text) >= prefix_limit) return
-      record_text = record_text//ch
-   end subroutine append_limited_csv_record_prefix
-
-   subroutine strip_trailing_carriage_return(text)
-      character(len=:), allocatable, intent(inout) :: text
-      integer :: text_len
-
-      text_len = len(text)
-      if (text_len <= 0) return
-      if (text(text_len:text_len) == achar(13)) text = text(:text_len - 1)
-   end subroutine strip_trailing_carriage_return
-
-   integer function csv_field_count(line) result(count)
-      character(len=*), intent(in) :: line
-      integer :: i
-      logical :: in_quotes
-
-      count = 1
-      in_quotes = .false.
-      do i = 1, len_trim(line)
-         if (line(i:i) == '"') then
-            in_quotes = .not. in_quotes
-         else if ((line(i:i) == ',') .and. (.not. in_quotes)) then
-            count = count + 1
-         end if
-      end do
-   end function csv_field_count
-
-   logical function csv_record_has_valid_prefix(line, summary_kind, format_version) result(matches)
-      character(len=*), intent(in) :: line
-      character(len=*), intent(in), optional :: summary_kind
-      character(len=*), intent(in), optional :: format_version
-      character(len=:), allocatable :: row_format_version
-
       row_format_version = FTIMER_CSV_FORMAT_VERSION
       if (present(format_version)) row_format_version = trim(format_version)
 
       if (present(summary_kind)) then
-         matches = starts_with(line, '"'//row_format_version//'","'//trim(summary_kind)//'","summary",') .or. &
-                   starts_with(line, '"'//row_format_version//'","'//trim(summary_kind)//'","metadata",') .or. &
-                   starts_with(line, '"'//row_format_version//'","'//trim(summary_kind)//'","entry",')
+         call ftimer_get_csv_append_header_mode(filename, append_mode, include_header, status, iomsg, &
+                                                expected_header, row_format_version, &
+                                                [character(len=len_trim(summary_kind)) :: trim(summary_kind)], &
+                                                [character(len=8) :: 'summary', 'metadata', 'entry'], &
+                                                'existing CSV header does not match fTimer '//schema_name, &
+                                                'existing CSV records do not match fTimer '//schema_name, &
+                                                'existing CSV records contain a bare carriage return', &
+                                                'existing CSV records contain malformed quoted fields', &
+                                                'existing CSV append target does not end with a newline', &
+                                                'existing CSV records contain an unterminated quoted field')
       else
-         matches = starts_with(line, '"'//row_format_version//'","local","summary",') .or. &
-                   starts_with(line, '"'//row_format_version//'","local","metadata",') .or. &
-                   starts_with(line, '"'//row_format_version//'","local","entry",') .or. &
-                   starts_with(line, '"'//row_format_version//'","mpi","summary",') .or. &
-                   starts_with(line, '"'//row_format_version//'","mpi","metadata",') .or. &
-                   starts_with(line, '"'//row_format_version//'","mpi","entry",')
+         call ftimer_get_csv_append_header_mode(filename, append_mode, include_header, status, iomsg, &
+                                                expected_header, row_format_version, &
+                                                [character(len=5) :: 'local', 'mpi'], &
+                                                [character(len=8) :: 'summary', 'metadata', 'entry'], &
+                                                'existing CSV header does not match fTimer '//schema_name, &
+                                                'existing CSV records do not match fTimer '//schema_name, &
+                                                'existing CSV records contain a bare carriage return', &
+                                                'existing CSV records contain malformed quoted fields', &
+                                                'existing CSV append target does not end with a newline', &
+                                                'existing CSV records contain an unterminated quoted field')
       end if
-   end function csv_record_has_valid_prefix
-
-   logical function starts_with(text, prefix) result(matches)
-      character(len=*), intent(in) :: text
-      character(len=*), intent(in) :: prefix
-
-      matches = .false.
-      if (len_trim(text) < len(prefix)) return
-      matches = text(1:len(prefix)) == prefix
-   end function starts_with
+   end subroutine get_csv_header_mode
 
    function csv_header_line() result(header)
       character(len=:), allocatable :: header

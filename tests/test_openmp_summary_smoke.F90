@@ -593,19 +593,34 @@ contains
 
    subroutine check_openmp_summary_csv_append_validation()
       character(len=*), parameter :: bad_csv_path = 'openmp_summary_bad_append.csv'
+      character(len=*), parameter :: bare_cr_path = 'openmp_summary_bare_cr_append.csv'
       character(len=*), parameter :: csv_path = 'openmp_summary_append.csv'
+      character(len=*), parameter :: malformed_quote_path = 'openmp_summary_malformed_quote_append.csv'
+      character(len=*), parameter :: quoted_csv_path = 'openmp_summary_quoted_append.csv'
       character(len=*), parameter :: truncated_csv_path = 'openmp_summary_truncated_append.csv'
       character(len=*), parameter :: wrong_header_csv_path = 'openmp_summary_wrong_header_append.csv'
       type(ftimer_openmp_config_t) :: config
       type(ftimer_openmp_t) :: timer
+      type(ftimer_metadata_t) :: metadata(1)
       character(len=:), allocatable :: bad_text
+      character(len=:), allocatable :: bad_record_text
+      character(len=:), allocatable :: bare_cr_text
       character(len=:), allocatable :: csv_text
       character(len=:), allocatable :: header
+      character(len=:), allocatable :: malformed_quote_text
+      character(len=:), allocatable :: metadata_line
+      character(len=:), allocatable :: truncated_text
+      character(len=:), allocatable :: wrong_header_text
       integer :: ierr
+      integer :: record_type_col
+      integer :: value_col
       integer :: timer_id
 
       call delete_if_exists(csv_path)
       call delete_if_exists(bad_csv_path)
+      call delete_if_exists(bare_cr_path)
+      call delete_if_exists(malformed_quote_path)
+      call delete_if_exists(quoted_csv_path)
       call delete_if_exists(truncated_csv_path)
       call delete_if_exists(wrong_header_csv_path)
 
@@ -632,29 +647,75 @@ contains
       call expect_status(ierr, FTIMER_SUCCESS, 186)
       csv_text = read_file_text(csv_path)
       call expect_int(count_occurrences(csv_text, header), 1, 187)
+      call expect_csv_record_count(csv_text, 'summary', 2, 215)
+      call expect_csv_record_count(csv_text, 'entry', 2, 216)
 
-      bad_text = header//new_line('a')//'"1","openmp","summary"'//new_line('a')
-      call write_text_file(bad_csv_path, bad_text)
+      metadata(1)%key = 'Notes'
+      metadata(1)%value = 'openmp, "quoted"'
+      call timer%write_openmp_summary_csv(quoted_csv_path, metadata=metadata, ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 196)
+      call timer%write_openmp_summary_csv(quoted_csv_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_SUCCESS, 197)
+      csv_text = read_file_text(quoted_csv_path)
+      header = first_line(csv_text)
+      metadata_line = find_csv_record(csv_text, 'metadata', 'Notes')
+      record_type_col = csv_column_index(csv_text, 'record_type')
+      value_col = csv_column_index(csv_text, 'value')
+      call expect_int(count_occurrences(csv_text, header), 1, 198)
+      call expect_csv_record_count(csv_text, 'summary', 2, 217)
+      call expect_csv_record_count(csv_text, 'metadata', 1, 218)
+      call expect_csv_record_count(csv_text, 'entry', 2, 219)
+      call expect_equal_text(csv_field_value(metadata_line, record_type_col), 'metadata', 199)
+      call expect_equal_text(csv_field_value(metadata_line, value_col), 'openmp, "quoted"', 210)
+
+      bad_record_text = header//new_line('a')//'"1","openmp","summary"'//new_line('a')
+      call write_text_file(bad_csv_path, bad_record_text)
       call timer%write_openmp_summary_csv(bad_csv_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 188)
-      call expect_equal_text(read_file_text(bad_csv_path), bad_text, 189)
+      call expect_equal_text(read_file_text(bad_csv_path), bad_record_text, 189)
 
-      bad_text = header//new_line('a')//'"1","openmp","summary",'
-      call write_text_file(truncated_csv_path, bad_text)
+      truncated_text = header//new_line('a')//'"1","openmp","summary",'
+      call write_text_file(truncated_csv_path, truncated_text)
       call timer%write_openmp_summary_csv(truncated_csv_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 190)
-      call expect_equal_text(read_file_text(truncated_csv_path), bad_text, 191)
+      call expect_equal_text(read_file_text(truncated_csv_path), truncated_text, 191)
 
-      bad_text = 'format_version,summary_kind,record_type'//new_line('a')
-      call write_text_file(wrong_header_csv_path, bad_text)
+      malformed_quote_text = header//new_line('a')//'1"bad'//new_line('a')
+      call write_text_file(malformed_quote_path, malformed_quote_text)
+      call timer%write_openmp_summary_csv(malformed_quote_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 211)
+      call expect_equal_text(read_file_text(malformed_quote_path), malformed_quote_text, 212)
+
+      bare_cr_text = header//new_line('a')//'"1","openmp","summary"'//achar(13)//'x'//new_line('a')
+      call write_text_file(bare_cr_path, bare_cr_text)
+      call timer%write_openmp_summary_csv(bare_cr_path, append=.true., ierr=ierr)
+      call expect_status(ierr, FTIMER_ERR_IO, 213)
+      call expect_equal_text(read_file_text(bare_cr_path), bare_cr_text, 214)
+
+      wrong_header_text = 'format_version,summary_kind,record_type'//new_line('a')
+      call write_text_file(wrong_header_csv_path, wrong_header_text)
       call timer%write_openmp_summary_csv(wrong_header_csv_path, append=.true., ierr=ierr)
       call expect_status(ierr, FTIMER_ERR_IO, 193)
-      call expect_equal_text(read_file_text(wrong_header_csv_path), bad_text, 194)
+      call expect_equal_text(read_file_text(wrong_header_csv_path), wrong_header_text, 194)
+
+      call timer%write_openmp_summary_csv(bad_csv_path, append=.true.)
+      call timer%write_openmp_summary_csv(truncated_csv_path, append=.true.)
+      call timer%write_openmp_summary_csv(malformed_quote_path, append=.true.)
+      call timer%write_openmp_summary_csv(bare_cr_path, append=.true.)
+      call timer%write_openmp_summary_csv(wrong_header_csv_path, append=.true.)
+      call expect_equal_text(read_file_text(bad_csv_path), bad_record_text, 220)
+      call expect_equal_text(read_file_text(truncated_csv_path), truncated_text, 221)
+      call expect_equal_text(read_file_text(malformed_quote_path), malformed_quote_text, 222)
+      call expect_equal_text(read_file_text(bare_cr_path), bare_cr_text, 223)
+      call expect_equal_text(read_file_text(wrong_header_csv_path), wrong_header_text, 224)
 
       call timer%finalize(ierr=ierr)
       call expect_status(ierr, FTIMER_SUCCESS, 195)
       call delete_if_exists(csv_path)
       call delete_if_exists(bad_csv_path)
+      call delete_if_exists(bare_cr_path)
+      call delete_if_exists(malformed_quote_path)
+      call delete_if_exists(quoted_csv_path)
       call delete_if_exists(truncated_csv_path)
       call delete_if_exists(wrong_header_csv_path)
    end subroutine check_openmp_summary_csv_append_validation
@@ -995,6 +1056,39 @@ contains
       actual = csv_field_value(row, column_idx)
       if ((len(actual) /= len(expected)) .or. (actual /= expected)) error stop stop_code + 2000
    end subroutine expect_csv_record_field
+
+   subroutine expect_csv_record_count(csv_text, record_type, expected, stop_code)
+      character(len=*), intent(in) :: csv_text
+      character(len=*), intent(in) :: record_type
+      integer, intent(in) :: expected
+      integer, intent(in) :: stop_code
+      character(len=:), allocatable :: candidate
+      integer :: count
+      integer :: line_end
+      integer :: line_start
+      integer :: newline_pos
+      integer :: record_type_col
+
+      record_type_col = csv_column_index(csv_text, 'record_type')
+      if (record_type_col <= 0) error stop stop_code
+      count = 0
+      line_start = len(first_line(csv_text)) + 2
+      do while (line_start <= len(csv_text))
+         newline_pos = index(csv_text(line_start:), new_line('a'))
+         if (newline_pos <= 0) then
+            line_end = len(csv_text)
+         else
+            line_end = line_start + newline_pos - 2
+         end if
+         if (line_end >= line_start) then
+            candidate = csv_text(line_start:line_end)
+            if (csv_field_value(candidate, record_type_col) == record_type) count = count + 1
+         end if
+         if (newline_pos <= 0) exit
+         line_start = line_end + 2
+      end do
+      if (count /= expected) error stop stop_code
+   end subroutine expect_csv_record_count
 
    integer function csv_column_index(csv_text, column) result(idx)
       character(len=*), intent(in) :: csv_text

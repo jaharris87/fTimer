@@ -1,6 +1,7 @@
 module ftimer_openmp
-   use, intrinsic :: iso_fortran_env, only: error_unit, int64, iostat_end, output_unit
+   use, intrinsic :: iso_fortran_env, only: error_unit, int64, output_unit
    use ftimer_clock, only: ftimer_date_string, ftimer_default_clock
+   use ftimer_csv_validation, only: ftimer_get_csv_append_header_mode
    use ftimer_types, only: FTIMER_ERR_ACTIVE, FTIMER_ERR_INVALID_NAME, FTIMER_ERR_IO, FTIMER_ERR_MISMATCH, &
                            FTIMER_ERR_MPI_INCON, FTIMER_ERR_NOT_IMPLEMENTED, FTIMER_ERR_NOT_INIT, &
                            FTIMER_ERR_UNKNOWN, FTIMER_SUCCESS, &
@@ -3913,202 +3914,20 @@ contains
       logical, intent(out) :: include_header
       integer, intent(out) :: status
       character(len=*), intent(out) :: iomsg
-      character(len=1) :: ch
       character(len=:), allocatable :: expected_header
-      character(len=:), allocatable :: header_line
-      character(len=:), allocatable :: record_text
-      character(len=1) :: last_char
-      integer :: expected_field_count
-      integer :: io
-      integer :: record_field_count
-      integer :: record_prefix_limit
-      integer :: unit
-      logical :: exists
-      logical :: after_quoted_field
-      logical :: field_has_content
-      logical :: in_quotes
-      logical :: pending_record_cr
-      logical :: pending_quote
-      logical :: reading_header
-      logical :: saw_any_char
-
-      include_header = .true.
-      status = FTIMER_SUCCESS
-      iomsg = ''
-      if (.not. append_mode) return
-
-      inquire (file=filename, exist=exists)
-      if (.not. exists) return
 
       expected_header = mpi_openmp_csv_header_line()
-      expected_field_count = openmp_csv_field_count(expected_header)
-      header_line = ''
-      record_text = ''
-      record_prefix_limit = 64
-      record_field_count = 1
-      last_char = ''
-      reading_header = .true.
-      after_quoted_field = .false.
-      field_has_content = .false.
-      in_quotes = .false.
-      pending_record_cr = .false.
-      pending_quote = .false.
-      saw_any_char = .false.
-
-      open (newunit=unit, file=filename, status='old', access='stream', form='unformatted', &
-            action='read', iostat=io, iomsg=iomsg)
-      if (io /= 0) then
-         status = FTIMER_ERR_IO
-         return
-      end if
-
-      do
-         read (unit, iostat=io, iomsg=iomsg) ch
-         if (io == iostat_end) exit
-         if (io /= 0) then
-            close (unit)
-            status = FTIMER_ERR_IO
-            return
-         end if
-
-         last_char = ch
-         saw_any_char = .true.
-
-         if (reading_header) then
-            if (ch == new_line('a')) then
-               reading_header = .false.
-               call strip_openmp_trailing_carriage_return(header_line)
-               if ((len(header_line) /= len(expected_header)) .or. (header_line /= expected_header)) then
-                  close (unit)
-                  status = FTIMER_ERR_IO
-                  iomsg = 'existing MPI+OpenMP summary CSV header does not match format version 1'
-                  return
-               end if
-            else
-               header_line = header_line//ch
-               if (len(header_line) > len(expected_header) + 1) then
-                  close (unit)
-                  status = FTIMER_ERR_IO
-                  iomsg = 'existing MPI+OpenMP summary CSV header does not match format version 1'
-                  return
-               end if
-            end if
-            cycle
-         end if
-
-         if (pending_record_cr) then
-            if (ch /= new_line('a')) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing MPI+OpenMP summary CSV records contain a bare carriage return'
-               return
-            end if
-            pending_record_cr = .false.
-         end if
-
-         if (pending_quote) then
-            if (ch == '"') then
-               pending_quote = .false.
-               call append_limited_openmp_csv_record_prefix(record_text, ch, record_prefix_limit)
-               cycle
-            end if
-            in_quotes = .false.
-            pending_quote = .false.
-            after_quoted_field = .true.
-         end if
-
-         if ((ch == achar(13)) .and. (.not. in_quotes)) then
-            pending_record_cr = .true.
-            cycle
-         end if
-
-         if (after_quoted_field) then
-            if ((ch /= ',') .and. (ch /= new_line('a'))) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing MPI+OpenMP summary CSV records contain malformed quoted fields'
-               return
-            end if
-         end if
-
-         if ((ch == new_line('a')) .and. (.not. in_quotes)) then
-            call strip_openmp_trailing_carriage_return(record_text)
-            if ((record_field_count /= expected_field_count) .or. &
-                (.not. mpi_openmp_csv_record_has_valid_prefix(record_text))) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing MPI+OpenMP summary CSV records do not match format version 1'
-               return
-            end if
-            record_text = ''
-            record_field_count = 1
-            after_quoted_field = .false.
-            field_has_content = .false.
-            cycle
-         end if
-
-         call append_limited_openmp_csv_record_prefix(record_text, ch, record_prefix_limit)
-
-         if ((ch == ',') .and. (.not. in_quotes)) then
-            record_field_count = record_field_count + 1
-            if (after_quoted_field) after_quoted_field = .false.
-            field_has_content = .false.
-            cycle
-         end if
-
-         if (ch == '"') then
-            if (in_quotes) then
-               pending_quote = .true.
-            else if (field_has_content) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing MPI+OpenMP summary CSV records contain malformed quoted fields'
-               return
-            else
-               in_quotes = .true.
-               after_quoted_field = .false.
-            end if
-         else if (.not. in_quotes) then
-            field_has_content = .true.
-         end if
-      end do
-      close (unit)
-
-      if (.not. saw_any_char) return
-
-      if (last_char /= new_line('a')) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing MPI+OpenMP summary CSV append target does not end with a newline'
-         return
-      end if
-
-      if (in_quotes) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing MPI+OpenMP summary CSV records contain an unterminated quoted field'
-         return
-      end if
-
-      if (pending_record_cr) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing MPI+OpenMP summary CSV records contain a bare carriage return'
-         return
-      end if
-
-      include_header = .false.
+      call ftimer_get_csv_append_header_mode(filename, append_mode, include_header, status, iomsg, &
+                                             expected_header, FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION, &
+                                             [character(len=11) :: 'mpi_openmp'], &
+                                             [character(len=8) :: 'summary', 'metadata', 'rank', 'entry'], &
+                                             'existing MPI+OpenMP summary CSV header does not match format version 1', &
+                                             'existing MPI+OpenMP summary CSV records do not match format version 1', &
+                                             'existing MPI+OpenMP summary CSV records contain a bare carriage return', &
+                                             'existing MPI+OpenMP summary CSV records contain malformed quoted fields', &
+                                             'existing MPI+OpenMP summary CSV append target does not end with a newline', &
+                                             'existing MPI+OpenMP summary CSV records contain an unterminated quoted field')
    end subroutine get_mpi_openmp_csv_header_mode
-
-   logical function mpi_openmp_csv_record_has_valid_prefix(line) result(matches)
-      character(len=*), intent(in) :: line
-
-      matches = openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION// &
-                                   '","mpi_openmp","summary",') .or. &
-                openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION// &
-                                   '","mpi_openmp","metadata",') .or. &
-                openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION// &
-                                   '","mpi_openmp","rank",') .or. &
-                openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_CSV_FORMAT_VERSION// &
-                                   '","mpi_openmp","entry",')
-   end function mpi_openmp_csv_record_has_valid_prefix
 
    subroutine format_mpi_openmp_union_summary(summary, text, metadata)
       type(ftimer_mpi_openmp_union_summary_t), intent(in) :: summary
@@ -4467,200 +4286,25 @@ contains
       logical, intent(out) :: include_header
       integer, intent(out) :: status
       character(len=*), intent(out) :: iomsg
-      character(len=1) :: ch
       character(len=:), allocatable :: expected_header
-      character(len=:), allocatable :: header_line
-      character(len=:), allocatable :: record_text
-      character(len=1) :: last_char
-      integer :: expected_field_count
-      integer :: io
-      integer :: record_field_count
-      integer :: record_prefix_limit
-      integer :: unit
-      logical :: exists
-      logical :: after_quoted_field
-      logical :: field_has_content
-      logical :: in_quotes
-      logical :: pending_record_cr
-      logical :: pending_quote
-      logical :: reading_header
-      logical :: saw_any_char
-
-      include_header = .true.
-      status = FTIMER_SUCCESS
-      iomsg = ''
-      if (.not. append_mode) return
-
-      inquire (file=filename, exist=exists)
-      if (.not. exists) return
 
       expected_header = mpi_openmp_union_csv_header_line()
-      expected_field_count = openmp_csv_field_count(expected_header)
-      header_line = ''
-      record_text = ''
-      record_prefix_limit = 64
-      record_field_count = 1
-      last_char = ''
-      reading_header = .true.
-      after_quoted_field = .false.
-      field_has_content = .false.
-      in_quotes = .false.
-      pending_record_cr = .false.
-      pending_quote = .false.
-      saw_any_char = .false.
-
-      open (newunit=unit, file=filename, status='old', access='stream', form='unformatted', &
-            action='read', iostat=io, iomsg=iomsg)
-      if (io /= 0) then
-         status = FTIMER_ERR_IO
-         return
-      end if
-
-      do
-         read (unit, iostat=io, iomsg=iomsg) ch
-         if (io == iostat_end) exit
-         if (io /= 0) then
-            close (unit)
-            status = FTIMER_ERR_IO
-            return
-         end if
-         last_char = ch
-         saw_any_char = .true.
-         if (reading_header) then
-            if (ch == new_line('a')) then
-               reading_header = .false.
-               call strip_openmp_trailing_carriage_return(header_line)
-               if ((len(header_line) /= len(expected_header)) .or. (header_line /= expected_header)) then
-                  close (unit)
-                  status = FTIMER_ERR_IO
-                  iomsg = 'existing sparse MPI+OpenMP union summary CSV header does not match format version 1'
-                  return
-               end if
-            else
-               header_line = header_line//ch
-               if (len(header_line) > len(expected_header) + 1) then
-                  close (unit)
-                  status = FTIMER_ERR_IO
-                  iomsg = 'existing sparse MPI+OpenMP union summary CSV header does not match format version 1'
-                  return
-               end if
-            end if
-            cycle
-         end if
-
-         if (pending_record_cr) then
-            if (ch /= new_line('a')) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing sparse MPI+OpenMP union summary CSV records contain a bare carriage return'
-               return
-            end if
-            pending_record_cr = .false.
-         end if
-
-         if (pending_quote) then
-            if (ch == '"') then
-               pending_quote = .false.
-               call append_limited_openmp_csv_record_prefix(record_text, ch, record_prefix_limit)
-               cycle
-            end if
-            in_quotes = .false.
-            pending_quote = .false.
-            after_quoted_field = .true.
-         end if
-
-         if ((ch == achar(13)) .and. (.not. in_quotes)) then
-            pending_record_cr = .true.
-            cycle
-         end if
-
-         if (after_quoted_field) then
-            if ((ch /= ',') .and. (ch /= new_line('a'))) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing sparse MPI+OpenMP union summary CSV records contain malformed quoted fields'
-               return
-            end if
-         end if
-
-         if ((ch == new_line('a')) .and. (.not. in_quotes)) then
-            call strip_openmp_trailing_carriage_return(record_text)
-            if ((record_field_count /= expected_field_count) .or. &
-                (.not. mpi_openmp_union_csv_record_has_valid_prefix(record_text))) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing sparse MPI+OpenMP union summary CSV records do not match format version 1'
-               return
-            end if
-            record_text = ''
-            record_field_count = 1
-            after_quoted_field = .false.
-            field_has_content = .false.
-            cycle
-         end if
-
-         call append_limited_openmp_csv_record_prefix(record_text, ch, record_prefix_limit)
-
-         if ((ch == ',') .and. (.not. in_quotes)) then
-            record_field_count = record_field_count + 1
-            if (after_quoted_field) after_quoted_field = .false.
-            field_has_content = .false.
-            cycle
-         end if
-
-         if (ch == '"') then
-            if (in_quotes) then
-               pending_quote = .true.
-            else if (field_has_content) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing sparse MPI+OpenMP union summary CSV records contain malformed quoted fields'
-               return
-            else
-               in_quotes = .true.
-               after_quoted_field = .false.
-            end if
-         else if (.not. in_quotes) then
-            field_has_content = .true.
-         end if
-      end do
-      close (unit)
-
-      if (.not. saw_any_char) return
-
-      if (last_char /= new_line('a')) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing sparse MPI+OpenMP union summary CSV append target does not end with a newline'
-         return
-      end if
-
-      if (in_quotes) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing sparse MPI+OpenMP union summary CSV records contain an unterminated quoted field'
-         return
-      end if
-
-      if (pending_record_cr) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing sparse MPI+OpenMP union summary CSV records contain a bare carriage return'
-         return
-      end if
-
-      include_header = .false.
+      call ftimer_get_csv_append_header_mode(filename, append_mode, include_header, status, iomsg, &
+                                             expected_header, FTIMER_MPI_OPENMP_UNION_CSV_FORMAT_VERSION, &
+                                             [character(len=17) :: 'mpi_openmp_union'], &
+                                             [character(len=8) :: 'summary', 'metadata', 'rank', 'entry'], &
+                                             'existing sparse MPI+OpenMP union summary CSV header does not match '// &
+                                             'format version 1', &
+                                             'existing sparse MPI+OpenMP union summary CSV records do not match format version 1', &
+                                             'existing sparse MPI+OpenMP union summary CSV records contain a bare '// &
+                                             'carriage return', &
+                                             'existing sparse MPI+OpenMP union summary CSV records contain malformed '// &
+                                             'quoted fields', &
+                                             'existing sparse MPI+OpenMP union summary CSV append target does not end '// &
+                                             'with a newline', &
+                                             'existing sparse MPI+OpenMP union summary CSV records contain an '// &
+                                             'unterminated quoted field')
    end subroutine get_mpi_openmp_union_csv_header_mode
-
-   logical function mpi_openmp_union_csv_record_has_valid_prefix(line) result(matches)
-      character(len=*), intent(in) :: line
-
-      matches = openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_UNION_CSV_FORMAT_VERSION// &
-                                   '","mpi_openmp_union","summary",') .or. &
-                openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_UNION_CSV_FORMAT_VERSION// &
-                                   '","mpi_openmp_union","metadata",') .or. &
-                openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_UNION_CSV_FORMAT_VERSION// &
-                                   '","mpi_openmp_union","rank",') .or. &
-                openmp_starts_with(line, '"'//FTIMER_MPI_OPENMP_UNION_CSV_FORMAT_VERSION// &
-                                   '","mpi_openmp_union","entry",')
-   end function mpi_openmp_union_csv_record_has_valid_prefix
 
    subroutine report_mpi_openmp_union_summary_error(self, ierr, status, diagnostic)
       class(ftimer_openmp_t), intent(inout) :: self
@@ -5481,231 +5125,20 @@ contains
       logical, intent(out) :: include_header
       integer, intent(out) :: status
       character(len=*), intent(out) :: iomsg
-      character(len=1) :: ch
       character(len=:), allocatable :: expected_header
-      character(len=:), allocatable :: header_line
-      character(len=:), allocatable :: record_text
-      character(len=1) :: last_char
-      integer :: expected_field_count
-      integer :: io
-      integer :: record_field_count
-      integer :: record_prefix_limit
-      integer :: unit
-      logical :: exists
-      logical :: after_quoted_field
-      logical :: field_has_content
-      logical :: in_quotes
-      logical :: pending_record_cr
-      logical :: pending_quote
-      logical :: reading_header
-      logical :: saw_any_char
-
-      include_header = .true.
-      status = FTIMER_SUCCESS
-      iomsg = ''
-      if (.not. append_mode) return
-
-      inquire (file=filename, exist=exists)
-      if (.not. exists) return
 
       expected_header = openmp_csv_header_line()
-      expected_field_count = openmp_csv_field_count(expected_header)
-      header_line = ''
-      record_text = ''
-      record_prefix_limit = 64
-      record_field_count = 1
-      last_char = ''
-      reading_header = .true.
-      after_quoted_field = .false.
-      field_has_content = .false.
-      in_quotes = .false.
-      pending_record_cr = .false.
-      pending_quote = .false.
-      saw_any_char = .false.
-
-      open (newunit=unit, file=filename, status='old', access='stream', form='unformatted', &
-            action='read', iostat=io, iomsg=iomsg)
-      if (io /= 0) then
-         status = FTIMER_ERR_IO
-         return
-      end if
-
-      do
-         read (unit, iostat=io, iomsg=iomsg) ch
-         if (io == iostat_end) exit
-         if (io /= 0) then
-            close (unit)
-            status = FTIMER_ERR_IO
-            return
-         end if
-
-         last_char = ch
-         saw_any_char = .true.
-
-         if (reading_header) then
-            if (ch == new_line('a')) then
-               reading_header = .false.
-               call strip_openmp_trailing_carriage_return(header_line)
-               if ((len(header_line) /= len(expected_header)) .or. (header_line /= expected_header)) then
-                  close (unit)
-                  status = FTIMER_ERR_IO
-                  iomsg = 'existing OpenMP summary CSV header does not match format version 1'
-                  return
-               end if
-            else
-               header_line = header_line//ch
-               if (len(header_line) > len(expected_header) + 1) then
-                  close (unit)
-                  status = FTIMER_ERR_IO
-                  iomsg = 'existing OpenMP summary CSV header does not match format version 1'
-                  return
-               end if
-            end if
-            cycle
-         end if
-
-         if (pending_record_cr) then
-            if (ch /= new_line('a')) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing OpenMP summary CSV records contain a bare carriage return'
-               return
-            end if
-            pending_record_cr = .false.
-         end if
-
-         if (pending_quote) then
-            if (ch == '"') then
-               pending_quote = .false.
-               call append_limited_openmp_csv_record_prefix(record_text, ch, record_prefix_limit)
-               cycle
-            end if
-            in_quotes = .false.
-            pending_quote = .false.
-            after_quoted_field = .true.
-         end if
-
-         if ((ch == achar(13)) .and. (.not. in_quotes)) then
-            pending_record_cr = .true.
-            cycle
-         end if
-
-         if (after_quoted_field) then
-            if ((ch /= ',') .and. (ch /= new_line('a'))) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing OpenMP summary CSV records contain malformed quoted fields'
-               return
-            end if
-         end if
-
-         if ((ch == new_line('a')) .and. (.not. in_quotes)) then
-            call strip_openmp_trailing_carriage_return(record_text)
-            if ((record_field_count /= expected_field_count) .or. &
-                (.not. openmp_csv_record_has_valid_prefix(record_text))) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing OpenMP summary CSV records do not match format version 1'
-               return
-            end if
-            record_text = ''
-            record_field_count = 1
-            after_quoted_field = .false.
-            field_has_content = .false.
-            cycle
-         end if
-
-         call append_limited_openmp_csv_record_prefix(record_text, ch, record_prefix_limit)
-
-         if ((ch == ',') .and. (.not. in_quotes)) then
-            record_field_count = record_field_count + 1
-            if (after_quoted_field) after_quoted_field = .false.
-            field_has_content = .false.
-            cycle
-         end if
-
-         if (ch == '"') then
-            if (in_quotes) then
-               pending_quote = .true.
-            else if (field_has_content) then
-               close (unit)
-               status = FTIMER_ERR_IO
-               iomsg = 'existing OpenMP summary CSV records contain malformed quoted fields'
-               return
-            else
-               in_quotes = .true.
-               after_quoted_field = .false.
-            end if
-         else if (.not. in_quotes) then
-            field_has_content = .true.
-         end if
-      end do
-      close (unit)
-
-      if (.not. saw_any_char) return
-
-      if (last_char /= new_line('a')) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing OpenMP summary CSV append target does not end with a newline'
-         return
-      end if
-
-      if (in_quotes) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing OpenMP summary CSV records contain an unterminated quoted field'
-         return
-      end if
-
-      if (pending_record_cr) then
-         status = FTIMER_ERR_IO
-         iomsg = 'existing OpenMP summary CSV records contain a bare carriage return'
-         return
-      end if
-
-      include_header = .false.
+      call ftimer_get_csv_append_header_mode(filename, append_mode, include_header, status, iomsg, &
+                                             expected_header, FTIMER_OPENMP_CSV_FORMAT_VERSION, &
+                                             [character(len=6) :: 'openmp'], &
+                                             [character(len=8) :: 'summary', 'metadata', 'entry'], &
+                                             'existing OpenMP summary CSV header does not match format version 1', &
+                                             'existing OpenMP summary CSV records do not match format version 1', &
+                                             'existing OpenMP summary CSV records contain a bare carriage return', &
+                                             'existing OpenMP summary CSV records contain malformed quoted fields', &
+                                             'existing OpenMP summary CSV append target does not end with a newline', &
+                                             'existing OpenMP summary CSV records contain an unterminated quoted field')
    end subroutine get_openmp_csv_header_mode
-
-   subroutine append_limited_openmp_csv_record_prefix(record_text, ch, prefix_limit)
-      character(len=:), allocatable, intent(inout) :: record_text
-      character(len=1), intent(in) :: ch
-      integer, intent(in) :: prefix_limit
-
-      if (len(record_text) >= prefix_limit) return
-      record_text = record_text//ch
-   end subroutine append_limited_openmp_csv_record_prefix
-
-   subroutine strip_openmp_trailing_carriage_return(text)
-      character(len=:), allocatable, intent(inout) :: text
-      integer :: text_len
-
-      text_len = len(text)
-      if (text_len <= 0) return
-      if (text(text_len:text_len) == achar(13)) text = text(:text_len - 1)
-   end subroutine strip_openmp_trailing_carriage_return
-
-   integer function openmp_csv_field_count(line) result(count)
-      character(len=*), intent(in) :: line
-      integer :: i
-      logical :: in_quotes
-
-      count = 1
-      in_quotes = .false.
-      do i = 1, len_trim(line)
-         if (line(i:i) == '"') then
-            in_quotes = .not. in_quotes
-         elseif ((line(i:i) == ',') .and. (.not. in_quotes)) then
-            count = count + 1
-         end if
-      end do
-   end function openmp_csv_field_count
-
-   logical function openmp_csv_record_has_valid_prefix(line) result(matches)
-      character(len=*), intent(in) :: line
-
-      matches = openmp_starts_with(line, '"'//FTIMER_OPENMP_CSV_FORMAT_VERSION//'","openmp","summary",') .or. &
-                openmp_starts_with(line, '"'//FTIMER_OPENMP_CSV_FORMAT_VERSION//'","openmp","metadata",') .or. &
-                openmp_starts_with(line, '"'//FTIMER_OPENMP_CSV_FORMAT_VERSION//'","openmp","entry",')
-   end function openmp_csv_record_has_valid_prefix
 
    logical function openmp_starts_with(text, prefix) result(matches)
       character(len=*), intent(in) :: text
