@@ -427,16 +427,23 @@ foreach(readme_role_route IN LISTS readme_role_routes)
   endif()
 endforeach()
 
+string(FIND "${readme_where_to_go_next_text}" "For users:"
+  readme_where_user_start)
 string(FIND "${readme_where_to_go_next_text}" "For project work:"
   readme_where_project_start)
-if(readme_where_project_start EQUAL -1)
+
+if(readme_where_user_start EQUAL -1 OR
+   readme_where_project_start EQUAL -1 OR
+   NOT readme_where_user_start LESS readme_where_project_start)
   message(FATAL_ERROR
-    "README.md must keep the 'For project work:' boundary in '## Where To Go Next'."
+    "README.md must order '## Where To Go Next' as user routes before project-work routes."
   )
 endif()
 
-string(SUBSTRING "${readme_where_to_go_next_text}" 0
-  "${readme_where_project_start}" readme_where_user_text)
+math(EXPR readme_where_user_length
+  "${readme_where_project_start} - ${readme_where_user_start}")
+string(SUBSTRING "${readme_where_to_go_next_text}" "${readme_where_user_start}"
+  "${readme_where_user_length}" readme_where_user_text)
 
 set(readme_project_only_targets
   "CONTRIBUTING.md"
