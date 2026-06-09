@@ -12,6 +12,35 @@ set(FTIMER_SOURCES
   ftimer.F90
 )
 
+function(ftimer_apply_feature_dependencies target_name)
+  if(FTIMER_USE_MPI)
+    target_compile_definitions(${target_name} PUBLIC FTIMER_USE_MPI)
+    target_link_libraries(${target_name} PUBLIC MPI::MPI_Fortran)
+  endif()
+
+  if(FTIMER_USE_OPENMP)
+    target_compile_definitions(${target_name} PUBLIC FTIMER_USE_OPENMP)
+    target_link_libraries(${target_name} PUBLIC OpenMP::OpenMP_Fortran)
+  endif()
+endfunction()
+
+function(ftimer_add_internal_library target_name module_dir build_definition)
+  add_library(${target_name} ${FTIMER_SOURCES})
+
+  set_target_properties(${target_name} PROPERTIES
+    Fortran_MODULE_DIRECTORY "${module_dir}"
+    OUTPUT_NAME ${target_name}
+  )
+
+  target_include_directories(${target_name}
+    PUBLIC
+      $<BUILD_INTERFACE:${module_dir}>
+  )
+
+  ftimer_apply_feature_dependencies(${target_name})
+  target_compile_definitions(${target_name} PRIVATE ${build_definition})
+endfunction()
+
 add_library(ftimer ${FTIMER_SOURCES})
 add_library(fTimer::ftimer ALIAS ftimer)
 
@@ -25,64 +54,20 @@ target_include_directories(ftimer
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ftimer>
 )
 
-if(FTIMER_USE_MPI)
-  target_compile_definitions(ftimer PUBLIC FTIMER_USE_MPI)
-  target_link_libraries(ftimer PUBLIC MPI::MPI_Fortran)
-endif()
-
-if(FTIMER_USE_OPENMP)
-  target_compile_definitions(ftimer PUBLIC FTIMER_USE_OPENMP)
-  target_link_libraries(ftimer PUBLIC OpenMP::OpenMP_Fortran)
-endif()
+ftimer_apply_feature_dependencies(ftimer)
 
 if(FTIMER_BUILD_TESTS)
-  add_library(ftimer_test ${FTIMER_SOURCES})
-
-  set_target_properties(ftimer_test PROPERTIES
-    Fortran_MODULE_DIRECTORY "${FTIMER_TEST_LIBRARY_MODULE_DIR}"
-    OUTPUT_NAME ftimer_test
+  ftimer_add_internal_library(
+    ftimer_test
+    "${FTIMER_TEST_LIBRARY_MODULE_DIR}"
+    FTIMER_BUILD_TESTS
   )
-
-  target_include_directories(ftimer_test
-    PUBLIC
-      $<BUILD_INTERFACE:${FTIMER_TEST_LIBRARY_MODULE_DIR}>
-  )
-
-  if(FTIMER_USE_MPI)
-    target_compile_definitions(ftimer_test PUBLIC FTIMER_USE_MPI)
-    target_link_libraries(ftimer_test PUBLIC MPI::MPI_Fortran)
-  endif()
-
-  if(FTIMER_USE_OPENMP)
-    target_compile_definitions(ftimer_test PUBLIC FTIMER_USE_OPENMP)
-    target_link_libraries(ftimer_test PUBLIC OpenMP::OpenMP_Fortran)
-  endif()
-
-  target_compile_definitions(ftimer_test PRIVATE FTIMER_BUILD_TESTS)
 endif()
 
 if(FTIMER_BUILD_SMOKE_TESTS)
-  add_library(ftimer_smoke_test ${FTIMER_SOURCES})
-
-  set_target_properties(ftimer_smoke_test PROPERTIES
-    Fortran_MODULE_DIRECTORY "${FTIMER_SMOKE_TEST_LIBRARY_MODULE_DIR}"
-    OUTPUT_NAME ftimer_smoke_test
+  ftimer_add_internal_library(
+    ftimer_smoke_test
+    "${FTIMER_SMOKE_TEST_LIBRARY_MODULE_DIR}"
+    FTIMER_BUILD_SMOKE_TESTS
   )
-
-  target_include_directories(ftimer_smoke_test
-    PUBLIC
-      $<BUILD_INTERFACE:${FTIMER_SMOKE_TEST_LIBRARY_MODULE_DIR}>
-  )
-
-  if(FTIMER_USE_MPI)
-    target_compile_definitions(ftimer_smoke_test PUBLIC FTIMER_USE_MPI)
-    target_link_libraries(ftimer_smoke_test PUBLIC MPI::MPI_Fortran)
-  endif()
-
-  if(FTIMER_USE_OPENMP)
-    target_compile_definitions(ftimer_smoke_test PUBLIC FTIMER_USE_OPENMP)
-    target_link_libraries(ftimer_smoke_test PUBLIC OpenMP::OpenMP_Fortran)
-  endif()
-
-  target_compile_definitions(ftimer_smoke_test PRIVATE FTIMER_BUILD_SMOKE_TESTS)
 endif()
