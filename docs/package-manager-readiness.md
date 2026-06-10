@@ -2,8 +2,9 @@
 
 Issue #311 records a package-manager readiness spike for Spack and EasyBuild.
 This note is evidence and maintainer guidance, not an in-repository package
-recipe. fTimer should not take ownership of maintained Spack `package.py` or
-EasyBuild easyconfig files unless a later issue accepts the support cost.
+recipe. fTimer does not currently own, ship, test, or maintain Spack
+`package.py` or EasyBuild easyconfig files. Do not treat any prototype below as
+a copy-paste-ready recipe unless a later issue accepts that support cost.
 
 Status date: 2026-06-09.
 
@@ -32,6 +33,12 @@ Spack or EasyBuild directly.
 A Spack package can be modeled as a `CMakePackage` with `mpi` and `openmp`
 variants. The serial prototype is the base case; MPI, OpenMP, and MPI+OpenMP
 add dependencies, CMake option flips, and the feature-mode caveats below.
+
+**Maintainer-only sketch, not a maintained Spack recipe:** this block is
+deliberately incomplete, was not executed by Spack during the readiness spike,
+and contains placeholders for a future upstream/site maintainer to replace with
+real ownership metadata, release versions, checksums, and package-manager
+validation.
 
 ```python
 from spack.package import *
@@ -85,6 +92,11 @@ Spack support assumptions:
 
 EasyBuild can use `CMakeMake` with one easyconfig per feature mode and
 toolchain. The serial easyconfig is the base case:
+
+**Maintainer-only sketch, not a maintained EasyBuild easyconfig:** this block
+is deliberately incomplete, was not executed by EasyBuild during the readiness
+spike, and contains placeholders for a future site maintainer to replace with a
+real toolchain, dependency versions, checksums, and package-manager validation.
 
 ```python
 easyblock = 'CMakeMake'
