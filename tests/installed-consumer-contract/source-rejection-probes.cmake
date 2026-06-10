@@ -105,10 +105,16 @@ function(ftimer_expect_installed_source_rejected probe_name required_diagnostic 
     )
   endif()
 
-  if(NOT probe_build_output MATCHES
-      "([Ee]rror|Semantic errors|no matching specific binding|not compatible|Dummy argument)")
+  string(CONCAT interface_diagnostic_regex
+    "(no matching specific binding|not compatible with dummy argument|"
+    "Dummy argument '[^']+' \\(#[0-9]+\\) is not OPTIONAL|"
+    "Actual argument type|Type mismatch|"
+    "Keyword argument .*not in the procedure|"
+    "There is no specific subroutine|Cannot match keyword)"
+  )
+  if(NOT probe_build_output MATCHES "${interface_diagnostic_regex}")
     message(FATAL_ERROR
-      "Rejected source probe '${probe_name}' failed without a recognizable compiler diagnostic.\n"
+      "Rejected source probe '${probe_name}' failed without an interface-rejection compiler diagnostic.\n"
       "${probe_build_output}"
     )
   endif()

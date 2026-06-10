@@ -22,3 +22,16 @@ function(ftimer_assert_installed_consumer_contract_phases)
     )
   endif()
 endfunction()
+
+function(ftimer_assert_installed_consumer_contract_mpi_run_skip_phases)
+  ftimer_assert_installed_consumer_contract_phases(
+    setup
+    producer-install
+    package-version-probes
+    installed-artifacts
+    source-rejection-positive-control
+    openmp-source-rejection-probes
+    mpi-source-rejection-probes
+    consumer-build
+  )
+endfunction()

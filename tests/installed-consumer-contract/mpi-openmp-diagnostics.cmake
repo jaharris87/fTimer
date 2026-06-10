@@ -21,6 +21,13 @@ function(ftimer_check_openmp_api_mpi_openmp_stderr stderr_text out_ok out_messag
     endif()
 
     math(EXPR diagnostic_line_count "${diagnostic_line_count} + 1")
+    string(REGEX REPLACE "ftimer_openmp recorded" "" stderr_line_remainder
+      "${stderr_line_stripped}"
+    )
+    if(stderr_line_remainder MATCHES "[Ff]Timer|FTIMER|ftimer_")
+      math(EXPR unexpected_ftimer_line_count "${unexpected_ftimer_line_count} + 1")
+      string(APPEND unexpected_ftimer_lines "${stderr_line_stripped}\n")
+    endif()
     if((stderr_line_stripped MATCHES "ftimer_openmp recorded 1 worker diagnostics")
         AND (stderr_line_stripped MATCHES "first status 5, overflow 0"))
       math(EXPR rank0_line_count "${rank0_line_count} + 1")
