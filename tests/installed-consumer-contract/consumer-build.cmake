@@ -89,3 +89,5 @@ if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
     set(openmp_api_openmp_consumer_executable "${configured_openmp_api_openmp_consumer_executable}")
   endif()
 endif()
+
+ftimer_record_installed_consumer_contract_phase(consumer-build)

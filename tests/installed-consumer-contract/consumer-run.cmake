@@ -1,5 +1,7 @@
 # Execute installed-package consumers and verify generated reports, CSV, and diagnostics.
 
+include("${CMAKE_CURRENT_LIST_DIR}/mpi-openmp-diagnostics.cmake")
+
 # Plain consumers do not call MPI_Init; MPI-enabled installed checks use the
 # MPI-aware consumers below.
 if(NOT TEST_ENABLE_MPI)
@@ -85,6 +87,7 @@ if(TEST_ENABLE_MPI)
       )
     else()
       message(STATUS "Skipping ${test_name} MPI run: no mpiexec/mpirun found on PATH.")
+      set(ftimer_installed_consumer_contract_stop TRUE)
       return()
     endif()
   endif()
@@ -340,74 +343,8 @@ if(TEST_ENABLE_MPI)
       )
     endif()
 
-    string(REPLACE "\r\n" "\n" openmp_api_mpi_openmp_consumer_stderr_normalized
-      "${openmp_api_mpi_openmp_consumer_stderr}"
-    )
-    string(REPLACE ";" "\\;" openmp_api_mpi_openmp_consumer_stderr_escaped
-      "${openmp_api_mpi_openmp_consumer_stderr_normalized}"
-    )
-    string(REPLACE "\n" ";" openmp_api_mpi_openmp_stderr_lines
-      "${openmp_api_mpi_openmp_consumer_stderr_escaped}"
-    )
-    set(openmp_api_mpi_openmp_diagnostic_line_count 0)
-    set(openmp_api_mpi_openmp_rank0_line_count 0)
-    set(openmp_api_mpi_openmp_rank1_line_count 0)
-    set(openmp_api_mpi_openmp_unexpected_ftimer_line_count 0)
-    set(openmp_api_mpi_openmp_unexpected_ftimer_lines "")
-    foreach(openmp_api_mpi_openmp_stderr_line IN LISTS openmp_api_mpi_openmp_stderr_lines)
-      string(STRIP "${openmp_api_mpi_openmp_stderr_line}" openmp_api_mpi_openmp_stderr_line_stripped)
-      if(NOT openmp_api_mpi_openmp_stderr_line_stripped MATCHES "ftimer_openmp recorded")
-        if(openmp_api_mpi_openmp_stderr_line_stripped MATCHES "[Ff]Timer|FTIMER|ftimer_")
-          math(EXPR openmp_api_mpi_openmp_unexpected_ftimer_line_count
-            "${openmp_api_mpi_openmp_unexpected_ftimer_line_count} + 1"
-          )
-          string(APPEND openmp_api_mpi_openmp_unexpected_ftimer_lines
-            "${openmp_api_mpi_openmp_stderr_line_stripped}\n"
-          )
-        endif()
-        continue()
-      endif()
-
-      math(EXPR openmp_api_mpi_openmp_diagnostic_line_count
-        "${openmp_api_mpi_openmp_diagnostic_line_count} + 1"
-      )
-      if((openmp_api_mpi_openmp_stderr_line_stripped MATCHES
-            "ftimer_openmp recorded 1 worker diagnostics")
-          AND (openmp_api_mpi_openmp_stderr_line_stripped MATCHES
-            "first status 5, overflow 0"))
-        math(EXPR openmp_api_mpi_openmp_rank0_line_count
-          "${openmp_api_mpi_openmp_rank0_line_count} + 1"
-        )
-      elseif((openmp_api_mpi_openmp_stderr_line_stripped MATCHES
-            "ftimer_openmp recorded 2 worker diagnostics")
-          AND (openmp_api_mpi_openmp_stderr_line_stripped MATCHES
-            "first status 5, overflow 0"))
-        math(EXPR openmp_api_mpi_openmp_rank1_line_count
-          "${openmp_api_mpi_openmp_rank1_line_count} + 1"
-        )
-      endif()
-    endforeach()
-
-    if((NOT "${openmp_api_mpi_openmp_diagnostic_line_count}" STREQUAL "2")
-        OR (NOT "${openmp_api_mpi_openmp_rank0_line_count}" STREQUAL "1")
-        OR (NOT "${openmp_api_mpi_openmp_rank1_line_count}" STREQUAL "1")
-        OR (NOT "${openmp_api_mpi_openmp_unexpected_ftimer_line_count}" STREQUAL "0"))
-      message(FATAL_ERROR
-        "Unexpected OpenMP API MPI+OpenMP diagnostic stderr.\n"
-        "Expected one rank diagnostic with 1 retained worker diagnostic and "
-        "one rank diagnostic with 2 retained worker diagnostics.\n"
-        "Observed ftimer_openmp diagnostic line count: "
-        "${openmp_api_mpi_openmp_diagnostic_line_count}\n"
-        "Observed rank-0-style diagnostic line count: "
-        "${openmp_api_mpi_openmp_rank0_line_count}\n"
-        "Observed rank-1-style diagnostic line count: "
-        "${openmp_api_mpi_openmp_rank1_line_count}\n"
-        "Observed unexpected fTimer diagnostic line count: "
-        "${openmp_api_mpi_openmp_unexpected_ftimer_line_count}\n"
-        "Unexpected fTimer diagnostic lines:\n"
-        "${openmp_api_mpi_openmp_unexpected_ftimer_lines}"
-        "Actual:\n${openmp_api_mpi_openmp_consumer_stderr_normalized}"
-      )
-    endif()
+    ftimer_assert_openmp_api_mpi_openmp_stderr("${openmp_api_mpi_openmp_consumer_stderr}")
   endif()
 endif()
+
+ftimer_record_installed_consumer_contract_phase(consumer-run)

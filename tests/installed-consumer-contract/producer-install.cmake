@@ -88,3 +88,5 @@ execute_process(
 if(NOT producer_install_result EQUAL 0)
   message(FATAL_ERROR "Failed to install the producer package.")
 endif()
+
+ftimer_record_installed_consumer_contract_phase(producer-install)

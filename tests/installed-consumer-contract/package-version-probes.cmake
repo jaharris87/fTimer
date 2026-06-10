@@ -182,3 +182,5 @@ ftimer_check_package_version_request(
   REJECT
   "${future_minor_prefix}"
 )
+
+ftimer_record_installed_consumer_contract_phase(package-version-probes)
