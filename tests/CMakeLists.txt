@@ -358,6 +358,12 @@ add_test(NAME ftimer_installed_openmp_hybrid_api_surface
 set_tests_properties(ftimer_installed_openmp_hybrid_api_surface
   PROPERTIES LABELS "mpi;openmp")
 
+add_test(NAME ftimer_installed_consumer_contract_meta
+  COMMAND ${CMAKE_COMMAND}
+    -DREPO_ROOT=${CMAKE_SOURCE_DIR}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/check_installed_consumer_contract_meta.cmake
+)
+
 add_test(NAME ftimer_openmp_hybrid_examples_contract
   COMMAND ${CMAKE_COMMAND}
     -DREPO_ROOT=${CMAKE_SOURCE_DIR}

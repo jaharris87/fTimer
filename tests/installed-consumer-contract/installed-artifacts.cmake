@@ -73,4 +73,6 @@ function(ftimer_verify_installed_artifacts)
       "Installed BSD license does not match LICENSE."
     )
   endif()
+
+  ftimer_record_installed_consumer_contract_phase(installed-artifacts)
 endfunction()

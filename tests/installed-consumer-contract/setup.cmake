@@ -82,3 +82,4 @@ endif()
 
 file(REMOVE_RECURSE "${TEST_BINARY_DIR}")
 file(MAKE_DIRECTORY "${TEST_BINARY_DIR}")
+ftimer_record_installed_consumer_contract_phase(setup)
