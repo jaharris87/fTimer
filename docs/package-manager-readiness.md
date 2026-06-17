@@ -48,11 +48,11 @@ class Ftimer(CMakePackage):
     """Lightweight wall-clock timing library for modern Fortran."""
 
     homepage = "https://github.com/jaharris87/fTimer"
-    url = "https://github.com/jaharris87/fTimer/archive/refs/tags/v0.2.0.tar.gz"
+    url = "https://github.com/jaharris87/fTimer/archive/refs/tags/v1.0.0.tar.gz"
 
     maintainers("TODO-site-or-upstream-maintainer")
 
-    version("0.2.0", sha256="TODO-release-tarball-sha256")
+    version("1.0.0", sha256="TODO-release-tarball-sha256")
 
     variant("mpi", default=False, description="Enable MPI timing support")
     variant("openmp", default=False, description="Enable OpenMP timing support")
@@ -102,7 +102,7 @@ real toolchain, dependency versions, checksums, and package-manager validation.
 easyblock = 'CMakeMake'
 
 name = 'fTimer'
-version = '0.2.0'
+version = '1.0.0'
 
 homepage = 'https://github.com/jaharris87/fTimer'
 description = 'Lightweight wall-clock timing library for modern Fortran.'

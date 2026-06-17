@@ -101,29 +101,44 @@ find_package(fTimer @requested_version@ CONFIG REQUIRED
 endfunction()
 
 set(current_package_version_request "${TEST_PACKAGE_VERSION}")
-set(same_minor_package_version_request
+set(current_major_package_version_request "${TEST_PACKAGE_VERSION_MAJOR}")
+set(same_major_minor_package_version_request
   "${TEST_PACKAGE_VERSION_MAJOR}.${TEST_PACKAGE_VERSION_MINOR}"
 )
+set(pre_v1_package_version_request "0.2")
+math(EXPR future_major_package_version "${TEST_PACKAGE_VERSION_MAJOR} + 1")
 math(EXPR future_minor_package_version "${TEST_PACKAGE_VERSION_MINOR} + 1")
-set(future_minor_package_version_request
+set(too_new_minor_package_version_request
   "${TEST_PACKAGE_VERSION_MAJOR}.${future_minor_package_version}.0"
 )
-math(EXPR same_minor_newer_patch_version "${TEST_PACKAGE_VERSION_PATCH} + 1")
-math(EXPR same_minor_too_new_patch_version "${TEST_PACKAGE_VERSION_PATCH} + 2")
-set(same_minor_newer_patch_package_version
-  "${TEST_PACKAGE_VERSION_MAJOR}.${TEST_PACKAGE_VERSION_MINOR}.${same_minor_newer_patch_version}"
+math(EXPR same_major_newer_patch_version "${TEST_PACKAGE_VERSION_PATCH} + 1")
+math(EXPR same_major_too_new_patch_version "${TEST_PACKAGE_VERSION_PATCH} + 2")
+set(same_major_newer_patch_package_version
+  "${TEST_PACKAGE_VERSION_MAJOR}.${TEST_PACKAGE_VERSION_MINOR}.${same_major_newer_patch_version}"
 )
-set(same_minor_too_new_patch_request
-  "${TEST_PACKAGE_VERSION_MAJOR}.${TEST_PACKAGE_VERSION_MINOR}.${same_minor_too_new_patch_version}"
+set(too_new_patch_package_version_request
+  "${TEST_PACKAGE_VERSION_MAJOR}.${TEST_PACKAGE_VERSION_MINOR}.${same_major_newer_patch_version}"
 )
-if(TEST_PACKAGE_VERSION_MINOR GREATER 0)
-  math(EXPR previous_minor_package_version "${TEST_PACKAGE_VERSION_MINOR} - 1")
-  set(incompatible_package_version_request
-    "${TEST_PACKAGE_VERSION_MAJOR}.${previous_minor_package_version}.0"
+set(same_major_too_new_patch_request
+  "${TEST_PACKAGE_VERSION_MAJOR}.${TEST_PACKAGE_VERSION_MINOR}.${same_major_too_new_patch_version}"
+)
+set(future_major_package_version_request "${future_major_package_version}.0.0")
+set(same_major_newer_minor_package_version
+  "${TEST_PACKAGE_VERSION_MAJOR}.${future_minor_package_version}.0"
+)
+set(same_major_newer_minor_too_new_patch_request
+  "${TEST_PACKAGE_VERSION_MAJOR}.${future_minor_package_version}.1"
+)
+
+if(NOT TEST_PACKAGE_VERSION_MAJOR EQUAL 1)
+  message(FATAL_ERROR
+    "The v1 installed-consumer package-version probes require project major version 1; got '${TEST_PACKAGE_VERSION}'."
   )
-else()
-  math(EXPR future_major_package_version "${TEST_PACKAGE_VERSION_MAJOR} + 1")
-  set(incompatible_package_version_request "${future_major_package_version}.0.0")
+endif()
+if(NOT TEST_PACKAGE_VERSION_COMPATIBILITY STREQUAL "SameMajorVersion")
+  message(FATAL_ERROR
+    "The v1 installed-consumer package-version probes require SameMajorVersion compatibility; got '${TEST_PACKAGE_VERSION_COMPATIBILITY}'."
+  )
 endif()
 
 ftimer_check_package_version_request(
@@ -133,54 +148,86 @@ ftimer_check_package_version_request(
   "${install_prefix}"
 )
 ftimer_check_package_version_request(
-  same-minor
-  "${same_minor_package_version_request}"
+  same-major-minor
+  "${same_major_minor_package_version_request}"
   ACCEPT
   "${install_prefix}"
 )
 ftimer_check_package_version_request(
-  future-minor-request
-  "${future_minor_package_version_request}"
+  same-major
+  "${current_major_package_version_request}"
+  ACCEPT
+  "${install_prefix}"
+)
+ftimer_check_package_version_request(
+  too-new-minor-request
+  "${too_new_minor_package_version_request}"
   REJECT
   "${install_prefix}"
 )
 ftimer_check_package_version_request(
-  incompatible-minor
-  "${incompatible_package_version_request}"
+  too-new-patch-request
+  "${too_new_patch_package_version_request}"
+  REJECT
+  "${install_prefix}"
+)
+ftimer_check_package_version_request(
+  pre-v1-request
+  "${pre_v1_package_version_request}"
+  REJECT
+  "${install_prefix}"
+)
+ftimer_check_package_version_request(
+  future-major
+  "${future_major_package_version_request}"
   REJECT
   "${install_prefix}"
 )
 
-set(same_minor_newer_patch_prefix
-  "${TEST_BINARY_DIR}/version-probes/same-minor-newer-patch-prefix"
+set(same_major_newer_patch_prefix
+  "${TEST_BINARY_DIR}/version-probes/same-major-newer-patch-prefix"
 )
 ftimer_write_synthetic_package_prefix(
-  "${same_minor_newer_patch_prefix}"
-  "${same_minor_newer_patch_package_version}"
+  "${same_major_newer_patch_prefix}"
+  "${same_major_newer_patch_package_version}"
 )
 ftimer_check_package_version_request(
-  same-minor-newer-patch-package
+  same-major-newer-patch-package
   "${current_package_version_request}"
   ACCEPT
-  "${same_minor_newer_patch_prefix}"
+  "${same_major_newer_patch_prefix}"
 )
 ftimer_check_package_version_request(
-  same-minor-too-new-patch-request
-  "${same_minor_too_new_patch_request}"
+  same-major-too-new-patch-request
+  "${same_major_too_new_patch_request}"
   REJECT
-  "${same_minor_newer_patch_prefix}"
+  "${same_major_newer_patch_prefix}"
 )
 
-set(future_minor_prefix "${TEST_BINARY_DIR}/version-probes/future-minor-prefix")
+set(same_major_newer_minor_prefix
+  "${TEST_BINARY_DIR}/version-probes/same-major-newer-minor-prefix"
+)
 ftimer_write_synthetic_package_prefix(
-  "${future_minor_prefix}"
-  "${future_minor_package_version_request}"
+  "${same_major_newer_minor_prefix}"
+  "${same_major_newer_minor_package_version}"
 )
 ftimer_check_package_version_request(
-  future-minor-package
-  "${same_minor_package_version_request}"
+  same-major-newer-minor-package
+  "${same_major_minor_package_version_request}"
+  ACCEPT
+  "${same_major_newer_minor_prefix}"
+)
+ftimer_check_package_version_request(
+  same-major-newer-minor-current-package-request
+  "${current_package_version_request}"
+  ACCEPT
+  "${same_major_newer_minor_prefix}"
+)
+ftimer_check_package_version_request(
+  same-major-newer-minor-too-new-patch-request
+  "${same_major_newer_minor_too_new_patch_request}"
   REJECT
-  "${future_minor_prefix}"
+  "${same_major_newer_minor_prefix}"
 )
 
 ftimer_record_installed_consumer_contract_phase(package-version-probes)

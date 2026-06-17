@@ -200,9 +200,9 @@ cmake --build my_app/build
 
 The supported downstream contract is the installed CMake package export. New adopters should not need to infer the consumption model from the test suite.
 
-Pre-1.0 CMake package compatibility is intentionally limited to the same minor release line. For example, a `0.2.z` install may satisfy `find_package(fTimer 0.2 CONFIG REQUIRED)` or an older compatible `0.2.x` request, but it will not satisfy a `0.1.x`, `0.3.x`, or later-minor request. Versionless `find_package(fTimer CONFIG REQUIRED)` remains available for consumers that deliberately accept whichever installed fTimer package appears on `CMAKE_PREFIX_PATH`.
+For the 1.x release line, CMake package compatibility uses same-major matching. A `1.y.z` install may satisfy `find_package(fTimer 1 CONFIG REQUIRED)` and same-major requests at or older than the installed package version, but it will not satisfy a `2.x` request or a request newer than the installed package. Versionless `find_package(fTimer CONFIG REQUIRED)` remains available for consumers that deliberately accept whichever installed fTimer package appears on `CMAKE_PREFIX_PATH`.
 
-The downstream examples under [`tests/install-consumer/`](tests/install-consumer/) stay in the smoke path as the supported installed-package happy path. For the full installed-module stability contract, public symbol boundary, installed docs/artifacts, and pre-1.0 compatibility notes, see [`docs/installed-api.md`](docs/installed-api.md).
+The downstream examples under [`tests/install-consumer/`](tests/install-consumer/) stay in the smoke path as the supported installed-package happy path. For the full installed-module stability contract, public symbol boundary, installed docs/artifacts, and 1.x compatibility notes, see [`docs/installed-api.md`](docs/installed-api.md).
 
 ## Supported Workflows
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fTimer
-  VERSION 0.2.0
+  VERSION 1.0.0
   LANGUAGES Fortran
   DESCRIPTION "Lightweight, correctness-first wall-clock timing library for Fortran"
 )
@@ -192,7 +192,7 @@ option(FTIMER_BUILD_EXAMPLES "Build example programs" ON)
 option(FTIMER_BUILD_BENCH "Build performance measurement harness" OFF)
 mark_as_advanced(FTIMER_OPENMP_ASSUME_MASTER_PROBE_OK)
 
-set(FTIMER_PACKAGE_VERSION_COMPATIBILITY SameMinorVersion)
+set(FTIMER_PACKAGE_VERSION_COMPATIBILITY SameMajorVersion)
 
 set(FTIMER_PUBLIC_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/ftimer")
 set(FTIMER_TEST_LIBRARY_MODULE_DIR "${CMAKE_BINARY_DIR}/mod/testlib")
