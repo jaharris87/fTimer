@@ -2,7 +2,26 @@
 
 Stable source-level modules: `ftimer`, `ftimer_core`, `ftimer_openmp`, `ftimer_types`.
 
-Pre-1.0 CMake package version compatibility is limited to the same minor release line. A `0.2.z` package can satisfy `find_package(fTimer 0.2 CONFIG REQUIRED)` and compatible `0.2.x` requests, but different `0.x` minor lines are not considered compatible. This package does not promise all-`0.x` source or compiler-module compatibility. The `0.2` package line is the compatibility boundary for the production-readiness call-count widening: local `ftimer_summary_entry_t%call_count` plus MPI `min_call_count`/`max_call_count` summary/result fields are `integer(int64)` on this line. MPI `avg_call_count` remains `real(wp)` and may differ from the exact integer average by representable real rounding for signed-64-bit values that `real(wp)` cannot represent exactly. Local structured summaries also expose context-cardinality diagnostics through `ftimer_summary_t%total_contexts`, `ftimer_summary_t%max_contexts_per_timer`, `ftimer_summary_t%context_diagnostics`, `ftimer_summary_t%num_context_diagnostics`, and `ftimer_summary_entry_t%timer_context_count`; these fields do not change text or CSV schemas.
+For the 1.x release line, CMake package version compatibility uses
+`SameMajorVersion`. A `1.y.z` package can satisfy
+`find_package(fTimer 1 CONFIG REQUIRED)` and same-major requests at or older
+than the installed package version, but it rejects `2.x` requests and same-major
+requests newer than the installed package. This source-level compatibility
+promise does not make installed Fortran compiler modules portable across
+compiler, MPI wrapper, OpenMP runtime, or fTimer feature-mode boundaries; those
+module artifact caveats are listed below. The 1.0 line includes the
+production-readiness call-count widening: local
+`ftimer_summary_entry_t%call_count` plus MPI `min_call_count`/`max_call_count`
+summary/result fields are `integer(int64)`. MPI `avg_call_count` remains
+`real(wp)` and may differ from the exact integer average by representable real
+rounding for signed-64-bit values that `real(wp)` cannot represent exactly.
+Local structured summaries also expose context-cardinality diagnostics through
+`ftimer_summary_t%total_contexts`,
+`ftimer_summary_t%max_contexts_per_timer`,
+`ftimer_summary_t%context_diagnostics`,
+`ftimer_summary_t%num_context_diagnostics`, and
+`ftimer_summary_entry_t%timer_context_count`; these fields do not change text
+or CSV schemas.
 
 The supported source-level import surface is intentionally narrow:
 
@@ -126,7 +145,7 @@ the dry-run exists only to expose the blast radius.
 | CSV/schema docs and fixtures | `docs/csv-schema.md`, `README.md` CSV text, `docs/troubleshooting.md` if user-facing remedies change, `tests/check_csv_schema_docs.cmake`, and the reader-aid fixtures under `tests/fixtures/csv-schema/` must either move together or explicitly state why the schema family is unchanged. |
 | Behavioral and contract tests | Local report/CSV behavior would need pFUnit coverage in `tests/test_summary.pf`, `tests/test_file_output.pf`, and procedural parity in `tests/test_procedural_api.pf`. MPI, OpenMP, or hybrid surfaces additionally require the matching `tests/mpi/` or OpenMP smoke tests and append-validation checks. |
 | Examples and installed consumers | If the promoted surface is part of the supported user story, update the relevant `examples/*.F90` and `tests/install-consumer/*.F90` path. If examples should not change, record that decision so the surface is not accidentally advertised. |
-| Installed artifacts and package version | Changes to the installed `.mod` artifact set, installed docs, or pre-1.0 compatibility rule must update `CMakeLists.txt`, `cmake/install_ftimer_modules.cmake.in` as applicable, and `tests/check_installed_package_consumer.cmake`, including package-version probes when the compatibility boundary changes. |
+| Installed artifacts and package version | Changes to the installed `.mod` artifact set, installed docs, or 1.x compatibility rule must update `CMakeLists.txt`, `cmake/install_ftimer_modules.cmake.in` as applicable, and `tests/check_installed_package_consumer.cmake`, including package-version probes when the compatibility boundary changes. |
 | Release evidence and CI | Update `docs/release-evidence.md`, `docs/release.md`, and any affected `.github/workflows/ci.yml` job names or filters when the release claim or proof path changes. Keep evidence narrow: local/strict MPI CSV, sparse MPI union CSV, OpenMP CSV, strict hybrid CSV, and sparse hybrid CSV are separate schema families. |
 
 For related change-amplification examples, #312, #314, #315, and #316 identify

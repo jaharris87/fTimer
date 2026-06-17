@@ -9,6 +9,7 @@ set(driver_path "${REPO_ROOT}/tests/check_installed_package_consumer.cmake")
 set(phase_helper_path "${contract_dir}/contract-phases.cmake")
 set(stderr_helper_path "${contract_dir}/mpi-openmp-diagnostics.cmake")
 set(source_rejection_path "${contract_dir}/source-rejection-probes.cmake")
+set(package_version_path "${contract_dir}/package-version-probes.cmake")
 
 if(NOT EXISTS "${phase_helper_path}")
   message(FATAL_ERROR
@@ -54,6 +55,20 @@ if(NOT source_rejection_text MATCHES "interface_diagnostic_regex")
     "Source rejection probes must require interface-rejection compiler diagnostics."
   )
 endif()
+
+file(READ "${package_version_path}" package_version_text)
+foreach(required_package_probe_text IN ITEMS
+    "SameMajorVersion"
+    "same-major-newer-minor-package"
+    "too-new-minor-request"
+    "too-new-patch-request"
+    "future-major")
+  if(NOT package_version_text MATCHES "${required_package_probe_text}")
+    message(FATAL_ERROR
+      "Package-version probes must retain v1 SameMajorVersion coverage term: ${required_package_probe_text}"
+    )
+  endif()
+endforeach()
 
 include("${phase_helper_path}")
 ftimer_record_installed_consumer_contract_phase(meta-setup)

@@ -41,8 +41,10 @@ Before starting a release candidate:
 ## Version And Compatibility
 
 - Update the project version in `CMakeLists.txt`.
-- Confirm the pre-1.0 CMake package compatibility rule is still accurate in
-  `README.md` and `docs/installed-api.md`.
+- Confirm the 1.x CMake package compatibility rule is still accurate in
+  `README.md` and `docs/installed-api.md`: package requests use same-major
+  matching for 1.x, reject future-major requests, and reject requests newer
+  than the installed package.
 - If a stable source-level symbol, installed module artifact, text report field,
   CSV schema field, or package compatibility boundary changes, update the
   relevant docs and smoke/contract checks in the same release-prep PR. Use the
@@ -273,8 +275,8 @@ After the release-prep PR has merged and `main` is current:
 
 1. Verify the local checkout is clean and current with `origin/main`.
 2. Confirm required CI passed on the merge commit.
-3. Create an annotated tag, for example `git tag -a v0.2.0 -m "fTimer 0.2.0"`.
-4. Push the tag with `git push origin v0.2.0`.
+3. Create an annotated tag, for example `git tag -a v1.0.0 -m "fTimer 1.0.0"`.
+4. Push the tag with `git push origin v1.0.0`.
 5. Create the GitHub release from that tag using the prepared release notes.
 6. Check the published release page, source archive links, and displayed license.
 
