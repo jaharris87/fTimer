@@ -1121,6 +1121,59 @@ if(NOT release_links_to_evidence)
 endif()
 
 file(READ "${REPO_ROOT}/docs/release-evidence.md" release_evidence_text)
+file(READ "${REPO_ROOT}/docs/installed-api.md" installed_api_text)
+
+set(readme_v1_package_contract_terms
+  "For the 1.x release line, CMake package compatibility uses same-major matching."
+  "find_package(fTimer 1 CONFIG REQUIRED)"
+  "it will not satisfy a `2.x` request or a request newer than the installed package"
+)
+
+foreach(readme_v1_package_contract_term IN LISTS readme_v1_package_contract_terms)
+  string(FIND "${release_readme_text}" "${readme_v1_package_contract_term}"
+    readme_v1_package_contract_index)
+  if(readme_v1_package_contract_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must keep v1 package compatibility term: ${readme_v1_package_contract_term}"
+    )
+  endif()
+endforeach()
+
+set(installed_api_v1_package_contract_terms
+  "For the 1.x release line, CMake package version compatibility uses"
+  "`SameMajorVersion`"
+  "find_package(fTimer 1 CONFIG REQUIRED)"
+  "it rejects `2.x` requests and same-major"
+  "requests newer than the installed package"
+  "does not make installed Fortran compiler modules portable across"
+)
+
+foreach(installed_api_v1_package_contract_term IN LISTS installed_api_v1_package_contract_terms)
+  string(FIND "${installed_api_text}" "${installed_api_v1_package_contract_term}"
+    installed_api_v1_package_contract_index)
+  if(installed_api_v1_package_contract_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/installed-api.md must keep v1 package compatibility term: ${installed_api_v1_package_contract_term}"
+    )
+  endif()
+endforeach()
+
+set(release_evidence_v1_package_contract_terms
+  "same-major 1.x package-version matching"
+  "A 1.x install may satisfy same-major requests at or older than the installed package version."
+  "Future-major requests and same-major requests newer than the installed package are rejected."
+)
+
+foreach(release_evidence_v1_package_contract_term IN LISTS release_evidence_v1_package_contract_terms)
+  string(FIND "${release_evidence_text}" "${release_evidence_v1_package_contract_term}"
+    release_evidence_v1_package_contract_index)
+  if(release_evidence_v1_package_contract_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/release-evidence.md must keep v1 package compatibility term: ${release_evidence_v1_package_contract_term}"
+    )
+  endif()
+endforeach()
+
 set(required_release_evidence_terms
   "Serial timing"
   "Pure MPI"
