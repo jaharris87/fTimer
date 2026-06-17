@@ -283,6 +283,13 @@ the readiness spike, MPICH hybrid is local-evidence-backed rather than permanent
 CI-covered, and NVHPC remains unvalidated unless #256 or a later issue changes
 that evidence.
 
+The prepared v1.0.0 release-note draft lives in
+[`docs/release-notes-v1.0.0.md`](release-notes-v1.0.0.md), with the companion
+validation and artifact record in
+[`docs/release-validation-v1.0.0.md`](release-validation-v1.0.0.md). Keep both
+files aligned with this checklist and
+[`docs/release-evidence.md`](release-evidence.md) until the tag is published.
+
 ## Tag And Publish
 
 After the release-prep PR has merged and `main` is current:

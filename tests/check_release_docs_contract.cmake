@@ -15,6 +15,8 @@ set(required_paths
   docs/package-manager-readiness.md
   docs/release-evidence.md
   docs/release.md
+  docs/release-notes-v1.0.0.md
+  docs/release-validation-v1.0.0.md
   docs/semantics.md
   docs/troubleshooting.md
   CONTRIBUTING.md
@@ -1122,6 +1124,194 @@ endif()
 
 file(READ "${REPO_ROOT}/docs/release-evidence.md" release_evidence_text)
 file(READ "${REPO_ROOT}/docs/installed-api.md" installed_api_text)
+file(READ "${REPO_ROOT}/docs/release-notes-v1.0.0.md" release_notes_v1_text)
+file(READ "${REPO_ROOT}/docs/release-validation-v1.0.0.md" release_validation_v1_text)
+file(READ "${REPO_ROOT}/CMakeLists.txt" cmake_lists_text)
+file(READ "${REPO_ROOT}/.github/workflows/codex-review.yml" codex_review_workflow_text)
+file(READ "${REPO_ROOT}/.github/workflows/codex-review-coverage.yml"
+  codex_review_coverage_workflow_text)
+file(STRINGS "${REPO_ROOT}/docs/release-validation-v1.0.0.md"
+  release_validation_v1_lines)
+file(STRINGS "${REPO_ROOT}/.github/workflows/ci.yml" ci_workflow_lines)
+
+function(require_release_text_contains doc_name doc_text needle)
+  string(FIND "${doc_text}" "${needle}" release_text_needle_index)
+  if(release_text_needle_index EQUAL -1)
+    message(FATAL_ERROR
+      "${doc_name} must keep v1 release closeout term: ${needle}"
+    )
+  endif()
+endfunction()
+
+set(release_notes_v1_required_terms
+  "serial/local timing through `ftimer` or `ftimer_core`"
+  "strict pure-MPI timing and sparse pure-MPI union timing"
+  "OpenMP compatibility timing"
+  "true OpenMP worker timing through the explicit `ftimer_openmp_t` object API"
+  "strict MPI+OpenMP rank/lane summaries, reports, and CSV output"
+  "sparse union MPI+OpenMP rank/lane participation summaries"
+  "`SameMajorVersion`"
+  "older than the installed package version"
+  "rejects future-major requests"
+  "rejects same-major requests newer than the installed package"
+  "CSV is the stable machine-readable export family."
+  "Fixed-width text reports are human-facing output."
+  "source-only"
+  "Do not attach binary packages"
+  "generated install trees"
+  "compiler module"
+  "compiler-, wrapper-, runtime-, and"
+  "feature-mode-specific artifacts"
+  "A serial install is not promised to satisfy"
+  "an MPI, OpenMP, MPI+OpenMP, or different-compiler downstream build"
+  "benchmark CSVs"
+  "Spack recipes"
+  "EasyBuild"
+  "MPICH MPI+OpenMP hybrid support is caveated"
+  "permanent PR CI"
+  "Package-manager availability and package-recipe ownership remain post-v1.0"
+  "issue #355"
+  "issue #294"
+  "issue #259"
+  "NVHPC serial smoke/install-consumer validation remains unclaimed"
+  "issue #256"
+  "benchmark trend"
+  "CSV plus a sidecar/provenance record"
+  "Codex Review Routing and Triggers"
+  "Codex Review Coverage"
+)
+
+foreach(release_notes_v1_required_term IN LISTS release_notes_v1_required_terms)
+  require_release_text_contains("docs/release-notes-v1.0.0.md"
+    "${release_notes_v1_text}" "${release_notes_v1_required_term}")
+endforeach()
+
+if(NOT cmake_lists_text MATCHES "project\\(fTimer[^\)]*VERSION[ \t\r\n]+1\\.0\\.0")
+  message(FATAL_ERROR
+    "CMakeLists.txt must keep project(fTimer VERSION 1.0.0) for the v1.0 release closeout."
+  )
+endif()
+
+if(NOT cmake_lists_text MATCHES "set\\(FTIMER_PACKAGE_VERSION_COMPATIBILITY[ \t\r\n]+SameMajorVersion\\)")
+  message(FATAL_ERROR
+    "CMakeLists.txt must keep FTIMER_PACKAGE_VERSION_COMPATIBILITY SameMajorVersion for the 1.x release line."
+  )
+endif()
+
+set(release_validation_v1_required_terms
+  "project(fTimer VERSION 1.0.0)"
+  "FTIMER_PACKAGE_VERSION_COMPATIBILITY"
+  "`SameMajorVersion`"
+  "source archive plus release notes"
+  "[`LICENSE`](../LICENSE)"
+  "installed-api.md"
+  "No binary package"
+  "No binary package, generated install"
+  "benchmark CSV"
+  "Spack recipe"
+  "EasyBuild easyconfig"
+  "post-release"
+  "release-blocker"
+  "Security-sensitive reports follow [`SECURITY.md`](../SECURITY.md)"
+)
+
+foreach(release_validation_v1_required_term IN LISTS release_validation_v1_required_terms)
+  require_release_text_contains("docs/release-validation-v1.0.0.md"
+    "${release_validation_v1_text}" "${release_validation_v1_required_term}")
+endforeach()
+
+function(extract_workflow_name doc_name workflow_text out_var)
+  string(REGEX MATCH "(^|\n)name:[ \t]*([^\n\r]+)"
+    workflow_name_match "${workflow_text}")
+  if(NOT workflow_name_match)
+    message(FATAL_ERROR "${doc_name} must define a workflow name.")
+  endif()
+
+  set("${out_var}" "${CMAKE_MATCH_2}" PARENT_SCOPE)
+endfunction()
+
+extract_workflow_name(".github/workflows/codex-review.yml"
+  "${codex_review_workflow_text}" codex_review_workflow_name)
+extract_workflow_name(".github/workflows/codex-review-coverage.yml"
+  "${codex_review_coverage_workflow_text}" codex_review_coverage_workflow_name)
+
+set(ci_workflow_job_ids)
+set(in_ci_jobs FALSE)
+foreach(ci_workflow_line IN LISTS ci_workflow_lines)
+  if(ci_workflow_line STREQUAL "jobs:")
+    set(in_ci_jobs TRUE)
+    continue()
+  endif()
+
+  if(in_ci_jobs AND ci_workflow_line MATCHES "^  ([A-Za-z0-9_-]+):$")
+    list(APPEND ci_workflow_job_ids "${CMAKE_MATCH_1}")
+  endif()
+endforeach()
+
+if(NOT ci_workflow_job_ids)
+  message(FATAL_ERROR ".github/workflows/ci.yml must define at least one CI job.")
+endif()
+
+set(release_validation_required_ci_proof_entries)
+set(in_release_validation_ci_proof FALSE)
+foreach(release_validation_v1_line IN LISTS release_validation_v1_lines)
+  if(release_validation_v1_line STREQUAL "## Required CI Proof")
+    set(in_release_validation_ci_proof TRUE)
+    continue()
+  endif()
+
+  if(in_release_validation_ci_proof AND release_validation_v1_line MATCHES "^## ")
+    set(in_release_validation_ci_proof FALSE)
+  endif()
+
+  if(in_release_validation_ci_proof AND release_validation_v1_line MATCHES "^- `([^`]+)`")
+    list(APPEND release_validation_required_ci_proof_entries "${CMAKE_MATCH_1}")
+  endif()
+endforeach()
+
+set(release_validation_required_status_checks
+  "${codex_review_workflow_name}"
+  "${codex_review_coverage_workflow_name}"
+)
+
+foreach(release_validation_required_ci_job IN LISTS ci_workflow_job_ids)
+  require_release_text_contains("docs/release-validation-v1.0.0.md"
+    "${release_validation_v1_text}" "- `${release_validation_required_ci_job}`")
+
+  list(FIND release_validation_required_ci_proof_entries
+    "${release_validation_required_ci_job}" ci_job_index)
+  if(ci_job_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/release-validation-v1.0.0.md Required CI Proof must list CI job '${release_validation_required_ci_job}' from .github/workflows/ci.yml."
+    )
+  endif()
+endforeach()
+
+foreach(release_validation_required_status_check IN LISTS release_validation_required_status_checks)
+  require_release_text_contains("docs/release-validation-v1.0.0.md"
+    "${release_validation_v1_text}" "- `${release_validation_required_status_check}`")
+
+  list(FIND release_validation_required_ci_proof_entries
+    "${release_validation_required_status_check}" status_check_index)
+  if(status_check_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/release-validation-v1.0.0.md Required CI Proof must list Codex workflow status '${release_validation_required_status_check}'."
+    )
+  endif()
+endforeach()
+
+foreach(release_validation_required_ci_proof_entry IN LISTS release_validation_required_ci_proof_entries)
+  list(FIND ci_workflow_job_ids "${release_validation_required_ci_proof_entry}"
+    ci_job_index)
+  list(FIND release_validation_required_status_checks
+    "${release_validation_required_ci_proof_entry}" status_check_index)
+
+  if(ci_job_index EQUAL -1 AND status_check_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/release-validation-v1.0.0.md Required CI Proof lists '${release_validation_required_ci_proof_entry}', but it is neither a .github/workflows/ci.yml job nor a Codex review workflow name."
+    )
+  endif()
+endforeach()
 
 set(readme_v1_package_contract_terms
   "For the 1.x release line, CMake package compatibility uses same-major matching."
