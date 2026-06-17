@@ -1248,6 +1248,84 @@ foreach(required_release_evidence_term IN LISTS required_release_evidence_terms)
 endforeach()
 
 file(STRINGS "${REPO_ROOT}/docs/release-evidence.md" release_evidence_lines)
+
+function(require_release_evidence_line_contains row_label)
+  set(row_text "")
+  set(expected_prefix "| ${row_label} |")
+
+  foreach(release_evidence_line IN LISTS release_evidence_lines)
+    string(FIND "${release_evidence_line}" "${expected_prefix}" release_evidence_line_prefix_index)
+    if(release_evidence_line_prefix_index EQUAL 0)
+      set(row_text "${release_evidence_line}")
+    endif()
+  endforeach()
+
+  if(row_text STREQUAL "")
+    message(FATAL_ERROR
+      "docs/release-evidence.md must keep a table row beginning with '${expected_prefix}'."
+    )
+  endif()
+
+  foreach(required_row_term IN LISTS ARGN)
+    string(FIND "${row_text}" "${required_row_term}" required_row_term_index)
+    if(required_row_term_index EQUAL -1)
+      message(FATAL_ERROR
+        "docs/release-evidence.md row '${row_label}' must keep row-local term '${required_row_term}'."
+      )
+    endif()
+  endforeach()
+endfunction()
+
+require_release_evidence_line_contains("Package-manager availability and recipe ownership"
+  "Non-goal for v1.0"
+  "#355"
+  "readiness guidance only"
+  "no direct `spack`/`eb` execution"
+)
+
+require_release_evidence_line_contains("Fixed-team or no-explicit-region OpenMP worker timing"
+  "Post-1.0 design issue #294"
+  "explicit timed-region"
+  "level-1 worker model"
+)
+
+require_release_evidence_line_contains("MPICH MPI+OpenMP permanent CI coverage"
+  "Non-goal for v1.0"
+  "#353"
+  "not permanent PR CI coverage"
+)
+
+require_release_evidence_line_contains("Ubuntu 24.04 MPICH pFUnit runner migration"
+  "Post-release runner maintenance tracked by #259"
+  "Ubuntu 22.04"
+  "raw launcher probe"
+)
+
+require_release_evidence_line_contains("NVHPC serial smoke/install-consumer support"
+  "Plausible but unvalidated"
+  "#256"
+  "must not claim NVHPC validation"
+)
+
+require_release_evidence_line_contains("Profiler backends, hardware counters, traces, dashboards, accelerator/device synchronization, automatic MPI barriers, FPM, binary packages"
+  "Non-goals for v1.0"
+  "wall-clock summaries and CSV exports only"
+  "artifact policy and release-note guardrails"
+)
+
+require_release_evidence_line_contains("Strict/sparse hybrid output"
+  "#353"
+  "not permanent CI coverage"
+  "local-evidence-backed caveated support for v1.0"
+  "not routine PR CI coverage"
+)
+
+require_release_evidence_line_contains("Spack/EasyBuild readiness"
+  "No Spack or EasyBuild recipe is committed"
+  "direct package-manager execution remains future"
+  "#355 owns any later package-manager ownership decision"
+)
+
 set(required_release_evidence_rows
   "Serial timing"
   "Pure MPI"
