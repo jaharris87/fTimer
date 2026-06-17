@@ -1139,6 +1139,25 @@ foreach(readme_v1_package_contract_term IN LISTS readme_v1_package_contract_term
   endif()
 endforeach()
 
+set(readme_v1_claim_boundary_terms
+  "**Evidence-backed advanced**"
+  "OpenMPI MPI+OpenMP has routine CI coverage; MPICH MPI+OpenMP has focused local smoke/install-consumer evidence only."
+  "**V1.0 non-goals or post-release topics**"
+  "package-manager availability"
+  "broader OpenMP ergonomics beyond the explicit level-1 worker runtime"
+  "Use that ledger, not this README, when you need release-review wording."
+)
+
+foreach(readme_v1_claim_boundary_term IN LISTS readme_v1_claim_boundary_terms)
+  string(FIND "${release_readme_text}" "${readme_v1_claim_boundary_term}"
+    readme_v1_claim_boundary_index)
+  if(readme_v1_claim_boundary_index EQUAL -1)
+    message(FATAL_ERROR
+      "README.md must keep v1 release-claim boundary term: ${readme_v1_claim_boundary_term}"
+    )
+  endif()
+endforeach()
+
 set(installed_api_v1_package_contract_terms
   "For the 1.x release line, CMake package version compatibility uses"
   "`SameMajorVersion`"
@@ -1174,7 +1193,30 @@ foreach(release_evidence_v1_package_contract_term IN LISTS release_evidence_v1_p
   endif()
 endforeach()
 
+file(READ "${REPO_ROOT}/docs/release.md" release_doc_text)
+set(release_doc_v1_claim_boundary_terms
+  "Review the v1.0 deferred/non-goal classification table"
+  "Keep the #353 MPICH MPI+OpenMP decision visible"
+  "local-evidence-backed caveated support for v1.0"
+  "package-manager recipe ownership or availability"
+  "OpenMP fixed-team ergonomics"
+  "package-manager execution was unavailable"
+  "NVHPC remains unvalidated unless #256 or a later issue changes"
+)
+
+foreach(release_doc_v1_claim_boundary_term IN LISTS release_doc_v1_claim_boundary_terms)
+  string(FIND "${release_doc_text}" "${release_doc_v1_claim_boundary_term}"
+    release_doc_v1_claim_boundary_index)
+  if(release_doc_v1_claim_boundary_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/release.md must keep v1 release-claim boundary term: ${release_doc_v1_claim_boundary_term}"
+    )
+  endif()
+endforeach()
+
 set(required_release_evidence_terms
+  "V1.0 Release-Note Claim Map"
+  "V1.0 Deferred And Non-Goal Classification"
   "Serial timing"
   "Pure MPI"
   "OpenMP compatibility"
@@ -1187,6 +1229,13 @@ set(required_release_evidence_terms
   "Benchmark evidence"
   "Plausible but unvalidated"
   "Release-validated"
+  "local-evidence-backed caveated support"
+  "not permanent CI coverage"
+  "#355"
+  "#294"
+  "#259"
+  "#256"
+  "#353"
 )
 
 foreach(required_release_evidence_term IN LISTS required_release_evidence_terms)
@@ -1199,6 +1248,84 @@ foreach(required_release_evidence_term IN LISTS required_release_evidence_terms)
 endforeach()
 
 file(STRINGS "${REPO_ROOT}/docs/release-evidence.md" release_evidence_lines)
+
+function(require_release_evidence_line_contains row_label)
+  set(row_text "")
+  set(expected_prefix "| ${row_label} |")
+
+  foreach(release_evidence_line IN LISTS release_evidence_lines)
+    string(FIND "${release_evidence_line}" "${expected_prefix}" release_evidence_line_prefix_index)
+    if(release_evidence_line_prefix_index EQUAL 0)
+      set(row_text "${release_evidence_line}")
+    endif()
+  endforeach()
+
+  if(row_text STREQUAL "")
+    message(FATAL_ERROR
+      "docs/release-evidence.md must keep a table row beginning with '${expected_prefix}'."
+    )
+  endif()
+
+  foreach(required_row_term IN LISTS ARGN)
+    string(FIND "${row_text}" "${required_row_term}" required_row_term_index)
+    if(required_row_term_index EQUAL -1)
+      message(FATAL_ERROR
+        "docs/release-evidence.md row '${row_label}' must keep row-local term '${required_row_term}'."
+      )
+    endif()
+  endforeach()
+endfunction()
+
+require_release_evidence_line_contains("Package-manager availability and recipe ownership"
+  "Non-goal for v1.0"
+  "#355"
+  "readiness guidance only"
+  "no direct `spack`/`eb` execution"
+)
+
+require_release_evidence_line_contains("Fixed-team or no-explicit-region OpenMP worker timing"
+  "Post-1.0 design issue #294"
+  "explicit timed-region"
+  "level-1 worker model"
+)
+
+require_release_evidence_line_contains("MPICH MPI+OpenMP permanent CI coverage"
+  "Non-goal for v1.0"
+  "#353"
+  "not permanent PR CI coverage"
+)
+
+require_release_evidence_line_contains("Ubuntu 24.04 MPICH pFUnit runner migration"
+  "Post-release runner maintenance tracked by #259"
+  "Ubuntu 22.04"
+  "raw launcher probe"
+)
+
+require_release_evidence_line_contains("NVHPC serial smoke/install-consumer support"
+  "Plausible but unvalidated"
+  "#256"
+  "must not claim NVHPC validation"
+)
+
+require_release_evidence_line_contains("Profiler backends, hardware counters, traces, dashboards, accelerator/device synchronization, automatic MPI barriers, FPM, binary packages"
+  "Non-goals for v1.0"
+  "wall-clock summaries and CSV exports only"
+  "artifact policy and release-note guardrails"
+)
+
+require_release_evidence_line_contains("Strict/sparse hybrid output"
+  "#353"
+  "not permanent CI coverage"
+  "local-evidence-backed caveated support for v1.0"
+  "not routine PR CI coverage"
+)
+
+require_release_evidence_line_contains("Spack/EasyBuild readiness"
+  "No Spack or EasyBuild recipe is committed"
+  "direct package-manager execution remains future"
+  "#355 owns any later package-manager ownership decision"
+)
+
 set(required_release_evidence_rows
   "Serial timing"
   "Pure MPI"
@@ -1262,6 +1389,9 @@ file(READ "${REPO_ROOT}/docs/package-manager-readiness.md" package_manager_readi
 set(package_manager_required_terms
   "spack"
   "eb"
+  "Status date: 2026-06-17."
+  "V1.0 release-claims refresh: this remains readiness guidance only."
+  "Issue #355"
   "Serial | Package-manager friendly"
   "MPI | Package-manager friendly"
   "OpenMP | Package-manager friendly"
@@ -1274,6 +1404,7 @@ set(package_manager_required_terms
   "v1.0.0.tar.gz"
   "version(\"1.0.0\""
   "version = '1.0.0'"
+  "Those placeholders are intentional evidence"
   "depends_on(\"cmake@3.24:\", when=\"+openmp\", type=\"build\")"
   "LLVM Flang OpenMP packages have the compiler-id support fTimer requires"
   "wrapper-, and feature-mode-specific"
@@ -1285,6 +1416,21 @@ foreach(package_manager_required_term IN LISTS package_manager_required_terms)
   if(package_manager_term_index EQUAL -1)
     message(FATAL_ERROR
       "docs/package-manager-readiness.md must keep package-manager readiness acceptance term: ${package_manager_required_term}"
+    )
+  endif()
+endforeach()
+
+file(READ "${REPO_ROOT}/SECURITY.md" security_doc_text)
+set(security_policy_terms
+  "For v1.0 and later, security fixes normally target the latest stable release"
+  "Pre-1.0 tags and snapshots remain best-effort only."
+)
+
+foreach(security_policy_term IN LISTS security_policy_terms)
+  string(FIND "${security_doc_text}" "${security_policy_term}" security_policy_term_index)
+  if(security_policy_term_index EQUAL -1)
+    message(FATAL_ERROR
+      "SECURITY.md must keep v1 release-line support wording: ${security_policy_term}"
     )
   endif()
 endforeach()

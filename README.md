@@ -260,9 +260,9 @@ For the full OpenMP and hybrid lifecycle, accepted source shapes, and migration 
 Support tiers still matter, but the detailed claim ledger lives outside the README:
 
 - **Core validated** today: serial/library smoke, installed consumer coverage, and pure-MPI on the documented GNU wrapper path.
-- **Supported advanced**: OpenMP compatibility through `ftimer` / `ftimer_core`, plus explicit worker timing and strict/sparse MPI+OpenMP reporting through `ftimer_openmp_t`.
+- **Evidence-backed advanced**: OpenMP compatibility through `ftimer` / `ftimer_core`, plus explicit worker timing and strict/sparse MPI+OpenMP reporting through `ftimer_openmp_t`. OpenMPI MPI+OpenMP has routine CI coverage; MPICH MPI+OpenMP has focused local smoke/install-consumer evidence only.
 - **Plausible but unvalidated**: compiler, MPI, or OpenMP combinations not yet backed by direct automation or recorded local evidence.
-- **Experimental/deferred**: package-manager installs, profiler backends, hardware counters, traces, dashboards, and similar ecosystem work.
+- **V1.0 non-goals or post-release topics**: package-manager availability, package-recipe ownership, profiler backends, hardware counters, traces, dashboards, broader OpenMP ergonomics beyond the explicit level-1 worker runtime, and similar ecosystem work.
 - Exact status, evidence, and caveats for each release-facing claim live in [`docs/release-evidence.md`](docs/release-evidence.md). Use that ledger, not this README, when you need release-review wording.
 
 For failure-oriented guidance, see [`docs/troubleshooting.md`](docs/troubleshooting.md). For installed package stability details, see [`docs/installed-api.md`](docs/installed-api.md).

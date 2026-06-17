@@ -6,7 +6,12 @@ recipe. fTimer does not currently own, ship, test, or maintain Spack
 `package.py` or EasyBuild easyconfig files. Do not treat any prototype below as
 a copy-paste-ready recipe unless a later issue accepts that support cost.
 
-Status date: 2026-06-09.
+Status date: 2026-06-17.
+
+V1.0 release-claims refresh: this remains readiness guidance only. Issue #355
+owns any post-v1.0 decision to accept package-manager recipe ownership or direct
+Spack/EasyBuild validation. Until that decision changes, release notes and
+README support text should not claim package-manager availability.
 
 ## Spike Summary
 
@@ -36,9 +41,10 @@ add dependencies, CMake option flips, and the feature-mode caveats below.
 
 **Maintainer-only sketch, not a maintained Spack recipe:** this block is
 deliberately incomplete, was not executed by Spack during the readiness spike,
-and contains placeholders for a future upstream/site maintainer to replace with
-real ownership metadata, release versions, checksums, and package-manager
-validation.
+and contains `TODO-*` placeholders for a future upstream/site maintainer to
+replace with real ownership metadata, release versions, checksums, and
+package-manager validation. Those placeholders are intentional evidence that
+fTimer has not accepted recipe ownership in v1.0.
 
 ```python
 from spack.package import *
@@ -95,8 +101,10 @@ toolchain. The serial easyconfig is the base case:
 
 **Maintainer-only sketch, not a maintained EasyBuild easyconfig:** this block
 is deliberately incomplete, was not executed by EasyBuild during the readiness
-spike, and contains placeholders for a future site maintainer to replace with a
-real toolchain, dependency versions, checksums, and package-manager validation.
+spike, and contains `TODO` placeholders for a future site maintainer to replace
+with a real toolchain, dependency versions, checksums, and package-manager
+validation. Those placeholders are intentional evidence that fTimer has not
+accepted easyconfig ownership in v1.0.
 
 ```python
 easyblock = 'CMakeMake'
@@ -165,6 +173,9 @@ Specifically:
 - Do not add maintained in-repository Spack or EasyBuild recipe files now.
 - Keep the existing CMake install/export and installed-consumer tests as the
   source of truth for package behavior.
+- Keep v1.0 release notes limited to package-manager readiness guidance until
+  #355 records a different ownership decision and real package-manager
+  validation exists.
 - Consider an upstream Spack recipe contribution after a release tarball and
   checksum are available, using `mpi` and `openmp` variants and an external
   CMake consumer smoke check.
