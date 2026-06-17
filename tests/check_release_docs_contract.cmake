@@ -15,6 +15,8 @@ set(required_paths
   docs/package-manager-readiness.md
   docs/release-evidence.md
   docs/release.md
+  docs/release-notes-v1.0.0.md
+  docs/release-validation-v1.0.0.md
   docs/semantics.md
   docs/troubleshooting.md
   CONTRIBUTING.md
