@@ -105,6 +105,7 @@ set(current_major_package_version_request "${TEST_PACKAGE_VERSION_MAJOR}")
 set(same_major_minor_package_version_request
   "${TEST_PACKAGE_VERSION_MAJOR}.${TEST_PACKAGE_VERSION_MINOR}"
 )
+set(pre_v1_package_version_request "0.2")
 math(EXPR future_major_package_version "${TEST_PACKAGE_VERSION_MAJOR} + 1")
 math(EXPR future_minor_package_version "${TEST_PACKAGE_VERSION_MINOR} + 1")
 set(too_new_minor_package_version_request
@@ -167,6 +168,12 @@ ftimer_check_package_version_request(
 ftimer_check_package_version_request(
   too-new-patch-request
   "${too_new_patch_package_version_request}"
+  REJECT
+  "${install_prefix}"
+)
+ftimer_check_package_version_request(
+  pre-v1-request
+  "${pre_v1_package_version_request}"
   REJECT
   "${install_prefix}"
 )

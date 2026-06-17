@@ -62,6 +62,7 @@ foreach(required_package_probe_text IN ITEMS
     "same-major-newer-minor-package"
     "too-new-minor-request"
     "too-new-patch-request"
+    "pre-v1-request"
     "future-major")
   if(NOT package_version_text MATCHES "${required_package_probe_text}")
     message(FATAL_ERROR
