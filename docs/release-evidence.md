@@ -15,22 +15,27 @@ Status vocabulary:
   release-validated support boundary.
 - **Non-goal**: intentionally outside the current release claim.
 
-## Dry-Run Release-Note Claim Map
+## V1.0 Release-Note Claim Map
 
-A current release note should be able to claim:
+The v1.0 release note may claim only the support areas mapped to the ledger
+rows below:
 
-- disciplined serial wall-clock timing with structured summaries, reports, CSV,
+- serial timing: disciplined serial wall-clock timing with structured summaries, reports, CSV,
   scoped guards, callbacks, mock-clock-friendly tests, and benchmark evidence;
-- pure MPI summaries and reports through the `mpi_f08` communicator contract;
-- OpenMP compatibility for existing `ftimer`/`ftimer_core` users through the
+- pure MPI: summaries and reports through the `mpi_f08` communicator contract;
+- OpenMP compatibility: existing `ftimer`/`ftimer_core` users through the
   master-thread-only carve-out;
-- opt-in true OpenMP worker timing through `ftimer_openmp_t`;
-- strict and sparse union MPI+OpenMP rank/lane summary, report, and CSV output
-  for the currently validated hybrid path;
-- stable CSV/export schemas within the documented schema lines;
-- installed CMake package consumption for supported feature modes;
-- a curated public symbol boundary; and
-- benchmark harness evidence for release-readiness sweeps and performance-risk
+- `ftimer_openmp_t`: opt-in true OpenMP worker timing through the explicit
+  object API;
+- strict/sparse hybrid output: strict and sparse union MPI+OpenMP rank/lane
+  summary, report, and CSV output, with OpenMPI as the routine CI-covered path
+  and MPICH as focused local-evidence-backed caveated support from #353;
+- stable CSV/export claims: stable CSV/export schemas within the documented
+  schema lines;
+- installed CMake package behavior: installed CMake package consumption for
+  supported feature modes and same-major 1.x package-version matching;
+- public symbols: a curated source-level public symbol boundary; and
+- benchmark evidence: harness evidence for release-readiness sweeps and performance-risk
   PRs.
 
 The same release note should not claim broad compiler portability,
@@ -41,6 +46,17 @@ matching evidence. The current [Spack and EasyBuild readiness note](package-mana
 records out-of-tree recipe guidance without making fTimer a package-recipe
 owner.
 
+## V1.0 Deferred And Non-Goal Classification
+
+| Topic | V1.0 classification | Evidence or disposition |
+| --- | --- | --- |
+| Package-manager availability and recipe ownership | Non-goal for v1.0; post-v1.0 strategic decision tracked by #355. | `docs/package-manager-readiness.md` is readiness guidance only: no in-repository Spack/EasyBuild recipes, no direct `spack`/`eb` execution, and intentional prototype placeholders. |
+| Fixed-team or no-explicit-region OpenMP worker timing | Post-1.0 design issue #294. | Current `ftimer_openmp_t` support remains the explicit timed-region, level-1 worker model documented in `docs/openmp-timing-modes.md` and `docs/semantics.md`. |
+| MPICH MPI+OpenMP permanent CI coverage | Non-goal for v1.0 under the #353 maintainer decision. | OpenMPI MPI+OpenMP is routine CI-covered. MPICH MPI+OpenMP remains local-evidence-backed caveated support, not permanent PR CI coverage. |
+| Ubuntu 24.04 MPICH pFUnit runner migration | Post-release runner maintenance tracked by #259. | Current pure-MPICH MPI CI/pFUnit coverage remains on the validated hosted Ubuntu 22.04 path with a raw launcher probe. |
+| NVHPC serial smoke/install-consumer support | Plausible but unvalidated; post-release investigation #256. | Hosted-runner NVHPC 26.3 built but smoke/install-consumer executables aborted at runtime, so README and release notes must not claim NVHPC validation. |
+| Profiler backends, hardware counters, traces, dashboards, accelerator/device synchronization, automatic MPI barriers, FPM, binary packages | Non-goals for v1.0 unless a later release issue accepts ownership and evidence. | Current docs describe wall-clock summaries and CSV exports only; `docs/release.md` owns artifact policy and release-note guardrails. |
+
 ## Claim Ledger
 
 | Release claim area | Current status | Evidence to cite | Caveats and compatibility boundary |
@@ -49,10 +65,10 @@ owner.
 | Pure MPI | Release-validated for GNU Fortran wrapper builds with OpenMPI and MPICH. | `build-mpi`, `build-mpi-mpich`, `test-mpi`, and `test-mpi-mpich` CI jobs; `tests/mpi/test_mpi_*.pf`; `examples/mpi_example.F90`; configure-time `mpi_f08` probe in `CMakeLists.txt`; `docs/semantics.md` MPI contract. | Requires MPI lifetime discipline and the `mpi_f08` `type(MPI_Comm)` contract. Legacy integer communicators, `mpif.h`, divergent collectives, and automatic MPI barriers are outside the claim. |
 | OpenMP compatibility | Release-validated for GNU Fortran OpenMP and LLVM Flang OpenMP smoke/example paths. | `build-openmp`, `build-openmp-flang`, and `test-openmp` CI jobs; `tests/test_openmp_guards.pf`; `tests/check_openmp_option_off_global_flags.cmake`; `examples/openmp_example.F90`; `docs/openmp-timing-modes.md`. | This is the master-thread-only carve-out for existing APIs. It is not general thread safety, thread-local timing, nested worker timing, or a hybrid timing model by itself. |
 | `ftimer_openmp_t` | Release-validated as the opt-in serial-lane and level-1 worker timing API in OpenMP builds; serial-context lifecycle/catalog/timing is available in non-OpenMP packages. | `tests/test_openmp_api_smoke.F90`; `tests/test_openmp_summary_smoke.F90`; OpenMP diagnostic smoke tests; `tests/check_installed_openmp_hybrid_api_surface.cmake`; `examples/openmp_worker_example.F90`; `docs/installed-api.md`. | Worker timing requires `FTIMER_USE_OPENMP=ON`, an opened level-1 timed region, pre-registered ids for the hot path, and stopped-run summary/report calls. Global downstream OpenMP flags do not retrofit OpenMP support into a non-OpenMP fTimer package. |
-| Strict/sparse hybrid output | Release-validated for OpenMPI wrapper MPI+OpenMP smoke/install-consumer coverage with GNU Fortran and OpenMP; focused local MPICH wrapper smoke/install-consumer evidence exists for the same feature mode. | `build-mpi-openmp` CI job; #306 local MPICH 5.0.1/GNU Fortran 15.2.0 `ctest --test-dir build-codex-306-mpich-hybrid --output-on-failure` run, 34/34 passed; `tests/test_openmp_mpi_summary_smoke.F90`; `tests/test_openmp_mpi_summary_3rank_smoke.F90`; `tests/check_openmp_mpi_union_descriptor_contract.cmake`; `examples/mpi_openmp_example.F90`; `tests/install-consumer/mpi_openmp_main.F90`; `README.md` hybrid contract. | MPICH hybrid is not permanent CI coverage yet; treat other MPI/compiler/OpenMP runtime combinations as plausible but unvalidated. Strict hybrid output rejects descriptor, eligible-lane, and mixed-epoch unknown missing-lane precision mismatches. Sparse union hybrid output is a separate participation-aware API and schema with explicit unknown missing-sample flags; it is not append-compatible with strict hybrid CSV. |
-| Stable CSV/export claims | Evidence-backed for the documented schema lines and append-validation behavior. | `tests/test_file_output.pf`; `tests/check_openmp_summary_smoke.cmake`; `tests/check_openmp_mpi_summary_smoke.cmake`; `tests/check_bench_csv_output.cmake`; CSV sections in `README.md`, `docs/semantics.md`, and `docs/troubleshooting.md`. | CSV is the first stable machine-readable export, not a trace/event/profiler format. Local/strict MPI, sparse MPI union, OpenMP, strict hybrid, and sparse hybrid schemas are dedicated and intentionally not append-compatible with one another. |
+| Strict/sparse hybrid output | Release-validated for OpenMPI wrapper MPI+OpenMP smoke/install-consumer coverage with GNU Fortran and OpenMP; evidence-backed local MPICH wrapper smoke/install-consumer coverage is caveated by #353 and is not permanent CI coverage. | `build-mpi-openmp` CI job; #306 local MPICH 5.0.1/GNU Fortran 15.2.0 `ctest --test-dir build-codex-306-mpich-hybrid --output-on-failure` run, 34/34 passed; `tests/test_openmp_mpi_summary_smoke.F90`; `tests/test_openmp_mpi_summary_3rank_smoke.F90`; `tests/check_openmp_mpi_union_descriptor_contract.cmake`; `examples/mpi_openmp_example.F90`; `tests/install-consumer/mpi_openmp_main.F90`; `README.md` hybrid contract. | MPICH hybrid is local-evidence-backed caveated support for v1.0, not routine PR CI coverage. Treat other MPI/compiler/OpenMP runtime combinations as plausible but unvalidated. Strict hybrid output rejects descriptor, eligible-lane, and mixed-epoch unknown missing-lane precision mismatches. Sparse union hybrid output is a separate participation-aware API and schema with explicit unknown missing-sample flags; it is not append-compatible with strict hybrid CSV. |
+| Stable CSV/export claims | Evidence-backed for the documented schema lines and append-validation behavior. | `tests/test_file_output.pf`; `tests/check_openmp_summary_smoke.cmake`; `tests/check_openmp_mpi_summary_smoke.cmake`; `tests/check_bench_csv_output.cmake`; CSV sections in `README.md`, `docs/semantics.md`, `docs/csv-schema.md`, and `docs/troubleshooting.md`. | CSV is the first stable machine-readable export, not a trace/event/profiler format. Local/strict MPI, sparse MPI union, OpenMP, strict hybrid, and sparse hybrid schemas are dedicated and intentionally not append-compatible with one another. |
 | Installed CMake package behavior | Release-validated for same-major 1.x package-version matching and the supported serial, MPI, OpenMP, and MPI+OpenMP installed-consumer paths. | `ftimer_installed_package_consumer*` CTest entries; `tests/check_installed_package_consumer.cmake`; `tests/installed-consumer-contract/package-version-probes.cmake`; `tests/install-consumer/*.F90`; installed docs check for `docs/installed-api.md` and `LICENSE`; `docs/installed-api.md`. | A 1.x install may satisfy same-major requests at or older than the installed package version. Future-major requests and same-major requests newer than the installed package are rejected. Installed `.mod` artifacts are compiler-, wrapper-, and feature-mode-specific. FPM, binary packages, cross-compiler module reuse, and broad package-manager support are non-goals unless separately validated. |
-| Spack/EasyBuild readiness | Preliminary out-of-tree recipe guidance inferred from fTimer's CMake install contract, not direct package-manager execution or maintained package-manager ownership. Serial, MPI, OpenMP, and MPI+OpenMP variants appear package-manager friendly when the package manager follows fTimer's install contract and feature-mode boundaries. | `docs/package-manager-readiness.md`; `fTimerConfig.cmake` dependency exports; `cmake/install_ftimer_modules.cmake.in`; `tests/check_installed_package_consumer.cmake`; installed-consumer CTest entries. | No Spack or EasyBuild recipe is committed in this repository. `spack` and `eb` were not available in the #311 local validation environment, so direct package-manager execution remains future upstream/site-recipe work. |
+| Spack/EasyBuild readiness | Preliminary out-of-tree recipe guidance inferred from fTimer's CMake install contract, not direct package-manager execution or maintained package-manager ownership. Serial, MPI, OpenMP, and MPI+OpenMP variants appear package-manager friendly when the package manager follows fTimer's install contract and feature-mode boundaries. | `docs/package-manager-readiness.md`; `fTimerConfig.cmake` dependency exports; `cmake/install_ftimer_modules.cmake.in`; `tests/check_installed_package_consumer.cmake`; installed-consumer CTest entries. | No Spack or EasyBuild recipe is committed in this repository. `spack` and `eb` were not available in the #311 local validation environment, so direct package-manager execution remains future upstream/site-recipe work. #355 owns any later package-manager ownership decision. |
 | Public symbols | Evidence-backed by an allowlisted source-level API boundary. | `tests/public_symbol_allowlist.txt`; `tests/check_public_symbol_allowlist.cmake`; `docs/installed-api.md`; `src/ftimer.F90`, `src/ftimer_core.F90`, `src/ftimer_openmp.F90`, and `src/ftimer_types.F90`. | New module-level public names must be intentionally classified as stable, unstable public-by-necessity, or test-only. Installed implementation module artifacts are not stable import targets. |
 | Benchmark evidence | Evidence-backed for trend review and release-readiness sweeps, not pass/fail thresholds. Durable comparisons require the benchmark CSV plus the provenance sidecar policy in `docs/release.md`. | `build-bench`, `build-openmp-bench`, and `build-mpi-openmp-bench` CI jobs; `bench/ftimer_bench.F90`; `bench_csv_smoke`; serial CI artifact `ftimer-bench-serial-<sha>`; benchmark commands in `README.md` and `docs/release.md`. | GitHub-hosted runner timings are noisy. Serial CSV artifacts are uploaded by CI; OpenMP and MPI+OpenMP benchmark CI jobs currently smoke-check parseable CSV but do not upload durable feature-enabled artifacts. Feature-enabled trend evidence is local CSV plus sidecar unless a future issue adds sidecar-aware CI artifact upload. |
 

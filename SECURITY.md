@@ -6,9 +6,9 @@ before public disclosure.
 
 ## Supported Versions
 
-Pre-1.0 releases are supported on a best-effort basis. Security fixes normally
-target the latest release line and current `main` unless a maintainer documents
-another patch policy for a specific release.
+For v1.0 and later, security fixes normally target the latest stable release
+line and current `main` unless a maintainer documents another patch policy for a
+specific release. Pre-1.0 tags and snapshots remain best-effort only.
 
 ## Reporting A Vulnerability
 

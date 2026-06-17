@@ -19,6 +19,10 @@ Before starting a release candidate:
   [`docs/release-evidence.md`](release-evidence.md) and update any rows whose
   CI jobs, tests, examples, caveats, or support status changed since the last
   release.
+- Review the v1.0 deferred/non-goal classification table in
+  [`docs/release-evidence.md`](release-evidence.md) before drafting release
+  notes. Do not convert a post-release or non-goal topic into a release claim
+  without a linked maintainer decision and matching evidence.
 - Keep the release claim within the documented support boundary: serial timing,
   pure-MPI timing, the narrow master-thread-only OpenMP carve-out, the
   `ftimer_openmp` lifecycle/configuration/timer-catalog and id-first
@@ -33,10 +37,16 @@ Before starting a release candidate:
   [`docs/release-evidence.md`](release-evidence.md). Other MPI/compiler/OpenMP
   runtime combinations remain plausible but unvalidated until a release issue
   adds matching evidence.
+- Keep the #353 MPICH MPI+OpenMP decision visible in release wording: MPICH
+  hybrid is local-evidence-backed caveated support for v1.0, not routine PR CI
+  coverage. Do not fold #259's pure-MPICH hosted-runner maintenance into a
+  hybrid support claim.
 - Do not promote deferred non-goals into the release unless a linked issue has
   changed scope. Current non-goals include full profiler integration, FPM
-  packaging, hardware counters, traces, accelerator timelines, automatic MPI
-  barriers, and stable callback semantic identity.
+  packaging, package-manager recipe ownership or availability, hardware
+  counters, traces, accelerator timelines, automatic MPI barriers, broad
+  OpenMP fixed-team ergonomics beyond the explicit level-1 worker runtime, and
+  stable callback semantic identity.
 
 ## Version And Compatibility
 
@@ -267,7 +277,11 @@ Release notes should be short and evidence-backed. Include:
 
 Do not claim production readiness, broad compiler support, general hybrid
 OpenMP timing, profiler-backend integration, or binary package availability
-unless the release validation and docs support that exact claim.
+unless the release validation and docs support that exact claim. If mentioned,
+name validation skips explicitly: package-manager execution was unavailable for
+the readiness spike, MPICH hybrid is local-evidence-backed rather than permanent
+CI-covered, and NVHPC remains unvalidated unless #256 or a later issue changes
+that evidence.
 
 ## Tag And Publish
 
