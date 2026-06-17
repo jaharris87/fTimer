@@ -1124,6 +1124,131 @@ endif()
 
 file(READ "${REPO_ROOT}/docs/release-evidence.md" release_evidence_text)
 file(READ "${REPO_ROOT}/docs/installed-api.md" installed_api_text)
+file(READ "${REPO_ROOT}/docs/release-notes-v1.0.0.md" release_notes_v1_text)
+file(READ "${REPO_ROOT}/docs/release-validation-v1.0.0.md" release_validation_v1_text)
+file(READ "${REPO_ROOT}/CMakeLists.txt" cmake_lists_text)
+file(READ "${REPO_ROOT}/.github/workflows/ci.yml" ci_workflow_text)
+
+function(require_release_text_contains doc_name doc_text needle)
+  string(FIND "${doc_text}" "${needle}" release_text_needle_index)
+  if(release_text_needle_index EQUAL -1)
+    message(FATAL_ERROR
+      "${doc_name} must keep v1 release closeout term: ${needle}"
+    )
+  endif()
+endfunction()
+
+set(release_notes_v1_required_terms
+  "serial/local timing through `ftimer` or `ftimer_core`"
+  "strict pure-MPI timing and sparse pure-MPI union timing"
+  "OpenMP compatibility timing"
+  "true OpenMP worker timing through the explicit `ftimer_openmp_t` object API"
+  "strict MPI+OpenMP rank/lane summaries, reports, and CSV output"
+  "sparse union MPI+OpenMP rank/lane participation summaries"
+  "`SameMajorVersion`"
+  "CSV is the stable machine-readable export family."
+  "Fixed-width text reports are human-facing output."
+  "source-only"
+  "Do not attach binary packages"
+  "generated install trees"
+  "compiler module"
+  "benchmark CSVs"
+  "Spack recipes"
+  "EasyBuild"
+  "MPICH MPI+OpenMP hybrid support is caveated"
+  "permanent PR CI"
+  "Package-manager availability and package-recipe ownership remain post-v1.0"
+  "issue #355"
+  "issue #294"
+  "issue #259"
+  "NVHPC serial smoke/install-consumer validation remains unclaimed"
+  "issue #256"
+  "benchmark trend"
+  "CSV plus a sidecar/provenance record"
+  "Codex Review Routing and Triggers"
+  "Codex Review Coverage"
+)
+
+foreach(release_notes_v1_required_term IN LISTS release_notes_v1_required_terms)
+  require_release_text_contains("docs/release-notes-v1.0.0.md"
+    "${release_notes_v1_text}" "${release_notes_v1_required_term}")
+endforeach()
+
+if(NOT cmake_lists_text MATCHES "project\\(fTimer[^\)]*VERSION[ \t\r\n]+1\\.0\\.0")
+  message(FATAL_ERROR
+    "CMakeLists.txt must keep project(fTimer VERSION 1.0.0) for the v1.0 release closeout."
+  )
+endif()
+
+if(NOT cmake_lists_text MATCHES "set\\(FTIMER_PACKAGE_VERSION_COMPATIBILITY[ \t\r\n]+SameMajorVersion\\)")
+  message(FATAL_ERROR
+    "CMakeLists.txt must keep FTIMER_PACKAGE_VERSION_COMPATIBILITY SameMajorVersion for the 1.x release line."
+  )
+endif()
+
+set(release_validation_v1_required_terms
+  "project(fTimer VERSION 1.0.0)"
+  "FTIMER_PACKAGE_VERSION_COMPATIBILITY"
+  "`SameMajorVersion`"
+  "source archive plus release notes"
+  "[`LICENSE`](../LICENSE)"
+  "installed-api.md"
+  "No binary package"
+  "No binary package, generated install"
+  "benchmark CSV"
+  "Spack recipe"
+  "EasyBuild easyconfig"
+  "post-release"
+  "release-blocker"
+  "Security-sensitive reports follow [`SECURITY.md`](../SECURITY.md)"
+)
+
+foreach(release_validation_v1_required_term IN LISTS release_validation_v1_required_terms)
+  require_release_text_contains("docs/release-validation-v1.0.0.md"
+    "${release_validation_v1_text}" "${release_validation_v1_required_term}")
+endforeach()
+
+set(release_validation_required_ci_jobs
+  build-serial
+  build-serial-flang
+  build-mpi
+  build-mpi-mpich
+  build-mpi-openmp
+  test-serial
+  test-mpi
+  test-mpi-mpich
+  build-openmp
+  build-openmp-flang
+  test-openmp
+  build-contract-regressions
+  build-bench
+  build-openmp-bench
+  build-mpi-openmp-bench
+  lint
+)
+
+foreach(release_validation_required_ci_job IN LISTS release_validation_required_ci_jobs)
+  require_release_text_contains("docs/release-validation-v1.0.0.md"
+    "${release_validation_v1_text}" "- `${release_validation_required_ci_job}`")
+
+  string(FIND "${ci_workflow_text}" "\n  ${release_validation_required_ci_job}:"
+    ci_job_index)
+  if(ci_job_index EQUAL -1)
+    message(FATAL_ERROR
+      "docs/release-validation-v1.0.0.md lists CI job '${release_validation_required_ci_job}', but .github/workflows/ci.yml does not define it."
+    )
+  endif()
+endforeach()
+
+set(release_validation_required_status_checks
+  "Codex Review Routing and Triggers"
+  "Codex Review Coverage"
+)
+
+foreach(release_validation_required_status_check IN LISTS release_validation_required_status_checks)
+  require_release_text_contains("docs/release-validation-v1.0.0.md"
+    "${release_validation_v1_text}" "- `${release_validation_required_status_check}`")
+endforeach()
 
 set(readme_v1_package_contract_terms
   "For the 1.x release line, CMake package compatibility uses same-major matching."
